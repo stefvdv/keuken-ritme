@@ -1,0 +1,148 @@
+=====================================================
+  SUPABASE AANZETTEN — 4 STAPPEN (eenmalig)
+=====================================================
+
+De koppeling zit nu in de app ingebouwd. Jij hoeft alleen
+nog: (1) je sleutels invullen, (2) de e-mailadressen
+controleren, (3) testen, (4) live zetten.
+
+Zolang je dit niet doet, draait de app gewoon door in
+demo-modus. Er kan dus niets stukgaan.
+
+
+-----------------------------------------------------
+STAP 1 — SLEUTELS INVULLEN (.env.local)
+-----------------------------------------------------
+
+1. Open supabase.com -> je project ->
+   Project Settings -> API.
+
+2. Je ziet daar twee dingen:
+   - Project URL        (begint met https://, eindigt op .supabase.co)
+   - anon public key    (een hele lange code)
+
+3. Ga naar je projectmap (ritme-project).
+   Daar staat een bestand:  .env.local.example
+
+4. Maak daar een kopie van en hernoem die kopie naar:
+   .env.local
+   (precies zo, met de punt ervoor)
+
+5. Open .env.local met Kladblok (rechtsklik -> Openen met)
+   en vul in, zonder spaties:
+
+   VITE_SUPABASE_URL=https://JOUWPROJECT.supabase.co
+   VITE_SUPABASE_ANON_KEY=hier-de-lange-code
+
+6. Opslaan (Ctrl+S) en sluiten.
+
+   LET OP: dit bestand blijft op jouw computer en gaat
+   NIET mee naar GitHub (dat is expres, zo lekt er niets).
+
+
+-----------------------------------------------------
+STAP 2 — E-MAILADRESSEN CONTROLEREN (App.jsx)
+-----------------------------------------------------
+
+1. Open  ritme-project\src\App.jsx  met Kladblok.
+
+2. Zoek (Ctrl+F) naar:  COOK_EMAILS
+
+3. Je ziet dit blok:
+
+   const COOK_EMAILS = {
+     Michael: "michael@debeug.nl",
+     Stef: "stef@debeug.nl",
+     ...
+   };
+
+4. Zorg dat elk adres PRECIES gelijk is aan het adres
+   dat je in Supabase hebt aangemaakt
+   (Authentication -> Users). Pas aan waar nodig.
+
+5. Opslaan en sluiten.
+
+   Wachtwoorden staan nergens in de code — die typt
+   iedere kok zelf in op het inlogscherm.
+
+
+-----------------------------------------------------
+STAP 3 — TESTEN OP JE EIGEN COMPUTER
+-----------------------------------------------------
+
+1. Terminal openen in je projectmap
+   (Verkenner -> adresbalk -> cmd -> Enter).
+
+2. Typ:  npm run dev
+   Open:  http://localhost:5173
+
+3. Tik op je naam -> er verschijnt nu een
+   wachtwoordveld. Log in met het wachtwoord dat je
+   in Supabase voor jezelf hebt ingesteld.
+
+4. Test even:
+   - Maak een testgerecht aan of registreer een batch.
+   - Sluit het tabblad, open opnieuw, log in:
+     staat het er nog? Dan werkt het opslaan!
+   - Probeer ook de gastknop: kijken mag, wijzigen niet.
+
+5. Stop de testserver met Ctrl+C.
+
+LUKT INLOGGEN NIET?
+   - "Inloggen lukte niet": wachtwoord of e-mail klopt
+     niet. Check Supabase -> Authentication -> Users.
+     Wachtwoord vergeten? Klik daar op de gebruiker ->
+     je kunt een nieuw wachtwoord instellen.
+   - Gastknop werkt niet: check Supabase ->
+     Authentication -> Providers -> zet
+     "Anonymous sign-ins" AAN.
+   - Koks kunnen niet inloggen zonder mail te
+     bevestigen: zet bij Providers -> Email de optie
+     "Confirm email" UIT.
+
+
+-----------------------------------------------------
+STAP 4 — LIVE ZETTEN (Vercel + de sleutels daar ook)
+-----------------------------------------------------
+
+Vercel kent jouw .env.local niet (die blijft op je pc),
+dus je vult dezelfde twee sleutels ook daar in:
+
+1. Ga naar vercel.com -> je project ->
+   Settings -> Environment Variables.
+
+2. Voeg twee variabelen toe (Name + Value):
+
+   Name:  VITE_SUPABASE_URL
+   Value: https://JOUWPROJECT.supabase.co
+
+   Name:  VITE_SUPABASE_ANON_KEY
+   Value: de lange code
+
+   Klik Save.
+
+3. Zet daarna de nieuwe app-versie live met het
+   vaste ritueel in je terminal:
+
+   git add .
+   git commit -m "supabase gekoppeld"
+   git push
+
+4. Wacht een minuutje en open je webadres:
+   inloggen met wachtwoord, opslaan en live meekijken
+   werken nu voor het hele team.
+
+
+-----------------------------------------------------
+WAT ER NU ANDERS IS
+-----------------------------------------------------
+
+- Koks loggen in met hun eigen wachtwoord.
+- Alles wat je opslaat blijft bewaard en is direct
+  zichtbaar op alle apparaten (live).
+- Gasten kunnen alleen kijken; de database zelf
+  blokkeert elke wijziging van een gast.
+- Zonder sleutels (of als Supabase er even uit ligt)
+  valt de app terug op demo-modus en blijft hij werken.
+
+=====================================================

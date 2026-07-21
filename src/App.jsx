@@ -5,12 +5,27 @@ import {
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent
 } from "lucide-react";
+import { supabase } from "./supabase";
 
 /* In het ritme van het land — receptenboek van Wilde Wortels, Landgoed de Beug (Odijk).
    Biologisch, seizoensgebonden, uit eigen moestuin.
    Basistechnieken die uitwaaieren in variaties per (tuin)ingrediënt, met
    seizoenslabels, fermentatie-batchregistratie, smaakcombinaties, een reken-
    tool per recept en een gastmodus (alleen lezen). Alles origineel. */
+
+/* =====================================================================
+   INLOG-INSTELLING — het enige dat je zelf hoeft aan te passen.
+   Zet hier per kok het e-mailadres dat je in Supabase hebt aangemaakt
+   (Authentication -> Users). Wachtwoorden staan NIET in de code;
+   die typt iedere kok zelf in op het inlogscherm.
+   ===================================================================== */
+const COOK_EMAILS = {
+  Michael: "michael@debeug.nl",
+  Stef: "stef@debeug.nl",
+  Simon: "simon@debeug.nl",
+  Isa: "isa@debeug.nl",
+  Kim: "kim@debeug.nl",
+};
 
 const TEAM = [
   { name: "Michael", role: "Chef" },
@@ -70,20 +85,19 @@ const SEASON = {
   "wortel":["Zomer","Herfst","Winter"],"pastinaak":["Herfst","Winter"],"aardpeer":["Herfst","Winter"],
   "oost-indische kers":["Zomer","Herfst"],"spinazie":["Lente","Herfst"],"chinese kool":["Herfst"],"amsoi":["Herfst"],
   "kardoen":["Herfst","Winter"],"bleekselderij":["Zomer","Herfst"],"groenlof":["Winter"],"madelief":["Lente","Zomer"],
-  "snijbiet ":["Zomer"],
 };
 const seasonOf = (m) => SEASON[m] || ["Hele jaar"];
 
 const BASES = [
   // ---- oude basistechnieken (voorraad + tuin overlap) ----
-  { id:"mousse", baseName:"Vruchtenmousse", noun:"Mousse", generic:"fruit", category:"Mousses", yield:"≈ 650 g", chefsPick:true, endorsements:["Michael","Stef"], gear:"Thermoblender", mains:[...FRUIT.slice(0,24),"tomaat"],
-    ingredients:[{item:"Püree van {x}",amount:"250 g"},{item:"Slagroom",amount:"200 g"},{item:"Suiker",amount:"40 g"},{item:"Gelatineblaadjes",amount:"3 blaadjes"},{item:"Citroensap",amount:"10 g"}],
-    steps:["Week de gelatine.","Verwarm een derde van de püree van {x} en los de gelatine op.","Meng met de rest en het citroensap; koel tot lobbig.","Spatel de halfgeslagen room erdoor; 3 uur opstijven."] },
+  { id:"mousse", baseName:"Vruchtenmousse", noun:"Mousse", generic:"fruit", category:"Mousses", yield:"≈ 650 g", chefsPick:true, endorsements:["Michael","Stef"], gear:"Thermoblender", mains:FRUIT.slice(0,24),
+    ingredients:[{item:"Puree van {x}",amount:"250 g"},{item:"Slagroom",amount:"200 g"},{item:"Suiker",amount:"40 g"},{item:"Gelatineblaadjes",amount:"3 blaadjes"},{item:"Citroensap",amount:"10 g"}],
+    steps:["Week de gelatine.","Verwarm een derde van de puree van {x} en los de gelatine op.","Meng met de rest en het citroensap; koel tot lobbig.","Spatel de halfgeslagen room erdoor; 3 uur opstijven."] },
   { id:"gel", baseName:"Vruchtengel", noun:"Gel", generic:"fruit", category:"Gels & sauzen", yield:"≈ 400 g", chefsPick:true, gear:"Thermoblender", mains:FRUIT,
-    ingredients:[{item:"Sap/püree van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"},{item:"Suiker",amount:"20 g"}],
+    ingredients:[{item:"Sap/puree van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"},{item:"Suiker",amount:"20 g"}],
     steps:["Kook sap van {x} met agar 2 min.","Laat opstijven en mix glad.","Passeer in een knijpfles."] },
   { id:"sorbet", baseName:"Fruitsorbet", noun:"Sorbet", generic:"fruit", category:"Sorbet & ijs", yield:"≈ 700 g", chefsPick:true, gear:"Sorbetmachine", mains:FRUIT_ONLY,
-    ingredients:[{item:"Püree van {x}",amount:"500 g"},{item:"Suikersiroop",amount:"150 g"},{item:"Glucose",amount:"30 g"},{item:"Citroensap",amount:"15 g"}],
+    ingredients:[{item:"Puree van {x}",amount:"500 g"},{item:"Suikersiroop",amount:"150 g"},{item:"Glucose",amount:"30 g"},{item:"Citroensap",amount:"15 g"}],
     steps:["Meng alles glad.","Rijp 4 uur koud.","Draai in de sorbetmachine; bewaar op -18°C."] },
   { id:"crumble", baseName:"Notencrumble", noun:"Crumble", generic:"noot", category:"Crumbles & garnituur", yield:"≈ 250 g", mains:NUT,
     ingredients:[{item:"{X}, gehakt",amount:"100 g"},{item:"Bloem",amount:"60 g"},{item:"Boter",amount:"60 g"},{item:"Suiker",amount:"40 g"}],
@@ -91,7 +105,7 @@ const BASES = [
   { id:"ganache", baseName:"Ganache", generic:"chocolade", category:"Zoet & patisserie", yield:"≈ 420 g", mode:"flavor", chefsPick:true,
     ingredients:[{item:"Chocolade",amount:"200 g"},{item:"Room",amount:"200 g"},{item:"Boter",amount:"20 g"}],
     steps:["Verwarm de room.","Giet over de chocolade en emulgeer.","Roer de boter erdoor."],
-    variations:[{name:"Pure ganache"},{name:"Melkchocoladeganache",add:"Iets minder room."},{name:"Witte ganache",add:"Meer chocolade voor stevigheid."},{name:"Koffieganache",add:"Trek de room met koffie."},{name:"Frambozenganache",add:"Deel room vervangen door frambozenpüree."},{name:"Muntganache",add:"Trek met verse munt; zeef."},{name:"Kweeperenganache",add:"Vervang deel room door kweeperenpuree."},{name:"Lavendelganache",add:"Trek kort met lavendel."}] },
+    variations:[{name:"Pure ganache"},{name:"Melkchocoladeganache",add:"Iets minder room."},{name:"Witte ganache",add:"Meer chocolade voor stevigheid."},{name:"Koffieganache",add:"Trek de room met koffie."},{name:"Frambozenganache",add:"Deel room vervangen door frambozenpuree."},{name:"Muntganache",add:"Trek met verse munt; zeef."},{name:"Kweeperenganache",add:"Vervang deel room door kweeperenpuree."},{name:"Lavendelganache",add:"Trek kort met lavendel."}] },
   { id:"anglaise", baseName:"Crème anglaise", generic:"vanille", category:"Zoet & patisserie", yield:"≈ 550 g", mode:"flavor", chefsPick:true,
     ingredients:[{item:"Melk",amount:"250 g"},{item:"Room",amount:"250 g"},{item:"Eidooiers",amount:"5 stuks"},{item:"Suiker",amount:"60 g"}],
     steps:["Verwarm melk en room.","Klop dooiers met suiker; bind tot 82°C.","Passeer en koel snel."],
@@ -99,11 +113,11 @@ const BASES = [
   { id:"icecream", baseName:"Roomijs", generic:"vanille", category:"Sorbet & ijs", yield:"≈ 900 g", mode:"flavor", chefsPick:true, gear:"Sorbetmachine",
     ingredients:[{item:"Melk",amount:"500 g"},{item:"Room",amount:"250 g"},{item:"Eidooiers",amount:"6 stuks"},{item:"Suiker",amount:"150 g"}],
     steps:["Maak een anglaise (82°C).","Rijp 12 uur.","Draai in de sorbetmachine."],
-    variations:[{name:"Vanille-roomijs",add:"Trek met vanille."},{name:"Karamel-roomijs",add:"Deel suiker vervangen door karamel."},{name:"Hazelnoot-roomijs",add:"Roer pralinépasta erdoor."},{name:"Braam-roomijs",add:"Roer braampüree door de gerijpte basis."},{name:"Aardbei-roomijs",add:"Roer aardbeienpüree erdoor."},{name:"Rabarber-roomijs",add:"Roer rabarbercompote erdoor."},{name:"Honing-tijm-roomijs",add:"Zoet met honing en trek met tijm."}] },
+    variations:[{name:"Vanille-roomijs",add:"Trek met vanille."},{name:"Karamel-roomijs",add:"Deel suiker vervangen door karamel."},{name:"Hazelnoot-roomijs",add:"Roer pralinépasta erdoor."},{name:"Braam-roomijs",add:"Roer braampuree door de gerijpte basis."},{name:"Aardbei-roomijs",add:"Roer aardbeienpuree erdoor."},{name:"Rabarber-roomijs",add:"Roer rabarbercompote erdoor."},{name:"Honing-tijm-roomijs",add:"Zoet met honing en trek met tijm."}] },
   { id:"caramel", baseName:"Karamel", generic:"karamel", category:"Zoet & patisserie", yield:"≈ 350 g", mode:"flavor",
     ingredients:[{item:"Suiker",amount:"200 g"},{item:"Room",amount:"150 g"},{item:"Boter",amount:"40 g"}],
     steps:["Smelt de suiker amberkleurig.","Blus met warme room.","Roer de boter erdoor."],
-    variations:[{name:"Klassieke karamel"},{name:"Gezouten karamel",add:"Werk af met flor de sel."},{name:"Miso-karamel",add:"Roer witte miso erdoor."},{name:"Boterscotch",add:"Bruine suiker en extra boter."}] },
+    variations:[{name:"Klassieke karamel"},{name:"Gezouten karamel",add:"Werk af met fleur de sel."},{name:"Miso-karamel",add:"Roer witte miso erdoor."},{name:"Butterscotch",add:"Bruine suiker en extra boter."}] },
   { id:"beurreblanc", baseName:"Beurre blanc", generic:"boter", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor", chefsPick:true, endorsements:["Michael"],
     ingredients:[{item:"Sjalot",amount:"1 stuk"},{item:"Witte wijn",amount:"100 g"},{item:"Azijn",amount:"50 g"},{item:"Koude boter",amount:"200 g"}],
     steps:["Reduceer tot bijna droog.","Monteer koude boter buiten het vuur.","Passeer; niet koken."],
@@ -115,7 +129,7 @@ const BASES = [
   { id:"vinaigrette", baseName:"Vinaigrette", generic:"vinaigrette", category:"Oliën & vinaigrettes", yield:"≈ 150 g", mode:"flavor",
     ingredients:[{item:"Azijn",amount:"30 g"},{item:"Olie",amount:"90 g"},{item:"Mosterd",amount:"5 g"}],
     steps:["Klop azijn met mosterd en zout.","Monteer met olie."],
-    variations:[{name:"Klassieke vinaigrette"},{name:"Sjalottenvinaigrette",add:"Fijne sjalot erdoor."},{name:"Honing-mosterdvinaigrette",add:"Honing toevoegen."},{name:"Dragonvinaigrette",add:"Dragon erdoor."},{name:"Frambozenvinaigrette",add:"Frambozenazijn + wat püree."}] },
+    variations:[{name:"Klassieke vinaigrette"},{name:"Sjalottenvinaigrette",add:"Fijne sjalot erdoor."},{name:"Honing-mosterdvinaigrette",add:"Honing toevoegen."},{name:"Dragonvinaigrette",add:"Dragon erdoor."},{name:"Frambozenvinaigrette",add:"Frambozenazijn + wat puree."}] },
   { id:"jus", baseName:"Jus / reductie", generic:"jus", category:"Sauzen & emulsies", yield:"≈ 400 g", mode:"flavor", endorsements:["Michael","Stef"],
     ingredients:[{item:"Fond",amount:"1 l"},{item:"Rode wijn",amount:"200 g"},{item:"Sjalot",amount:"2 stuks"},{item:"Boter",amount:"30 g"}],
     steps:["Reduceer wijn met sjalot.","Voeg fond toe; reduceer napperend.","Monteer met boter; passeer."],
@@ -127,7 +141,7 @@ const BASES = [
 
   // ---- TUIN: bereiden ----
   { id:"roast", baseName:"Geroosterde tuingroente", varTemplate:"Geroosterde {x}", generic:"tuingroente", category:"Tuin · geroosterd", yield:"4 porties", chefsPick:true, endorsements:["Michael","Simon"], gear:"Combi-oven / iVario",
-    mains:[...ROOT,...STALK,...BRASSICA,...BEAN],
+    mains:[...ROOT,"venkel","bleekselderij","kardoen","courgette","tomaat",...BRASSICA,"princessenbonen","sperziebonen","snijbonen","pronkbonen"],
     ingredients:[{item:"{X}",amount:"800 g"},{item:"Olijfolie",amount:"3 el"},{item:"Zout",amount:"naar smaak"},{item:"Tijm",amount:"enkele takjes"}],
     steps:["Maak de {x} schoon en snijd in gelijke stukken.","Meng met olie, zout en tijm.","Rooster op 200°C tot gaar en gekaramelliseerd."] },
   { id:"grill", baseName:"Gegrilde tuingroente", varTemplate:"Gegrilde {x}", generic:"tuingroente", category:"Tuin · gegrild", yield:"4 porties", gear:"Black Bastard",
@@ -135,7 +149,7 @@ const BASES = [
     ingredients:[{item:"{X}",amount:"600 g"},{item:"Olie",amount:"2 el"},{item:"Zout",amount:"naar smaak"}],
     steps:["Grill de {x} op de Black Bastard tot mooie strepen.","Gaar door aan de koele kant of in de combi-oven.","Maak af met zout en olie."] },
   { id:"steam", baseName:"Gestoomde tuingroente", varTemplate:"Gestoomde {x}", generic:"tuingroente", category:"Tuin · gestoomd", yield:"4 porties", gear:"Combi-oven",
-    mains:[...ROOT.slice(0,10),...STALK,...BRASSICA.slice(0,4)],
+    mains:[...ROOT.slice(0,10),"venkel","bleekselderij","kardoen","courgette",...BRASSICA.slice(0,4)],
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Zout",amount:"een snuf"}],
     steps:["Stoom de {x} beetgaar in de combi-oven.","Schrik indien nodig.","Breng op smaak."] },
   { id:"gpuree", baseName:"Tuinpuree", noun:"Puree", generic:"tuingroente", category:"Purees", yield:"≈ 500 g", chefsPick:true, endorsements:["Stef","Kim"], gear:"Thermoblender",
@@ -151,11 +165,11 @@ const BASES = [
     ingredients:[{item:"Dunne plakjes {x}",amount:"1 stuk"},{item:"Zout",amount:"naar smaak"}],
     steps:["Snijd flinterdun.","Droog in de droogoven of frituur krokant in de iVario.","Zout licht."] },
   { id:"gespuma", baseName:"Tuin-espuma", noun:"Espuma", generic:"tuingroente", category:"Schuim & espuma", yield:"1 sifon", gear:"Sifon",
-    mains:[...ROOT,"erwten","venkel","bleekselderij"],
-    ingredients:[{item:"Püree van {x}",amount:"400 g"},{item:"Room",amount:"100 g"},{item:"Gelatineblaadje",amount:"1 blaadje"}],
-    steps:["Meng warme püree van {x} met room en gelatine.","Passeer en vul een sifon; 2 patronen.","Koel 2 uur; schud voor gebruik."] },
+    mains:["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","ui","knoflook","erwten","venkel","bleekselderij"],
+    ingredients:[{item:"Puree van {x}",amount:"400 g"},{item:"Room",amount:"100 g"},{item:"Gelatineblaadje",amount:"1 blaadje"}],
+    steps:["Meng warme puree van {x} met room en gelatine.","Passeer en vul een sifon; 2 patronen.","Koel 2 uur; schud voor gebruik."] },
   { id:"ggel", baseName:"Tuingel", noun:"Gel", generic:"tuingroente", category:"Gels & sauzen", yield:"≈ 400 g", gear:"Thermoblender",
-    mains:[...ROOT,...STALK],
+    mains:["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","ui","venkel","bleekselderij","courgette","komkommer","tomaat"],
     ingredients:[{item:"Sap van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"},{item:"Zout",amount:"snuf"}],
     steps:["Kook sap van {x} met agar 2 min.","Laat opstijven en mix glad.","Passeer in een knijpfles."] },
   { id:"gconfit", baseName:"Geconfijte tuingroente", varTemplate:"Geconfijte {x}", generic:"tuingroente", category:"Tuin · confit", yield:"naar behoefte",
@@ -189,17 +203,17 @@ const BASES = [
     ingredients:[{item:"{X}",amount:"40 g"},{item:"Grof zeezout",amount:"200 g"}],
     steps:["Droog de {x} in de droogoven.","Vermaal met het zout.","Bewaar droog en afgesloten."] },
   { id:"gbutter", baseName:"Kruidenboter", varTemplate:"Boter van {x}", generic:"kruid", category:"Zuivel", yield:"≈ 280 g",
-    mains:GHERB,
+    mains:GHERB.filter((h) => h !== "laurier"),
     ingredients:[{item:"Zachte boter",amount:"250 g"},{item:"{X}, fijn",amount:"30 g"},{item:"Zout",amount:"snuf"}],
     steps:["Meng de zachte boter met de {x} en zout.","Rol op in folie.","Koel tot stevig."] },
   { id:"gpesto", baseName:"Pesto", varTemplate:"Pesto van {x}", generic:"kruid", category:"Sauzen & emulsies", yield:"≈ 300 g",
-    mains:GHERB.slice(0,8),
+    mains:["bieslook","peterselie","dragon","lavas","munt","oregano","koriander","tuinzuring"],
     ingredients:[{item:"{X}",amount:"80 g"},{item:"Pompoenpit of amandel",amount:"30 g"},{item:"Kaas",amount:"40 g"},{item:"Olijfolie",amount:"120 g"}],
     steps:["Rooster de pitten.","Mix {x}, pitten en kaas grof.","Monteer met olie; op smaak."] },
   { id:"gherbgel", baseName:"Kruidengel", noun:"Gel", generic:"kruid", category:"Gels & sauzen", yield:"≈ 300 g", gear:"Thermoblender",
     mains:GHERB.slice(0,10),
-    ingredients:[{item:"Sap van {x}",amount:"300 g"},{item:"Agar-agar",amount:"3 g"}],
-    steps:["Kook sap van {x} met agar 2 min.","Opstijven en glad mixen.","Passeer in een knijpfles."] },
+    ingredients:[{item:"Sap of aftreksel van {x}",amount:"300 g"},{item:"Agar-agar",amount:"3 g"}],
+    steps:["Kook het sap of aftreksel van {x} met agar 2 min.","Opstijven en glad mixen.","Passeer in een knijpfles."] },
   { id:"fvinegar", baseName:"Bloemenazijn", varTemplate:"Azijn van {x}", generic:"bloem", category:"Oliën & vinaigrettes", yield:"≈ 300 g",
     mains:GFLOWER,
     ingredients:[{item:"{X}",amount:"30 g"},{item:"Witte-wijnazijn",amount:"300 g"}],
@@ -209,14 +223,14 @@ const BASES = [
     ingredients:[{item:"{X}",amount:"50 g"},{item:"Rijstazijn",amount:"100 g"},{item:"Suiker",amount:"30 g"},{item:"Zout",amount:"3 g"}],
     steps:["Breng de pekel aan de kook en laat afkoelen.","Leg de {x} onder de pekel.","Laat minimaal 1 dag trekken."] },
   { id:"candyflower", baseName:"Gekonfijte bloemen", varTemplate:"Gekonfijte {x}", generic:"bloem", category:"Zoet & patisserie", yield:"naar behoefte", gear:"Droogoven",
-    mains:GFLOWER,
+    mains:GFLOWER.filter((f) => f !== "courgettebloem"),
     ingredients:[{item:"{X}",amount:"20 g"},{item:"Eiwit",amount:"1 stuk"},{item:"Fijne suiker",amount:"100 g"}],
     steps:["Bestrijk de {x} dun met eiwit.","Bestrooi met suiker.","Droog in de droogoven tot krokant."] },
 
   // ---- TUIN: fruit ----
   { id:"gsorbet", baseName:"Tuinsorbet", noun:"Sorbet", generic:"tuinfruit", category:"Sorbet & ijs", yield:"≈ 700 g", chefsPick:true, gear:"Sorbetmachine",
     mains:GFRUIT,
-    ingredients:[{item:"Püree van {x}",amount:"500 g"},{item:"Suikersiroop",amount:"150 g"},{item:"Glucose",amount:"30 g"},{item:"Citroensap",amount:"15 g"}],
+    ingredients:[{item:"Puree van {x}",amount:"500 g"},{item:"Suikersiroop",amount:"150 g"},{item:"Glucose",amount:"30 g"},{item:"Citroensap",amount:"15 g"}],
     steps:["Mix alles glad.","Draai in de sorbetmachine.","Bewaar op -18°C."] },
   { id:"gcompote", baseName:"Tuincompote", noun:"Compote", generic:"tuinfruit", category:"Compotes & jam", yield:"≈ 400 g",
     mains:GFRUIT,
@@ -228,11 +242,11 @@ const BASES = [
     steps:["Kook de {x} met geleisuiker.","4 min doorkoken; test op koud bordje.","Vul potten heet af."] },
   { id:"gcoulis", baseName:"Tuincoulis", noun:"Coulis", generic:"tuinfruit", category:"Gels & sauzen", yield:"≈ 350 g",
     mains:GFRUIT,
-    ingredients:[{item:"Püree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
+    ingredients:[{item:"Puree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Mix alles glad.","Op smaak; verdun voor een lopende saus.","Passeer en koel."] },
   { id:"gdry", baseName:"Gedroogd fruitpoeder", varTemplate:"Poeder van {x}", generic:"tuinfruit", category:"Krokant & garnituur", yield:"≈ 60 g", gear:"Droogoven",
     mains:GFRUIT,
-    ingredients:[{item:"Püree van {x}",amount:"300 g"}],
+    ingredients:[{item:"Puree van {x}",amount:"300 g"}],
     steps:["Strijk dun uit op een mat.","Droog op 60°C tot leerachtig.","Maal tot poeder; bewaar droog."] },
   { id:"gpoach", baseName:"Gepocheerd tuinfruit", varTemplate:"Gepocheerde {x}", generic:"tuinfruit", category:"Fruit & garnituur", yield:"4 porties",
     mains:["peer","appel","pruim","reine claude","kweepeer","mispel","rabarber","druif"],
@@ -267,14 +281,14 @@ const BASES = [
     ingredients:[{item:"{X} + chili",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"}],
     steps:["Mix de {x} met chili en zout.","Ferment 1–2 weken onder pekel op ±22°C.","Mix glad, passeer en bottel; koel."] },
   { id:"fcaper", baseName:"Gefermenteerde bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie", yield:"1 pot", ferment:true, fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
-    mains:["oost-indische kers","goudsbloem","leeuwenbek","afrikaantjes","dahlia"],
+    mains:["oost-indische kers","madelief","goudsbloem"],
     ingredients:[{item:"Knoppen van {x}",amount:"200 g"},{item:"Zout (3,5%)",amount:"7 g"},{item:"Water",amount:"200 g"}],
     steps:["Leg de knoppen onder een 3,5% pekel.","Ferment 1–2 weken op ±20°C.","Bewaar in de pekel; gebruik als kappertjes."] },
 
   // ---- voorraad-basistechnieken (extra breedte) ----
   { id:"coulis", baseName:"Fruitcoulis", noun:"Coulis", generic:"fruit", category:"Gels & sauzen", yield:"≈ 350 g", mains:FRUIT_ONLY,
-    ingredients:[{item:"Püree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
-    steps:["Mix püree van {x} met suiker en citroen.","Verdun voor een lopende saus.","Passeer en koel."] },
+    ingredients:[{item:"Puree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
+    steps:["Mix puree van {x} met suiker en citroen.","Verdun voor een lopende saus.","Passeer en koel."] },
   { id:"compote", baseName:"Fruitcompote", noun:"Compote", generic:"fruit", category:"Compotes & jam", yield:"≈ 400 g", mains:FRUIT_ONLY,
     ingredients:[{item:"{X} in stukken",amount:"400 g"},{item:"Suiker",amount:"80 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Wel de {x} met suiker.","Kook zachtjes in tot compote.","Op smaak en koel."] },
@@ -282,7 +296,7 @@ const BASES = [
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Geleisuiker",amount:"500 g"},{item:"Citroensap",amount:"20 g"}],
     steps:["Kook met geleisuiker.","4 min doorkoken; test op een koud bordje.","Vul potten heet af."] },
   { id:"fpowder", baseName:"Fruitpoeder", varTemplate:"Poeder van {x}", generic:"fruit", category:"Krokant & garnituur", yield:"≈ 60 g", gear:"Droogoven", mains:FRUIT_ONLY,
-    ingredients:[{item:"Püree van {x}",amount:"300 g"}],
+    ingredients:[{item:"Puree van {x}",amount:"300 g"}],
     steps:["Strijk dun uit op een mat.","Droog op 60°C tot leerachtig.","Maal tot poeder."] },
   { id:"pearl", baseName:"Fruitparels", varTemplate:"Parels van {x}", generic:"fruit", category:"Garnituur", yield:"≈ 150 g", mains:FRUIT,
     ingredients:[{item:"Sap van {x}",amount:"200 g"},{item:"Agar-agar",amount:"2 g"},{item:"IJskoude olie",amount:"500 ml"}],
@@ -291,8 +305,8 @@ const BASES = [
     ingredients:[{item:"Dunne plakjes {x}",amount:"1 stuk"},{item:"Poedersuiker",amount:"naar behoefte"}],
     steps:["Snijd flinterdun.","Bestrooi licht met suiker.","Droog op 90°C tot krokant."] },
   { id:"fleather", baseName:"Fruitleer", varTemplate:"Fruitleer van {x}", generic:"fruit", category:"Krokant & garnituur", yield:"1 vel", gear:"Droogoven", mains:FRUIT,
-    ingredients:[{item:"Püree van {x}",amount:"400 g"},{item:"Suiker",amount:"30 g"}],
-    steps:["Strijk de püree dun uit.","Droog op 60°C tot buigzaam.","Snijd op maat."] },
+    ingredients:[{item:"Puree van {x}",amount:"400 g"},{item:"Suiker",amount:"30 g"}],
+    steps:["Strijk de puree dun uit.","Droog op 60°C tot buigzaam.","Snijd op maat."] },
   { id:"fvinegar2", baseName:"Fruitazijn", varTemplate:"Azijn van {x}", generic:"fruit", category:"Oliën & vinaigrettes", yield:"≈ 300 g", mains:FRUIT,
     ingredients:[{item:"{X}",amount:"150 g"},{item:"Witte-wijnazijn",amount:"300 g"}],
     steps:["Doe de {x} in de azijn.","Laat 2 weken trekken.","Zeef en bottel."] },
@@ -303,15 +317,15 @@ const BASES = [
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Boter",amount:"50 g"},{item:"Melk of bouillon",amount:"200 g"},{item:"Zout",amount:"naar smaak"}],
     steps:["Gaar de {x} zacht.","Mix in de thermoblender glad.","Op smaak en passeer."] },
   { id:"vespuma", baseName:"Groente-espuma (voorraad)", noun:"Espuma", generic:"groente", category:"Schuim & espuma", yield:"1 sifon", gear:"Sifon", mains:VEG_ONLY,
-    ingredients:[{item:"Püree van {x}",amount:"400 g"},{item:"Room",amount:"100 g"},{item:"Gelatineblaadje",amount:"1 blaadje"}],
-    steps:["Meng warme püree van {x} met room en gelatine.","Vul een sifon; 2 patronen.","Koel; schud voor gebruik."] },
+    ingredients:[{item:"Puree van {x}",amount:"400 g"},{item:"Room",amount:"100 g"},{item:"Gelatineblaadje",amount:"1 blaadje"}],
+    steps:["Meng warme puree van {x} met room en gelatine.","Vul een sifon; 2 patronen.","Koel; schud voor gebruik."] },
   { id:"vpickle", baseName:"Gepekelde groente (voorraad)", varTemplate:"Gepekelde {x}", generic:"groente", category:"Pickles & zuur", yield:"≈ 400 g", mains:VEG_ONLY,
     ingredients:[{item:"{X}",amount:"400 g"},{item:"Azijn",amount:"200 g"},{item:"Suiker",amount:"80 g"},{item:"Zout",amount:"8 g"}],
     steps:["Snijd de {x} op maat.","Kook de pekel en giet over de {x}.","Laat minimaal 1 uur trekken."] },
-  { id:"vchip", baseName:"Groentechip (voorraad)", varTemplate:"Groentechip van {x}", generic:"groente", category:"Krokant & garnituur", yield:"≈ 20 chips", gear:"iVario", mains:VEG_ONLY,
+  { id:"vchip", baseName:"Groentechip (voorraad)", varTemplate:"Groentechip van {x}", generic:"groente", category:"Krokant & garnituur", yield:"≈ 20 chips", gear:"iVario", mains:VEG_ONLY.filter((v) => !["doperwt","mais"].includes(v)),
     ingredients:[{item:"Dunne plakjes {x}",amount:"1 stuk"},{item:"Zout",amount:"naar smaak"}],
     steps:["Snijd flinterdun.","Frituur of droog krokant.","Zout licht."] },
-  { id:"vgel", baseName:"Groentegel (voorraad)", noun:"Gel", generic:"groente", category:"Gels & sauzen", yield:"≈ 400 g", gear:"Thermoblender", mains:VEG_ONLY,
+  { id:"vgel", baseName:"Groentegel (voorraad)", noun:"Gel", generic:"groente", category:"Gels & sauzen", yield:"≈ 400 g", gear:"Thermoblender", mains:VEG_ONLY.filter((v) => !["aardappel","aubergine","doperwt"].includes(v)),
     ingredients:[{item:"Sap van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"}],
     steps:["Kook sap van {x} met agar 2 min.","Opstijven en glad mixen.","Passeer in een knijpfles."] },
   { id:"herboil2", baseName:"Kruidenolie (voorraad)", varTemplate:"Olie van {x}", generic:"kruid", category:"Oliën & vinaigrettes", yield:"≈ 250 g", gear:"Thermoblender", mains:HERB_ONLY,
@@ -335,19 +349,28 @@ const BASES = [
     variations:[{name:"Vanillebanketbakkersroom",add:"Trek met vanille."},{name:"Koffiebanketbakkersroom",add:"Trek met koffie."},{name:"Citroenbanketbakkersroom",add:"Citroenrasp toevoegen."},{name:"Pistachebanketbakkersroom",add:"Pistachepasta erdoor."},{name:"Pralinébanketbakkersroom",add:"Pralinépasta erdoor."},{name:"Kaneelbanketbakkersroom",add:"Trek met kaneel."},{name:"Laurierbanketbakkersroom",add:"Trek kort met laurier."},{name:"Chocoladebanketbakkersroom",add:"Chocolade oplossen."}] },
   { id:"hollandaise", baseName:"Hollandaisefamilie", generic:"boter", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor",
     ingredients:[{item:"Eidooiers",amount:"3 stuks"},{item:"Geklaarde boter",amount:"200 g"},{item:"Citroensap",amount:"10 g"},{item:"Reductie",amount:"20 g"}],
-    steps:["Klop dooiers met reductie au bain tot ruban.","Monteer met de boter.","Op smaak met citroen."],
+    steps:["Klop dooiers met reductie au bain-marie tot ruban.","Monteer met de boter.","Op smaak met citroen."],
     variations:[{name:"Hollandaise"},{name:"Béarnaise",add:"Dragonreductie en verse dragon."},{name:"Choron",add:"Tomatenconcentraat door de béarnaise."},{name:"Maltaise",add:"Bloedsinaasappel."},{name:"Mousseline",add:"Opgeslagen room erdoor."},{name:"Paloise",add:"Munt i.p.v. dragon."}] },
   { id:"sponge", baseName:"Sifon-spons", generic:"spons", category:"Zoet & patisserie", yield:"≈ 8 stuks", mode:"flavor", gear:"Sifon",
     ingredients:[{item:"Eiwit",amount:"100 g"},{item:"Eidooier",amount:"60 g"},{item:"Suiker",amount:"60 g"},{item:"Bloem",amount:"40 g"}],
     steps:["Mix glad en passeer in een sifon.","2 patronen; vul bekers tot een derde.","Gaar 40 sec in de magnetron."],
-    variations:[{name:"Bietenspons",add:"Kleur met bietenpoeder."},{name:"Basilicumspons",add:"Verse basilicum door het beslag."},{name:"Citroenspons",add:"Citroenrasp."},{name:"Chocoladespons",add:"Cacao toevoegen."},{name:"Pistachespons",add:"Pistachepasta."},{name:"Zuringspons",add:"Verse zuring door het beslag."},{name:"Peterseliespons",add:"Blancheerde peterselie door het beslag."}] },
+    variations:[{name:"Bietenspons",add:"Kleur met bietenpoeder."},{name:"Basilicumspons",add:"Verse basilicum door het beslag."},{name:"Citroenspons",add:"Citroenrasp."},{name:"Chocoladespons",add:"Cacao toevoegen."},{name:"Pistachespons",add:"Pistachepasta."},{name:"Zuringspons",add:"Verse zuring door het beslag."},{name:"Peterseliespons",add:"Geblancheerde peterselie door het beslag."}] },
   { id:"granita", baseName:"Granité", generic:"fruit", category:"Sorbet & ijs", yield:"≈ 700 g", mode:"flavor", gear:"Vriezer",
     ingredients:[{item:"Sap of aftreksel",amount:"600 g"},{item:"Suiker",amount:"80 g"},{item:"Citroensap",amount:"15 g"}],
     steps:["Meng en breng op smaak.","Vries in en schraap elk half uur met een vork.","Bewaar luchtig bevroren."],
     variations:[{name:"Aardbei-granité"},{name:"Framboos-granité"},{name:"Druiven-granité"},{name:"Appel-granité"},{name:"Rabarber-granité"},{name:"Citroenmelisse-granité"},{name:"Munt-granité"},{name:"Kamille-granité"}] },
-  { id:"kruidensuiker", baseName:"Kruidensuiker", varTemplate:"Suiker van {x}", generic:"kruid", category:"Zoet & patisserie", yield:"≈ 220 g", gear:"Droogoven", mains:[...GHERB,"lavendel"],
+  { id:"kruidensuiker", baseName:"Kruidensuiker", varTemplate:"Suiker van {x}", generic:"kruid", category:"Zoet & patisserie", yield:"≈ 220 g", gear:"Droogoven", mains:["munt","citroenmelisse","lavendel","kamille","rozemarijn","tijm"],
     ingredients:[{item:"{X}",amount:"20 g"},{item:"Suiker",amount:"200 g"}],
     steps:["Droog de {x} in de droogoven.","Vermaal met de suiker.","Bewaar droog en afgesloten."] },
+
+  { id:"siroop", baseName:"Kruiden- en bloemensiroop", varTemplate:"Siroop van {x}", generic:"kruid", category:"Zoet & patisserie", yield:"≈ 500 g",
+    mains:["munt","citroenmelisse","lavendel","kamille","rozemarijn","tijm","salie","lavas","goudsbloem","korenbloem"],
+    ingredients:[{item:"{X}",amount:"30 g"},{item:"Water",amount:"300 g"},{item:"Suiker",amount:"300 g"}],
+    steps:["Breng water en suiker aan de kook.","Voeg de {x} toe en laat van het vuur 20 min afgedekt trekken.","Zeef, koel terug en bewaar in de koeling."] },
+  { id:"gedroogd", baseName:"Gedroogde kruiden & bloemen", varTemplate:"Gedroogde {x}", generic:"kruid", category:"Kruiden & zout", yield:"1 pot", gear:"Droogoven",
+    mains:[...GHERB,"kamille","lavendel","goudsbloem","korenbloem"],
+    ingredients:[{item:"{X}",amount:"1 bos"}],
+    steps:["Was de {x} en dep goed droog.","Droog op 40–50°C tot ritselend droog.","Verkruimel en bewaar luchtdicht en donker."] },
 
   // ---- VLEES (voornamelijk varken, soms rund) ----
   { id:"pork", baseName:"Varkensvlees (eigen varkens)", generic:"varken", category:"Vlees", yield:"naar behoefte", mode:"flavor", diet:"Varkensvlees", gear:"iVario / Black Bastard", endorsements:["Michael"],
@@ -404,6 +427,10 @@ function buildLibrary() {
 }
 
 const CURATED = [
+  { id:"c-tomato-mousse", name:"Hartige tomatenmousse", category:"Mousses", yield:"≈ 550 g",
+    ingredients:[{item:"Gezeefde tomaten (passata)",amount:"300 g"},{item:"Slagroom",amount:"200 g"},{item:"Gelatineblaadjes",amount:"3 blaadjes"},{item:"Basilicum, fijngesneden",amount:"enkele blaadjes"},{item:"Zout & peper",amount:"naar smaak"}],
+    steps:["Week de gelatine en los op in een derde van de warme passata.","Meng met de rest van de passata en breng stevig op smaak met zout en peper.","Koel tot lobbig en spatel de halfgeslagen room en de basilicum erdoor.","Laat minimaal 3 uur opstijven."],
+    endorsements:["Michael"], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:true, diet:"Vegetarisch", ferment:false, gear:"Thermoblender", updatedBy:"Michael", updatedAt:"1 week geleden" },
   { id:"c-caprese-mozz", name:"Gerookte mozzarella", category:"Zuivel", yield:"4 porties",
     ingredients:[{item:"Buffelmozzarella",amount:"2 bollen"},{item:"Beukenrookmot",amount:"1 handvol"},{item:"Olijfolie",amount:"om in te wrijven"},{item:"Zeezout",amount:"om af te maken"}],
     steps:["Laat de mozzarella uitlekken en dep droog.","Rook koud 8–10 min zonder hitte.","Trek in stukken en maak af."],
@@ -424,8 +451,8 @@ const initialRecipes = [...CURATED, ...LIBRARY];
 const seedDishes = [
   { id:"d1", name:"Salade Caprese", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
     description:"Gedeconstrueerde caprese met tomaat uit eigen tuin, rook en kruid.",
-    plating:"Quenelle mousse van tomaat, gerookte mozzarella, gel van basilicum, olijvencrumble en balsamicoparels.",
-    recipeIds:["mousse-tomaat","c-caprese-mozz","gherbgel-munt","c-olive-crumble","c-balsamic-pearls"],
+    plating:"Quenelle hartige tomatenmousse, gerookte mozzarella, gel van basilicum, olijvencrumble en balsamicoparels.",
+    recipeIds:["c-tomato-mousse","c-caprese-mozz","herbgel2-basilicum","c-olive-crumble","c-balsamic-pearls"],
     updatedBy:"Michael", updatedAt:"2 dagen geleden" },
   { id:"d2", name:"Drie bieten uit eigen tuin", course:"Herfstvoorgerecht", season:["Herfst"], diet:"Vegetarisch",
     description:"Rode, gele en chioggia biet in verschillende texturen, met appel en dragon.",
@@ -455,7 +482,7 @@ const seedDishes = [
   { id:"d7", name:"Tomaten van het erf", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
     description:"Tomaat uit eigen tuin in vier texturen, met rook en kruid.",
     plating:"Mousse van tomaat, tartaar van tomaat, gefermenteerde hotsauce van tomaat, olie van bieslook en olijvencrumble.",
-    recipeIds:["mousse-tomaat","gtartaar-tomaat","fhot-tomaat","gherboil-bieslook","c-olive-crumble"],
+    recipeIds:["c-tomato-mousse","gtartaar-tomaat","fhot-tomaat","gherboil-bieslook","c-olive-crumble"],
     updatedBy:"Michael", updatedAt:"1 dag geleden" },
   { id:"d8", name:"Venkel, peer & walnoot", course:"Herfstvoorgerecht", season:["Herfst"], diet:"Vegetarisch",
     description:"Gegrilde venkel met gepocheerde peer en een noot van walnoot.",
@@ -617,6 +644,10 @@ function scaleAmount(str, f) {
   }
   return str;
 }
+function roleLabel(role) {
+  return { chef: "Chef", souschef: "Souschef", kok: "Zelfstandig kok",
+           leerling: "Leerling kok", hulpkok: "Hulpkok", guest: "Gast" }[role] || role;
+}
 function daysBetween(iso) {
   const d = new Date(iso); if (isNaN(d)) return 0;
   return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
@@ -680,6 +711,68 @@ export default function App() {
   }, []);
   const doInstall = async () => { if (!deferredPrompt) return; deferredPrompt.prompt(); try { await deferredPrompt.userChoice; } catch (e) {} setDeferredPrompt(null); };
 
+  // ---------- Supabase: sessie volgen ----------
+  const live = !!supabase; // zonder sleutels draait de app als demo
+  useEffect(() => {
+    if (!live) return;
+    let alive = true;
+    const applySession = async (session) => {
+      if (!alive) return;
+      if (!session) { setUser(null); return; }
+      const { data } = await supabase.from("profiles").select("name, role").eq("id", session.user.id).single();
+      if (!alive) return;
+      const role = data?.role || "guest";
+      setUser({ name: data?.name || "Gast", role: roleLabel(role), canEdit: role !== "guest" });
+    };
+    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
+    return () => { alive = false; sub.subscription.unsubscribe(); };
+  }, [live]);
+
+  // ---------- Supabase: gedeelde laag laden + live meekijken ----------
+  const loadShared = async () => {
+    if (!live) return;
+    const [ov, cu, en, pk, di, ba, hi] = await Promise.all([
+      supabase.from("recipe_overrides").select("*"),
+      supabase.from("recipes_custom").select("*"),
+      supabase.from("recipe_endorsements").select("*"),
+      supabase.from("recipe_picks").select("*"),
+      supabase.from("dishes").select("*"),
+      supabase.from("ferment_batches").select("*").order("created_at", { ascending: false }),
+      supabase.from("recipe_hidden").select("recipe_id"),
+    ]);
+    let recs = [...initialRecipes];
+    const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
+    recs = recs.map((r) => (ovMap.has(r.id) ? { ...r, ...ovMap.get(r.id) } : r));
+    recs = [...(cu.data || []).map((r) => r.data), ...recs];
+    const byRec = {};
+    (en.data || []).forEach((e) => { (byRec[e.recipe_id] = byRec[e.recipe_id] || []).push(e.user_name); });
+    recs = recs.map((r) => ({ ...r, endorsements: byRec[r.id] || [] }));
+    const picks = new Set((pk.data || []).map((p) => p.recipe_id));
+    recs = recs.map((r) => ({ ...r, chefsPick: picks.has(r.id) }));
+    const hidden = new Set((hi.data || []).map((h) => h.recipe_id));
+    recs = recs.filter((r) => !hidden.has(r.id));
+    setRecipes(recs);
+    if (di.data && di.data.length) setDishes(di.data.map((d) => ({
+      id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating,
+      recipeIds: d.recipe_ids || [], season: d.season || [], diet: d.diet || "Vegetarisch",
+      updatedBy: d.updated_by || "—", updatedAt: "opgeslagen",
+    })));
+    setBatches((ba.data || []).map((b) => ({
+      id: b.id, product: b.product, type: b.type, startDate: b.start_date, days: b.days,
+      saltPct: Number(b.salt_pct), tempC: Number(b.temp_c), amount: b.amount,
+      pH: b.ph === null ? null : Number(b.ph), notes: b.notes || "", done: !!b.done, by: b.by || "—",
+    })));
+  };
+  useEffect(() => {
+    if (!live || !user) return;
+    loadShared();
+    const ch = supabase.channel("gedeeld")
+      .on("postgres_changes", { event: "*", schema: "public" }, () => loadShared())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [live, !!user]);
+
   const current = stack[stack.length - 1];
   const push = (s) => { setStack((st) => [...st, s]); try { window.history.pushState({ app: "ritme" }, ""); } catch (e) {} };
   const back = () => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
@@ -698,24 +791,108 @@ export default function App() {
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
   const canEdit = !!user && user.canEdit;
 
-  const saveRecipe = (data, editingId) => {
-    const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
-    if (editingId) setRecipes((rs) => rs.map((r) => (r.id === editingId ? { ...r, ...stamped } : r)));
-    else setRecipes((rs) => [{ ...stamped, id: "r" + Date.now(), endorsements: [], chefsPick: false, baseId: null, isBase: false, season: ["Hele jaar"], garden: false, diet: "Vegetarisch", ferment: false }, ...rs]);
-    flash("Opgeslagen — zichtbaar voor het hele team");
-  };
-  const saveDish = (data, editingId) => {
-    const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
-    if (editingId) setDishes((ds) => ds.map((d) => (d.id === editingId ? { ...d, ...stamped } : d)));
-    else setDishes((ds) => [{ ...stamped, id: "d" + Date.now() }, ...ds]);
-    flash("Opgeslagen — zichtbaar voor het hele team");
-  };
-  const saveBatch = (data) => { setBatches((bs) => [{ ...data, id: "b" + Date.now(), by: user.name }, ...bs]); flash("Batch geregistreerd"); };
-  const toggleBatchDone = (id) => setBatches((bs) => bs.map((b) => (b.id === id ? { ...b, done: !b.done } : b)));
-  const toggleEndorse = (id) => setRecipes((rs) => rs.map((r) => r.id === id ? { ...r, endorsements: r.endorsements.includes(user.name) ? r.endorsements.filter((n) => n !== user.name) : [...r.endorsements, user.name] } : r));
-  const toggleChefsPick = (id) => setRecipes((rs) => rs.map((r) => (r.id === id ? { ...r, chefsPick: !r.chefsPick } : r)));
+  const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
 
-  if (!user) return <><BrandCSS /><Login onPick={setUser} /></>;
+  const saveRecipe = async (data, editingId) => {
+    const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
+    if (editingId) {
+      const existing = recipes.find((r) => r.id === editingId);
+      const merged = { ...existing, ...stamped };
+      if (live) {
+        const table = existing && existing.custom ? "recipes_custom" : "recipe_overrides";
+        const { error } = await supabase.from(table).upsert({ id: editingId, data: merged, updated_by: user.name, updated_at: new Date().toISOString() });
+        if (dbFail(error)) return;
+      }
+      setRecipes((rs) => rs.map((r) => (r.id === editingId ? merged : r)));
+    } else {
+      const rec = { ...stamped, id: "r" + Date.now(), endorsements: [], chefsPick: false, baseId: null, isBase: false, season: ["Hele jaar"], garden: false, diet: "Vegetarisch", ferment: false, custom: true };
+      if (live) {
+        const { error } = await supabase.from("recipes_custom").upsert({ id: rec.id, data: rec, updated_by: user.name, updated_at: new Date().toISOString() });
+        if (dbFail(error)) return;
+      }
+      setRecipes((rs) => [rec, ...rs]);
+    }
+    flash(live ? "Opgeslagen — zichtbaar voor het hele team" : "Opgeslagen (demo: alleen op dit apparaat)");
+  };
+  const saveDish = async (data, editingId) => {
+    const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
+    const id = editingId || "d" + Date.now();
+    if (live) {
+      const { error } = await supabase.from("dishes").upsert({
+        id, name: stamped.name, course: stamped.course, description: stamped.description,
+        plating: stamped.plating, recipe_ids: stamped.recipeIds, season: stamped.season,
+        diet: stamped.diet, updated_by: user.name, updated_at: new Date().toISOString(),
+      });
+      if (dbFail(error)) return;
+    }
+    if (editingId) setDishes((ds) => ds.map((d) => (d.id === editingId ? { ...d, ...stamped } : d)));
+    else setDishes((ds) => [{ ...stamped, id }, ...ds]);
+    flash(live ? "Opgeslagen — zichtbaar voor het hele team" : "Opgeslagen (demo: alleen op dit apparaat)");
+  };
+  const saveBatch = async (data) => {
+    const b = { ...data, id: "b" + Date.now(), by: user.name };
+    if (live) {
+      const { error } = await supabase.from("ferment_batches").upsert({
+        id: b.id, product: b.product, type: b.type, start_date: b.startDate, days: b.days,
+        salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, notes: b.notes,
+        done: b.done, by: b.by,
+      });
+      if (dbFail(error)) return;
+    }
+    setBatches((bs) => [b, ...bs]);
+    flash("Batch geregistreerd");
+  };
+  const toggleBatchDone = async (id) => {
+    const b = batches.find((x) => x.id === id);
+    if (live && b) {
+      const { error } = await supabase.from("ferment_batches").update({ done: !b.done }).eq("id", id);
+      if (dbFail(error)) return;
+    }
+    setBatches((bs) => bs.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+  };
+  const toggleEndorse = async (id) => {
+    const r = recipes.find((x) => x.id === id);
+    const has = r && r.endorsements.includes(user.name);
+    if (live) {
+      const { error } = has
+        ? await supabase.from("recipe_endorsements").delete().eq("recipe_id", id).eq("user_name", user.name)
+        : await supabase.from("recipe_endorsements").insert({ recipe_id: id, user_name: user.name });
+      if (dbFail(error)) return;
+    }
+    setRecipes((rs) => rs.map((x) => x.id === id ? { ...x, endorsements: has ? x.endorsements.filter((n) => n !== user.name) : [...x.endorsements, user.name] } : x));
+  };
+  const deleteRecipe = async (id) => {
+    const r = recipes.find((x) => x.id === id);
+    if (!r) return;
+    const ok = window.confirm('"' + r.name + '" verwijderen voor het hele team?');
+    if (!ok) return;
+    if (live) {
+      let error = null;
+      if (r.custom) ({ error } = await supabase.from("recipes_custom").delete().eq("id", id));
+      else ({ error } = await supabase.from("recipe_hidden").upsert({ recipe_id: id, by: user.name }));
+      if (dbFail(error)) return;
+      // opruimen: onderschrijvingen, kok's keuze en eventuele aanpassing
+      await supabase.from("recipe_endorsements").delete().eq("recipe_id", id);
+      await supabase.from("recipe_picks").delete().eq("recipe_id", id);
+      await supabase.from("recipe_overrides").delete().eq("id", id);
+    }
+    setRecipes((rs) => rs.filter((x) => x.id !== id));
+    goBack();
+    flash(live ? "Recept verwijderd voor het hele team" : "Recept verwijderd (demo: alleen dit apparaat)");
+  };
+  const toggleChefsPick = async (id) => {
+    const r = recipes.find((x) => x.id === id);
+    const on = r && r.chefsPick;
+    if (live) {
+      const { error } = on
+        ? await supabase.from("recipe_picks").delete().eq("recipe_id", id)
+        : await supabase.from("recipe_picks").upsert({ recipe_id: id, by: user.name });
+      if (dbFail(error)) return;
+    }
+    setRecipes((rs) => rs.map((x) => (x.id === id ? { ...x, chefsPick: !x.chefsPick } : x)));
+  };
+
+  if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => push({ screen: "recipeDetail", id });
   const fabAction = () => {
     if (section === "gerechten") push({ screen: "dishForm", editing: null });
@@ -727,7 +904,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onSignOut={() => { setUser(null); resetTo({ screen: "list" }); }} />
+      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
         {current.screen === "list" && (
@@ -744,7 +921,7 @@ export default function App() {
           <RecipeDetail recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
             baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={r?.isBase ? variationsOf(current.id) : []}
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
-            onChefsPick={toggleChefsPick} onOpenRecipe={openRecipe}
+            onChefsPick={toggleChefsPick} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} allRecipes={recipes} recipeById={recipeById} onCancel={goBack} onSave={(d) => { saveDish(d, current.editing); goBack(); }} />}
@@ -782,25 +959,78 @@ function Wordmark({ size = "small", onHome }) {
   );
 }
 
-function Login({ onPick }) {
+function Login({ onPick, live }) {
+  const [chosen, setChosen] = useState(null);   // gekozen kok (live-modus)
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const pickCook = async (m) => {
+    if (!live) { onPick({ ...m, canEdit: true }); return; }
+    setChosen(m); setPw(""); setErr(null);
+  };
+  const submitPw = async () => {
+    if (!chosen || !pw || busy) return;
+    setBusy(true); setErr(null);
+    const email = COOK_EMAILS[chosen.name];
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+    setBusy(false);
+    if (error) setErr("Inloggen lukte niet. Controleer het wachtwoord.");
+    // bij succes zet de sessie-listener in App de gebruiker vanzelf
+  };
+  const pickGuest = async () => {
+    if (!live) { onPick({ name: "Gast", role: "Gast", canEdit: false }); return; }
+    setBusy(true); setErr(null);
+    const { error } = await supabase.auth.signInAnonymously();
+    setBusy(false);
+    if (error) setErr("Gasttoegang lukte niet. Probeer opnieuw.");
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: T.paper, color: "#33352c" }}>
       <div className="w-full max-w-sm">
         <Wordmark size="large" />
         <p className="mute text-center text-sm mt-5 mb-8">Het receptenboek van de moestuinkeuken.</p>
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase acc mb-3"><Lock size={13} /> Kies je naam</div>
-        <div className="space-y-2">
-          {TEAM.map((m) => (
-            <button key={m.name} onClick={() => onPick({ ...m, canEdit: true })} className="card cardh ff w-full flex items-center gap-3 px-3 py-3 text-left">
-              <span className="w-9 h-9 shrink-0 rounded-full font-semibold flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }}>{m.name[0]}</span>
-              <span><span className="block font-medium ink">{m.name}</span><span className="block text-xs mute">{m.role}</span></span>
+
+        {!chosen && (
+          <>
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase acc mb-3"><Lock size={13} /> Kies je naam</div>
+            <div className="space-y-2">
+              {TEAM.map((m) => (
+                <button key={m.name} onClick={() => pickCook(m)} className="card cardh ff w-full flex items-center gap-3 px-3 py-3 text-left">
+                  <span className="w-9 h-9 shrink-0 rounded-full font-semibold flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }}>{m.name[0]}</span>
+                  <span><span className="block font-medium ink">{m.name}</span><span className="block text-xs mute">{m.role}</span></span>
+                </button>
+              ))}
+            </div>
+            <button onClick={pickGuest} disabled={busy} className="ff w-full mt-3 flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm mute disabled:opacity-60" style={{ border: "1px dashed #cfccbe" }}>
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />} Verder als gast (alleen lezen)
             </button>
-          ))}
-        </div>
-        <button onClick={() => onPick({ name: "Gast", role: "Gast", canEdit: false })} className="ff w-full mt-3 flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm mute" style={{ border: "1px dashed #cfccbe" }}>
-          <Eye size={16} /> Verder als gast (alleen lezen)
-        </button>
-        <p className="text-xs mute mt-5 leading-relaxed">Demo-login op naam. In de live versie krijgt elke kok een eigen beveiligd account (Supabase). Gasten kijken mee maar wijzigen niets.</p>
+            {err && <p className="text-xs mt-3 text-center" style={{ color: "#a23b2c" }}>{err}</p>}
+            <p className="text-xs mute mt-5 leading-relaxed">{live ? "Log in met je eigen wachtwoord. Gasten kijken mee maar kunnen niets wijzigen." : "Demo-modus: er is nog geen database gekoppeld, wijzigingen blijven alleen op dit apparaat."}</p>
+          </>
+        )}
+
+        {chosen && (
+          <>
+            <div className="card p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="w-9 h-9 shrink-0 rounded-full font-semibold flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }}>{chosen.name[0]}</span>
+                <span><span className="block font-medium ink">{chosen.name}</span><span className="block text-xs mute">{chosen.role}</span></span>
+              </div>
+              <label className="block text-sm font-medium ink mb-1.5">Wachtwoord</label>
+              <input type="password" autoFocus className="input px-3 py-2.5" value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") submitPw(); }}
+                placeholder="Je wachtwoord" />
+              {err && <p className="text-xs mt-2" style={{ color: "#a23b2c" }}>{err}</p>}
+              <button onClick={submitPw} disabled={busy || !pw} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium py-2.5 disabled:opacity-60">
+                {busy ? <Loader2 size={16} className="animate-spin" /> : <Lock size={15} />} Inloggen
+              </button>
+            </div>
+            <button onClick={() => { setChosen(null); setErr(null); }} className="ff w-full mt-3 text-sm mute hover:opacity-70">Terug naar namen</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1103,7 +1333,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe })
   );
 }
 
-function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variations, onBack, onEdit, onEndorse, onChefsPick, onOpenRecipe, onStartBatch }) {
+function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variations, onBack, onEdit, onEndorse, onChefsPick, onOpenRecipe, onStartBatch, onDelete }) {
   const [factor, setFactor] = useState(1);
   if (!recipe) return null;
   const endorsed = recipe.endorsements.includes(user.name);
@@ -1128,6 +1358,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variation
           <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><ThumbsUp size={15} /> {endorsed ? "Onderschreven" : "Onderschrijf"} · {recipe.endorsements.length}</button>
           <button onClick={() => onChefsPick(recipe.id)} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={recipe.chefsPick ? { background: "#eef1e7", borderColor: "#3a4b30" } : undefined}><Star size={15} className={recipe.chefsPick ? "acc" : ""} fill={recipe.chefsPick ? "currentColor" : "none"} /> Kok's keuze</button>
           {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
+          <button onClick={() => onDelete(recipe.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
         </div>
       )}
       <div className="text-xs mute mt-2.5">Gebruikt in {usageCount} {usageCount === 1 ? "gerecht" : "gerechten"}{recipe.endorsements.length > 0 && <> · Onderschreven door {recipe.endorsements.join(", ")}</>}</div>
@@ -1219,8 +1450,8 @@ function RecipeForm({ recipe, onCancel, onSave }) {
       <div className="text-sm font-medium ink mb-1.5">Ingrediënten</div>
       <div className="space-y-2 mb-2">{ingredients.map((ing, i) => (
         <div key={i} className="flex gap-2">
-          <input className={inputCls + " flex-1"} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
-          <input className={inputCls + " w-28"} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} placeholder="Hoeveelheid" />
+          <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
+          <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} placeholder="Hoeveelheid" />
           <button onClick={() => setIngredients((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
         </div>))}
       </div>
