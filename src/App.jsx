@@ -671,7 +671,8 @@ function BrandCSS() {
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap');
 .serif{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif}
 .ink{color:#2b3823}.mute{color:#6f7263}.acc{color:#3a4b30}
-.ff:focus{outline:none;box-shadow:0 0 0 2px #3a4b30}
+.ff:focus{outline:none}
+.ff:focus-visible{outline:none;box-shadow:0 0 0 2px #3a4b30}
 .card{background:#fff;border:1px solid #e3e0d4;border-radius:14px}
 .cardh{transition:border-color .15s}.cardh:hover{border-color:#8fa07d}
 .btnp{background:#3a4b30;color:#f4f2ea;transition:background .15s}.btnp:hover{background:#2b3823}
@@ -697,6 +698,7 @@ export default function App() {
   const [stack, setStack] = useState([{ screen: "list" }]);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
+  const [pairings, setPairings] = useState(PAIRINGS);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -732,7 +734,7 @@ export default function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) return;
-    const [ov, cu, en, pk, di, ba, hi] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -740,6 +742,7 @@ export default function App() {
       supabase.from("dishes").select("*"),
       supabase.from("ferment_batches").select("*").order("created_at", { ascending: false }),
       supabase.from("recipe_hidden").select("recipe_id"),
+      supabase.from("flavor_pairings").select("*"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -753,11 +756,23 @@ export default function App() {
     const hidden = new Set((hi.data || []).map((h) => h.recipe_id));
     recs = recs.filter((r) => !hidden.has(r.id));
     setRecipes(recs);
-    if (di.data && di.data.length) setDishes(di.data.map((d) => ({
+    const fpRows = fp.data || [];
+    const fpMap = new Map(fpRows.map((x) => [x.name, x]));
+    setPairings([
+      ...PAIRINGS.map((p) => fpMap.has(p.name) ? { name: p.name, pairs: fpMap.get(p.name).pairs || [], note: fpMap.get(p.name).note || "" } : p),
+      ...fpRows.filter((x) => !PAIRINGS.some((p) => p.name === x.name)).map((x) => ({ name: x.name, pairs: x.pairs || [], note: x.note || "" })),
+    ]);
+    const dbDishes = (di.data || []).map((d) => ({
       id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating,
       recipeIds: d.recipe_ids || [], season: d.season || [], diet: d.diet || "Vegetarisch",
       updatedBy: d.updated_by || "—", updatedAt: "opgeslagen",
-    })));
+    }));
+    // Samenvoegen: nieuwe gerechten uit de database bovenaan, de startgerechten
+    // blijven staan (met eventuele bewerkingen uit de database eroverheen).
+    setDishes([
+      ...dbDishes.filter((d) => !seedDishes.some((sd) => sd.id === d.id)),
+      ...seedDishes.map((sd) => dbDishes.find((d) => d.id === sd.id) || sd),
+    ]);
     setBatches((ba.data || []).map((b) => ({
       id: b.id, product: b.product, type: b.type, startDate: b.start_date, days: b.days,
       saltPct: Number(b.salt_pct), tempC: Number(b.temp_c), amount: b.amount,
@@ -861,6 +876,24 @@ export default function App() {
     }
     setRecipes((rs) => rs.map((x) => x.id === id ? { ...x, endorsements: has ? x.endorsements.filter((n) => n !== user.name) : [...x.endorsements, user.name] } : x));
   };
+  const savePairing = async (name, pairs, note) => {
+    const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim() };
+    if (!clean.name || clean.pairs.length === 0) { flash("Vul een naam en minstens één partner in"); return; }
+    if (live) {
+      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setPairings((ps) => ps.some((p) => p.name === clean.name) ? ps.map((p) => (p.name === clean.name ? clean : p)) : [...ps, clean]);
+    flash(live ? "Smaakcombinatie opgeslagen" : "Opgeslagen (demo: alleen dit apparaat)");
+  };
+  const resetPairing = async (name) => {
+    const orig = PAIRINGS.find((p) => p.name === name);
+    const ok = window.confirm(orig ? 'Aanpassingen aan "' + name + '" terugdraaien naar het origineel?' : '"' + name + '" verwijderen voor het hele team?');
+    if (!ok) return;
+    if (live) { const { error } = await supabase.from("flavor_pairings").delete().eq("name", name); if (dbFail(error)) return; }
+    setPairings((ps) => (orig ? ps.map((p) => (p.name === name ? orig : p)) : ps.filter((p) => p.name !== name)));
+    flash(orig ? "Origineel hersteld" : "Smaakcombinatie verwijderd");
+  };
   const deleteRecipe = async (id) => {
     const r = recipes.find((x) => x.id === id);
     if (!r) return;
@@ -913,7 +946,7 @@ export default function App() {
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onOpenRecipe={openRecipe} />}
-            {section === "smaak" && <FlavorList onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
+            {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
           </>
         )}
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} />}
@@ -1218,9 +1251,13 @@ function SeasonPill({ s }) {
 function MeatPill({ diet }) { return <span className="inline-flex items-center rounded-full text-[10px] font-medium px-1.5 py-0.5" style={{ background: "#ecdcd6", color: "#8a4a3a" }}>{diet}</span>; }
 
 function FermentList({ batches, recipes, canEdit, onToggleDone, onOpenRecipe }) {
+  const [limit, setLimit] = useState(30);
   const active = batches.filter((b) => !b.done);
   const done = batches.filter((b) => b.done);
-  const fermentRecipes = recipes.filter((r) => r.ferment && !r.isBase).slice(0, 40);
+  const fermentRecipes = recipes.filter((r) => r.ferment).sort((a, b) => {
+    if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
   return (
     <div className="pt-4">
       <div className="card p-4 mb-4">
@@ -1232,8 +1269,27 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onOpenRecipe }) 
       {done.length > 0 && <div className="mt-6"><Eyebrow>Afgerond</Eyebrow></div>}
       <div className="space-y-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} />)}</div>
       <div className="mt-6"><Eyebrow>Fermentatierecepten</Eyebrow></div>
-      <div className="flex flex-wrap gap-2">
-        {fermentRecipes.map((r) => <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="btno ff rounded-full text-sm px-3 py-1.5">{r.name}</button>)}
+      <div className="space-y-2.5">
+        {fermentRecipes.slice(0, limit).map((r) => (
+          <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
+                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
+                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>
+              </div>
+              <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
+                {r.garden && <span className="inline-flex items-center gap-1 acc"><Sprout size={12} /> tuin</span>}
+                {r.season.filter((sx) => sx !== "Hele jaar").map((sx) => <SeasonPill key={sx} s={sx} />)}
+                {r.chefsPick && <span className="inline-flex items-center gap-1 font-semibold acc"><Star size={12} fill="currentColor" /> Kok's keuze</span>}
+                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><ThumbsUp size={12} /> {r.endorsements.length}</span>}
+              </div>
+            </div>
+            <ChevronRight size={18} className="shrink-0" style={{ color: "#c4c2b2" }} />
+          </button>
+        ))}
+        {fermentRecipes.length > limit && <button onClick={() => setLimit((l) => l + 50)} className="ff w-full rounded-xl text-sm mute py-3" style={{ border: "1px dashed #cfccbe" }}>Toon meer ({fermentRecipes.length - limit} resterend)</button>}
       </div>
     </div>
   );
@@ -1263,16 +1319,29 @@ function BatchCard({ b, canEdit, onToggleDone }) {
   );
 }
 
-function FlavorList({ onSearchRecipes }) {
+function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
-  const shown = PAIRINGS.filter((p) => p.name.includes(q.toLowerCase()) || p.pairs.some((x) => x.includes(q.toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
+  const [editing, setEditing] = useState(null); // naam van item in bewerking, of "__new"
+  const [fName, setFName] = useState("");
+  const [fPairs, setFPairs] = useState("");
+  const [fNote, setFNote] = useState("");
+  const startEdit = (p) => { setEditing(p ? p.name : "__new"); setFName(p ? p.name : ""); setFPairs(p ? p.pairs.join(", ") : ""); setFNote(p ? p.note : ""); if (p) setOpen(p.name); };
+  const submit = () => { onSave(fName, fPairs.split(","), fNote); setEditing(null); };
+  const isSeed = (name) => PAIRINGS.some((p) => p.name === name);
+  const shown = pairings.filter((p) => p.name.includes(q.toLowerCase()) || p.pairs.some((x) => x.includes(q.toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div>
       <div className="card p-4 mt-4 mb-3">
         <div className="flex items-center gap-2 serif ink text-lg"><Blend size={17} className="acc" /> Smaakcombinaties</div>
-        <p className="text-sm mute mt-1">Inspiratie per product uit de moestuin. Tik op een product voor de partners.</p>
+        <p className="text-sm mute mt-1">Inspiratie per product uit de moestuin. Tik op een product voor de partners.{canEdit && " Koks kunnen combinaties aanpassen en toevoegen."}</p>
+        {canEdit && editing !== "__new" && (
+          <button onClick={() => startEdit(null)} className="btno ff mt-3 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Plus size={15} /> Product toevoegen</button>
+        )}
       </div>
+      {editing === "__new" && (
+        <PairingForm title="Nieuw product" name={fName} setName={setFName} nameLocked={false} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} onSubmit={submit} onCancel={() => setEditing(null)} />
+      )}
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een product of smaak" />
       <div className="space-y-2">
         {shown.map((p) => (
@@ -1281,16 +1350,41 @@ function FlavorList({ onSearchRecipes }) {
               <span className="serif ink text-lg flex items-center gap-2">{cap(p.name)} {SEASON[p.name] && SEASON[p.name].filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}</span>
               <ChevronRight size={16} className={"transition-transform " + (open === p.name ? "rotate-90" : "")} style={{ color: "#c4c2b2" }} />
             </button>
-            {open === p.name && (
+            {open === p.name && editing !== p.name && (
               <div className="px-4 pb-4 -mt-1">
                 <p className="text-xs mute mb-2 italic">{p.note}</p>
                 <div className="flex flex-wrap gap-1.5">{p.pairs.map((x) => <span key={x} className="chip rounded-full text-xs font-medium px-2.5 py-1">{x}</span>)}</div>
-                <button onClick={() => onSearchRecipes(p.name)} className="mt-3 inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Search size={12} /> Bekijk recepten met {p.name}</button>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button onClick={() => onSearchRecipes(p.name)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Search size={12} /> Bekijk recepten met {p.name}</button>
+                  {canEdit && <button onClick={() => startEdit(p)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerken</button>}
+                </div>
+              </div>
+            )}
+            {open === p.name && editing === p.name && (
+              <div className="px-4 pb-4 -mt-1">
+                <PairingForm title={"Bewerk " + p.name} name={fName} setName={setFName} nameLocked={true} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} onSubmit={submit} onCancel={() => setEditing(null)}
+                  extraLabel={isSeed(p.name) ? "Herstel origineel" : "Verwijderen"} onExtra={() => { setEditing(null); onReset(p.name); }} />
               </div>
             )}
           </div>
         ))}
         {shown.length === 0 && <Empty label="Geen combinatie gevonden." />}
+      </div>
+    </div>
+  );
+}
+
+function PairingForm({ title, name, setName, nameLocked, pairs, setPairs, note, setNote, onSubmit, onCancel, extraLabel, onExtra }) {
+  return (
+    <div className="card p-4 mb-3">
+      <div className="text-sm font-medium ink mb-3">{title}</div>
+      {!nameLocked && <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Product</span><input className="input px-3 py-2.5" value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. vlierbloesem" /></label>}
+      <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Partners (gescheiden door komma's)</span><textarea rows={2} className="input px-3 py-2.5 resize-none" value={pairs} onChange={(e) => setPairs(e.target.value)} placeholder="bv. citroen, honing, room" /></label>
+      <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Notitie</span><input className="input px-3 py-2.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Korte typering" /></label>
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={onSubmit} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><Check size={15} /> Opslaan</button>
+        <button onClick={onCancel} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><X size={15} /> Annuleren</button>
+        {extraLabel && <button onClick={onExtra} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> {extraLabel}</button>}
       </div>
     </div>
   );
