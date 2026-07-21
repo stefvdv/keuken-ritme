@@ -105,15 +105,15 @@ const BASES = [
   { id:"ganache", baseName:"Ganache", generic:"chocolade", category:"Zoet & patisserie", yield:"≈ 420 g", mode:"flavor", chefsPick:true,
     ingredients:[{item:"Chocolade",amount:"200 g"},{item:"Room",amount:"200 g"},{item:"Boter",amount:"20 g"}],
     steps:["Verwarm de room.","Giet over de chocolade en emulgeer.","Roer de boter erdoor."],
-    variations:[{name:"Pure ganache"},{name:"Melkchocoladeganache",add:"Iets minder room."},{name:"Witte ganache",add:"Meer chocolade voor stevigheid."},{name:"Koffieganache",add:"Trek de room met koffie."},{name:"Frambozenganache",add:"Deel room vervangen door frambozenpuree."},{name:"Muntganache",add:"Trek met verse munt; zeef."},{name:"Kweeperenganache",add:"Vervang deel room door kweeperenpuree."},{name:"Lavendelganache",add:"Trek kort met lavendel."}] },
+    variations:[{name:"Pure ganache"},{name:"Melkchocoladeganache",add:"Iets minder room."},{name:"Witte ganache",add:"Meer chocolade voor stevigheid."},{name:"Koffieganache",add:"Trek de room met koffie."},{name:"Frambozenganache",add:"Deel room vervangen door frambozenpuree.",season:["Zomer","Herfst"]},{name:"Muntganache",add:"Trek met verse munt; zeef.",season:["Lente","Zomer","Herfst"]},{name:"Kweeperenganache",add:"Vervang deel room door kweeperenpuree.",season:["Herfst"]},{name:"Lavendelganache",add:"Trek kort met lavendel.",season:["Zomer"]}] },
   { id:"anglaise", baseName:"Crème anglaise", generic:"vanille", category:"Zoet & patisserie", yield:"≈ 550 g", mode:"flavor", chefsPick:true,
     ingredients:[{item:"Melk",amount:"250 g"},{item:"Room",amount:"250 g"},{item:"Eidooiers",amount:"5 stuks"},{item:"Suiker",amount:"60 g"}],
     steps:["Verwarm melk en room.","Klop dooiers met suiker; bind tot 82°C.","Passeer en koel snel."],
-    variations:[{name:"Vanille-anglaise",add:"Trek met vanille."},{name:"Koffie-anglaise",add:"Trek met koffie."},{name:"Citroenmelisse-anglaise",add:"Trek met citroenmelisse uit de tuin."},{name:"Laurier-anglaise",add:"Trek kort met verse laurier."},{name:"Salie-anglaise",add:"Trek met salie."},{name:"Kamille-anglaise",add:"Trek met kamillebloemen."}] },
+    variations:[{name:"Vanille-anglaise",add:"Trek met vanille."},{name:"Koffie-anglaise",add:"Trek met koffie."},{name:"Citroenmelisse-anglaise",add:"Trek met citroenmelisse uit de tuin.",season:["Zomer"]},{name:"Laurier-anglaise",add:"Trek kort met verse laurier."},{name:"Salie-anglaise",add:"Trek met salie.",season:["Lente","Zomer","Herfst"]},{name:"Kamille-anglaise",add:"Trek met kamillebloemen.",season:["Zomer"]}] },
   { id:"icecream", baseName:"Roomijs", generic:"vanille", category:"Sorbet & ijs", yield:"≈ 900 g", mode:"flavor", chefsPick:true, gear:"Sorbetmachine",
     ingredients:[{item:"Melk",amount:"500 g"},{item:"Room",amount:"250 g"},{item:"Eidooiers",amount:"6 stuks"},{item:"Suiker",amount:"150 g"}],
     steps:["Maak een anglaise (82°C).","Rijp 12 uur.","Draai in de sorbetmachine."],
-    variations:[{name:"Vanille-roomijs",add:"Trek met vanille."},{name:"Karamel-roomijs",add:"Deel suiker vervangen door karamel."},{name:"Hazelnoot-roomijs",add:"Roer pralinépasta erdoor."},{name:"Braam-roomijs",add:"Roer braampuree door de gerijpte basis."},{name:"Aardbei-roomijs",add:"Roer aardbeienpuree erdoor."},{name:"Rabarber-roomijs",add:"Roer rabarbercompote erdoor."},{name:"Honing-tijm-roomijs",add:"Zoet met honing en trek met tijm."}] },
+    variations:[{name:"Vanille-roomijs",add:"Trek met vanille."},{name:"Karamel-roomijs",add:"Deel suiker vervangen door karamel."},{name:"Hazelnoot-roomijs",add:"Roer pralinépasta erdoor."},{name:"Braam-roomijs",add:"Roer braampuree door de gerijpte basis.",season:["Zomer","Herfst"]},{name:"Aardbei-roomijs",add:"Roer aardbeienpuree erdoor.",season:["Lente","Zomer"]},{name:"Rabarber-roomijs",add:"Roer rabarbercompote erdoor.",season:["Lente"]},{name:"Honing-tijm-roomijs",add:"Zoet met honing en trek met tijm."}] },
   { id:"caramel", baseName:"Karamel", generic:"karamel", category:"Zoet & patisserie", yield:"≈ 350 g", mode:"flavor",
     ingredients:[{item:"Suiker",amount:"200 g"},{item:"Room",amount:"150 g"},{item:"Boter",amount:"40 g"}],
     steps:["Smelt de suiker amberkleurig.","Blus met warme room.","Roer de boter erdoor."],
@@ -121,15 +121,15 @@ const BASES = [
   { id:"beurreblanc", baseName:"Beurre blanc", generic:"boter", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor", chefsPick:true, endorsements:["Michael"],
     ingredients:[{item:"Sjalot",amount:"1 stuk"},{item:"Witte wijn",amount:"100 g"},{item:"Azijn",amount:"50 g"},{item:"Koude boter",amount:"200 g"}],
     steps:["Reduceer tot bijna droog.","Monteer koude boter buiten het vuur.","Passeer; niet koken."],
-    variations:[{name:"Klassieke beurre blanc"},{name:"Dille-beurre blanc",add:"Roer dille erdoor."},{name:"Dragon-beurre blanc",add:"Roer dragon erdoor."},{name:"Beurre rouge",add:"Rode wijn i.p.v. witte."},{name:"Mosterd-beurre blanc",add:"Lepel mosterd erdoor."}] },
+    variations:[{name:"Klassieke beurre blanc"},{name:"Dille-beurre blanc",add:"Roer dille erdoor."},{name:"Dragon-beurre blanc",add:"Roer dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Beurre rouge",add:"Rode wijn i.p.v. witte."},{name:"Mosterd-beurre blanc",add:"Lepel mosterd erdoor."}] },
   { id:"mayo", baseName:"Emulsie / mayonaise", generic:"emulsie", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor", chefsPick:true,
     ingredients:[{item:"Eidooier",amount:"1 stuk"},{item:"Mosterd",amount:"10 g"},{item:"Neutrale olie",amount:"250 g"},{item:"Azijn",amount:"10 g"}],
     steps:["Klop dooier met mosterd.","Druppel de olie erbij.","Op smaak met azijn."],
-    variations:[{name:"Klassieke mayonaise"},{name:"Aioli",add:"Knoflook uit de tuin."},{name:"Bieslookmayonaise",add:"Fijne bieslook erdoor."},{name:"Mosterdmayonaise",add:"Extra grove mosterd."},{name:"Sojasaus-mayonaise",add:"Werk af met sojasaus."},{name:"Oost-Indische-kersmayonaise",add:"Roer fijne blaadjes erdoor voor peperigheid."}] },
+    variations:[{name:"Klassieke mayonaise"},{name:"Aioli",add:"Knoflook uit de tuin."},{name:"Bieslookmayonaise",add:"Fijne bieslook erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Mosterdmayonaise",add:"Extra grove mosterd."},{name:"Sojasaus-mayonaise",add:"Werk af met sojasaus."},{name:"Oost-Indische-kersmayonaise",add:"Roer fijne blaadjes erdoor voor peperigheid.",season:["Zomer","Herfst"]}] },
   { id:"vinaigrette", baseName:"Vinaigrette", generic:"vinaigrette", category:"Oliën & vinaigrettes", yield:"≈ 150 g", mode:"flavor",
     ingredients:[{item:"Azijn",amount:"30 g"},{item:"Olie",amount:"90 g"},{item:"Mosterd",amount:"5 g"}],
     steps:["Klop azijn met mosterd en zout.","Monteer met olie."],
-    variations:[{name:"Klassieke vinaigrette"},{name:"Sjalottenvinaigrette",add:"Fijne sjalot erdoor."},{name:"Honing-mosterdvinaigrette",add:"Honing toevoegen."},{name:"Dragonvinaigrette",add:"Dragon erdoor."},{name:"Frambozenvinaigrette",add:"Frambozenazijn + wat puree."}] },
+    variations:[{name:"Klassieke vinaigrette"},{name:"Sjalottenvinaigrette",add:"Fijne sjalot erdoor."},{name:"Honing-mosterdvinaigrette",add:"Honing toevoegen."},{name:"Dragonvinaigrette",add:"Dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Frambozenvinaigrette",add:"Frambozenazijn + wat puree.",season:["Zomer","Herfst"]}] },
   { id:"jus", baseName:"Jus / reductie", generic:"jus", category:"Sauzen & emulsies", yield:"≈ 400 g", mode:"flavor", endorsements:["Michael","Stef"],
     ingredients:[{item:"Fond",amount:"1 l"},{item:"Rode wijn",amount:"200 g"},{item:"Sjalot",amount:"2 stuks"},{item:"Boter",amount:"30 g"}],
     steps:["Reduceer wijn met sjalot.","Voeg fond toe; reduceer napperend.","Monteer met boter; passeer."],
@@ -264,26 +264,112 @@ const BASES = [
     steps:["Blancheer de {x} kort.","Blister heet in de iVario met olie.","Maak af met zout en kruiden."] },
 
   // ---- FERMENTATIE ----
-  { id:"lacto", baseName:"Melkzuurgefermenteerde groente", varTemplate:"Gefermenteerde {x}", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentDefaults:{saltPct:2,tempC:20,days:10}, chefsPick:true, endorsements:["Simon","Stef"], gear:"Fermentatiemateriaal",
-    mains:[...ROOT,...BRASSICA,...STALK,...BEAN],
-    ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout (2%)",amount:"20 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
-    steps:["Weeg de {x} en 2% zout af.","Kneus of meng tot vocht vrijkomt; pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; proef en koel bij de gewenste zuurte."] },
-  { id:"kraut", baseName:"Zuurkoolstijl", varTemplate:"Zuurkool van {x}", generic:"kool", category:"Fermentatie", yield:"1 pot", ferment:true, fermentDefaults:{saltPct:2,tempC:20,days:21}, gear:"Fermentatiemateriaal",
+  { id:"lacto", baseName:"Melkzuurgefermenteerde groente", varTemplate:"Gefermenteerde {x}", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, chefsPick:true, endorsements:["Simon","Stef"], gear:"Fermentatiemateriaal",
+    mains:[...ROOT,...BRASSICA,...STALK],
+    ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout (2,5%)",amount:"25 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
+    steps:["Weeg de {x} en 2,5% zout af.","Kneus of meng tot vocht vrijkomt; pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; proef en koel bij de gewenste zuurte."] },
+  { id:"kraut", baseName:"Zuurkoolstijl", varTemplate:"Zuurkool van {x}", generic:"kool", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:21}, gear:"Fermentatiemateriaal",
     mains:BRASSICA,
-    ingredients:[{item:"{X}, gesneden",amount:"1 kg"},{item:"Zout (2%)",amount:"20 g"}],
-    steps:["Snijd de {x} fijn en meng met 2% zout.","Kneed tot er pekel vrijkomt en stamp aan onder het vocht.","Ferment 2–4 weken op ±20°C; koel bij gewenste zuurte."] },
-  { id:"kimchi", baseName:"Kimchi-stijl", varTemplate:"Kimchi van {x}", generic:"kool", category:"Fermentatie", yield:"1 pot", ferment:true, fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"{X}, gesneden",amount:"1 kg"},{item:"Zout (2,5%)",amount:"25 g"}],
+    steps:["Snijd de {x} fijn en meng met 2,5% zout.","Kneed tot er pekel vrijkomt en stamp aan onder het vocht.","Ferment 2–4 weken op ±20°C; koel bij gewenste zuurte."] },
+  { id:"kimchi", baseName:"Kimchi-stijl", varTemplate:"Kimchi van {x}", generic:"kool", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
     mains:["chinese kool","paksoi","amsoi","rode kool","koolrabi","radijs"],
     ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout",amount:"25 g"},{item:"Kimchipasta (ui, knoflook, gember, chili)",amount:"200 g"}],
     steps:["Zout de {x} en laat 2 uur wellen; spoel en dep.","Meng met de pasta.","Ferment 3–7 dagen op ±20°C; daarna koelen."] },
-  { id:"fhot", baseName:"Gefermenteerde hotsauce", varTemplate:"Hotsauce van {x}", generic:"groente", category:"Fermentatie", yield:"≈ 500 g", ferment:true, fermentDefaults:{saltPct:2.5,tempC:22,days:14}, gear:"Fermentatiemateriaal",
+  { id:"fhot", baseName:"Gefermenteerde hotsauce", varTemplate:"Hotsauce van {x}", generic:"groente", category:"Fermentatie", yield:"≈ 500 g", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:22,days:14}, gear:"Fermentatiemateriaal",
     mains:["tomaat","radijs","ui","knoflook","rode biet"],
     ingredients:[{item:"{X} + chili",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"}],
     steps:["Mix de {x} met chili en zout.","Ferment 1–2 weken onder pekel op ±22°C.","Mix glad, passeer en bottel; koel."] },
-  { id:"fcaper", baseName:"Gefermenteerde bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie", yield:"1 pot", ferment:true, fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
+  { id:"fcaper", baseName:"Gefermenteerde bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
     mains:["oost-indische kers","madelief","goudsbloem"],
     ingredients:[{item:"Knoppen van {x}",amount:"200 g"},{item:"Zout (3,5%)",amount:"7 g"},{item:"Water",amount:"200 g"}],
     steps:["Leg de knoppen onder een 3,5% pekel.","Ferment 1–2 weken op ±20°C.","Bewaar in de pekel; gebruik als kappertjes."] },
+
+  // ---- FERMENTATIE: melkzuur (uitbreiding) ----
+  { id:"kvass", baseName:"Groentekvass", varTemplate:"Kvass van {x}", generic:"tuingroente", category:"Fermentatie · dranken", yield:"≈ 1,5 l", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
+    mains:["rode biet","gele biet","chioggia biet","wortel","knolselderij"],
+    ingredients:[{item:"{X}, grof gesneden",amount:"500 g"},{item:"Water",amount:"1,5 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"}],
+    steps:["Doe de {x} met het water en zout in een pot; alles onder het vocht.","Ferment 3–7 dagen op ±20°C; roer dagelijks even om.","Zeef, proef op zuurte en bottel; bewaar koud en ontlucht de flessen dagelijks."] },
+  { id:"dongchimi", baseName:"Waterkimchi (dongchimi-stijl)", varTemplate:"Waterkimchi van {x}", generic:"knolgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:18,days:7}, gear:"Fermentatiemateriaal",
+    mains:["meiknol","radijs","chinese kool","koolrabi"],
+    ingredients:[{item:"{X}, in parten",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"},{item:"Knoflook, gember, ui",amount:"naar smaak"}],
+    steps:["Leg de {x} met de aromaten onder de pekel.","Ferment 5–10 dagen op ±18°C tot de pekel licht bruist.","Serveer de groente én de sprankelende pekel ijskoud."] },
+  { id:"fstem", baseName:"Gefermenteerde stelen", varTemplate:"Gefermenteerde stelen van {x}", generic:"steelgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, gear:"Fermentatiemateriaal",
+    mains:["snijbiet","bleekselderij","kardoen","paksoi"],
+    ingredients:[{item:"Stelen van {x}, in stukken",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
+    steps:["Snijd de stelen van de {x} op maat en weeg 2,5% zout af.","Pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; de stelen blijven knapperig."] },
+  { id:"fherbpaste", baseName:"Gefermenteerde kruidenpasta", varTemplate:"Kruidenpasta van {x}", generic:"kruid", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:5,tempC:20,days:14}, gear:"Fermentatiemateriaal",
+    mains:["lavas","dragon","koriander","peterselie","bieslook","tuinzuring"],
+    ingredients:[{item:"{X}, fijngehakt",amount:"200 g"},{item:"Zout (5%)",amount:"10 g"}],
+    steps:["Hak de {x} fijn en kneed met 5% zout tot een natte pasta.","Druk luchtvrij aan in een klein potje.","Ferment 2 weken op ±20°C; daarna koel bewaren als smaakmaker."] },
+  { id:"fvat", baseName:"Pekelgroenten uit het vat", varTemplate:"{X} uit het vat", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:18,days:10}, gear:"Fermentatiemateriaal",
+    mains:["komkommer","courgette","meiknol","radijs"],
+    ingredients:[{item:"{X}, heel of in stukken",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (3,5% van het water)",amount:"35 g"},{item:"Dille, knoflook & een druivenblad",amount:"per pot"}],
+    steps:["Leg de {x} met dille, knoflook en een druivenblad (voor de knapperigheid) in de pot.","Giet de 3,5% pekel erover; alles onder het vocht.","Ferment 7–14 dagen op ±18°C; koel bij de gewenste zuurte."] },
+  { id:"fkosho", baseName:"Tuinkosho", varTemplate:"Kosho van {x}", generic:"citrus", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:7}, gear:"Fermentatiemateriaal",
+    mains:["citroen","limoen","yuzu"],
+    ingredients:[{item:"Schilrasp en sap van {x}",amount:"100 g"},{item:"Oost-Indische kers (blad en bloem), fijngehakt",amount:"50 g"},{item:"Zout (10%)",amount:"15 g"}],
+    steps:["Meng rasp en sap van {x} met de fijngehakte Oost-Indische kers en 10% zout.","Ferment 1 week op ±20°C in een klein potje.","Rijp daarna koel; gebruik met mate als scherpe condiment."] },
+  { id:"zoutpruim", baseName:"Zoutpruimen (umeboshi-stijl)", varTemplate:"Zoutpruimen van {x}", generic:"steenfruit", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:30}, gear:"Fermentatiemateriaal / droogoven",
+    mains:["pruim","reine claude"],
+    ingredients:[{item:"{X}, net niet rijp",amount:"1 kg"},{item:"Zout (10%)",amount:"100 g"},{item:"Rode melde (als shiso-alternatief)",amount:"een handvol"}],
+    steps:["Wrijf de {x} in met het zout en verzwaar zodat er pekel vrijkomt.","Ferment 4 weken op ±20°C met de rode melde erbij voor kleur en aroma.","Droog de vruchten daarna kort na in de droogoven en bewaar in de eigen pekel."] },
+  { id:"fmustard", baseName:"Gefermenteerde mosterd", generic:"mosterd", category:"Fermentatie", yield:"≈ 300 g", mode:"flavor", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Geel en bruin mosterdzaad",amount:"150 g"},{item:"Zuurkoolpekel (levend)",amount:"150 g"},{item:"Zout (2,5%)",amount:"8 g"}],
+    steps:["Week het mosterdzaad in de levende zuurkoolpekel met het zout.","Ferment 3–5 dagen op ±20°C; roer dagelijks.","Maal grof of glad en rijp koel — de scherpte verzacht met de tijd."],
+    variations:[{name:"Klassieke gefermenteerde mosterd"},{name:"Honingmosterd",add:"Roer na fermentatie honing erdoor."},{name:"Dragonmosterd",add:"Meng fijngehakte dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Bietenmosterd",add:"Vervang een deel pekel door bietensap."}] },
+  { id:"cultzuivel", baseName:"Gekweekte zuivel", generic:"zuivel", category:"Fermentatie · zuivel", yield:"≈ 500 g", mode:"flavor", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:0,tempC:24,days:1}, gear:"KitchenAid",
+    ingredients:[{item:"Room of melk",amount:"500 g"},{item:"Karnemelk met levende culturen (starter)",amount:"50 g"}],
+    steps:["Verwarm de zuivel tot ±24°C en roer de starter erdoor.","Laat 18–24 uur afgedekt op kamertemperatuur dikken.","Koel terug; klaar als basis of om verder te verwerken."],
+    variations:[{name:"Crème fraîche"},{name:"Karnemelk",add:"Gebruik melk i.p.v. room; langer laten aanzuren."},{name:"Gekweekte boter",add:"Klop de gekweekte room in de KitchenAid tot boter en karnemelk; was de boter koud."}] },
+
+  // ---- FERMENTATIE: suikerfermentatie (dranken) ----
+  { id:"gingerbeer", baseName:"Gemberbier", generic:"gember", category:"Fermentatie · dranken", yield:"≈ 2 l", mode:"flavor", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:22,days:4}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Gemberbug (actieve starter)",amount:"100 g"},{item:"Verse gember, geraspt",amount:"60 g"},{item:"Suiker",amount:"160 g"},{item:"Water",amount:"2 l"},{item:"Citroensap",amount:"30 g"}],
+    steps:["Meng water, suiker, gember, citroensap en de actieve gemberbug.","Ferment 2–4 dagen op ±22°C tot het bruist; zeef en bottel.","LET OP druk: gebruik beugelflessen of PET en ontlucht dagelijks; koel serveren."],
+    variations:[{name:"Klassiek gemberbier"},{name:"Citroen-gemberbier",add:"Extra citroenrasp bij het bottelen."},{name:"Munt-gemberbier",add:"Trek munt mee in de tweede fermentatie.",season:["Lente","Zomer","Herfst"]},{name:"Frambozen-gemberbier",add:"Handvol frambozen in de fles voor kleur en smaak.",season:["Zomer","Herfst"]}] },
+  { id:"waterkefir", baseName:"Waterkefir", generic:"kefir", category:"Fermentatie · dranken", yield:"≈ 1,5 l", mode:"flavor", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:22,days:2}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Waterkefirkorrels",amount:"60 g"},{item:"Suiker",amount:"70 g"},{item:"Water",amount:"1,5 l"},{item:"Ongezwavelde rozijn & schijfje citroen",amount:"per pot"}],
+    steps:["Los de suiker op in het water en voeg korrels, rozijn en citroen toe.","Ferment 24–48 uur op kamertemperatuur; zeef de korrels terug voor de volgende ronde.","Bottel voor een tweede fermentatie van 1–2 dagen; ontlucht dagelijks en koel."],
+    variations:[{name:"Klassieke waterkefir"},{name:"Aardbei-waterkefir",add:"Aardbeien in de tweede fermentatie.",season:["Lente","Zomer"]},{name:"Frambozen-waterkefir",add:"Frambozen in de tweede fermentatie.",season:["Zomer","Herfst"]},{name:"Citroenmelisse-waterkefir",add:"Takjes citroenmelisse in de fles.",season:["Zomer"]},{name:"Munt-waterkefir",add:"Verse munt in de fles.",season:["Lente","Zomer","Herfst"]}] },
+  { id:"kombucha", baseName:"Kombucha", generic:"thee", category:"Fermentatie · dranken", yield:"≈ 2 l", mode:"flavor", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:23,days:10}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Sterke thee (zwart of groen)",amount:"2 l"},{item:"Suiker",amount:"160 g"},{item:"SCOBY + starterthee",amount:"1 stuk + 200 g"}],
+    steps:["Zoet de thee, laat afkoelen en voeg SCOBY en starterthee toe.","Ferment 7–14 dagen op ±23°C onder een doek; proef vanaf dag 7.","Bottel (eventueel met fruit of kruiden voor de tweede fermentatie); ontlucht dagelijks."],
+    variations:[{name:"Klassieke kombucha"},{name:"Appelkombucha",add:"Appelsap of -stukjes in de tweede fermentatie.",season:["Herfst","Winter"]},{name:"Druivenkombucha",add:"Gekneusde druiven in de fles.",season:["Herfst"]},{name:"Kruidenkombucha",add:"Tweede fermentatie met tijm of salie."}] },
+  { id:"tepache", baseName:"Schillenbrouwsel", varTemplate:"Schillenbrouwsel van {x}", generic:"fruit", category:"Fermentatie · dranken", yield:"≈ 2 l", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:22,days:3}, gear:"Fermentatiemateriaal",
+    mains:["appel","peer","kweepeer","ananas"],
+    ingredients:[{item:"Schillen en klokhuizen van {x}",amount:"400 g"},{item:"Suiker of rietsuiker",amount:"150 g"},{item:"Water",amount:"2 l"},{item:"Kaneel of specerijen",amount:"naar smaak"}],
+    steps:["Doe de schillen van {x} met suiker, water en specerijen in een pot; dek af met een doek.","Ferment 2–4 dagen op ±22°C tot het licht bruist (wilde gist van de schil).","Zeef, bottel en koel; ontlucht dagelijks. Mooi zero-waste uit de keuken."] },
+  { id:"wildesoda", baseName:"Wilde bruislimonade", varTemplate:"Wilde bruis van {x}", generic:"bloem", category:"Fermentatie · dranken", yield:"≈ 2 l", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:22,days:3}, gear:"Fermentatiemateriaal",
+    mains:["kamille","lavendel","citroenmelisse","munt","goudsbloem","korenbloem"],
+    ingredients:[{item:"{X} (vers, ongewassen voor de wilde gist)",amount:"40 g"},{item:"Suiker",amount:"150 g"},{item:"Water",amount:"2 l"},{item:"Citroensap",amount:"30 g"}],
+    steps:["Meng alles in een pot en dek af met een doek; roer 2× per dag.","Ferment 2–4 dagen op ±22°C tot er belletjes verschijnen.","Zeef en bottel; LET OP druk — beugelfles of PET, dagelijks ontluchten, koel serveren."] },
+  { id:"landwijn", baseName:"Landwijn", varTemplate:"Landwijn van {x}", generic:"tuinfruit", category:"Fermentatie · dranken", yield:"≈ 5 l", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:20,days:21}, gear:"Fermentatiemateriaal (mandfles + waterslot)",
+    mains:["druif","appel","pruim","braam","framboos","aalbes"],
+    ingredients:[{item:"{X}, gekneusd",amount:"3 kg"},{item:"Suiker",amount:"800 g"},{item:"Water",amount:"tot 5 l"},{item:"Wijngist (of wild, met geduld)",amount:"1 zakje"}],
+    steps:["Kneus de {x}, voeg suikerwater en gist toe in een mandfles met waterslot.","Ferment 2–4 weken op ±20°C tot het waterslot stil valt.","Hevel over van het bezinksel en laat minimaal 2 maanden rijpen."] },
+  { id:"cider", baseName:"Boerderijcider", varTemplate:"Cider van {x}", generic:"fruit", category:"Fermentatie · dranken", yield:"≈ 5 l", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:18,days:14}, gear:"Sapcentrifuge + waterslot",
+    mains:["appel","peer","kweepeer"],
+    ingredients:[{item:"Sap van {x} (sapcentrifuge)",amount:"5 l"},{item:"Cidergist (of wild)",amount:"1 zakje"}],
+    steps:["Pers het sap van {x} en doe het met de gist in een mandfles met waterslot.","Ferment 2–3 weken op ±18°C tot droog.","Hevel over, laat klaren en bottel; kort nagisten op fles voor bubbels (ontlucht bij twijfel)."] },
+  { id:"honingknoflook", baseName:"Honing-knoflook", generic:"knoflook", category:"Fermentatie", yield:"1 pot", mode:"flavor", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:20,days:30}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Knoflooktenen, gepeld",amount:"250 g"},{item:"Rauwe honing",amount:"om onder te dompelen"}],
+    steps:["Dompel de gepelde tenen volledig onder in rauwe honing.","Keer de pot de eerste 2 weken dagelijks; ontlucht het deksel regelmatig.","Na ±1 maand zacht en rond van smaak; wordt maandenlang beter."],
+    variations:[{name:"Klassieke honing-knoflook",season:["Zomer","Herfst"]},{name:"Honing-knoflook met chili",add:"Voeg gedroogde chili toe.",season:["Zomer","Herfst"]},{name:"Honing-knoflook met tijm",add:"Takjes tijm mee in de pot.",season:["Zomer","Herfst"]}] },
+
+  // ---- FERMENTATIE: azijn (tweetraps, met moeder en zuurstof) ----
+  { id:"fruitazijnlevend", baseName:"Levende fruitazijn", varTemplate:"Levende azijn van {x}", generic:"tuinfruit", category:"Fermentatie · azijn", yield:"≈ 1 l", ferment:true, fermentMethod:"Azijnfermentatie", fermentDefaults:{saltPct:0,tempC:24,days:30}, gear:"Fermentatiemateriaal",
+    mains:["appel","peer","druif","framboos","braam","pruim"],
+    ingredients:[{item:"{X}, gekneusd",amount:"500 g"},{item:"Water",amount:"1 l"},{item:"Suiker",amount:"100 g"},{item:"Levende azijn of azijnmoeder",amount:"scheut"}],
+    steps:["Laat de {x} met suikerwater eerst enkele dagen tot alcohol vergisten (doek erover, dagelijks roeren).","Zeef en voeg de azijnmoeder toe; dek af met een doek — azijn heeft zuurstof nodig, dus géén deksel.","Laat 3–6 weken op ±24°C verzuren; proef, zeef en bottel."] },
+  { id:"wijnazijn", baseName:"Wijnazijn van restjes", generic:"wijn", category:"Fermentatie · azijn", yield:"≈ 1 l", mode:"flavor", ferment:true, fermentMethod:"Azijnfermentatie", fermentDefaults:{saltPct:0,tempC:24,days:45}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Wijnresten (open flessen)",amount:"1 l"},{item:"Water",amount:"250 g"},{item:"Azijnmoeder of levende azijn",amount:"scheut"}],
+    steps:["Verdun de wijnresten iets met water en voeg de azijnmoeder toe.","Dek af met een doek (zuurstof!) en zet weg op ±24°C.","Proef na 4–6 weken; zeef, bottel en bewaar de moeder voor de volgende ronde."],
+    variations:[{name:"Rodewijnazijn"},{name:"Wittewijnazijn"},{name:"Ciderazijn",add:"Gebruik eigen cider als basis."}] },
+  { id:"kombuchaazijn", baseName:"Kombucha-azijn", generic:"kombucha", category:"Fermentatie · azijn", yield:"≈ 1 l", mode:"flavor", ferment:true, fermentMethod:"Azijnfermentatie", fermentDefaults:{saltPct:0,tempC:23,days:30}, gear:"Fermentatiemateriaal",
+    ingredients:[{item:"Kombucha (doorgefermenteerd)",amount:"1 l"}],
+    steps:["Laat kombucha bewust 3–4 weken langer doorfermenteren onder een doek.","Proef tot de zuurgraad die van azijn benadert.","Zeef en bottel; gebruik als frisse azijn in dressings en pekels."],
+    variations:[{name:"Klassieke kombucha-azijn"},{name:"Kruiden-kombucha-azijn",add:"Trek na het bottelen met tijm of dragon."}] },
 
   // ---- voorraad-basistechnieken (extra breedte) ----
   { id:"coulis", baseName:"Fruitcoulis", noun:"Coulis", generic:"fruit", category:"Gels & sauzen", yield:"≈ 350 g", mains:FRUIT_ONLY,
@@ -350,15 +436,15 @@ const BASES = [
   { id:"hollandaise", baseName:"Hollandaisefamilie", generic:"boter", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor",
     ingredients:[{item:"Eidooiers",amount:"3 stuks"},{item:"Geklaarde boter",amount:"200 g"},{item:"Citroensap",amount:"10 g"},{item:"Reductie",amount:"20 g"}],
     steps:["Klop dooiers met reductie au bain-marie tot ruban.","Monteer met de boter.","Op smaak met citroen."],
-    variations:[{name:"Hollandaise"},{name:"Béarnaise",add:"Dragonreductie en verse dragon."},{name:"Choron",add:"Tomatenconcentraat door de béarnaise."},{name:"Maltaise",add:"Bloedsinaasappel."},{name:"Mousseline",add:"Opgeslagen room erdoor."},{name:"Paloise",add:"Munt i.p.v. dragon."}] },
+    variations:[{name:"Hollandaise"},{name:"Béarnaise",add:"Dragonreductie en verse dragon.",season:["Lente","Zomer","Herfst"]},{name:"Choron",add:"Tomatenconcentraat door de béarnaise."},{name:"Maltaise",add:"Bloedsinaasappel.",season:["Winter"]},{name:"Mousseline",add:"Opgeslagen room erdoor."},{name:"Paloise",add:"Munt i.p.v. dragon.",season:["Lente","Zomer","Herfst"]}] },
   { id:"sponge", baseName:"Sifon-spons", generic:"spons", category:"Zoet & patisserie", yield:"≈ 8 stuks", mode:"flavor", gear:"Sifon",
     ingredients:[{item:"Eiwit",amount:"100 g"},{item:"Eidooier",amount:"60 g"},{item:"Suiker",amount:"60 g"},{item:"Bloem",amount:"40 g"}],
     steps:["Mix glad en passeer in een sifon.","2 patronen; vul bekers tot een derde.","Gaar 40 sec in de magnetron."],
-    variations:[{name:"Bietenspons",add:"Kleur met bietenpoeder."},{name:"Basilicumspons",add:"Verse basilicum door het beslag."},{name:"Citroenspons",add:"Citroenrasp."},{name:"Chocoladespons",add:"Cacao toevoegen."},{name:"Pistachespons",add:"Pistachepasta."},{name:"Zuringspons",add:"Verse zuring door het beslag."},{name:"Peterseliespons",add:"Geblancheerde peterselie door het beslag."}] },
+    variations:[{name:"Bietenspons",add:"Kleur met bietenpoeder."},{name:"Basilicumspons",add:"Verse basilicum door het beslag.",season:["Zomer"]},{name:"Citroenspons",add:"Citroenrasp."},{name:"Chocoladespons",add:"Cacao toevoegen."},{name:"Pistachespons",add:"Pistachepasta."},{name:"Zuringspons",add:"Verse zuring door het beslag.",season:["Lente","Zomer"]},{name:"Peterseliespons",add:"Geblancheerde peterselie door het beslag.",season:["Lente","Zomer","Herfst"]}] },
   { id:"granita", baseName:"Granité", generic:"fruit", category:"Sorbet & ijs", yield:"≈ 700 g", mode:"flavor", gear:"Vriezer",
     ingredients:[{item:"Sap of aftreksel",amount:"600 g"},{item:"Suiker",amount:"80 g"},{item:"Citroensap",amount:"15 g"}],
     steps:["Meng en breng op smaak.","Vries in en schraap elk half uur met een vork.","Bewaar luchtig bevroren."],
-    variations:[{name:"Aardbei-granité"},{name:"Framboos-granité"},{name:"Druiven-granité"},{name:"Appel-granité"},{name:"Rabarber-granité"},{name:"Citroenmelisse-granité"},{name:"Munt-granité"},{name:"Kamille-granité"}] },
+    variations:[{name:"Aardbei-granité",season:["Lente","Zomer"]},{name:"Framboos-granité",season:["Zomer","Herfst"]},{name:"Druiven-granité",season:["Herfst"]},{name:"Appel-granité",season:["Herfst","Winter"]},{name:"Rabarber-granité",season:["Lente"]},{name:"Citroenmelisse-granité",season:["Zomer"]},{name:"Munt-granité",season:["Lente","Zomer","Herfst"]},{name:"Kamille-granité",season:["Zomer"]}] },
   { id:"kruidensuiker", baseName:"Kruidensuiker", varTemplate:"Suiker van {x}", generic:"kruid", category:"Zoet & patisserie", yield:"≈ 220 g", gear:"Droogoven", mains:["munt","citroenmelisse","lavendel","kamille","rozemarijn","tijm"],
     ingredients:[{item:"{X}",amount:"20 g"},{item:"Suiker",amount:"200 g"}],
     steps:["Droog de {x} in de droogoven.","Vermaal met de suiker.","Bewaar droog en afgesloten."] },
@@ -383,6 +469,15 @@ const BASES = [
     variations:[{name:"Gesmoorde sukade"},{name:"Short rib van het bot"},{name:"Runderwang"}] },
 ];
 
+// Vereniging van de seizoenen van alle hoofdingrediënten van een basis.
+// Dekt de basis het hele jaar (of alle vier de seizoenen), dan "Hele jaar".
+function unionSeason(mains) {
+  const set = new Set();
+  for (const m of mains) for (const s of seasonOf(m)) set.add(s);
+  if (set.has("Hele jaar") || SEASONS.every((s) => set.has(s))) return ["Hele jaar"];
+  return SEASONS.filter((s) => set.has(s));
+}
+
 function buildLibrary() {
   const out = [];
   for (const b of BASES) {
@@ -392,8 +487,9 @@ function buildLibrary() {
       ingredients: b.ingredients.map((x) => ({ item: fill(x.item, b.generic), amount: x.amount })),
       steps: b.steps.map((s) => fill(s, b.generic)),
       endorsements: b.endorsements ? [...b.endorsements] : [], chefsPick: !!b.chefsPick,
-      baseId: null, baseName: null, isBase: true, season: ["Hele jaar"], garden: false,
-      diet: b.diet || "Vegetarisch", ferment: !!b.ferment, fermentDefaults: b.fermentDefaults || null,
+      baseId: null, baseName: null, isBase: true,
+      season: b.mode === "flavor" ? ["Hele jaar"] : unionSeason(b.mains), garden: false,
+      diet: b.diet || "Vegetarisch", ferment: !!b.ferment, fermentMethod: b.fermentMethod || null, fermentDefaults: b.fermentDefaults || null,
       gear: b.gear || null, updatedBy: "Keukenteam", updatedAt: "startbibliotheek",
     });
     if (b.mode === "flavor") {
@@ -403,8 +499,8 @@ function buildLibrary() {
           ingredients: b.ingredients.map((x) => ({ ...x })),
           steps: v.add ? [...b.steps, "Variatie: " + v.add] : [...b.steps],
           endorsements: [], chefsPick: false, baseId: b.id, baseName: b.baseName, isBase: false,
-          season: ["Hele jaar"], garden: false, diet: b.diet || "Vegetarisch",
-          ferment: !!b.ferment, fermentDefaults: b.fermentDefaults || null, gear: b.gear || null,
+          season: v.season || ["Hele jaar"], garden: false, diet: b.diet || "Vegetarisch",
+          ferment: !!b.ferment, fermentMethod: b.fermentMethod || null, fermentDefaults: b.fermentDefaults || null, gear: b.gear || null,
           updatedBy: "Keukenteam", updatedAt: "startbibliotheek",
         });
       }
@@ -417,7 +513,7 @@ function buildLibrary() {
           steps: b.steps.map((s) => fill(s, m)),
           endorsements: [], chefsPick: false, baseId: b.id, baseName: b.baseName, isBase: false,
           season: seasonOf(m), garden: GARDEN_ALL.includes(m), diet: b.diet || "Vegetarisch",
-          ferment: !!b.ferment, fermentDefaults: b.fermentDefaults || null, gear: b.gear || null,
+          ferment: !!b.ferment, fermentMethod: b.fermentMethod || null, fermentDefaults: b.fermentDefaults || null, gear: b.gear || null,
           updatedBy: "Keukenteam", updatedAt: "startbibliotheek",
         });
       }
@@ -459,7 +555,7 @@ const seedDishes = [
     plating:"Geroosterde rode biet, carpaccio van chioggia biet, gepekelde gele biet, compote van appel en olie van dragon.",
     recipeIds:["roast-rode-biet","gcarp-chioggia-biet","gpickle-gele-biet","gcompote-appel","gherboil-dragon"],
     updatedBy:"Stef", updatedAt:"1 dag geleden" },
-  { id:"d3", name:"Courgette & tuinbloemen", course:"Zomergerecht", season:["Zomer"], diet:"Vegetarisch",
+  { id:"d3", name:"Courgette & tuinbloemen", course:"Zomertussengerecht", season:["Zomer"], diet:"Vegetarisch",
     description:"Gegrilde courgette met eetbare bloemen en frisse kruiden uit de tuin.",
     plating:"Gegrilde courgette, puree van courgette, gepekelde courgettebloem, azijn van goudsbloem en olie van bieslook.",
     recipeIds:["grill-courgette","gpuree-courgette","pflower-courgettebloem","fvinegar-goudsbloem","gherboil-bieslook"],
@@ -489,7 +585,7 @@ const seedDishes = [
     plating:"Gegrilde venkel, gel van venkel, gepocheerde peer, olie van dragon en pasta van walnoot.",
     recipeIds:["grill-venkel","ggel-venkel","gpoach-peer","gherboil-dragon","nutpaste-walnoot"],
     updatedBy:"Simon", updatedAt:"2 dagen geleden" },
-  { id:"d9", name:"Erwt, munt & radijs", course:"Lentegerecht", season:["Lente"], diet:"Vegetarisch",
+  { id:"d9", name:"Erwt, munt & radijs", course:"Lentetussengerecht", season:["Lente"], diet:"Vegetarisch",
     description:"Zoete erwten uit de tuin met frisse munt en knapperige radijs.",
     plating:"Espuma van erwten, puree van erwten, gepekelde radijs, olie van munt en gel van munt.",
     recipeIds:["gespuma-erwten","beanpuree-erwten","gpickle-radijs","gherboil-munt","gherbgel-munt"],
@@ -499,7 +595,7 @@ const seedDishes = [
     plating:"Gepocheerde rabarber, sorbet van rabarber, coulis van rabarber, anglaise van kamille en gekonfijte kamille.",
     recipeIds:["gpoach-rabarber","gsorbet-rabarber","gcoulis-rabarber","anglaise-kamille-anglaise","candyflower-kamille"],
     updatedBy:"Isa", updatedAt:"3 dagen geleden" },
-  { id:"d11", name:"Wortel in texturen", course:"Herfstgerecht", season:["Herfst","Winter"], diet:"Vegetarisch",
+  { id:"d11", name:"Wortel in texturen", course:"Herfsttussengerecht", season:["Herfst","Winter"], diet:"Vegetarisch",
     description:"Wortel uit eigen tuin, van geroosterd tot krokant, met koriander.",
     plating:"Geroosterde wortel, puree van wortel, chip van wortel, gepekelde wortel en olie van koriander.",
     recipeIds:["roast-wortel","gpuree-wortel","gchip-wortel","gpickle-wortel","gherboil-koriander"],
@@ -519,7 +615,7 @@ const seedDishes = [
     plating:"Gerookte rode biet, carpaccio van chioggia biet, gepekelde gele biet, olie van dragon en balsamicoparels.",
     recipeIds:["gsmoke-rode-biet","gcarp-chioggia-biet","gpickle-gele-biet","gherboil-dragon","c-balsamic-pearls"],
     updatedBy:"Simon", updatedAt:"2 dagen geleden" },
-  { id:"d15", name:"Courgette, bloem & munt", course:"Zomergerecht", season:["Zomer"], diet:"Vegetarisch",
+  { id:"d15", name:"Courgette, bloem & munt", course:"Zomertussengerecht", season:["Zomer"], diet:"Vegetarisch",
     description:"Gegrilde courgette met eetbare bloem en frisse munt.",
     plating:"Gegrilde courgette, tartaar van courgette, gepekelde courgettebloem, olie van munt en azijn van goudsbloem.",
     recipeIds:["grill-courgette","gtartaar-courgette","pflower-courgettebloem","gherboil-munt","fvinegar-goudsbloem"],
@@ -529,6 +625,215 @@ const seedDishes = [
     plating:"Gepocheerde pruim, sorbet van pruim, compote van reine claude, pasta van amandel en anglaise van laurier.",
     recipeIds:["gpoach-pruim","gsorbet-pruim","gcompote-reine-claude","nutpaste-amandel","anglaise-laurier-anglaise"],
     updatedBy:"Isa", updatedAt:"5 dagen geleden" },
+
+  // ---- 50 nieuwe gerechten (met fermentatiecomponenten), toegevoegd na peer review ----
+  // ---------- LENTE ----------
+  { id:"d17", name:"Asperge, mousseline & radijs uit het vat", course:"Lentevoorgerecht", season:["Lente"], diet:"Vegetarisch",
+    description:"Romige asperge met luchtige mousseline en een zuur accent uit het fermentatievat.",
+    plating:"Puree van asperge, mousseline, olie van bieslook en radijs uit het vat.",
+    recipeIds:["vpuree-asperge","hollandaise-mousseline","gherboil-bieslook","fvat-radijs"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d18", name:"Meiknol in twee fermentaties", course:"Lentetussengerecht", season:["Lente"], diet:"Vegetarisch",
+    description:"Meiknol rauw, als waterkimchi en uit het vat — fris, sprankelend en knapperig.",
+    plating:"Carpaccio van meiknol, waterkimchi van meiknol met sprankelende pekel, meiknol uit het vat, olie van dille en zout van bieslook.",
+    recipeIds:["gcarp-meiknol","dongchimi-meiknol","fvat-meiknol","herboil2-dille","gsalt-bieslook"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d19", name:"Radijs, gekweekte boter & loof", course:"Lentevoorgerecht", season:["Lente"], diet:"Vegetarisch",
+    description:"Radijs met eigen gekweekte boter en een zure kruidenpasta van tuinzuring.",
+    plating:"Tartaar en hele radijs, gekweekte boter, radijs uit het vat, kruidenpasta van tuinzuring en zout van bieslook.",
+    recipeIds:["gtartaar-radijs","cultzuivel-gekweekte-boter","fvat-radijs","fherbpaste-tuinzuring","gsalt-bieslook"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d20", name:"Rabarber, crème fraîche & munt", course:"Lentedessert", season:["Lente"], diet:"Vegetarisch",
+    description:"Zacht gepocheerde rabarber met eigen gekweekte crème fraîche en frisse munt.",
+    plating:"Gepocheerde rabarber, quenelle crème fraîche, rabarber-granité en suiker van munt.",
+    recipeIds:["gpoach-rabarber","cultzuivel-cre-me-frai-che","granita-rabarber-granite","kruidensuiker-munt"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d21", name:"Spitskool, dragonmosterd & zuurkool", course:"Lentetussengerecht", season:["Lente","Zomer"], diet:"Vegetarisch",
+    description:"Gegrilde spitskool met gefermenteerde dragonmosterd en jonge zuurkool van dezelfde kool.",
+    plating:"Gegrilde spitskool, dragonmosterd, zuurkool van spitskool, olie van dragon en olijvencrumble.",
+    recipeIds:["grill-spitskool","fmustard-dragonmosterd","kraut-spitskool","gherboil-dragon","c-olive-crumble"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d22", name:"Spinazie & tuinzuring", course:"Lentevoorgerecht", season:["Lente"], diet:"Vegetarisch",
+    description:"Groen op groen: spinazie, zure tuinzuring en een luchtige zuringspons.",
+    plating:"Puree van spinazie, zuringspons, kruidenpasta van tuinzuring en crème fraîche.",
+    recipeIds:["gpuree-spinazie","sponge-zuringspons","fherbpaste-tuinzuring","cultzuivel-cre-me-frai-che"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d23", name:"Gelakte buik, meiknol & lentegroen", course:"Lentehoofdgerecht", season:["Lente"], diet:"Varkensvlees",
+    description:"Buik van eigen varkens met sprankelende waterkimchi en spinazie uit de tuin.",
+    plating:"Gelakte buik, waterkimchi van meiknol, puree van spinazie, gefermenteerde mosterd en tijm-knoflookjus.",
+    recipeIds:["pork-gelakte-buik","dongchimi-meiknol","gpuree-spinazie","fmustard-klassieke-gefermenteerde-mosterd","jus-tijm-knoflookjus"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d24", name:"Aardbei & gekweekte room", course:"Lentedessert", season:["Lente","Zomer"], diet:"Vegetarisch",
+    description:"Aardbei uit de tuin met zure room en een frisse scheut aardbei-waterkefir.",
+    plating:"Sorbet en coulis van aardbei, crème fraîche, suiker van munt en aan tafel een scheut aardbei-waterkefir.",
+    recipeIds:["gsorbet-aardbei","gcoulis-aardbei","cultzuivel-cre-me-frai-che","kruidensuiker-munt","waterkefir-aardbei-waterkefir"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d55", name:"Paksoi, stelen & kimchi", course:"Lentetussengerecht", season:["Lente","Zomer"], diet:"Vegetarisch",
+    description:"Paksoi in drie gedaanten: gefermenteerde stelen, kimchi en een umami-mayonaise.",
+    plating:"Gefermenteerde stelen van paksoi, kimchi van paksoi, sojasaus-mayonaise, olie van bieslook en sesamtuile.",
+    recipeIds:["fstem-paksoi","kimchi-paksoi","mayo-sojasaus-mayonaise","gherboil-bieslook","tuile-sesamtuile"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d64", name:"Munt & chocolade", course:"Lentedessert", season:["Lente","Zomer"], diet:"Vegetarisch",
+    description:"Chocolade met munt uit de tuin, van ganache tot granité.",
+    plating:"Muntganache, munt-granité, vanille-roomijs, suiker van munt en een glaasje munt-waterkefir.",
+    recipeIds:["ganache-muntganache","granita-munt-granite","icecream-vanille-roomijs","kruidensuiker-munt","waterkefir-munt-waterkefir"], updatedBy:"Kim", updatedAt:"zojuist" },
+
+  // ---------- ZOMER ----------
+  { id:"d25", name:"Tomaat, zoutpruim & basilicum", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
+    description:"Zomertomaat met de diepe umami van eigen zoutpruimen en gerookte mozzarella.",
+    plating:"Tartaar van tomaat, fijngehakte zoutpruim, gerookte mozzarella, olie van basilicum en zout van oregano.",
+    recipeIds:["gtartaar-tomaat","zoutpruim-pruim","c-caprese-mozz","herboil2-basilicum","gsalt-oregano"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d26", name:"Komkommer uit het vat & dille", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
+    description:"Knapperige vatkomkommer met rauwe courgette, dille en frisse gel.",
+    plating:"Komkommer uit het vat, carpaccio van courgette, gel van komkommer, olie van dille en crème fraîche.",
+    recipeIds:["fvat-komkommer","gcarp-courgette","ggel-komkommer","herboil2-dille","cultzuivel-cre-me-frai-che"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d27", name:"Erwt, lavas & tuinbloemen", course:"Zomertussengerecht", season:["Lente","Zomer"], diet:"Vegetarisch",
+    description:"Zoete erwt met de bouillonachtige diepte van gefermenteerde lavas en gepekelde bloemen.",
+    plating:"Espuma van erwten, geblisterde peultjes, kruidenpasta van lavas, gepekelde goudsbloem en gel van munt.",
+    recipeIds:["gespuma-erwten","beanroast-peultjes","fherbpaste-lavas","pflower-goudsbloem","gherbgel-munt"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d28", name:"Courgettebloem, kosho & citroen", course:"Zomertussengerecht", season:["Zomer"], diet:"Vegetarisch",
+    description:"Gegrilde courgette met de scherpte van tuinkosho en een gepekelde bloem.",
+    plating:"Gegrilde courgette, gepekelde courgettebloem, kosho van citroen, gel van courgette en olie van munt.",
+    recipeIds:["grill-courgette","pflower-courgettebloem","fkosho-citroen","ggel-courgette","gherboil-munt"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d29", name:"Bonen van de vuurplaats", course:"Zomertussengerecht", season:["Zomer","Herfst"], diet:"Vegetarisch",
+    description:"Geblisterde bonen met aioli, gefermenteerde dragon en zoetzuur.",
+    plating:"Geblisterde sperziebonen, gepekelde sperziebonen, aioli, kruidenpasta van dragon en olijvencrumble.",
+    recipeIds:["beanroast-sperziebonen","gpickle-sperziebonen","mayo-aioli","fherbpaste-dragon","c-olive-crumble"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d30", name:"Pulled schouder, jonge zuurkool & hotsauce", course:"Zomerhoofdgerecht", season:["Zomer"], diet:"Varkensvlees",
+    description:"Zomers barbecuebord van eigen varkens met jonge zuurkool en gefermenteerde tomatenhotsauce.",
+    plating:"Pulled schouder, zuurkool van spitskool, hotsauce van tomaat, puree van erwten en gepekelde ui.",
+    recipeIds:["pork-pulled-schouder","kraut-spitskool","fhot-tomaat","beanpuree-erwten","gpickle-ui"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d31", name:"Framboos, gember & citroenmelisse", course:"Zomerdessert", season:["Zomer"], diet:"Vegetarisch",
+    description:"Framboos in drie temperaturen met de bruis van eigen frambozen-gemberbier.",
+    plating:"Sorbet en coulis van framboos, framboos-granité, anglaise van citroenmelisse en aan tafel frambozen-gemberbier.",
+    recipeIds:["gsorbet-framboos","gcoulis-framboos","granita-framboos-granite","anglaise-citroenmelisse-anglaise","gingerbeer-frambozen-gemberbier"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d32", name:"Blauwe bes, lavendel & honing", course:"Zomerdessert", season:["Zomer"], diet:"Vegetarisch",
+    description:"Zomerbessen met bloemige lavendel uit de pluktuin.",
+    plating:"Compote en sorbet van blauwe bes, lavendelganache, gekonfijte lavendel en een glaasje wilde bruis van lavendel.",
+    recipeIds:["gcompote-blauwe-bes","gsorbet-blauwe-bes","ganache-lavendelganache","candyflower-lavendel","wildesoda-lavendel"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d33", name:"Aalbes & wilde bruis", course:"Zomerdessert", season:["Zomer"], diet:"Vegetarisch",
+    description:"Zure aalbes met een wild gefermenteerde kamillebruis van eigen bloemen.",
+    plating:"Sorbet en confituur van aalbes, sesamtuile, suiker van kamille en een glaasje wilde bruis van kamille.",
+    recipeIds:["gsorbet-aalbes","gjam-aalbes","tuile-sesamtuile","kruidensuiker-kamille","wildesoda-kamille"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d34", name:"Venkel, kosho & goudsbloem", course:"Zomertussengerecht", season:["Zomer","Herfst"], diet:"Vegetarisch",
+    description:"Anijsachtige venkel van de grill met citrusscherpte en bloemenazijn.",
+    plating:"Gegrilde venkel, kosho van limoen, azijn van goudsbloem, carpaccio van koolrabi en olie van munt.",
+    recipeIds:["grill-venkel","fkosho-limoen","fvinegar-goudsbloem","gcarp-koolrabi","gherboil-munt"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d56", name:"Utrechtse ui & honingmosterd", course:"Zomertussengerecht", season:["Lente","Zomer"], diet:"Vegetarisch",
+    description:"De eigen Utrechtse ui, gefermenteerd en geconfijt, met zoete gefermenteerde mosterd.",
+    plating:"Geconfijte en gefermenteerde Utrechtse ui, honingmosterd, gel van bieslook en olijvencrumble.",
+    recipeIds:["gconfit-utrechtse-ui","lacto-utrechtse-ui","fmustard-honingmosterd","gherbgel-bieslook","c-olive-crumble"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d61", name:"Courgette, bonen & aioli", course:"Zomerhoofdgerecht", season:["Zomer"], diet:"Vegetarisch",
+    description:"Vegetarisch zomerhoofdgerecht van de Black Bastard met knoflook in twee fermentaties.",
+    plating:"Gegrilde courgette, geblisterde snijbonen, aioli, hotsauce van knoflook en pesto van oregano.",
+    recipeIds:["grill-courgette","beanroast-snijbonen","mayo-aioli","fhot-knoflook","gpesto-oregano"], updatedBy:"Michael", updatedAt:"zojuist" },
+
+  // ---------- HERFST ----------
+  { id:"d35", name:"Biet, kvass & dille", course:"Herfstvoorgerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Gerookte biet met een lepel van de eigen bietenkvass — aards en licht sprankelend.",
+    plating:"Gerookte rode biet, carpaccio van gele biet, lepel bietenkvass, olie van dille en balsamicoparels.",
+    recipeIds:["gsmoke-rode-biet","gcarp-gele-biet","kvass-rode-biet","herboil2-dille","c-balsamic-pearls"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d36", name:"Pompoen, honing-knoflook & salie", course:"Herfstvoorgerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Zoete pompoen met zachte tenen honing-knoflook en herfstsalie.",
+    plating:"Puree en chip van pompoen, honing-knoflook, boter van salie en zout van salie.",
+    recipeIds:["vpuree-pompoen","vchip-pompoen","honingknoflook-klassieke-honing-knoflook","gbutter-salie","gsalt-salie"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d37", name:"Kimchi-bord uit de herfsttuin", course:"Herfsttussengerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Chinese kool op twee manieren gefermenteerd, met koriander uit de tuin.",
+    plating:"Kimchi en waterkimchi van chinese kool, gefermenteerde stelen van paksoi, kruidenpasta en olie van koriander.",
+    recipeIds:["kimchi-chinese-kool","dongchimi-chinese-kool","fstem-paksoi","fherbpaste-koriander","gherboil-koriander"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d38", name:"Kweepeer, cider & laurier", course:"Herfstdessert", season:["Herfst"], diet:"Vegetarisch",
+    description:"Gepocheerde kweepeer met eigen kweeperencider en karamel.",
+    plating:"Gepocheerde kweepeer, poeder van kweepeer, karamel, anglaise van laurier en een glaasje cider van kweepeer.",
+    recipeIds:["gpoach-kweepeer","gdry-kweepeer","caramel-klassieke-karamel","anglaise-laurier-anglaise","cider-kweepeer"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d39", name:"Druif, landwijn & walnoot", course:"Herfstdessert", season:["Herfst"], diet:"Vegetarisch",
+    description:"Druiven van eigen stok, van granité tot landwijn.",
+    plating:"Gepocheerde druif, druiven-granité, coulis van druif, crumble van walnoot en een glaasje landwijn van druif.",
+    recipeIds:["gpoach-druif","granita-druiven-granite","gcoulis-druif","crumble-walnoot","landwijn-druif"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d40", name:"Procureur, appel & levende azijn", course:"Herfsthoofdgerecht", season:["Herfst","Winter"], diet:"Varkensvlees",
+    description:"Langzaam gegaarde procureur met appel en de eigen levende appelazijn.",
+    plating:"Gegaarde procureur, compote van appel, levende azijn van appel door de jus, puree van knolselderij en portjus.",
+    recipeIds:["pork-gegaarde-procureur","gcompote-appel","fruitazijnlevend-appel","gpuree-knolselderij","jus-portjus"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d42", name:"Amsoi, kimchi & sesam", course:"Herfsttussengerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Mosterdachtige amsoi, scherp gefermenteerd, met salieboter en sesam.",
+    plating:"Kimchi en gefermenteerde amsoi, boter van salie, hotsauce van ui en sesamtuile.",
+    recipeIds:["kimchi-amsoi","lacto-amsoi","gbutter-salie","fhot-ui","tuile-sesamtuile"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d43", name:"Wortel, zoutpruim & dragon", course:"Herfsttussengerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Zoete geroosterde wortel met het umami-zuur van zoutpruimen van reine claude.",
+    plating:"Geroosterde wortel, espuma en chip van wortel, fijngehakte zoutpruim van reine claude en kruidenpasta van dragon.",
+    recipeIds:["roast-wortel","gespuma-wortel","gchip-wortel","zoutpruim-reine-claude","fherbpaste-dragon"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d44", name:"Appelschil & karnemelk", course:"Herfstdessert", season:["Herfst","Winter"], diet:"Vegetarisch",
+    description:"Zero waste: schillenbrouwsel van appel met eigen karnemelk en fruitleer.",
+    plating:"Compote van appel, karnemelk-ijsschaafsel, fruitleer van appel, suiker van tijm en een glaasje schillenbrouwsel van appel.",
+    recipeIds:["gcompote-appel","cultzuivel-karnemelk","fleather-appel","kruidensuiker-tijm","tepache-appel"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d57", name:"Krokante krosse & zuren", course:"Herfstvoorgerecht", season:["Herfst","Winter"], diet:"Varkensvlees",
+    description:"Krokant van eigen varkens met gefermenteerde en gepekelde zuren ertegenover.",
+    plating:"Krokante krosse, bietenmosterd, gepekelde ui, hotsauce van ui en mosterdmayonaise.",
+    recipeIds:["pork-krokante-krosse","fmustard-bietenmosterd","gpickle-ui","fhot-ui","mayo-mosterdmayonaise"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d62", name:"Herfstbord van het land", course:"Herfsthoofdgerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Vegetarisch herfsthoofdgerecht: biet, pompoen en zuurkool met beurre rouge.",
+    plating:"Geroosterde rode biet, puree van pompoen, zuurkool van rode kool, crumble van hazelnoot en beurre rouge.",
+    recipeIds:["roast-rode-biet","vpuree-pompoen","kraut-rode-kool","crumble-hazelnoot","beurreblanc-beurre-rouge"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d65", name:"Fermentenbord van het land", course:"Herfstvoorgerecht", season:["Herfst"], diet:"Vegetarisch",
+    description:"Proeverij van het fermentatievat: vijf huisgemaakte fermenten om te delen.",
+    plating:"Gefermenteerde venkel, komkommer uit het vat, kimchi van koolrabi, hotsauce van rode biet en gefermenteerde mosterd.",
+    recipeIds:["lacto-venkel","fvat-komkommer","kimchi-koolrabi","fhot-rode-biet","fmustard-klassieke-gefermenteerde-mosterd"], updatedBy:"Stef", updatedAt:"zojuist" },
+
+  // ---------- WINTER ----------
+  { id:"d41", name:"Sukade, kardoen & mosterd", course:"Winterhoofdgerecht", season:["Winter"], diet:"Rundvlees",
+    description:"Gesmoorde sukade met gefermenteerde kardoenstelen en eigen mosterd.",
+    plating:"Gesmoorde sukade, gefermenteerde stelen van kardoen, puree van pastinaak, gefermenteerde mosterd en rodewijnjus.",
+    recipeIds:["beef-gesmoorde-sukade","fstem-kardoen","gpuree-pastinaak","fmustard-klassieke-gefermenteerde-mosterd","jus-rodewijnjus"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d45", name:"Varkenswang, zuurkool & aardappel", course:"Winterhoofdgerecht", season:["Winter"], diet:"Varkensvlees",
+    description:"Zachte varkenswang in eigen jus met savooizuurkool en bietenmosterd.",
+    plating:"Varkenswang in eigen jus, zuurkool van savooikool, puree van aardappel, bietenmosterd en tijm-knoflookjus.",
+    recipeIds:["pork-varkenswang-in-eigen-jus","kraut-savooikool","vpuree-aardappel","fmustard-bietenmosterd","jus-tijm-knoflookjus"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d46", name:"Groenlof, peer & walnoot", course:"Wintervoorgerecht", season:["Winter"], diet:"Vegetarisch",
+    description:"Bittere groenlof met zoete peer en de eigen levende perenazijn in de dressing.",
+    plating:"Blaadjes groenlof, gepocheerde peer, levende azijn van peer in de honing-mosterdvinaigrette en crumble van walnoot.",
+    recipeIds:["gpoach-peer","fruitazijnlevend-peer","vinaigrette-honing-mosterdvinaigrette","crumble-walnoot"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d47", name:"Winterkoolbord", course:"Wintertussengerecht", season:["Winter"], diet:"Vegetarisch",
+    description:"Boerenkool in texturen met gefermenteerde biet en geconfijte knoflook.",
+    plating:"Puree en chip van boerenkool, gefermenteerde boerenkool, hotsauce van rode biet en geconfijte knoflook.",
+    recipeIds:["gpuree-boerenkool","gchip-boerenkool","lacto-boerenkool","fhot-rode-biet","gconfit-knoflook"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d48", name:"Pastinaak, honing-knoflook & tijm", course:"Wintertussengerecht", season:["Herfst","Winter"], diet:"Vegetarisch",
+    description:"Zoete pastinaak met tijm-honing-knoflook en beurre blanc.",
+    plating:"Geroosterde pastinaak, puree en chip van pastinaak, honing-knoflook met tijm en beurre blanc.",
+    recipeIds:["roast-pastinaak","gpuree-pastinaak","gchip-pastinaak","honingknoflook-honing-knoflook-met-tijm","beurreblanc-klassieke-beurre-blanc"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d49", name:"Veldsla, biet & hazelnoot", course:"Wintervoorgerecht", season:["Winter"], diet:"Vegetarisch",
+    description:"Winterse salade van veldsla met biet in twee bereidingen en gefermenteerde ui.",
+    plating:"Veldsla, carpaccio en geconfijte rode biet, gefermenteerde ui, sjalottenvinaigrette en crumble van hazelnoot.",
+    recipeIds:["gcarp-rode-biet","gconfit-rode-biet","lacto-ui","vinaigrette-sjalottenvinaigrette","crumble-hazelnoot"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d50", name:"Knolselderij in het geheel", course:"Winterhoofdgerecht", season:["Winter"], diet:"Vegetarisch",
+    description:"Vegetarisch winterhoofdgerecht: knolselderij geroosterd, gerookt en als kvass.",
+    plating:"Geroosterde en gerookte knolselderij, lepel knolselderijkvass, mosterd-beurre blanc en zout van rozemarijn.",
+    recipeIds:["roast-knolselderij","gsmoke-knolselderij","kvass-knolselderij","beurreblanc-mosterd-beurre-blanc","gsalt-rozemarijn"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"d51", name:"Short rib & gefermenteerde ui", course:"Winterhoofdgerecht", season:["Herfst","Winter"], diet:"Rundvlees",
+    description:"Short rib van het bot met ui in twee fermentaties en aardpeer.",
+    plating:"Short rib van het bot, gefermenteerde ui, hotsauce van ui, puree van aardpeer en rodewijnjus.",
+    recipeIds:["beef-short-rib-van-het-bot","lacto-ui","fhot-ui","gpuree-aardpeer","jus-rodewijnjus"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d52", name:"Mispel, karamel & laurier", course:"Winterdessert", season:["Herfst","Winter"], diet:"Vegetarisch",
+    description:"Vergeten fruit: mispel met gezouten karamel en laurier.",
+    plating:"Gepocheerde mispel, compote van mispel, gezouten karamel afgeblust met levende appelazijn, anglaise van laurier en boekweittuile.",
+    recipeIds:["gpoach-mispel","gcompote-mispel","caramel-gezouten-karamel","fruitazijnlevend-appel","anglaise-laurier-anglaise","tuile-boekweittuile"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d53", name:"Winterappel & cider", course:"Winterdessert", season:["Herfst","Winter"], diet:"Vegetarisch",
+    description:"Appel van de boomgaard met karamelroomijs en eigen cider.",
+    plating:"Gepocheerde appel, karamel-roomijs, fruitchip van appel, kaneelbanketbakkersroom en een glaasje cider van appel.",
+    recipeIds:["gpoach-appel","icecream-karamel-roomijs","fchip-appel","patissiere-kaneelbanketbakkersroom","cider-appel"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d54", name:"Bloedsinaasappel in de winter", course:"Winterdessert", season:["Winter"], diet:"Vegetarisch",
+    description:"Winterzon op het bord: bloedsinaasappel met pistache en een streep kombucha-azijn.",
+    plating:"Mousse, sorbet en gel van bloedsinaasappel, crumble van pistache en een streep kombucha-azijn.",
+    recipeIds:["mousse-bloedsinaasappel","sorbet-bloedsinaasappel","gel-bloedsinaasappel","crumble-pistache","kombuchaazijn-klassieke-kombucha-azijn"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d58", name:"Kardoen & beurre blanc", course:"Wintertussengerecht", season:["Herfst","Winter"], diet:"Vegetarisch",
+    description:"Vergeten groente kardoen, geroosterd en gefermenteerd, met klassieke botersaus.",
+    plating:"Geroosterde kardoen, gefermenteerde stelen van kardoen, beurre blanc, olijvencrumble en zout van tijm.",
+    recipeIds:["roast-kardoen","fstem-kardoen","beurreblanc-klassieke-beurre-blanc","c-olive-crumble","gsalt-tijm"], updatedBy:"Stef", updatedAt:"zojuist" },
+  { id:"d59", name:"Chioggia, yuzu-kosho & rozemarijn", course:"Wintervoorgerecht", season:["Winter"], diet:"Vegetarisch",
+    description:"Gestreepte chioggia met de winterse scherpte van yuzu-kosho.",
+    plating:"Carpaccio van chioggia biet, geconfijte rode biet, kosho van yuzu, olie van waterkers en zout van rozemarijn.",
+    recipeIds:["gcarp-chioggia-biet","gconfit-rode-biet","fkosho-yuzu","herboil2-waterkers","gsalt-rozemarijn"], updatedBy:"Kim", updatedAt:"zojuist" },
+  { id:"d60", name:"Gelakte buik, kimchi & pinda", course:"Winterhoofdgerecht", season:["Winter"], diet:"Varkensvlees",
+    description:"Winterse buik van eigen varkens met rodekoolkimchi en pindacrunch.",
+    plating:"Gelakte buik, kimchi van rode kool, puree van zoete aardappel, crumble van pinda en peperjus.",
+    recipeIds:["pork-gelakte-buik","kimchi-rode-kool","vpuree-zoete-aardappel","crumble-pinda","jus-peperjus"], updatedBy:"Michael", updatedAt:"zojuist" },
+  { id:"d63", name:"Peer, ganache & walnoot", course:"Winterdessert", season:["Herfst","Winter"], diet:"Vegetarisch",
+    description:"Gepocheerde peer met pure ganache en walnoot uit de herfstvoorraad.",
+    plating:"Gepocheerde peer, pure ganache, pasta van walnoot, vanille-roomijs en een glaasje cider van peer.",
+    recipeIds:["gpoach-peer","ganache-pure-ganache","nutpaste-walnoot","icecream-vanille-roomijs","cider-peer"], updatedBy:"Isa", updatedAt:"zojuist" },
+  { id:"d66", name:"Wortel, kvass & gember", course:"Wintertussengerecht", season:["Winter"], diet:"Vegetarisch",
+    description:"Winterwortel met wortelkvass en een warme gemberbiersaus.",
+    plating:"Puree en chip van wortel, lepel wortelkvass, ingekookte saus van klassiek gemberbier en kruidenpasta van koriander.",
+    recipeIds:["gpuree-wortel","gchip-wortel","kvass-wortel","gingerbeer-klassiek-gemberbier","fherbpaste-koriander"], updatedBy:"Simon", updatedAt:"zojuist" },
 ];
 
 const PAIRINGS = [
@@ -622,7 +927,7 @@ const PAIRINGS = [
 ];
 
 const seedBatches = [
-  { id:"b1", product:"Zuurkool van rode kool", type:"Zuurkool", startDate:"2026-07-08", days:21, saltPct:2, tempC:20, amount:"3 kg", pH:3.6, notes:"Mooie zuurgraad, bijna klaar.", done:false, by:"Simon" },
+  { id:"b1", product:"Zuurkool van rode kool", type:"Zuurkool", startDate:"2026-07-08", days:21, saltPct:2.5, tempC:20, amount:"3 kg", pH:3.6, notes:"Mooie zuurgraad, bijna klaar.", done:false, by:"Simon" },
   { id:"b2", product:"Kimchi van chinese kool", type:"Kimchi", startDate:"2026-07-16", days:5, saltPct:2.5, tempC:21, amount:"2 kg", pH:4.2, notes:"Dag 5, begint te bruisen.", done:false, by:"Stef" },
   { id:"b3", product:"Gefermenteerde knoflook-hotsauce", type:"Hotsauce", startDate:"2026-06-20", days:14, saltPct:2.5, tempC:22, amount:"1,5 kg", pH:3.4, notes:"Afgerond en gebotteld.", done:true, by:"Michael" },
 ];
@@ -822,7 +1127,11 @@ export default function App() {
       }
       setRecipes((rs) => rs.map((r) => (r.id === editingId ? merged : r)));
     } else {
-      const rec = { ...stamped, id: "r" + Date.now(), endorsements: [], chefsPick: false, baseId: null, isBase: false, season: ["Hele jaar"], garden: false, diet: "Vegetarisch", ferment: false, custom: true };
+      const rec = { ...stamped, id: "r" + Date.now(), endorsements: [], chefsPick: false, baseId: null, isBase: false,
+        season: stamped.season && stamped.season.length ? stamped.season : ["Hele jaar"], garden: false,
+        diet: stamped.diet || "Vegetarisch", ferment: !!stamped.ferment,
+        fermentMethod: stamped.ferment ? (stamped.fermentMethod || "Melkzuur") : null,
+        fermentDefaults: stamped.ferment ? (stamped.fermentDefaults || null) : null, custom: true };
       if (live) {
         const { error } = await supabase.from("recipes_custom").upsert({ id: rec.id, data: rec, updated_by: user.name, updated_at: new Date().toISOString() });
         if (dbFail(error)) return;
@@ -866,6 +1175,18 @@ export default function App() {
       if (dbFail(error)) return;
     }
     setBatches((bs) => bs.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+  };
+  const deleteBatch = async (id) => {
+    const b = batches.find((x) => x.id === id);
+    if (!b) return;
+    const ok = window.confirm('Batch "' + b.product + '" definitief verwijderen voor het hele team?');
+    if (!ok) return;
+    if (live) {
+      const { error } = await supabase.from("ferment_batches").delete().eq("id", id);
+      if (dbFail(error)) return;
+    }
+    setBatches((bs) => bs.filter((x) => x.id !== id));
+    flash(live ? "Batch verwijderd voor het hele team" : "Batch verwijderd (demo: alleen dit apparaat)");
   };
   const toggleEndorse = async (id) => {
     const r = recipes.find((x) => x.id === id);
@@ -964,7 +1285,7 @@ export default function App() {
             <SectionNav section={section} setSection={(s) => { setSection(s); setSearch(""); }} />
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} search={search} setSearch={setSearch} onOpen={openRecipe} />}
-            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onOpenRecipe={openRecipe} />}
+            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onOpenRecipe={openRecipe} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
           </>
         )}
@@ -978,7 +1299,7 @@ export default function App() {
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} allRecipes={recipes} recipeById={recipeById} onCancel={goBack} onSave={(d) => { saveDish(d, current.editing); goBack(); }} />}
         {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} onCancel={goBack} onSave={(d) => { saveRecipe(d, current.editing); goBack(); }} />}
-        {current.screen === "batchForm" && <BatchForm prefill={current.prefill} onCancel={goBack} onSave={(d) => { saveBatch(d); setSection("fermentatie"); goBack(); }} />}
+        {current.screen === "batchForm" && <BatchForm prefill={current.prefill} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d); setSection("fermentatie"); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
 
@@ -1176,12 +1497,22 @@ function SearchBar({ value, onChange, placeholder }) {
   );
 }
 
+const COURSE_FILTERS = ["Alle", "Voorgerecht", "Tussengerecht", "Hoofdgerecht", "Dessert"];
+
 function DishList({ dishes, search, setSearch, onOpen }) {
+  const [courseF, setCourseF] = useState("Alle");
   const q = search.trim().toLowerCase();
-  const shown = dishes.filter((d) => d.name.toLowerCase().includes(q) || d.course.toLowerCase().includes(q));
+  let shown = dishes.filter((d) => d.name.toLowerCase().includes(q) || d.course.toLowerCase().includes(q));
+  if (courseF !== "Alle") shown = shown.filter((d) => d.course.toLowerCase().includes(courseF.toLowerCase()));
   return (
     <div>
       <SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" />
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+        {COURSE_FILTERS.map((c) => (
+          <button key={c} onClick={() => setCourseF(c)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (courseF === c ? "pillon" : "pill")}>{c}</button>
+        ))}
+      </div>
+      <div className="text-right text-xs mute mb-2">{shown.length} {shown.length === 1 ? "gerecht" : "gerechten"}</div>
       <div className="space-y-2.5">
         {shown.map((d) => (
           <button key={d.id} onClick={() => onOpen(d.id)} className="card cardh ff w-full text-left p-4 flex items-start gap-3">
@@ -1269,11 +1600,18 @@ function SeasonPill({ s }) {
 }
 function MeatPill({ diet }) { return <span className="inline-flex items-center rounded-full text-[10px] font-medium px-1.5 py-0.5" style={{ background: "#ecdcd6", color: "#8a4a3a" }}>{diet}</span>; }
 
-function FermentList({ batches, recipes, canEdit, onToggleDone, onOpenRecipe }) {
+const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
+
+function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onOpenRecipe }) {
   const [limit, setLimit] = useState(30);
+  const [seasonF, setSeasonF] = useState("Alle");
+  const [methodF, setMethodF] = useState("Alle");
   const active = batches.filter((b) => !b.done);
   const done = batches.filter((b) => b.done);
-  const fermentRecipes = recipes.filter((r) => r.ferment).sort((a, b) => {
+  let fermentRecipes = recipes.filter((r) => r.ferment);
+  if (seasonF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
+  if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
+  fermentRecipes = fermentRecipes.sort((a, b) => {
     if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
@@ -1284,10 +1622,21 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onOpenRecipe }) 
         <p className="text-sm mute mt-1">Registreer batches met zout%, temperatuur, pH en duur. {canEdit ? "Tik op de + voor een nieuwe batch." : "Als gast kijk je mee."}</p>
       </div>
       {active.length > 0 && <Eyebrow>Actief</Eyebrow>}
-      <div className="space-y-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} />)}</div>
+      <div className="space-y-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} />)}</div>
       {done.length > 0 && <div className="mt-6"><Eyebrow>Afgerond</Eyebrow></div>}
-      <div className="space-y-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} />)}</div>
+      <div className="space-y-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} />)}</div>
       <div className="mt-6"><Eyebrow>Fermentatierecepten</Eyebrow></div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+        {["Alle", ...SEASONS].map((s) => (
+          <button key={s} onClick={() => { setSeasonF(s); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
+        ))}
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+        {["Alle", ...FERMENT_METHODS].map((m) => (
+          <button key={m} onClick={() => { setMethodF(m); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (methodF === m ? "pillon" : "pill")}>{m === "Alle" ? "Alle methodes" : m}</button>
+        ))}
+      </div>
+      <div className="text-right text-xs mute mb-2">{fermentRecipes.length} recepten</div>
       <div className="space-y-2.5">
         {fermentRecipes.slice(0, limit).map((r) => (
           <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
@@ -1314,7 +1663,7 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onOpenRecipe }) 
   );
 }
 
-function BatchCard({ b, canEdit, onToggleDone }) {
+function BatchCard({ b, canEdit, onToggleDone, onDelete }) {
   const day = daysBetween(b.startDate);
   return (
     <div className="card p-4">
@@ -1333,7 +1682,12 @@ function BatchCard({ b, canEdit, onToggleDone }) {
         <span className="inline-flex items-center gap-1.5"><FlaskConical size={13} /> pH {b.pH ?? "—"}</span>
       </div>
       {b.notes && <p className="text-xs mute mt-2 italic">{b.notes}</p>}
-      {canEdit && <button onClick={() => onToggleDone(b.id)} className="mt-3 text-xs font-medium acc hover:opacity-70">{b.done ? "Heropen batch" : "Markeer als afgerond"}</button>}
+      {canEdit && (
+        <div className="flex items-center gap-4 mt-3">
+          <button onClick={() => onToggleDone(b.id)} className="text-xs font-medium acc hover:opacity-70">{b.done ? "Heropen batch" : "Markeer als afgerond"}</button>
+          <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-1 text-xs font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /> Verwijder batch</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1460,6 +1814,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variation
       <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
       <div className="flex flex-wrap gap-2 mt-3">
         <Chip>{recipe.category}</Chip>
+        {recipe.fermentMethod && <Chip>{recipe.fermentMethod}</Chip>}
         {recipe.gear && <Chip>{recipe.gear}</Chip>}
         {recipe.garden && <span className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2.5 py-1" style={{ background: "#e4ecdc", color: "#3f5a34" }}><Sprout size={12} /> eigen tuin</span>}
         {recipe.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
@@ -1534,10 +1889,19 @@ function RecipeForm({ recipe, onCancel, onSave }) {
   const [yieldVal, setYieldVal] = useState(recipe?.yield || "");
   const [ingredients, setIngredients] = useState(recipe?.ingredients?.length ? recipe.ingredients : [{ item: "", amount: "" }]);
   const [steps, setSteps] = useState(recipe?.steps?.length ? recipe.steps : [""]);
+  const [seasons, setSeasons] = useState((recipe?.season || []).filter((s) => s !== "Hele jaar"));
+  const [diet, setDiet] = useState(recipe?.diet || "Vegetarisch");
+  const [ferment, setFerment] = useState(!!recipe?.ferment);
+  const [fermentMethod, setFermentMethod] = useState(recipe?.fermentMethod || "Melkzuur");
+  const fd = recipe?.fermentDefaults;
+  const [fSalt, setFSalt] = useState(fd ? String(fd.saltPct) : "2.5");
+  const [fTemp, setFTemp] = useState(fd ? String(fd.tempC) : "20");
+  const [fDays, setFDays] = useState(fd ? String(fd.days) : "10");
   const [translating, setTranslating] = useState(false);
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
   const setStep = (i, v) => setSteps((a) => a.map((x, idx) => (idx === i ? v : x)));
+  const toggleSeason = (s) => setSeasons((a) => (a.includes(s) ? a.filter((x) => x !== s) : [...a, s]));
   async function handleTranslate() {
     setTranslating(true); setErr(null);
     try {
@@ -1551,7 +1915,15 @@ function RecipeForm({ recipe, onCancel, onSave }) {
       if (Array.isArray(p.steps) && p.steps.length) setSteps(p.steps);
     } catch (e) { setErr("Vertalen lukte niet. Probeer opnieuw."); } finally { setTranslating(false); }
   }
-  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), category: category.trim() || "Zonder categorie", yield: yieldVal.trim() || "—", ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()) }); };
+  const submit = () => { if (!name.trim()) return; onSave({
+    name: name.trim(), category: category.trim() || "Zonder categorie", yield: yieldVal.trim() || "—",
+    ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
+    season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
+    diet,
+    ferment,
+    fermentMethod: ferment ? fermentMethod : null,
+    fermentDefaults: ferment ? { saltPct: Number(String(fSalt).replace(",", ".")) || 0, tempC: Number(fTemp) || 20, days: Number(fDays) || 0 } : null,
+  }); };
   return (
     <div>
       <FormBar title={recipe ? "Recept bewerken" : "Nieuw recept"} onCancel={onCancel} onSave={submit} />
@@ -1562,6 +1934,31 @@ function RecipeForm({ recipe, onCancel, onSave }) {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Fermentatie" /></Field>
         <Field label="Opbrengst"><input className={inputCls} value={yieldVal} onChange={(e) => setYieldVal(e.target.value)} placeholder="1 pot" /></Field>
+      </div>
+      <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = hele jaar)</span></div>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {SEASONS.map((s) => (
+          <button key={s} type="button" onClick={() => toggleSeason(s)} className={"ff rounded-full px-3 py-1.5 text-xs font-medium " + (seasons.includes(s) ? "pillon" : "pill")}>{s}</button>
+        ))}
+      </div>
+      <Field label="Dieet"><select className={inputCls} value={diet} onChange={(e) => setDiet(e.target.value)}>{["Vegetarisch","Varkensvlees","Rundvlees"].map((d) => <option key={d}>{d}</option>)}</select></Field>
+      <div className="tintbox rounded-xl p-4 mb-4">
+        <button type="button" onClick={() => setFerment((f) => !f)} className="ff w-full flex items-center gap-3 text-left">
+          <span className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={ferment ? { background: T.green, color: T.paper } : { border: "1px solid #cfccbe", background: "#fff" }}>{ferment && <Check size={13} />}</span>
+          <span className="text-sm font-medium ink inline-flex items-center gap-1.5"><FlaskConical size={15} className="acc" /> Dit is een fermentatierecept</span>
+        </button>
+        {ferment && (
+          <div className="mt-3">
+            <Field label="Fermentatiemethode"><select className={inputCls} value={fermentMethod} onChange={(e) => setFermentMethod(e.target.value)}>{FERMENT_METHODS.map((m) => <option key={m}>{m}</option>)}</select></Field>
+            <div className="text-sm font-medium ink mb-1.5">Batchrichtlijn <span className="mute font-normal">(voorgevuld bij een nieuwe batch)</span></div>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Zout (%)"><input type="number" step="0.1" className={inputCls} value={fSalt} onChange={(e) => setFSalt(e.target.value)} /></Field>
+              <Field label="Temp (°C)"><input type="number" className={inputCls} value={fTemp} onChange={(e) => setFTemp(e.target.value)} /></Field>
+              <Field label="Dagen"><input type="number" className={inputCls} value={fDays} onChange={(e) => setFDays(e.target.value)} /></Field>
+            </div>
+            <p className="text-xs mute -mt-2">Verschijnt met de methode als filter op de fermentatiepagina, en is daar direct als batch te starten.</p>
+          </div>
+        )}
       </div>
       <div className="text-sm font-medium ink mb-1.5">Ingrediënten</div>
       <div className="space-y-2 mb-2">{ingredients.map((ing, i) => (
@@ -1591,15 +1988,31 @@ function DishForm({ dish, allRecipes, recipeById, onCancel, onSave }) {
   const [description, setDescription] = useState(dish?.description || "");
   const [plating, setPlating] = useState(dish?.plating || "");
   const [recipeIds, setRecipeIds] = useState(dish?.recipeIds || []);
+  const [seasons, setSeasons] = useState((dish?.season || []).filter((s) => s !== "Hele jaar"));
+  const [diet, setDiet] = useState(dish?.diet || "Vegetarisch");
   const [pick, setPick] = useState("");
   const toggle = (id) => setRecipeIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const toggleSeason = (s) => setSeasons((a) => (a.includes(s) ? a.filter((x) => x !== s) : [...a, s]));
+  const suggestCourse = (g) => setCourse(seasons.length === 1 ? seasons[0] + g.toLowerCase() : g);
   const matches = (pick.trim() ? allRecipes.filter((r) => r.name.toLowerCase().includes(pick.toLowerCase())) : allRecipes).slice(0, 40);
-  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim(), recipeIds, season: dish?.season || [], diet: dish?.diet || "Vegetarisch" }); };
+  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim(), recipeIds, season: SEASONS.filter((s) => seasons.includes(s)), diet }); };
   return (
     <div>
       <FormBar title={dish ? "Gerecht bewerken" : "Nieuw gerecht"} onCancel={onCancel} onSave={submit} />
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Drie bieten uit eigen tuin" /></Field>
+      <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(voor het seizoensfilter)</span></div>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {SEASONS.map((s) => (
+          <button key={s} type="button" onClick={() => toggleSeason(s)} className={"ff rounded-full px-3 py-1.5 text-xs font-medium " + (seasons.includes(s) ? "pillon" : "pill")}>{s}</button>
+        ))}
+      </div>
       <Field label="Gang"><input className={inputCls} value={course} onChange={(e) => setCourse(e.target.value)} placeholder="Herfstvoorgerecht" /></Field>
+      <div className="flex flex-wrap gap-1.5 -mt-2 mb-4">
+        {["Voorgerecht","Tussengerecht","Hoofdgerecht","Dessert"].map((g) => (
+          <button key={g} type="button" onClick={() => suggestCourse(g)} className="ff pill rounded-full px-2.5 py-1 text-xs font-medium">{g}</button>
+        ))}
+      </div>
+      <Field label="Dieet"><select className={inputCls} value={diet} onChange={(e) => setDiet(e.target.value)}>{["Vegetarisch","Varkensvlees","Rundvlees"].map((d) => <option key={d}>{d}</option>)}</select></Field>
       <Field label="Omschrijving"><textarea rows={2} className={inputCls + " resize-none"} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Korte regel over het gerecht" /></Field>
       <div className="text-sm font-medium ink mb-1.5 mt-1">Recepten in dit gerecht <span className="mute font-normal">({recipeIds.length})</span></div>
       {recipeIds.length > 0 && <div className="flex flex-wrap gap-1.5 mb-2">{recipeIds.map((id, i) => { const r = recipeById(id); if (!r) return null; return <span key={id} className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2 py-1" style={{ background: "#e8ebe0", color: T.green }}>#{i + 1} {r.name}<button onClick={() => toggle(id)}><X size={12} /></button></span>; })}</div>}
@@ -1616,23 +2029,43 @@ function DishForm({ dish, allRecipes, recipeById, onCancel, onSave }) {
   );
 }
 
-function BatchForm({ prefill, onCancel, onSave }) {
+function BatchForm({ prefill, fermentRecipes, onCancel, onSave }) {
   const fd = prefill?.fermentDefaults;
   const [product, setProduct] = useState(prefill ? prefill.name : "");
-  const [type, setType] = useState("Melkzuur");
+  const [type, setType] = useState(prefill?.fermentMethod || "Melkzuur");
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [days, setDays] = useState(fd ? String(fd.days) : "10");
-  const [saltPct, setSaltPct] = useState(fd ? String(fd.saltPct) : "2");
+  const [saltPct, setSaltPct] = useState(fd ? String(fd.saltPct) : "2.5");
   const [tempC, setTempC] = useState(fd ? String(fd.tempC) : "20");
   const [amount, setAmount] = useState("");
   const [pH, setPH] = useState("");
   const [notes, setNotes] = useState("");
+  const [pick, setPick] = useState("");
+  const applyRecipe = (r) => {
+    setProduct(r.name);
+    if (r.fermentMethod) setType(r.fermentMethod);
+    if (r.fermentDefaults) { setSaltPct(String(r.fermentDefaults.saltPct)); setTempC(String(r.fermentDefaults.tempC)); setDays(String(r.fermentDefaults.days)); }
+    setPick("");
+  };
+  const pickMatches = pick.trim() ? (fermentRecipes || []).filter((r) => r.name.toLowerCase().includes(pick.trim().toLowerCase())).slice(0, 8) : [];
   const submit = () => { if (!product.trim()) return; onSave({ product: product.trim(), type, startDate, days: Number(days) || 0, saltPct: Number(saltPct) || 0, tempC: Number(tempC) || 0, amount: amount.trim() || "—", pH: pH ? Number(pH) : null, notes: notes.trim(), done: false }); };
   return (
     <div>
       <FormBar title="Nieuwe batch" onCancel={onCancel} onSave={submit} saveLabel="Registreer" />
+      <div className="text-sm font-medium ink mb-1.5">Kies een fermentatierecept <span className="mute font-normal">(vult naam, methode en richtlijn in)</span></div>
+      <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een fermentatierecept" className={inputCls + " pl-9"} /></div>
+      {pickMatches.length > 0 && (
+        <div className="card overflow-hidden mb-4">
+          {pickMatches.map((r, i) => (
+            <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
+              <FlaskConical size={15} className="acc shrink-0" />
+              <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.fermentMethod || r.category}{r.fermentDefaults ? " · " + r.fermentDefaults.saltPct + "% · " + r.fermentDefaults.days + " dgn" : ""}</div></div>
+            </button>
+          ))}
+        </div>
+      )}
       <Field label="Product / recept"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Zuurkool van rode kool" /></Field>
-      <Field label="Type"><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}>{["Melkzuur","Zuurkool","Kimchi","Hotsauce","Kappertjes","Kombucha","Anders"].map((t) => <option key={t}>{t}</option>)}</select></Field>
+      <Field label="Type"><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}>{["Melkzuur","Zuurkool","Kimchi","Hotsauce","Kappertjes","Suikerfermentatie","Kombucha","Waterkefir","Gemberbier","Wilde drank","Landwijn / cider","Azijnfermentatie","Zuivel","Zoutpruimen","Anders"].map((t) => <option key={t}>{t}</option>)}</select></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Startdatum"><input type="date" className={inputCls} value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
         <Field label="Duur (dagen)"><input type="number" className={inputCls} value={days} onChange={(e) => setDays(e.target.value)} /></Field>
