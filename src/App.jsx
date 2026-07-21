@@ -734,7 +734,7 @@ export default function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) return;
-    const [ov, cu, en, pk, di, ba, hi, fp] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -743,6 +743,7 @@ export default function App() {
       supabase.from("ferment_batches").select("*").order("created_at", { ascending: false }),
       supabase.from("recipe_hidden").select("recipe_id"),
       supabase.from("flavor_pairings").select("*"),
+      supabase.from("dish_hidden").select("dish_id"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -769,10 +770,11 @@ export default function App() {
     }));
     // Samenvoegen: nieuwe gerechten uit de database bovenaan, de startgerechten
     // blijven staan (met eventuele bewerkingen uit de database eroverheen).
+    const hiddenDishes = new Set((dh.data || []).map((x) => x.dish_id));
     setDishes([
       ...dbDishes.filter((d) => !seedDishes.some((sd) => sd.id === d.id)),
       ...seedDishes.map((sd) => dbDishes.find((d) => d.id === sd.id) || sd),
-    ]);
+    ].filter((d) => !hiddenDishes.has(d.id)));
     setBatches((ba.data || []).map((b) => ({
       id: b.id, product: b.product, type: b.type, startDate: b.start_date, days: b.days,
       saltPct: Number(b.salt_pct), tempC: Number(b.temp_c), amount: b.amount,
@@ -894,6 +896,23 @@ export default function App() {
     setPairings((ps) => (orig ? ps.map((p) => (p.name === name ? orig : p)) : ps.filter((p) => p.name !== name)));
     flash(orig ? "Origineel hersteld" : "Smaakcombinatie verwijderd");
   };
+  const deleteDish = async (id) => {
+    const d = dishes.find((x) => x.id === id);
+    if (!d) return;
+    const ok = window.confirm('"' + d.name + '" verwijderen voor het hele team?');
+    if (!ok) return;
+    const isSeedDish = seedDishes.some((sd) => sd.id === id);
+    if (live) {
+      let error = null;
+      if (isSeedDish) ({ error } = await supabase.from("dish_hidden").upsert({ dish_id: id, by: user.name }));
+      else ({ error } = await supabase.from("dishes").delete().eq("id", id));
+      if (dbFail(error)) return;
+      if (isSeedDish) await supabase.from("dishes").delete().eq("id", id); // eventuele bewerking mee opruimen
+    }
+    setDishes((ds) => ds.filter((x) => x.id !== id));
+    goBack();
+    flash(live ? "Gerecht verwijderd voor het hele team" : "Gerecht verwijderd (demo: alleen dit apparaat)");
+  };
   const deleteRecipe = async (id) => {
     const r = recipes.find((x) => x.id === id);
     if (!r) return;
@@ -949,7 +968,7 @@ export default function App() {
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
           </>
         )}
-        {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} />}
+        {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
         {current.screen === "recipeDetail" && (() => { const r = recipeById(current.id); return (
           <RecipeDetail recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
             baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={r?.isBase ? variationsOf(current.id) : []}
@@ -1401,7 +1420,7 @@ function BackBar({ onBack, onEdit }) {
 function EditMeta({ by, at }) { return <div className="flex items-center gap-1.5 text-xs mute mt-2"><Clock size={12} /> Laatst bewerkt door <span className="ink font-medium">{by}</span> · {at}</div>; }
 function Eyebrow({ children }) { return <h3 className="text-[11px] font-semibold uppercase tracking-widest acc mb-2">{children}</h3>; }
 
-function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe }) {
+function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, onDelete }) {
   if (!dish) return null;
   return (
     <div>
@@ -1410,6 +1429,9 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe })
       <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
       <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}</div>
       <p className="mute mt-2 leading-relaxed">{dish.description}</p>
+      {canEdit && (
+        <button onClick={() => onDelete(dish.id)} className="ff mt-4 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
+      )}
       <EditMeta by={dish.updatedBy} at={dish.updatedAt} />
       <SectionTitle>Onderdelen</SectionTitle>
       <div className="space-y-2">
