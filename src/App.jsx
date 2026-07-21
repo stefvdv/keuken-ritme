@@ -1285,7 +1285,7 @@ export default function App() {
             <SectionNav section={section} setSection={(s) => { setSection(s); setSearch(""); }} />
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} search={search} setSearch={setSearch} onOpen={openRecipe} />}
-            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onOpenRecipe={openRecipe} />}
+            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
           </>
         )}
@@ -1298,7 +1298,7 @@ export default function App() {
             onStartBatch={() => push({ screen: "batchForm", prefill: r })} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} allRecipes={recipes} recipeById={recipeById} onCancel={goBack} onSave={(d) => { saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} onCancel={goBack} onSave={(d) => { saveRecipe(d, current.editing); goBack(); }} />}
+        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} onCancel={goBack} onSave={(d) => { saveRecipe(d, current.editing); goBack(); }} />}
         {current.screen === "batchForm" && <BatchForm prefill={current.prefill} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d); setSection("fermentatie"); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
@@ -1602,7 +1602,7 @@ function MeatPill({ diet }) { return <span className="inline-flex items-center r
 
 const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
 
-function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onOpenRecipe }) {
+function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onOpenRecipe, onNewFermentRecipe }) {
   const [limit, setLimit] = useState(30);
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
@@ -1625,7 +1625,9 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
       <div className="space-y-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} />)}</div>
       {done.length > 0 && <div className="mt-6"><Eyebrow>Afgerond</Eyebrow></div>}
       <div className="space-y-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} />)}</div>
-      <div className="mt-6"><Eyebrow>Fermentatierecepten</Eyebrow></div>
+      <div className="mt-6 flex items-center justify-between"><Eyebrow>Fermentatierecepten</Eyebrow>
+        {canEdit && <button onClick={onNewFermentRecipe} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuw fermentatierecept</button>}
+      </div>
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
         {["Alle", ...SEASONS].map((s) => (
           <button key={s} onClick={() => { setSeasonF(s); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
@@ -1883,15 +1885,15 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ recipe, onCancel, onSave }) {
+function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
   const [name, setName] = useState(recipe?.name || "");
-  const [category, setCategory] = useState(recipe?.category || "");
+  const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
   const [yieldVal, setYieldVal] = useState(recipe?.yield || "");
   const [ingredients, setIngredients] = useState(recipe?.ingredients?.length ? recipe.ingredients : [{ item: "", amount: "" }]);
   const [steps, setSteps] = useState(recipe?.steps?.length ? recipe.steps : [""]);
   const [seasons, setSeasons] = useState((recipe?.season || []).filter((s) => s !== "Hele jaar"));
   const [diet, setDiet] = useState(recipe?.diet || "Vegetarisch");
-  const [ferment, setFerment] = useState(!!recipe?.ferment);
+  const [ferment, setFerment] = useState(!!recipe?.ferment || !!fermentDefault);
   const [fermentMethod, setFermentMethod] = useState(recipe?.fermentMethod || "Melkzuur");
   const fd = recipe?.fermentDefaults;
   const [fSalt, setFSalt] = useState(fd ? String(fd.saltPct) : "2.5");
