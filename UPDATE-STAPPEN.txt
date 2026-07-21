@@ -1,0 +1,100 @@
+=====================================================
+  IN HET RITME VAN HET LAND — ZO ZET JE EEN UPDATE LIVE
+=====================================================
+
+Bewaar dit bestand in je projectmap (ritme-project).
+Elke update is hetzelfde ritueel: WIJZIG -> TEST -> PUSH.
+Vercel zet 'm daarna vanzelf live (± 1 minuut).
+
+
+-----------------------------------------------------
+FASE 1 — DE WIJZIGING MAKEN (samen met Claude)
+-----------------------------------------------------
+
+1. Vertel Claude wat je wilt veranderen
+   (nieuw gerecht, andere seizoenslabels, extra functie...).
+
+2. Claude past de code aan en geeft je het bijgewerkte
+   bestand — meestal alleen App.jsx.
+
+3. Vervang het oude bestand op je computer:
+   - Download het nieuwe bestand.
+   - Zorg dat het "App.jsx" heet.
+   - Plak het in de map:  ritme-project\src\
+   - Kies "vervangen" als Windows dat vraagt.
+
+
+-----------------------------------------------------
+FASE 2 — TESTEN OP JE EIGEN COMPUTER
+-----------------------------------------------------
+
+4. Open de terminal in je projectmap:
+   Verkenner -> klik in de adresbalk -> typ: cmd -> Enter
+
+5. Typ:
+   npm run dev
+
+6. Open in je browser:  http://localhost:5173
+   Klik de wijziging na.
+
+   - Goed?      -> door naar Fase 3.
+   - Niet goed? -> meld het Claude. Er staat nog niets
+                   online, dus er kan niets stuk.
+
+7. Stop de testserver: druk Ctrl+C in de terminal.
+
+
+-----------------------------------------------------
+FASE 3 — LIVE ZETTEN (de drie gouden regels)
+-----------------------------------------------------
+
+8. Typ in de terminal, een voor een:
+
+   git add .
+   git commit -m "korte omschrijving van de wijziging"
+   git push
+
+   Tussen de aanhalingstekens: een paar woorden over wat
+   er veranderd is, bijv. "nieuw herfstgerecht toegevoegd".
+   Dit wordt je logboek op GitHub.
+
+9. Klaar! Vercel bouwt en publiceert vanzelf.
+   Meekijken kan (hoeft niet): vercel.com -> Deployments.
+
+10. Op telefoon/tablet: app openen en even verversen
+    (naar beneden trekken, of afsluiten en heropenen).
+
+
+-----------------------------------------------------
+ALS ER IETS MISGAAT
+-----------------------------------------------------
+
+FOUT STAAT AL LIVE?
+  Ga naar vercel.com -> je project -> Deployments.
+  Klik bij de vorige (werkende) versie op ... ->
+  "Instant Rollback". Binnen seconden staat de oude
+  versie terug. Fouten zijn altijd omkeerbaar.
+
+FOUTMELDING IN DE TERMINAL?
+  Kopieer de laatste regels en plak ze in de chat met
+  Claude. Samen lossen we het op.
+
+GOUDEN REGEL:
+  Eerst lokaal testen (Fase 2), dan pas pushen (Fase 3).
+  Zo ziet het team nooit een halfwerkende versie.
+
+
+-----------------------------------------------------
+SPIEKBRIEFJE — ALLES IN HET KORT
+-----------------------------------------------------
+
+  Nieuw App.jsx in ritme-project\src\ zetten
+  cmd openen in projectmap
+  npm run dev          (testen op localhost:5173)
+  Ctrl+C               (testserver stoppen)
+  git add .
+  git commit -m "..."
+  git push
+  Klaar — Vercel doet de rest.
+
+=====================================================
