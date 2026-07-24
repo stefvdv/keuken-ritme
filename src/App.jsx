@@ -3,7 +3,8 @@ import {
   ChefHat, Utensils, Layers, Plus, Search, ChevronRight, ArrowLeft, Pencil, X, Check,
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
-  FlaskConical, Blend, Eye, Calendar, Thermometer, Percent
+  FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -40,6 +41,31 @@ const slug = (s) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-")
 const fill = (str, x) => str.split("{x}").join(x).split("{X}").join(cap(x));
 
 const SEASONS = ["Lente", "Zomer", "Herfst", "Winter"];
+
+// Receptcategorieën voor het keuzemenu bij een nieuw recept
+const RECIPE_CATEGORIES = [
+  "Fermentatie","Fermentatie · dranken","Fermentatie · azijn","Fermentatie · zuivel",
+  "Pickles & zuur","Compotes & jam","Kruiden & zout","Oliën & vinaigrettes",
+  "Sauzen & emulsies","Gels & sauzen","Purees","Schuim & espuma","Mousses",
+  "Sorbet & ijs","Zoet & patisserie","Fruit & garnituur",
+  "Tuin · rauw","Tuin · geroosterd","Tuin · gegrild","Tuin · gestoomd","Tuin · gerookt","Tuin · confit",
+  "Krokant & garnituur","Crumbles & garnituur","Garnituur",
+  "Vlees","Vis","Zuivel","Fonds & bouillon","Deeg & brood","Zonder categorie",
+];
+
+// Standaard streefwaarden voor de fermentatie-eindcontrole
+const FERMENT_TARGETS = {
+  Melkzuur: { phStart: 6.0, phEnd: 3.5, note: "Melkzuur: pH zakt van ~6,0 naar onder 3,5 (voedselveilig)." },
+  Suikerfermentatie: { phStart: null, phEnd: null, note: "Suikerfermentatie: stuur op smaak, bruis en (bij drank) alcohol; pH minder leidend." },
+  Azijnfermentatie: { phStart: null, phEnd: 3.0, note: "Azijn: verzuurt tot pH ~2,5–3,0; heeft zuurstof nodig (doek, geen deksel)." },
+};
+// Standaard handelingsschema per fermentatiemethode (voor herinneringen)
+const FERMENT_ACTIONS = {
+  Melkzuur: [{ label: "Controleer onderdompeling en proef", everyDays: 2 }],
+  Suikerfermentatie: [{ label: "Roer om / voed en ontlucht de fles", everyDays: 1 }],
+  Azijnfermentatie: [{ label: "Proef en controleer de moeder", everyDays: 3 }],
+};
+
 
 // ------- tuinproducten per groep -------
 const ROOT = ["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","radijs","ui","utrechtse ui","knoflook"];
@@ -927,9 +953,9 @@ const PAIRINGS = [
 ];
 
 const seedBatches = [
-  { id:"b1", product:"Zuurkool van rode kool", type:"Zuurkool", startDate:"2026-07-08", days:21, saltPct:2.5, tempC:20, amount:"3 kg", pH:3.6, notes:"Mooie zuurgraad, bijna klaar.", done:false, by:"Simon" },
-  { id:"b2", product:"Kimchi van chinese kool", type:"Kimchi", startDate:"2026-07-16", days:5, saltPct:2.5, tempC:21, amount:"2 kg", pH:4.2, notes:"Dag 5, begint te bruisen.", done:false, by:"Stef" },
-  { id:"b3", product:"Gefermenteerde knoflook-hotsauce", type:"Hotsauce", startDate:"2026-06-20", days:14, saltPct:2.5, tempC:22, amount:"1,5 kg", pH:3.4, notes:"Afgerond en gebotteld.", done:true, by:"Michael" },
+  { id:"b1", product:"Zuurkool van rode kool", type:"Zuurkool", method:"Melkzuur", startDate:"2026-07-08", days:21, saltPct:2.5, tempC:20, amount:"3 kg", pH:3.6, notes:"Mooie zuurgraad, bijna klaar.", done:false, by:"Simon" },
+  { id:"b2", product:"Kimchi van chinese kool", type:"Kimchi", method:"Melkzuur", startDate:"2026-07-16", days:5, saltPct:2.5, tempC:21, amount:"2 kg", pH:4.2, notes:"Dag 5, begint te bruisen.", done:false, by:"Stef" },
+  { id:"b3", product:"Gefermenteerde knoflook-hotsauce", type:"Hotsauce", method:"Melkzuur", startDate:"2026-06-20", days:14, saltPct:2.5, tempC:22, amount:"1,5 kg", pH:3.4, notes:"Afgerond en gebotteld.", done:true, by:"Michael" },
 ];
 
 // ---------- helpers ----------
@@ -1004,6 +1030,9 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
   const [pairings, setPairings] = useState(PAIRINGS);
+  const [openCounts, setOpenCounts] = useState({});
+  const [dismissedNotices, setDismissedNotices] = useState({});
+  const [dishDraft, setDishDraft] = useState(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -1043,7 +1072,7 @@ export default function App() {
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
-      supabase.from("recipe_picks").select("*"),
+      supabase.from("recipe_opens").select("*"),
       supabase.from("dishes").select("*"),
       supabase.from("ferment_batches").select("*").order("created_at", { ascending: false }),
       supabase.from("recipe_hidden").select("recipe_id"),
@@ -1057,8 +1086,9 @@ export default function App() {
     const byRec = {};
     (en.data || []).forEach((e) => { (byRec[e.recipe_id] = byRec[e.recipe_id] || []).push(e.user_name); });
     recs = recs.map((r) => ({ ...r, endorsements: byRec[r.id] || [] }));
-    const picks = new Set((pk.data || []).map((p) => p.recipe_id));
-    recs = recs.map((r) => ({ ...r, chefsPick: picks.has(r.id) }));
+    const oc = {};
+    (pk.data || []).forEach((p) => { oc[p.recipe_id] = p.count || 0; });
+    setOpenCounts(oc);
     const hidden = new Set((hi.data || []).map((h) => h.recipe_id));
     recs = recs.filter((r) => !hidden.has(r.id));
     setRecipes(recs);
@@ -1084,6 +1114,8 @@ export default function App() {
       id: b.id, product: b.product, type: b.type, startDate: b.start_date, days: b.days,
       saltPct: Number(b.salt_pct), tempC: Number(b.temp_c), amount: b.amount,
       pH: b.ph === null ? null : Number(b.ph), notes: b.notes || "", done: !!b.done, by: b.by || "—",
+      finishedDate: b.finished_date || null, log: Array.isArray(b.log) ? b.log : [],
+      recipeId: b.recipe_id || null, method: b.method || b.type || null,
     })));
   };
   useEffect(() => {
@@ -1115,6 +1147,17 @@ export default function App() {
 
   const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
 
+  // Melding bij inloggen (alleen koks): batches die klaar zijn of een handeling vragen.
+  const [noticeShown, setNoticeShown] = useState(false);
+  useEffect(() => {
+    if (!user || !user.canEdit || noticeShown || batches.length === 0) return;
+    const { ready, due } = collectNotices(batches);
+    const n = ready.length + due.length;
+    if (n === 0) return;
+    setNoticeShown(true);
+    flash(n === 1 ? "1 batch vraagt aandacht" : n + " batches vragen aandacht");
+  }, [user, batches, noticeShown]);
+
   const saveRecipe = async (data, editingId) => {
     const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
     if (editingId) {
@@ -1137,6 +1180,8 @@ export default function App() {
         if (dbFail(error)) return;
       }
       setRecipes((rs) => [rec, ...rs]);
+      flash(live ? "Opgeslagen — zichtbaar voor het hele team" : "Opgeslagen (demo: alleen op dit apparaat)");
+      return rec.id;
     }
     flash(live ? "Opgeslagen — zichtbaar voor het hele team" : "Opgeslagen (demo: alleen op dit apparaat)");
   };
@@ -1155,26 +1200,52 @@ export default function App() {
     else setDishes((ds) => [{ ...stamped, id }, ...ds]);
     flash(live ? "Opgeslagen — zichtbaar voor het hele team" : "Opgeslagen (demo: alleen op dit apparaat)");
   };
-  const saveBatch = async (data) => {
-    const b = { ...data, id: "b" + Date.now(), by: user.name };
-    if (live) {
-      const { error } = await supabase.from("ferment_batches").upsert({
-        id: b.id, product: b.product, type: b.type, start_date: b.startDate, days: b.days,
-        salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, notes: b.notes,
-        done: b.done, by: b.by,
-      });
-      if (dbFail(error)) return;
+  const persistBatch = async (b) => {
+    if (!live) return true;
+    const { error } = await supabase.from("ferment_batches").upsert({
+      id: b.id, product: b.product, type: b.type, start_date: b.startDate, days: b.days,
+      salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, notes: b.notes,
+      done: b.done, by: b.by, finished_date: b.finishedDate, log: b.log || [],
+      recipe_id: b.recipeId || null, method: b.method || b.type || null,
+    });
+    return !dbFail(error);
+  };
+  const saveBatch = async (data, editingId) => {
+    if (editingId) {
+      const existing = batches.find((x) => x.id === editingId);
+      const b = { ...existing, ...data };
+      if (!(await persistBatch(b))) return;
+      setBatches((bs) => bs.map((x) => (x.id === editingId ? b : x)));
+      flash("Batch bijgewerkt");
+      return;
     }
+    const b = { ...data, id: "b" + Date.now(), by: user.name, finishedDate: null, log: data.log || [] };
+    if (!(await persistBatch(b))) return;
     setBatches((bs) => [b, ...bs]);
     flash("Batch geregistreerd");
   };
+  const addBatchMeasurement = async (id, m) => {
+    const b = batches.find((x) => x.id === id);
+    if (!b) return;
+    const entry = { date: m.date, ph: m.ph === "" ? null : Number(m.ph), brix: m.brix === "" ? null : Number(m.brix), tempC: m.tempC === "" ? null : Number(m.tempC), note: m.note || "", by: user.name };
+    const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH };
+    if (!(await persistBatch(nb))) return;
+    setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
+    flash("Meting toegevoegd aan het logboek");
+  };
+  const deleteBatchMeasurement = async (id, idx) => {
+    const b = batches.find((x) => x.id === id);
+    if (!b) return;
+    const nb = { ...b, log: (b.log || []).filter((_, i) => i !== idx) };
+    if (!(await persistBatch(nb))) return;
+    setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
+  };
   const toggleBatchDone = async (id) => {
     const b = batches.find((x) => x.id === id);
-    if (live && b) {
-      const { error } = await supabase.from("ferment_batches").update({ done: !b.done }).eq("id", id);
-      if (dbFail(error)) return;
-    }
-    setBatches((bs) => bs.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+    if (!b) return;
+    const nb = { ...b, done: !b.done, finishedDate: !b.done ? new Date().toISOString().slice(0, 10) : null };
+    if (!(await persistBatch(nb))) return;
+    setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
   };
   const deleteBatch = async (id) => {
     const b = batches.find((x) => x.id === id);
@@ -1244,35 +1315,30 @@ export default function App() {
       if (r.custom) ({ error } = await supabase.from("recipes_custom").delete().eq("id", id));
       else ({ error } = await supabase.from("recipe_hidden").upsert({ recipe_id: id, by: user.name }));
       if (dbFail(error)) return;
-      // opruimen: onderschrijvingen, kok's keuze en eventuele aanpassing
+      // opruimen: likes, openingen en eventuele aanpassing
       await supabase.from("recipe_endorsements").delete().eq("recipe_id", id);
-      await supabase.from("recipe_picks").delete().eq("recipe_id", id);
+      await supabase.from("recipe_opens").delete().eq("recipe_id", id);
       await supabase.from("recipe_overrides").delete().eq("id", id);
     }
     setRecipes((rs) => rs.filter((x) => x.id !== id));
     goBack();
     flash(live ? "Recept verwijderd voor het hele team" : "Recept verwijderd (demo: alleen dit apparaat)");
   };
-  const toggleChefsPick = async (id) => {
-    const r = recipes.find((x) => x.id === id);
-    const on = r && r.chefsPick;
-    if (live) {
-      const { error } = on
-        ? await supabase.from("recipe_picks").delete().eq("recipe_id", id)
-        : await supabase.from("recipe_picks").upsert({ recipe_id: id, by: user.name });
-      if (dbFail(error)) return;
-    }
-    setRecipes((rs) => rs.map((x) => (x.id === id ? { ...x, chefsPick: !x.chefsPick } : x)));
+  const bumpOpenCount = async (id) => {
+    setOpenCounts((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
+    if (live) { try { await supabase.rpc("bump_recipe_open", { rid: id }); } catch (e) {} }
   };
 
+  const todayKey = new Date().toISOString().slice(0, 10);
+
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
-  const openRecipe = (id) => push({ screen: "recipeDetail", id });
+  const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
   const fabAction = () => {
     if (section === "gerechten") push({ screen: "dishForm", editing: null });
     else if (section === "recepten") push({ screen: "recipeForm", editing: null });
     else if (section === "fermentatie") push({ screen: "batchForm", prefill: null });
   };
-  const showFab = current.screen === "list" && canEdit && section !== "smaak";
+  const showFab = current.screen === "list" && canEdit && section !== "smaak" && section !== "technieken";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -1282,11 +1348,15 @@ export default function App() {
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
         {current.screen === "list" && (
           <>
+            {canEdit && !dismissedNotices[todayKey] && (
+              <NoticeBanner batches={batches} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
+            )}
             <SectionNav section={section} setSection={(s) => { setSection(s); setSearch(""); }} />
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
-            {section === "recepten" && <RecipeList recipes={recipes} search={search} setSearch={setSearch} onOpen={openRecipe} />}
-            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} />}
+            {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
+            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
+            {section === "technieken" && <TechniquesList />}
           </>
         )}
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
@@ -1294,12 +1364,19 @@ export default function App() {
           <RecipeDetail recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
             baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={r?.isBase ? variationsOf(current.id) : []}
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
-            onChefsPick={toggleChefsPick} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
+            openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })} />
         ); })()}
-        {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} allRecipes={recipes} recipeById={recipeById} onCancel={goBack} onSave={(d) => { saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} onCancel={goBack} onSave={(d) => { saveRecipe(d, current.editing); goBack(); }} />}
-        {current.screen === "batchForm" && <BatchForm prefill={current.prefill} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d); setSection("fermentatie"); goBack(); }} />}
+        {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} draft={dishDraft} allRecipes={recipes} recipeById={recipeById}
+          onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
+          onCancel={() => { setDishDraft(null); goBack(); }}
+          onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
+        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} onCancel={goBack}
+          onSave={async (d) => { const newId = await saveRecipe(d, current.editing);
+            if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
+            goBack(); }} />}
+        {current.screen === "batchForm" && <BatchForm prefill={current.prefill} editing={current.editing ? batches.find((b) => b.id === current.editing) : null} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d, current.editing); setSection("fermentatie"); goBack(); }} />}
+        {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => addBatchMeasurement(current.id, m)} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
 
@@ -1413,7 +1490,10 @@ function Header({ user, onHome, onOpenSettings, onSignOut }) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-        <Wordmark onHome={onHome} />
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={onHome} className="ff shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-medium hover:opacity-70" style={{ background: "#e8ebe0", color: T.green }} title="Naar startscherm"><Home size={22} /></button>
+          <Wordmark onHome={onHome} />
+        </div>
         <div className="flex items-center gap-3 shrink-0">
           {!user.canEdit && <span className="inline-flex items-center gap-1 text-xs mute"><Eye size={13} /> Gast</span>}
           <span className="w-7 h-7 rounded-full font-semibold text-xs flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }} title={user.name + " · " + user.role}>{user.name[0]}</span>
@@ -1472,15 +1552,16 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall }) {
 
 function SectionNav({ section, setSection }) {
   const items = [
-    { id: "gerechten", label: "Gerechten", icon: <Utensils size={15} /> },
-    { id: "recepten", label: "Recepten", icon: <Layers size={15} /> },
-    { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={15} /> },
-    { id: "smaak", label: "Smaak", icon: <Blend size={15} /> },
+    { id: "gerechten", label: "Gerechten", icon: <Utensils size={16} /> },
+    { id: "recepten", label: "Recepten", icon: <Layers size={16} /> },
+    { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={16} /> },
+    { id: "smaak", label: "Smaak", icon: <Blend size={16} /> },
+    { id: "technieken", label: "Technieken", icon: <BookOpen size={16} /> },
   ];
   return (
     <div className="flex gap-1.5 overflow-x-auto pt-4 pb-1 -mx-1 px-1">
       {items.map((it) => (
-        <button key={it.id} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
+        <button key={it.id} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}{it.label}
         </button>
       ))}
@@ -1497,7 +1578,8 @@ function SearchBar({ value, onChange, placeholder }) {
   );
 }
 
-const COURSE_FILTERS = ["Alle", "Voorgerecht", "Tussengerecht", "Hoofdgerecht", "Dessert"];
+const DISH_COURSES = ["Amuse", "Borrel", "Lunch", "Voorgerecht", "Tussengerecht", "Hoofdgerecht", "Dessert", "Friandise"];
+const COURSE_FILTERS = ["Alle", ...DISH_COURSES];
 
 function DishList({ dishes, search, setSearch, onOpen }) {
   const [courseF, setCourseF] = useState("Alle");
@@ -1535,18 +1617,23 @@ function DishList({ dishes, search, setSearch, onOpen }) {
   );
 }
 
-function RecipeList({ recipes, search, setSearch, onOpen }) {
-  const [sortMode, setSortMode] = useState("recommended");
+function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
+  const [sortMode, setSortMode] = useState("used");
   const [seasonF, setSeasonF] = useState("Alle");
   const [limit, setLimit] = useState(60);
   const q = search.trim().toLowerCase();
+  const oc = openCounts || {};
   let shown = recipes.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q));
   if (seasonF !== "Alle") shown = shown.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
+  const pop = (r) => (oc[r.id] || 0) + (r.endorsements.length * 3);
   const sorted = [...shown].sort((a, b) => {
     if (sortMode === "az") return a.name.localeCompare(b.name);
+    if (sortMode === "used") {
+      if (pop(b) !== pop(a)) return pop(b) - pop(a);
+      if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    }
     if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
-    if (a.chefsPick !== b.chefsPick) return a.chefsPick ? -1 : 1;
-    if (b.endorsements.length !== a.endorsements.length) return b.endorsements.length - a.endorsements.length;
     return a.name.localeCompare(b.name);
   });
   const visible = sorted.slice(0, limit);
@@ -1561,7 +1648,7 @@ function RecipeList({ recipes, search, setSearch, onOpen }) {
       <div className="flex items-center justify-between mb-3 text-xs">
         <div className="flex items-center gap-1.5">
           <span className="mute">Sorteer</span>
-          <button onClick={() => setSortMode("recommended")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "recommended" ? "pillon" : "pill")}>Aanbevolen</button>
+          <button onClick={() => setSortMode("used")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
           <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
         </div>
         <span className="mute">{sorted.length} recepten</span>
@@ -1579,8 +1666,7 @@ function RecipeList({ recipes, search, setSearch, onOpen }) {
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
                 {r.garden && <span className="inline-flex items-center gap-1 acc"><Sprout size={12} /> tuin</span>}
                 {r.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
-                {r.chefsPick && <span className="inline-flex items-center gap-1 font-semibold acc"><Star size={12} fill="currentColor" /> Kok's keuze</span>}
-                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><ThumbsUp size={12} /> {r.endorsements.length}</span>}
+                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
                 {r.diet !== "Vegetarisch" && <MeatPill diet={r.diet} />}
               </div>
             </div>
@@ -1602,13 +1688,16 @@ function MeatPill({ diet }) { return <span className="inline-flex items-center r
 
 const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
 
-function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onOpenRecipe, onNewFermentRecipe }) {
+function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch }) {
   const [limit, setLimit] = useState(30);
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
+  const [q, setQ] = useState("");
   const active = batches.filter((b) => !b.done);
   const done = batches.filter((b) => b.done);
   let fermentRecipes = recipes.filter((r) => r.ferment);
+  const query = q.trim().toLowerCase();
+  if (query) fermentRecipes = fermentRecipes.filter((r) => r.name.toLowerCase().includes(query) || r.category.toLowerCase().includes(query) || (r.fermentMethod || "").toLowerCase().includes(query));
   if (seasonF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
   fermentRecipes = fermentRecipes.sort((a, b) => {
@@ -1617,17 +1706,21 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   });
   return (
     <div className="pt-4">
-      <div className="card p-4 mb-4">
-        <div className="flex items-center gap-2 serif ink text-lg"><FlaskConical size={17} className="acc" /> Fermentatie-batches</div>
-        <p className="text-sm mute mt-1">Registreer batches met zout%, temperatuur, pH en duur. {canEdit ? "Tik op de + voor een nieuwe batch." : "Als gast kijk je mee."}</p>
+      <div className="flex items-center justify-between mb-3">
+        <Eyebrow>Actieve batches</Eyebrow>
+        {canEdit && <button onClick={onStartBatch} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Plus size={14} /> Nieuwe batch</button>}
       </div>
-      {active.length > 0 && <Eyebrow>Actief</Eyebrow>}
-      <div className="space-y-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} />)}</div>
-      {done.length > 0 && <div className="mt-6"><Eyebrow>Afgerond</Eyebrow></div>}
-      <div className="space-y-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} />)}</div>
-      <div className="mt-6 flex items-center justify-between"><Eyebrow>Fermentatierecepten</Eyebrow>
+      {active.length > 0
+        ? <div className="grid grid-cols-2 gap-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} />)}</div>
+        : <Empty label="Nog geen actieve batches." />}
+      {done.length > 0 && <>
+        <div className="mt-6"><Eyebrow>Afgerond</Eyebrow></div>
+        <div className="grid grid-cols-2 gap-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} />)}</div>
+      </>}
+      <div className="mt-7 flex items-center justify-between"><Eyebrow>Fermentatierecepten</Eyebrow>
         {canEdit && <button onClick={onNewFermentRecipe} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuw fermentatierecept</button>}
       </div>
+      <SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek een fermentatierecept" />
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
         {["Alle", ...SEASONS].map((s) => (
           <button key={s} onClick={() => { setSeasonF(s); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
@@ -1646,48 +1739,120 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
                 {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
-                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>
+                {r.fermentMethod && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> {r.fermentMethod}</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
-                {r.garden && <span className="inline-flex items-center gap-1 acc"><Sprout size={12} /> tuin</span>}
                 {r.season.filter((sx) => sx !== "Hele jaar").map((sx) => <SeasonPill key={sx} s={sx} />)}
-                {r.chefsPick && <span className="inline-flex items-center gap-1 font-semibold acc"><Star size={12} fill="currentColor" /> Kok's keuze</span>}
-                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><ThumbsUp size={12} /> {r.endorsements.length}</span>}
+                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
               </div>
             </div>
             <ChevronRight size={18} className="shrink-0" style={{ color: "#c4c2b2" }} />
           </button>
         ))}
         {fermentRecipes.length > limit && <button onClick={() => setLimit((l) => l + 50)} className="ff w-full rounded-xl text-sm mute py-3" style={{ border: "1px dashed #cfccbe" }}>Toon meer ({fermentRecipes.length - limit} resterend)</button>}
+        {fermentRecipes.length === 0 && <Empty label="Geen fermentatierecept gevonden." />}
       </div>
     </div>
   );
 }
 
-function BatchCard({ b, canEdit, onToggleDone, onDelete }) {
-  const day = daysBetween(b.startDate);
+// Welke batches vragen vandaag aandacht? (klaar of handeling verschuldigd)
+function collectNotices(batches) {
+  const ready = [], due = [];
+  for (const b of batches) {
+    if (b.done) continue;
+    const st = batchStatus(b);
+    if (st.ready) ready.push({ b, day: st.day });
+    else if (st.due.length) due.push({ b, label: st.due[0] });
+  }
+  return { ready, due };
+}
+
+function NoticeBanner({ batches, onOpen, onDismiss }) {
+  const { ready, due } = collectNotices(batches);
+  if (ready.length === 0 && due.length === 0) return null;
   return (
-    <div className="card p-4">
+    <div className="rounded-xl p-4 mt-4" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="serif ink text-lg leading-tight">{b.product}</div>
-          <div className="text-xs mute mt-0.5">{b.type} · {b.amount} · door {b.by}</div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold flex items-center gap-1.5 text-sm"><Bell size={15} /> Fermentatie vraagt aandacht</div>
+          <ul className="mt-1.5 space-y-1 text-sm">
+            {ready.map(({ b, day }) => (
+              <li key={b.id} className="flex gap-1.5"><Check size={14} className="shrink-0 mt-0.5" /><span><span className="font-medium">{b.product}</span> is klaar — dag {day}/{b.days}</span></li>
+            ))}
+            {due.map(({ b, label }) => (
+              <li key={b.id} className="flex gap-1.5"><FlaskConical size={14} className="shrink-0 mt-0.5" /><span><span className="font-medium">{b.product}</span>: {label.toLowerCase()}</span></li>
+            ))}
+          </ul>
+          <button onClick={onOpen} className="ff mt-2.5 inline-flex items-center gap-1 text-xs font-semibold underline">Naar fermentatie</button>
         </div>
-        {b.done ? <span className="shrink-0 text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Afgerond</span>
-          : <span className="shrink-0 text-[11px] font-semibold rounded-full px-2 py-0.5 pillon">Dag {day}/{b.days}</span>}
+        <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Verberg voor vandaag"><X size={16} /></button>
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3 text-xs mute">
-        <span className="inline-flex items-center gap-1.5"><Calendar size={13} /> Start {b.startDate}</span>
-        <span className="inline-flex items-center gap-1.5"><Percent size={13} /> Zout {b.saltPct}%</span>
-        <span className="inline-flex items-center gap-1.5"><Thermometer size={13} /> {b.tempC}°C</span>
-        <span className="inline-flex items-center gap-1.5"><FlaskConical size={13} /> pH {b.pH ?? "—"}</span>
+    </div>
+  );
+}
+
+// Wat moet er vandaag met deze batch gebeuren, en is hij klaar?
+function batchStatus(b) {
+  const day = daysBetween(b.startDate);
+  const ready = !b.done && day >= b.days;
+  const actions = FERMENT_ACTIONS[b.method] || FERMENT_ACTIONS[b.type] || [];
+  const due = [];
+  if (!b.done) for (const a of actions) {
+    if (a.everyDays && day > 0 && day % a.everyDays === 0) due.push(a.label);
+  }
+  return { day, ready, due };
+}
+
+function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog }) {
+  const [open, setOpen] = useState(false);
+  const { day, ready, due } = batchStatus(b);
+  const tgt = FERMENT_TARGETS[b.method] || FERMENT_TARGETS[b.type];
+  const lastPh = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.ph != null) : null;
+  const lastBrix = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.brix != null) : null;
+  return (
+    <div className="card p-3 flex flex-col">
+      <div className="flex items-start justify-between gap-1.5">
+        <div className="min-w-0">
+          <div className="serif ink text-base leading-tight truncate">{b.product}</div>
+          <div className="text-[11px] mute mt-0.5 truncate">{b.method || b.type}</div>
+        </div>
+        {b.done
+          ? <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
+          : ready
+            ? <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#dfead6", color: "#3a4b30" }}>Dag {day}/{b.days} ✓</span>
+            : <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5 pillon">Dag {day}/{b.days}</span>}
       </div>
-      {b.notes && <p className="text-xs mute mt-2 italic">{b.notes}</p>}
-      {canEdit && (
-        <div className="flex items-center gap-4 mt-3">
-          <button onClick={() => onToggleDone(b.id)} className="text-xs font-medium acc hover:opacity-70">{b.done ? "Heropen batch" : "Markeer als afgerond"}</button>
-          <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-1 text-xs font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /> Verwijder batch</button>
+      {!b.done && due.length > 0 && (
+        <div className="mt-1.5 text-[11px] font-medium rounded-md px-2 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>{due[0]}</div>
+      )}
+      <div className="mt-2 space-y-0.5 text-[11px] mute">
+        {tgt && tgt.phEnd != null && <div className="inline-flex items-center gap-1"><FlaskConical size={11} /> Doel pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · nu {String(lastPh.ph).replace(".", ",")}</span>}</div>}
+        {lastBrix != null && <div className="inline-flex items-center gap-1"><Percent size={11} /> Suiker {String(lastBrix.brix).replace(".", ",")}°Bx</div>}
+        {b.done && b.finishedDate && <div className="inline-flex items-center gap-1"><Check size={11} /> Afgerond {b.finishedDate}</div>}
+      </div>
+      <button onClick={() => setOpen((o) => !o)} className="ff mt-2 inline-flex items-center gap-1 text-[11px] font-medium acc self-start">{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{open ? "Minder" : "Details"}</button>
+      {open && (
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: T.line }}>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] mute">
+            <span className="inline-flex items-center gap-1"><Calendar size={11} /> Start {b.startDate}</span>
+            {b.finishedDate && <span className="inline-flex items-center gap-1"><Check size={11} /> Klaar {b.finishedDate}</span>}
+            <span className="inline-flex items-center gap-1"><Percent size={11} /> Zout {b.saltPct}%</span>
+            <span className="inline-flex items-center gap-1"><Thermometer size={11} /> {b.tempC}°C</span>
+            <span className="inline-flex items-center gap-1"><FlaskConical size={11} /> pH {b.pH ?? "—"}</span>
+            <span className="inline-flex items-center gap-1"><LineChart size={11} /> {(b.log || []).length} metingen</span>
+          </div>
+          {b.amount && b.amount !== "—" && <div className="text-[11px] mute mt-1">Hoeveelheid: {b.amount} · door {b.by}</div>}
+          {b.notes && <p className="text-[11px] mute mt-1 italic">{b.notes}</p>}
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5">
+              <button onClick={() => onOpenLog(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><LineChart size={12} /> Metingen / logboek</button>
+              <button onClick={() => onEdit(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerken</button>
+              <button onClick={() => onToggleDone(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><Check size={12} /> {b.done ? "Heropen" : "Afronden"}</button>
+              <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijder</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1704,7 +1869,12 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
   const startEdit = (p) => { setEditing(p ? p.name : "__new"); setFName(p ? p.name : ""); setFPairs(p ? p.pairs.join(", ") : ""); setFNote(p ? p.note : ""); if (p) setOpen(p.name); };
   const submit = () => { onSave(fName, fPairs.split(","), fNote); setEditing(null); };
   const isSeed = (name) => PAIRINGS.some((p) => p.name === name);
-  const shown = pairings.filter((p) => p.name.includes(q.toLowerCase()) || p.pairs.some((x) => x.includes(q.toLowerCase()))).sort((a, b) => a.name.localeCompare(b.name));
+  const [seasonF, setSeasonF] = useState("Alle");
+  const inSeason = (p) => { const ss = seasonOf(p.name); return ss.includes(seasonF) || ss.includes("Hele jaar"); };
+  const shown = pairings
+    .filter((p) => p.name.includes(q.toLowerCase()) || p.pairs.some((x) => x.includes(q.toLowerCase())))
+    .filter((p) => seasonF === "Alle" || inSeason(p))
+    .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div>
       <div className="card p-4 mt-4 mb-3">
@@ -1718,6 +1888,12 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
         <PairingForm title="Nieuw product" name={fName} setName={setFName} nameLocked={false} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} onSubmit={submit} onCancel={() => setEditing(null)} />
       )}
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een product of smaak" />
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+        {["Alle", ...SEASONS].map((sx) => (
+          <button key={sx} onClick={() => setSeasonF(sx)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === sx ? "pillon" : "pill")}>{sx}</button>
+        ))}
+      </div>
+      <div className="text-right text-xs mute mb-2">{shown.length} producten</div>
       <div className="space-y-2">
         {shown.map((p) => (
           <div key={p.name} className="card overflow-hidden">
@@ -1765,11 +1941,165 @@ function PairingForm({ title, name, setName, nameLocked, pairs, setPairs, note, 
   );
 }
 
+// ---------- Technieken: vaste werkwijzes en tabellen ----------
+// Jam met 2:1 geleisuiker (500 g geleisuiker per kg schoon fruit).
+const JAM_ROWS = [
+  { fruit:"Kweepeer", pectine:"zeer hoog", suiker:"500 g", pectineX:"—", zuur:"2 g" },
+  { fruit:"Appel", pectine:"hoog", suiker:"500 g", pectineX:"—", zuur:"2 g" },
+  { fruit:"Aalbes", pectine:"hoog", suiker:"500 g", pectineX:"—", zuur:"—" },
+  { fruit:"Kruisbes", pectine:"hoog", suiker:"500 g", pectineX:"—", zuur:"—" },
+  { fruit:"Mispel (rijp)", pectine:"middel", suiker:"500 g", pectineX:"2 g", zuur:"3 g" },
+  { fruit:"Pruim / reine claude", pectine:"middel", suiker:"500 g", pectineX:"—", zuur:"3 g" },
+  { fruit:"Druif", pectine:"middel", suiker:"500 g", pectineX:"3 g", zuur:"3 g" },
+  { fruit:"Braam", pectine:"middel", suiker:"500 g", pectineX:"3 g", zuur:"2 g" },
+  { fruit:"Framboos", pectine:"middel", suiker:"500 g", pectineX:"3 g", zuur:"2 g" },
+  { fruit:"Japanse wijnbes", pectine:"middel", suiker:"500 g", pectineX:"3 g", zuur:"2 g" },
+  { fruit:"Perzik / abrikoos", pectine:"laag–middel", suiker:"500 g", pectineX:"4 g", zuur:"4 g" },
+  { fruit:"Blauwe bes", pectine:"laag", suiker:"500 g", pectineX:"5 g", zuur:"4 g" },
+  { fruit:"Rabarber", pectine:"laag (zuur hoog)", suiker:"500 g", pectineX:"5 g", zuur:"—" },
+  { fruit:"Aardbei", pectine:"laag", suiker:"500 g", pectineX:"6 g", zuur:"4 g" },
+  { fruit:"Peer", pectine:"laag", suiker:"500 g", pectineX:"6 g", zuur:"5 g" },
+  { fruit:"Kers", pectine:"laag", suiker:"500 g", pectineX:"6 g", zuur:"5 g" },
+  { fruit:"Vijg", pectine:"laag", suiker:"500 g", pectineX:"6 g", zuur:"5 g" },
+];
+// Suikergehaltes voor gedraaid ijs en sorbet (percentage van het totale mengsel).
+const ICE_ROWS = [
+  { soort:"Roomijs (anglaise-basis)", suiker:"16–18%", glucose:"20–25%", extra:"vet 8–12% · droge stof 36–42%" },
+  { soort:"Melkijs / licht roomijs", suiker:"17–19%", glucose:"25%", extra:"vet 4–8%" },
+  { soort:"Yoghurt- of karnemelkijs", suiker:"18–20%", glucose:"20%", extra:"zuur vraagt meer suiker" },
+  { soort:"Sorbet zuur fruit (framboos, aalbes, rabarber)", suiker:"28–32%", glucose:"20–25%", extra:"stabilisator 0,3–0,5%" },
+  { soort:"Sorbet zoet fruit (peer, appel, perzik)", suiker:"26–28%", glucose:"20%", extra:"stabilisator 0,3–0,5%" },
+  { soort:"Groente- of kruidensorbet", suiker:"24–26%", glucose:"20%", extra:"proef op zoet/zuur-balans" },
+  { soort:"Granité", suiker:"18–22%", glucose:"—", extra:"niet draaien; vriezen en opschrapen" },
+  { soort:"Parfait / semifreddo", suiker:"20–22%", glucose:"—", extra:"wordt niet gedraaid; lucht uit eiwit/room" },
+];
+// Vochtverlies bij roosteren (200 °C, geolied, één laag, schoongemaakt product).
+const ROAST_ROWS = [
+  { groente:"Tomaat (halve, langzaam)", type:"nat", verlies:"55–65%", rendement:"40%", rauw:"2,5 kg" },
+  { groente:"Courgette", type:"nat", verlies:"50–60%", rendement:"45%", rauw:"2,2 kg" },
+  { groente:"Champignon / paddenstoel", type:"nat", verlies:"45–55%", rendement:"50%", rauw:"2,0 kg" },
+  { groente:"Aubergine", type:"nat", verlies:"45–55%", rendement:"50%", rauw:"2,0 kg" },
+  { groente:"Ui", type:"nat", verlies:"40–50%", rendement:"55%", rauw:"1,8 kg" },
+  { groente:"Prei", type:"nat", verlies:"40–50%", rendement:"55%", rauw:"1,8 kg" },
+  { groente:"Venkel", type:"nat", verlies:"35–45%", rendement:"60%", rauw:"1,7 kg" },
+  { groente:"Paprika", type:"nat", verlies:"35–45%", rendement:"60%", rauw:"1,7 kg" },
+  { groente:"Pompoen", type:"middel", verlies:"30–40%", rendement:"65%", rauw:"1,5 kg" },
+  { groente:"Bloemkool / broccoli", type:"middel", verlies:"25–35%", rendement:"70%", rauw:"1,4 kg" },
+  { groente:"Wortel", type:"hard", verlies:"25–35%", rendement:"70%", rauw:"1,4 kg" },
+  { groente:"Pastinaak", type:"hard", verlies:"25–35%", rendement:"70%", rauw:"1,4 kg" },
+  { groente:"Knolselderij", type:"hard", verlies:"25–30%", rendement:"72%", rauw:"1,4 kg" },
+  { groente:"Koolrabi", type:"hard", verlies:"25–30%", rendement:"72%", rauw:"1,4 kg" },
+  { groente:"Aardpeer", type:"hard", verlies:"20–30%", rendement:"75%", rauw:"1,3 kg" },
+  { groente:"Asperge", type:"hard", verlies:"20–30%", rendement:"75%", rauw:"1,3 kg" },
+  { groente:"Zoete aardappel", type:"hard", verlies:"25–30%", rendement:"72%", rauw:"1,4 kg" },
+  { groente:"Aardappel", type:"hard", verlies:"20–25%", rendement:"78%", rauw:"1,3 kg" },
+  { groente:"Rode biet (in folie)", type:"hard", verlies:"12–18%", rendement:"85%", rauw:"1,2 kg" },
+];
+
+function TechTable({ head, rows }) {
+  return (
+    <div className="overflow-x-auto -mx-1 px-1">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr>{head.map((h) => <th key={h} className="text-left font-semibold ink text-[11px] uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((cells, i) => (
+            <tr key={i} className={i > 0 ? "divi" : ""}>
+              {cells.map((c, j) => <td key={j} className={"py-2 pr-3 align-top " + (j === 0 ? "ink font-medium" : "mute")} style={{ whiteSpace: j === 0 ? "normal" : "nowrap" }}>{c}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TechCard({ title, intro, children, defaultOpen }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div className="card overflow-hidden">
+      <button onClick={() => setOpen((o) => !o)} className="ff w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left">
+        <span className="min-w-0">
+          <span className="serif ink text-lg block leading-tight">{title}</span>
+          <span className="text-xs mute block mt-0.5">{intro}</span>
+        </span>
+        {open ? <ChevronUp size={18} className="shrink-0" style={{ color: "#c4c2b2" }} /> : <ChevronDown size={18} className="shrink-0" style={{ color: "#c4c2b2" }} />}
+      </button>
+      {open && <div className="px-4 pb-4 -mt-1">{children}</div>}
+    </div>
+  );
+}
+
+function TechniquesList() {
+  const [q, setQ] = useState("");
+  const query = q.trim().toLowerCase();
+  const hit = (t) => !query || t.toLowerCase().includes(query);
+  const jam = JAM_ROWS.filter((r) => hit(r.fruit));
+  const ice = ICE_ROWS.filter((r) => hit(r.soort));
+  const roast = ROAST_ROWS.filter((r) => hit(r.groente) || hit(r.type));
+  return (
+    <div>
+      <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
+      <div className="space-y-2.5">
+        <TechCard title="Jam & confituur" intro="Met 2:1 geleisuiker — per kg schoongemaakt fruit" defaultOpen>
+          <TechTable head={["Fruit", "Pectine", "Geleisuiker 2:1", "Extra pectine", "Citroenzuur"]}
+            rows={jam.map((r) => [r.fruit, r.pectine, r.suiker, r.pectineX, r.zuur])} />
+          {jam.length === 0 && <p className="text-sm mute py-3">Geen fruitsoort gevonden.</p>}
+          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
+            <div className="font-semibold mb-1">Werkwijze</div>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Weeg het schoongemaakte fruit; reken 500 g geleisuiker 2:1 per kg.</li>
+              <li>Meng losse pectine eerst door een klein deel van de suiker — anders klontert het.</li>
+              <li>Breng fruit met suiker aan de kook en kook exact 4 minuten hard door.</li>
+              <li>Voeg citroenzuur pas op het eind toe; pectine geleert bij pH 2,8–3,4.</li>
+              <li>Koude-schoteltest: een druppel op een ijskoud bordje moet in 30 seconden rimpelen.</li>
+              <li>Vul af boven 85 °C, sluit direct en keer de potten 5 minuten om.</li>
+            </ol>
+          </div>
+        </TechCard>
+
+        <TechCard title="Roomijs & sorbet" intro="Suikergehaltes en glucoseverhouding">
+          <TechTable head={["Soort", "Totaal suiker", "Aandeel glucose", "Aandachtspunt"]}
+            rows={ice.map((r) => [r.soort, r.suiker, r.glucose, r.extra])} />
+          {ice.length === 0 && <p className="text-sm mute py-3">Niets gevonden.</p>}
+          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
+            <div className="font-semibold mb-1">Lezen als volgt</div>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Percentages zijn van het <span className="font-medium">totale mengsel</span>; meet na met een refractometer (°Bx).</li>
+              <li>Aandeel glucose is een deel <span className="font-medium">van het suikergewicht</span>: 28% suiker met 25% glucose = 210 g kristalsuiker + 70 g glucose per kg.</li>
+              <li>Glucosepoeder (DE 38–40) verlaagt de zoetkracht en houdt het ijs smeuïg. Ga niet boven ~25%, anders wordt het taai.</li>
+              <li>Te weinig suiker geeft een harde, scherpe textuur; te veel suiker laat het ijs niet opstijven.</li>
+              <li>Laat roomijsbasis 12 uur koud rijpen voor het draaien; draai af op −8 tot −10 °C.</li>
+            </ul>
+          </div>
+        </TechCard>
+
+        <TechCard title="Vochtverlies bij roosteren" intro="Hoeveel rauw product je nodig hebt">
+          <TechTable head={["Groente", "Type", "Vochtverlies", "Rendement", "Rauw voor 1 kg"]}
+            rows={roast.map((r) => [r.groente, r.type, r.verlies, r.rendement, r.rauw])} />
+          {roast.length === 0 && <p className="text-sm mute py-3">Geen groente gevonden.</p>}
+          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
+            <div className="font-semibold mb-1">Zo gebruik je de tabel</div>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Gemeten bij 200 °C, licht geolied, in één laag, op schoongemaakt product.</li>
+              <li>Natte groenten (tomaat, courgette, paddenstoel) verliezen ruwweg de helft; harde knollen een kwart.</li>
+              <li>Dunner snijden of heter roosteren betekent meer verlies — reken bij twijfel de bovenkant van de marge.</li>
+              <li>Voorbeeld: 4 kg geroosterde courgette voor het weekend? Bestel 4 × 2,2 = ruim 8,5 kg rauw.</li>
+              <li>Weeg een keer per seizoen na en pas de waarde aan; jonge tuingroente bevat meer vocht.</li>
+            </ul>
+          </div>
+        </TechCard>
+      </div>
+    </div>
+  );
+}
+
 function BackBar({ onBack, onEdit }) {
   return (
-    <div className="flex items-center justify-between pt-4 pb-2">
-      <button onClick={onBack} className="ff inline-flex items-center gap-1 text-sm mute hover:opacity-70"><ArrowLeft size={16} /> Terug</button>
-      {onEdit && <button onClick={onEdit} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Pencil size={15} /> Bewerken</button>}
+    <div className="flex items-center justify-between pt-3 pb-2">
+      <button onClick={onBack} className="ff inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
+      {onEdit && <button onClick={onEdit} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Pencil size={15} /> Bewerken</button>}
     </div>
   );
 }
@@ -1795,7 +2125,6 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
           <button key={id} onClick={() => onOpenRecipe(id)} className="card cardh ff w-full text-left p-3.5 flex items-center gap-3">
             <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Layers size={15} /></span>
             <div className="flex-1 min-w-0"><div className="font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.category}</div></div>
-            {r.chefsPick && <Star size={14} className="acc shrink-0" fill="currentColor" />}
             <ChevronRight size={16} style={{ color: "#c4c2b2" }} />
           </button>
         ); })}
@@ -1805,11 +2134,12 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
   );
 }
 
-function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variations, onBack, onEdit, onEndorse, onChefsPick, onOpenRecipe, onStartBatch, onDelete }) {
+function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onDelete }) {
   const [factor, setFactor] = useState(1);
   if (!recipe) return null;
   const endorsed = recipe.endorsements.includes(user.name);
-  const factors = [0.5, 1, 2, 3];
+  const fmt = (f) => { const r = Math.round(f * 100) / 100; return String(r).replace(".", ","); };
+  const critical = criticalValues(recipe);
   return (
     <div>
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} />
@@ -1826,21 +2156,30 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variation
 
       {baseRecipe && <button onClick={() => onOpenRecipe(baseRecipe.id)} className="ff mt-3 inline-flex items-center gap-1.5 text-sm acc hover:opacity-70"><GitBranch size={14} /> Variatie op {recipe.baseName} — bekijk de basis</button>}
 
+      {critical.length > 0 && (
+        <div className="mt-4 rounded-xl p-3.5 text-sm" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+          <div className="font-semibold flex items-center gap-1.5 mb-1"><Info size={14} /> Let op de kritische waarden</div>
+          <ul className="list-disc list-inside space-y-0.5">{critical.map((c, i) => <li key={i}>{c}</li>)}</ul>
+        </div>
+      )}
+
       {canEdit && (
         <div className="flex flex-wrap items-center gap-2 mt-4">
-          <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><ThumbsUp size={15} /> {endorsed ? "Onderschreven" : "Onderschrijf"} · {recipe.endorsements.length}</button>
-          <button onClick={() => onChefsPick(recipe.id)} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={recipe.chefsPick ? { background: "#eef1e7", borderColor: "#3a4b30" } : undefined}><Star size={15} className={recipe.chefsPick ? "acc" : ""} fill={recipe.chefsPick ? "currentColor" : "none"} /> Kok's keuze</button>
+          <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
           {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
           <button onClick={() => onDelete(recipe.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
         </div>
       )}
-      <div className="text-xs mute mt-2.5">Gebruikt in {usageCount} {usageCount === 1 ? "gerecht" : "gerechten"}{recipe.endorsements.length > 0 && <> · Onderschreven door {recipe.endorsements.join(", ")}</>}</div>
+      <div className="text-xs mute mt-2.5">Gebruikt in {usageCount} {usageCount === 1 ? "gerecht" : "gerechten"}{typeof openCount === "number" && openCount > 0 && <> · {openCount}× geopend</>}{recipe.endorsements.length > 0 && <> · geliket door {recipe.endorsements.join(", ")}</>}</div>
       <EditMeta by={recipe.updatedBy} at={recipe.updatedAt} />
 
       <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
-        <div className="flex items-center gap-1">
-          {factors.map((f) => <button key={f} onClick={() => setFactor(f)} className={"ff rounded-md px-2.5 py-1 text-xs font-semibold " + (factor === f ? "pillon" : "pill")}>×{String(f).replace(".", ",")}</button>)}
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setFactor((f) => Math.max(0.015625, f / 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Halveren">×½</button>
+          <button onClick={() => setFactor((f) => Math.min(64, f * 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Verdubbelen">×2</button>
+          <span className="pillon rounded-md px-2.5 h-8 flex items-center text-xs font-semibold">×{fmt(factor)}</span>
+          {factor !== 1 && <button onClick={() => setFactor(1)} className="ff mute text-xs underline">reset</button>}
         </div>
         {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
       </div>
@@ -1853,7 +2192,8 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variation
       {recipe.fermentDefaults && (
         <div className="mt-4 tintbox rounded-xl p-4 text-sm" style={{ color: "#3f5238" }}>
           <div className="font-semibold flex items-center gap-1.5 mb-1"><FlaskConical size={14} /> Fermentatie-richtlijn</div>
-          Zout {recipe.fermentDefaults.saltPct}% · ±{recipe.fermentDefaults.tempC}°C · ±{recipe.fermentDefaults.days} dagen. Meet de pH en proef onderweg.
+          Zout {recipe.fermentDefaults.saltPct}% · ±{recipe.fermentDefaults.tempC}°C · ±{recipe.fermentDefaults.days} dagen.
+          {recipe.fermentMethod && FERMENT_TARGETS[recipe.fermentMethod] && <> {FERMENT_TARGETS[recipe.fermentMethod].note}</>}
         </div>
       )}
 
@@ -1868,6 +2208,21 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, baseRecipe, variation
       )}
     </div>
   );
+}
+
+// Bepaalt welke waarden bij dit recept expliciet bewaakt moeten worden.
+function criticalValues(r) {
+  const out = [];
+  const cat = (r.category || "").toLowerCase();
+  const name = (r.name || "").toLowerCase();
+  if (r.ferment && r.fermentMethod === "Melkzuur") out.push("Zuurgraad: pH moet onder 3,5 zakken (voedselveilig). Meet met een pH-meter, niet op het oog.");
+  if (r.ferment && r.fermentMethod === "Azijnfermentatie") out.push("Zuurgraad: verzuurt tot pH ~2,5–3,0. Heeft zuurstof nodig — afdekken met doek, geen luchtdicht deksel.");
+  if (r.ferment && r.fermentMethod === "Suikerfermentatie") out.push("Suiker & druk: houd het suikergehalte en de bruis in de gaten; ontlucht flessen dagelijks.");
+  if (r.fermentDefaults && typeof r.fermentDefaults.saltPct === "number" && r.fermentDefaults.saltPct > 0) out.push("Zoutgehalte: weeg exact " + String(r.fermentDefaults.saltPct).replace(".", ",") + "% van het productgewicht af — bepaalt de veiligheid.");
+  if (!r.ferment && (cat.includes("pickle") || cat.includes("zuur")) ) out.push("Zuurgraad: gebruik voldoende azijn in de pekel voor houdbaarheid.");
+  if (!r.ferment && (cat.includes("jam") || cat.includes("compote") || name.includes("jam") || name.includes("confituur"))) out.push("Suiker & zuur: suiker- en citroenzuurverhouding bepalen de gelering en houdbaarheid — zie Technieken › Jam.");
+  if (cat.includes("sorbet") || cat.includes("ijs")) out.push("Suikergehalte: bepaalt de zachtheid/schepbaarheid — zie Technieken › Roomijs & sorbet.");
+  return out;
 }
 
 function SectionTitle({ children }) { return <h2 className="text-[11px] font-semibold uppercase tracking-widest acc mt-7 mb-2.5">{children}</h2>; }
@@ -1934,9 +2289,14 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
       {err && <p className="text-xs mb-3" style={{ color: "#a23b2c" }}>{err}</p>}
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Gefermenteerde rode biet" /></Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Fermentatie" /></Field>
+        <Field label="Categorie"><select className={inputCls} value={RECIPE_CATEGORIES.includes(category) ? category : (category ? "__custom" : "")} onChange={(e) => { if (e.target.value === "__custom") setCategory(category && !RECIPE_CATEGORIES.includes(category) ? category : "Zonder categorie"); else setCategory(e.target.value); }}>
+          <option value="" disabled>Kies een categorie…</option>
+          {RECIPE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          <option value="__custom">Anders…</option>
+        </select></Field>
         <Field label="Opbrengst"><input className={inputCls} value={yieldVal} onChange={(e) => setYieldVal(e.target.value)} placeholder="1 pot" /></Field>
       </div>
+      {category && !RECIPE_CATEGORIES.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
       <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = hele jaar)</span></div>
       <div className="flex flex-wrap gap-1.5 mb-4">
         {SEASONS.map((s) => (
@@ -1984,20 +2344,25 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
   );
 }
 
-function DishForm({ dish, allRecipes, recipeById, onCancel, onSave }) {
-  const [name, setName] = useState(dish?.name || "");
-  const [course, setCourse] = useState(dish?.course || "");
-  const [description, setDescription] = useState(dish?.description || "");
-  const [plating, setPlating] = useState(dish?.plating || "");
-  const [recipeIds, setRecipeIds] = useState(dish?.recipeIds || []);
-  const [seasons, setSeasons] = useState((dish?.season || []).filter((s) => s !== "Hele jaar"));
-  const [diet, setDiet] = useState(dish?.diet || "Vegetarisch");
+function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNewRecipe }) {
+  const init = draft || dish;
+  const [name, setName] = useState(init?.name || "");
+  const [course, setCourse] = useState(init?.course || "");
+  const [description, setDescription] = useState(init?.description || "");
+  const [plating, setPlating] = useState(init?.plating || "");
+  const [recipeIds, setRecipeIds] = useState(init?.recipeIds || []);
+  const [seasons, setSeasons] = useState((init?.season || []).filter((s) => s !== "Hele jaar"));
+  const [diet, setDiet] = useState(init?.diet || "Vegetarisch");
   const [pick, setPick] = useState("");
+  const [limit, setLimit] = useState(40);
   const toggle = (id) => setRecipeIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   const toggleSeason = (s) => setSeasons((a) => (a.includes(s) ? a.filter((x) => x !== s) : [...a, s]));
   const suggestCourse = (g) => setCourse(seasons.length === 1 ? seasons[0] + g.toLowerCase() : g);
-  const matches = (pick.trim() ? allRecipes.filter((r) => r.name.toLowerCase().includes(pick.toLowerCase())) : allRecipes).slice(0, 40);
-  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim(), recipeIds, season: SEASONS.filter((s) => seasons.includes(s)), diet }); };
+  const q = pick.trim().toLowerCase();
+  const found = q ? allRecipes.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q)) : allRecipes;
+  const matches = found.slice(0, limit);
+  const currentState = () => ({ name, course, description, plating, recipeIds, season: SEASONS.filter((s) => seasons.includes(s)), diet });
+  const submit = () => { if (!name.trim()) return; onSave({ ...currentState(), name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim() }); };
   return (
     <div>
       <FormBar title={dish ? "Gerecht bewerken" : "Nieuw gerecht"} onCancel={onCancel} onSave={submit} />
@@ -2010,7 +2375,7 @@ function DishForm({ dish, allRecipes, recipeById, onCancel, onSave }) {
       </div>
       <Field label="Gang"><input className={inputCls} value={course} onChange={(e) => setCourse(e.target.value)} placeholder="Herfstvoorgerecht" /></Field>
       <div className="flex flex-wrap gap-1.5 -mt-2 mb-4">
-        {["Voorgerecht","Tussengerecht","Hoofdgerecht","Dessert"].map((g) => (
+        {DISH_COURSES.map((g) => (
           <button key={g} type="button" onClick={() => suggestCourse(g)} className="ff pill rounded-full px-2.5 py-1 text-xs font-medium">{g}</button>
         ))}
       </div>
@@ -2018,65 +2383,139 @@ function DishForm({ dish, allRecipes, recipeById, onCancel, onSave }) {
       <Field label="Omschrijving"><textarea rows={2} className={inputCls + " resize-none"} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Korte regel over het gerecht" /></Field>
       <div className="text-sm font-medium ink mb-1.5 mt-1">Recepten in dit gerecht <span className="mute font-normal">({recipeIds.length})</span></div>
       {recipeIds.length > 0 && <div className="flex flex-wrap gap-1.5 mb-2">{recipeIds.map((id, i) => { const r = recipeById(id); if (!r) return null; return <span key={id} className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2 py-1" style={{ background: "#e8ebe0", color: T.green }}>#{i + 1} {r.name}<button onClick={() => toggle(id)}><X size={12} /></button></span>; })}</div>}
-      <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een recept om toe te voegen" className={inputCls + " pl-9"} /></div>
-      <div className="card overflow-auto mb-5 max-h-72">
+      <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => { setPick(e.target.value); setLimit(40); }} placeholder="Zoek een recept om toe te voegen" className={inputCls + " pl-9"} /></div>
+      {onNewRecipe && (
+        <button type="button" onClick={() => onNewRecipe(currentState())} className="btno ff mb-2 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Plus size={15} /> Nieuw recept maken en toevoegen</button>
+      )}
+      <div className="text-xs mute mb-1.5">{found.length} {found.length === 1 ? "recept" : "recepten"} beschikbaar</div>
+      <div className="card overflow-auto mb-2 max-h-72">
         {matches.map((r, i) => { const on = recipeIds.includes(r.id); return (
           <button key={r.id} onClick={() => toggle(r.id)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
             <span className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={on ? { background: T.green, color: T.paper } : { border: "1px solid #cfccbe" }}>{on && <Check size={13} />}</span>
             <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.category}</div></div>
           </button>); })}
+        {matches.length === 0 && <div className="px-4 py-6 text-center text-sm mute">Geen recept gevonden.</div>}
       </div>
+      {found.length > limit && <button type="button" onClick={() => setLimit((l) => l + 100)} className="ff w-full rounded-xl text-sm mute py-2.5 mb-5" style={{ border: "1px dashed #cfccbe" }}>Toon meer ({found.length - limit} resterend)</button>}
+      {found.length <= limit && <div className="mb-5" />}
       <Field label="Dressering"><textarea rows={3} className={inputCls + " resize-none"} value={plating} onChange={(e) => setPlating(e.target.value)} placeholder="Hoe het op het bord komt" /></Field>
     </div>
   );
 }
 
-function BatchForm({ prefill, fermentRecipes, onCancel, onSave }) {
+function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
+  const src = editing || prefill;
   const fd = prefill?.fermentDefaults;
-  const [product, setProduct] = useState(prefill ? prefill.name : "");
-  const [type, setType] = useState(prefill?.fermentMethod || "Melkzuur");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [days, setDays] = useState(fd ? String(fd.days) : "10");
-  const [saltPct, setSaltPct] = useState(fd ? String(fd.saltPct) : "2.5");
-  const [tempC, setTempC] = useState(fd ? String(fd.tempC) : "20");
-  const [amount, setAmount] = useState("");
-  const [pH, setPH] = useState("");
-  const [notes, setNotes] = useState("");
+  const [product, setProduct] = useState(editing ? editing.product : (prefill ? prefill.name : ""));
+  const [type, setType] = useState(editing ? (editing.method || editing.type) : (prefill?.fermentMethod || "Melkzuur"));
+  const [recipeId, setRecipeId] = useState(editing ? (editing.recipeId || null) : (prefill?.id || null));
+  const [startDate, setStartDate] = useState(editing ? editing.startDate : new Date().toISOString().slice(0, 10));
+  const [days, setDays] = useState(editing ? String(editing.days) : (fd ? String(fd.days) : "10"));
+  const [saltPct, setSaltPct] = useState(editing ? String(editing.saltPct) : (fd ? String(fd.saltPct) : "2.5"));
+  const [tempC, setTempC] = useState(editing ? String(editing.tempC) : (fd ? String(fd.tempC) : "20"));
+  const [amount, setAmount] = useState(editing ? (editing.amount === "—" ? "" : editing.amount) : "");
+  const [pH, setPH] = useState(editing && editing.pH != null ? String(editing.pH) : "");
+  const [notes, setNotes] = useState(editing ? editing.notes : "");
   const [pick, setPick] = useState("");
   const applyRecipe = (r) => {
-    setProduct(r.name);
+    setProduct(r.name); setRecipeId(r.id);
     if (r.fermentMethod) setType(r.fermentMethod);
     if (r.fermentDefaults) { setSaltPct(String(r.fermentDefaults.saltPct)); setTempC(String(r.fermentDefaults.tempC)); setDays(String(r.fermentDefaults.days)); }
     setPick("");
   };
   const pickMatches = pick.trim() ? (fermentRecipes || []).filter((r) => r.name.toLowerCase().includes(pick.trim().toLowerCase())).slice(0, 8) : [];
-  const submit = () => { if (!product.trim()) return; onSave({ product: product.trim(), type, startDate, days: Number(days) || 0, saltPct: Number(saltPct) || 0, tempC: Number(tempC) || 0, amount: amount.trim() || "—", pH: pH ? Number(pH) : null, notes: notes.trim(), done: false }); };
+  const isMethod = FERMENT_METHODS.includes(type);
+  const tgt = FERMENT_TARGETS[type];
+  const submit = () => { if (!product.trim()) return; onSave({ product: product.trim(), type, method: isMethod ? type : type, recipeId, startDate, days: Number(days) || 0, saltPct: Number(saltPct) || 0, tempC: Number(tempC) || 0, amount: amount.trim() || "—", pH: pH ? Number(pH) : null, notes: notes.trim(), done: editing ? editing.done : false }); };
   return (
     <div>
-      <FormBar title="Nieuwe batch" onCancel={onCancel} onSave={submit} saveLabel="Registreer" />
-      <div className="text-sm font-medium ink mb-1.5">Kies een fermentatierecept <span className="mute font-normal">(vult naam, methode en richtlijn in)</span></div>
-      <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een fermentatierecept" className={inputCls + " pl-9"} /></div>
-      {pickMatches.length > 0 && (
-        <div className="card overflow-hidden mb-4">
-          {pickMatches.map((r, i) => (
-            <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
-              <FlaskConical size={15} className="acc shrink-0" />
-              <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.fermentMethod || r.category}{r.fermentDefaults ? " · " + r.fermentDefaults.saltPct + "% · " + r.fermentDefaults.days + " dgn" : ""}</div></div>
-            </button>
-          ))}
-        </div>
-      )}
+      <FormBar title={editing ? "Batch bewerken" : "Nieuwe batch"} onCancel={onCancel} onSave={submit} saveLabel={editing ? "Opslaan" : "Registreer"} />
+      {!editing && <>
+        <div className="text-sm font-medium ink mb-1.5">Kies een fermentatierecept <span className="mute font-normal">(vult naam, methode en richtlijn in)</span></div>
+        <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een fermentatierecept" className={inputCls + " pl-9"} /></div>
+        {pickMatches.length > 0 && (
+          <div className="card overflow-hidden mb-4">
+            {pickMatches.map((r, i) => (
+              <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
+                <FlaskConical size={15} className="acc shrink-0" />
+                <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.fermentMethod || r.category}{r.fermentDefaults ? " · " + r.fermentDefaults.saltPct + "% · " + r.fermentDefaults.days + " dgn" : ""}</div></div>
+              </button>
+            ))}
+          </div>
+        )}
+      </>}
       <Field label="Product / recept"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Zuurkool van rode kool" /></Field>
-      <Field label="Type"><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}>{["Melkzuur","Zuurkool","Kimchi","Hotsauce","Kappertjes","Suikerfermentatie","Kombucha","Waterkefir","Gemberbier","Wilde drank","Landwijn / cider","Azijnfermentatie","Zuivel","Zoutpruimen","Anders"].map((t) => <option key={t}>{t}</option>)}</select></Field>
+      <Field label="Type / methode"><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}>{["Melkzuur","Suikerfermentatie","Azijnfermentatie","Zuurkool","Kimchi","Hotsauce","Kappertjes","Kombucha","Waterkefir","Gemberbier","Wilde drank","Landwijn / cider","Zuivel","Zoutpruimen","Anders"].map((t) => <option key={t}>{t}</option>)}</select></Field>
+      {tgt && <p className="text-xs mute -mt-2 mb-4">{tgt.note}</p>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Startdatum"><input type="date" className={inputCls} value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
         <Field label="Duur (dagen)"><input type="number" className={inputCls} value={days} onChange={(e) => setDays(e.target.value)} /></Field>
         <Field label="Zoutgehalte (%)"><input type="number" step="0.1" className={inputCls} value={saltPct} onChange={(e) => setSaltPct(e.target.value)} /></Field>
         <Field label="Temperatuur (°C)"><input type="number" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value)} /></Field>
         <Field label="Hoeveelheid"><input className={inputCls} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="bv. 3 kg" /></Field>
-        <Field label="pH (optioneel)"><input type="number" step="0.1" className={inputCls} value={pH} onChange={(e) => setPH(e.target.value)} placeholder="bv. 3,6" /></Field>
+        <Field label="Start-pH (optioneel)"><input type="number" step="0.1" className={inputCls} value={pH} onChange={(e) => setPH(e.target.value)} placeholder="bv. 6,0" /></Field>
       </div>
       <Field label="Notities"><textarea rows={2} className={inputCls + " resize-none"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Waarnemingen, proefnotities…" /></Field>
+      <p className="text-xs mute -mt-2">Metingen (pH, suiker) over de dagen leg je vast in het logboek, na het opslaan van de batch.</p>
+    </div>
+  );
+}
+
+function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [ph, setPh] = useState("");
+  const [brix, setBrix] = useState("");
+  const [tempC, setTempC] = useState("");
+  const [note, setNote] = useState("");
+  if (!batch) return null;
+  const tgt = FERMENT_TARGETS[batch.method] || FERMENT_TARGETS[batch.type];
+  const rows = [...(batch.log || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const submit = () => { if (!date) return; onAdd(batch.id, { date, ph, brix, tempC, note }); setPh(""); setBrix(""); setTempC(""); setNote(""); };
+  return (
+    <div>
+      <BackBar onBack={onBack} />
+      <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1">Fermentatie-logboek</div>
+      <h1 className="serif ink text-2xl leading-tight">{batch.product}</h1>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs mute">
+        <span className="inline-flex items-center gap-1"><Calendar size={12} /> Start {batch.startDate}</span>
+        {batch.finishedDate && <span className="inline-flex items-center gap-1"><Check size={12} /> Afgerond {batch.finishedDate}</span>}
+        <span className="inline-flex items-center gap-1"><FlaskConical size={12} /> {batch.method || batch.type}</span>
+        {tgt && tgt.phEnd != null && <span className="inline-flex items-center gap-1">Doel pH ≤ {String(tgt.phEnd).replace(".", ",")}</span>}
+      </div>
+      <p className="text-xs mute mt-2">Leg pH en suikergehalte over de dagen vast. Dit logboek toont het verloop en dient als bewijs voor de Keuringsdienst van Waren.</p>
+
+      {canEdit && (
+        <div className="card p-4 mt-4">
+          <div className="text-sm font-medium ink mb-3">Nieuwe meting</div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Datum"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+            <Field label="pH"><input type="number" step="0.01" className={inputCls} value={ph} onChange={(e) => setPh(e.target.value)} placeholder="bv. 3,8" /></Field>
+            <Field label="Suiker (°Brix)"><input type="number" step="0.1" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value)} placeholder="optioneel" /></Field>
+            <Field label="Temp (°C)"><input type="number" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value)} placeholder="optioneel" /></Field>
+          </div>
+          <Field label="Notitie"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. geproefd, mooi zuur" /></Field>
+          <button onClick={submit} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-4 py-2.5"><Plus size={15} /> Meting toevoegen</button>
+        </div>
+      )}
+
+      <SectionTitle>Metingen ({rows.length})</SectionTitle>
+      {rows.length === 0 ? <Empty label="Nog geen metingen vastgelegd." /> : (
+        <div className="card overflow-hidden">
+          <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-x-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide acc" style={{ borderBottom: "1px solid " + T.line }}>
+            <span>Datum</span><span>pH</span><span>°Bx</span><span>°C</span><span></span>
+          </div>
+          {rows.map((r, i) => (
+            <div key={i} className={"grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-x-3 items-center px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}>
+              <span className="mute text-xs">{r.date}</span>
+              <span className="ink font-medium">{r.ph != null ? String(r.ph).replace(".", ",") : "—"}</span>
+              <span className="mute">{r.brix != null ? String(r.brix).replace(".", ",") : "—"}</span>
+              <span className="mute">{r.tempC != null ? r.tempC : "—"}</span>
+              {canEdit ? <button onClick={() => onDeleteRow(batch.id, batch.log.indexOf(r))} className="justify-self-end hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /></button> : <span />}
+              {r.note && <span className="col-span-5 text-xs mute italic mt-0.5">{r.note}{r.by ? " · " + r.by : ""}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
