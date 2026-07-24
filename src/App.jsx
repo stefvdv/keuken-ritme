@@ -1138,6 +1138,7 @@ function BrandCSS() {
   return (
     <style>{`
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap');
+html{font-size:17px}
 .serif{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif}
 .ink{color:#2b3823}.mute{color:#6f7263}.acc{color:#3a4b30}
 .ff:focus{outline:none}
@@ -1150,7 +1151,7 @@ function BrandCSS() {
 .pillon{background:#3a4b30;color:#f4f2ea}
 .chip{background:#eceadf;color:#5b5e4f}
 .tintbox{background:#eef1e7;border:1px solid #e0e5d6}
-.input{width:100%;border:1px solid #d8d5c8;background:#fff;border-radius:10px;font-size:14px;color:#33352c}
+.input{width:100%;border:1px solid #d8d5c8;background:#fff;border-radius:10px;font-size:15px;color:#33352c}
 .input:focus{outline:none;box-shadow:0 0 0 2px #3a4b30;border-color:#3a4b30}
 .divi{border-top:1px solid #ece9dd}
 ::selection{background:#dfe4d3}
@@ -1639,9 +1640,9 @@ export default function App() {
 function Wordmark({ size = "small", onHome }) {
   if (size === "large") return (
     <div className="text-center">
-      <div className="text-[11px] font-semibold tracking-widest uppercase acc mb-3">Wilde Wortels · Landgoed de Beug</div>
+      <div className="text-[12.5px] font-semibold tracking-widest uppercase acc mb-3">Wilde Wortels · Landgoed de Beug</div>
       <h1 className="serif ink text-4xl leading-tight">In het ritme<br />van het land</h1>
-      <div className="flex items-center justify-center gap-3 mt-3 mute text-[11px] tracking-widest uppercase">
+      <div className="flex items-center justify-center gap-3 mt-3 mute text-[12.5px] tracking-widest uppercase">
         <span className="h-px w-6" style={{ background: "#c7c8b6" }} /> Odijk · sinds 1554 <span className="h-px w-6" style={{ background: "#c7c8b6" }} />
       </div>
     </div>
@@ -1690,7 +1691,7 @@ function Login({ onPick, live }) {
 
         {!chosen && (
           <>
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest uppercase acc mb-3"><Lock size={13} /> Kies je naam</div>
+            <div className="flex items-center gap-1.5 text-[12.5px] font-semibold tracking-widest uppercase acc mb-3"><Lock size={13} /> Kies je naam</div>
             <div className="space-y-2">
               {TEAM.map((m) => (
                 <button key={m.name} onClick={() => pickCook(m)} className="card cardh ff w-full flex items-center gap-3 px-3 py-3 text-left">
@@ -1846,7 +1847,7 @@ function DishList({ dishes, search, setSearch, onOpen }) {
         {shown.map((d) => (
           <button key={d.id} onClick={() => onOpen(d.id)} className="card cardh ff w-full text-left p-4 flex items-start gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1">{d.course}</div>
+              <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">{d.course}</div>
               <div className="serif ink text-xl leading-tight">{d.name}</div>
               <div className="text-sm mute mt-1 line-clamp-2">{d.description}</div>
               <div className="mt-2.5 flex items-center gap-2 flex-wrap text-xs mute">
@@ -1906,11 +1907,11 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
-                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
-                {r.ferment && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>}
+                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
+                {r.ferment && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[12.5px]">
                 {r.garden && <span className="inline-flex items-center gap-1 acc"><Sprout size={12} /> tuin</span>}
                 {r.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
                 {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
@@ -1929,9 +1930,9 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
 
 function SeasonPill({ s }) {
   const st = seasonStyle[s] || { background: "#eceadf", color: "#5b5e4f" };
-  return <span className="inline-flex items-center rounded-full text-[10px] font-medium px-1.5 py-0.5" style={st}>{s}</span>;
+  return <span className="inline-flex items-center rounded-full text-[11.5px] font-medium px-1.5 py-0.5" style={st}>{s}</span>;
 }
-function MeatPill({ diet }) { return <span className="inline-flex items-center rounded-full text-[10px] font-medium px-1.5 py-0.5" style={{ background: "#ecdcd6", color: "#8a4a3a" }}>{diet}</span>; }
+function MeatPill({ diet }) { return <span className="inline-flex items-center rounded-full text-[11.5px] font-medium px-1.5 py-0.5" style={{ background: "#ecdcd6", color: "#8a4a3a" }}>{diet}</span>; }
 
 const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
 
@@ -1995,11 +1996,11 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
-                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
-                {r.fermentMethod && <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> {r.fermentMethod}</span>}
+                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
+                {r.fermentMethod && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> {r.fermentMethod}</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[12.5px]">
                 {r.season.filter((sx) => sx !== "Hele jaar").map((sx) => <SeasonPill key={sx} s={sx} />)}
                 {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
               </div>
@@ -2039,14 +2040,14 @@ function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
               <li key={b.id} className="flex items-start gap-1.5">
                 <Check size={14} className="shrink-0 mt-0.5" />
                 <span className="flex-1"><span className="font-medium">{b.product}</span> is klaar — dag {day}/{b.days}</span>
-                {canAck && <button onClick={() => onAck(b.id, READY_KEY)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#e6dcc2" }} title="Gezien — verberg tot morgen">Afvinken</button>}
+                {canAck && <button onClick={() => onAck(b.id, READY_KEY)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Gezien — verberg tot morgen">Afvinken</button>}
               </li>
             ))}
             {due.map(({ b, label }) => (
               <li key={b.id + label} className="flex items-start gap-1.5">
                 <FlaskConical size={14} className="shrink-0 mt-0.5" />
                 <span className="flex-1"><span className="font-medium">{b.product}</span>: {label.toLowerCase()}</span>
-                {canAck && <button onClick={() => onAck(b.id, label)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#e6dcc2" }} title="Gedaan — verberg tot de volgende beurt">Afvinken</button>}
+                {canAck && <button onClick={() => onAck(b.id, label)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Gedaan — verberg tot de volgende beurt">Afvinken</button>}
               </li>
             ))}
           </ul>
@@ -2081,45 +2082,56 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
   const lastPh = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.ph != null) : null;
   const lastBrix = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.brix != null) : null;
   return (
-    <div className="card p-2.5 flex flex-col">
-      <div className="serif ink text-[15px] leading-tight break-words">{b.product}</div>
-      <div className="flex items-center gap-1 mt-1 flex-wrap">
+    <div className="card p-3 flex flex-col">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="serif ink text-[17px] leading-tight break-words min-w-0">{b.product}</span>
         {b.done
-          ? <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
+          ? <span className="shrink-0 text-[11.5px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
           : readyRaw
-            ? <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#dfead6", color: "#3a4b30" }}>Dag {day}/{b.days} ✓</span>
-            : <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5 pillon">Dag {day}/{b.days}</span>}
-        <span className="text-[10px] mute truncate">{b.method || b.type}</span>
+            ? <span className="shrink-0 text-[11.5px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#dfead6", color: "#3a4b30" }}>{day}/{b.days} ✓</span>
+            : <span className="shrink-0 text-[11.5px] font-semibold rounded-full px-1.5 py-0.5 pillon">{day}/{b.days}</span>}
       </div>
-      {!b.done && due.length > 0 && (
-        <div className="mt-1.5 flex items-start gap-1 text-[10px] font-medium leading-tight rounded-md px-1.5 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>
-          <span className="flex-1">{due[0]}</span>
-          {canEdit && onAck && <button onClick={() => onAck(b.id, due[0])} className="ff shrink-0 hover:opacity-70" title="Gedaan"><Check size={12} /></button>}
+      <div className="flex items-center justify-between gap-2 mt-1 text-[12.5px] mute">
+        <span className="truncate">{b.method || b.type}</span>
+        <span className="shrink-0">
+          {tgt && tgt.phEnd != null && <>pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · {String(lastPh.ph).replace(".", ",")}</span>}</>}
+          {lastBrix != null && <> · {String(lastBrix.brix).replace(".", ",")}°Bx</>}
+          {b.done && b.finishedDate && <>{b.finishedDate}</>}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-1.5">
+        <div className="min-w-0 flex-1">
+          {!b.done && due.length > 0 && (
+            <div className="flex items-center gap-1 text-[12px] font-medium leading-tight rounded-md px-1.5 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>
+              <span className="flex-1 truncate" title={due[0]}>{due[0]}</span>
+              {canEdit && onAck && <button onClick={() => onAck(b.id, due[0])} className="ff shrink-0 hover:opacity-70" title="Gedaan"><Check size={13} /></button>}
+            </div>
+          )}
+          {!b.done && due.length === 0 && acked.length > 0 && (
+            <span className="text-[12px] rounded-md px-1.5 py-0.5 inline-flex items-center gap-1" style={{ background: "#e8ebe0", color: T.green }}><Check size={12} /> Afgevinkt</span>
+          )}
         </div>
-      )}
-      {!b.done && due.length === 0 && acked.length > 0 && (
-        <div className="mt-1.5 text-[10px] rounded-md px-1.5 py-0.5 inline-flex items-center gap-1 self-start" style={{ background: "#e8ebe0", color: T.green }}><Check size={11} /> Afgevinkt</div>
-      )}
-      <div className="mt-1.5 space-y-0.5 text-[10px] mute leading-snug">
-        {tgt && tgt.phEnd != null && <div>pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · nu {String(lastPh.ph).replace(".", ",")}</span>}</div>}
-        {lastBrix != null && <div>Suiker {String(lastBrix.brix).replace(".", ",")}°Bx</div>}
-        {b.done && b.finishedDate && <div>Afgerond {b.finishedDate}</div>}
+        <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 inline-flex items-center gap-0.5 text-[12px] font-medium acc">{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{open ? "Minder" : "Details"}</button>
       </div>
-      <button onClick={() => setOpen((o) => !o)} className="ff mt-1.5 inline-flex items-center gap-0.5 text-[10px] font-medium acc self-start">{open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}{open ? "Minder" : "Details"}</button>
       {open && (
-        <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.line }}>
-          <div className="space-y-0.5 text-[10px] mute leading-snug">
-            <div>Start {b.startDate}{b.finishedDate ? " · klaar " + b.finishedDate : ""}</div>
-            <div>Zout {b.saltPct}% · {b.tempC}°C · pH {b.pH ?? "—"}</div>
-            <div>{(b.log || []).length} metingen{b.amount && b.amount !== "—" ? " · " + b.amount : ""} · {b.by}</div>
+        <div className="mt-1.5 pt-1.5 border-t text-[12px] mute leading-snug" style={{ borderColor: T.line }}>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>Start {b.startDate}</span>
+            {b.finishedDate && <span>Klaar {b.finishedDate}</span>}
+            <span>Zout {b.saltPct}%</span>
+            <span>{b.tempC}°C</span>
+            <span>pH {b.pH ?? "—"}</span>
+            <span>{(b.log || []).length} metingen</span>
+            {b.amount && b.amount !== "—" && <span>{b.amount}</span>}
+            <span>door {b.by}</span>
           </div>
-          {b.notes && <p className="text-[10px] mute mt-1 italic leading-snug">{b.notes}</p>}
+          {b.notes && <p className="mt-1 italic">{b.notes}</p>}
           {canEdit && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
-              <button onClick={() => onOpenLog(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium acc hover:opacity-70"><LineChart size={11} /> Logboek</button>
-              <button onClick={() => onEdit(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium acc hover:opacity-70"><Pencil size={11} /> Bewerk</button>
-              <button onClick={() => onToggleDone(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium acc hover:opacity-70"><Check size={11} /> {b.done ? "Heropen" : "Afronden"}</button>
-              <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={11} /> Wis</button>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+              <button onClick={() => onOpenLog(b.id)} className="inline-flex items-center gap-1 font-medium acc hover:opacity-70"><LineChart size={12} /> Logboek</button>
+              <button onClick={() => onEdit(b.id)} className="inline-flex items-center gap-1 font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerk</button>
+              <button onClick={() => onToggleDone(b.id)} className="inline-flex items-center gap-1 font-medium acc hover:opacity-70"><Check size={12} /> {b.done ? "Heropen" : "Afronden"}</button>
+              <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-1 font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Wis</button>
             </div>
           )}
         </div>
@@ -2304,7 +2316,7 @@ function TechTable({ head, rows }) {
     <div className="overflow-x-auto -mx-1 px-1">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr>{head.map((h) => <th key={h} className="text-left font-semibold ink text-[11px] uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>)}</tr>
+          <tr>{head.map((h) => <th key={h} className="text-left font-semibold ink text-[12.5px] uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((cells, i) => (
@@ -2343,12 +2355,12 @@ function TechNotes({ notes, canEdit, onSave, label }) {
     <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="font-semibold">{label}</div>
-        {canEdit && !editing && <button onClick={start} className="ff inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-70"><Pencil size={11} /> Aanpassen</button>}
+        {canEdit && !editing && <button onClick={start} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium hover:opacity-70"><Pencil size={11} /> Aanpassen</button>}
       </div>
       {editing ? (
         <>
           <textarea rows={Math.max(4, text.split("\n").length + 1)} className={inputCls + " resize-none text-sm"} value={text} onChange={(e) => setText(e.target.value)} placeholder="Eén regel per stap" />
-          <p className="text-[11px] mt-1 opacity-70">Eén regel per stap. Regels die je leeg laat, vervallen.</p>
+          <p className="text-[12.5px] mt-1 opacity-70">Eén regel per stap. Regels die je leeg laat, vervallen.</p>
           <div className="flex items-center gap-2 mt-2">
             <button onClick={save} className="btnp ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><Check size={13} /> Opslaan</button>
             <button onClick={() => setEditing(false)} className="btno ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><X size={13} /> Annuleren</button>
@@ -2411,7 +2423,11 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
   const searching = q.trim().length > 0;
 
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
-  const dueToday = withStatus.filter((x) => x.st.due).sort((a, b) => (b.st.overdue ? 1 : 0) - (a.st.overdue ? 1 : 0) || CLEANING_AREAS.indexOf(a.t.area) - CLEANING_AREAS.indexOf(b.t.area) || a.t.intervalDays - b.t.intervalDays);
+  const dueToday = withStatus.filter((x) => x.st.due).sort((a, b) =>
+    a.t.intervalDays - b.t.intervalDays
+    || CLEANING_AREAS.indexOf(a.t.area) - CLEANING_AREAS.indexOf(b.t.area)
+    || (b.st.overdue ? 1 : 0) - (a.st.overdue ? 1 : 0)
+    || a.t.name.localeCompare(b.t.name));
   let all = withStatus;
   if (areaF !== "Alle") all = all.filter((x) => x.t.area === areaF);
   if (searching) all = all.filter((x) => softMatchAny([x.t.name, x.t.area, intervalLabel(x.t.intervalDays)], q));
@@ -2445,7 +2461,7 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
               <div key={x.t.id} className={"flex items-center gap-3 px-4 py-3 " + (i > 0 ? "divi" : "")}>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium ink truncate">{x.t.name}</div>
-                  <div className="text-[11px] mute mt-0.5">
+                  <div className="text-[12.5px] mute mt-0.5">
                     {x.t.area} · {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min
                     {x.st.overdue && <span className="ml-1.5 font-semibold" style={{ color: "#8a4a3a" }}>{x.st.since - x.t.intervalDays} dag(en) over tijd</span>}
                     {!x.st.last && <span className="ml-1.5 mute">nog nooit afgetekend</span>}
@@ -2453,7 +2469,7 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
                 </div>
                 {canEdit
                   ? <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title={"Aftekenen als " + user.name}><Check size={14} /> {user.name}</button>
-                  : <span className="text-[11px] mute shrink-0">te doen</span>}
+                  : <span className="text-[12.5px] mute shrink-0">te doen</span>}
               </div>
             ))}
           </div>}
@@ -2473,13 +2489,13 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
           <div className="space-y-3">
             {grouped.map((g) => (
               <div key={g.area}>
-                <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1.5">{g.area} <span className="mute font-normal normal-case tracking-normal">· {g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span></div>
+                <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">{g.area} <span className="mute font-normal normal-case tracking-normal">· {g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span></div>
                 <div className="card overflow-hidden">
                   {g.items.map((x, i) => (
                     <div key={x.t.id} className={"flex items-center gap-2 px-3.5 py-2.5 " + (i > 0 ? "divi" : "")}>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium ink truncate">{x.t.name}</div>
-                        <div className="text-[11px] mute mt-0.5 truncate">
+                        <div className="text-[12.5px] mute mt-0.5 truncate">
                           {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min ·{" "}
                           {x.st.last ? <>laatst {x.st.since === 0 ? "vandaag" : x.st.since === 1 ? "gisteren" : x.st.since + " dagen geleden"} door {x.st.last.doneBy}</> : "nog nooit afgetekend"}
                         </div>
@@ -2503,7 +2519,7 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
         <Eyebrow>Logboek per week</Eyebrow>
         <div className="flex items-center gap-1.5 mb-2">
           <button onClick={() => setWeekOffset((w) => w - 1)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Vorige week"><ArrowLeft size={13} /></button>
-          <span className="pillon rounded-md px-2 h-7 flex items-center text-[11px] font-semibold">{wk.replace("-W", " · week ")}</span>
+          <span className="pillon rounded-md px-2 h-7 flex items-center text-[12.5px] font-semibold">{wk.replace("-W", " · week ")}</span>
           <button onClick={() => setWeekOffset((w) => Math.min(0, w + 1))} disabled={weekOffset >= 0} className="ff pill rounded-md w-7 h-7 flex items-center justify-center disabled:opacity-40" title="Volgende week"><ChevronRight size={13} /></button>
         </div>
       </div>
@@ -2515,17 +2531,17 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
               <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Check size={15} /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium ink">{taskName(l.taskId)}</div>
-                <div className="text-[11px] mute mt-0.5">{l.doneDate} · afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
+                <div className="text-[12.5px] mute mt-0.5">{l.doneDate} · afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
                 {l.note && <p className="text-xs mt-1.5 italic" style={{ color: "#3b3d33" }}>{l.note}</p>}
                 {(l.edits || []).length > 0 && (
-                  <div className="mt-1.5 text-[11px] mute space-y-0.5">
+                  <div className="mt-1.5 text-[12.5px] mute space-y-0.5">
                     {l.edits.map((e, i) => (
                       <div key={i} className="flex gap-1"><Pencil size={10} className="shrink-0 mt-0.5" /><span>{e.at} — {e.by} wijzigde de opmerking{e.from ? <> van “{e.from}”</> : <> (was leeg)</>} naar “{e.to}”</span></div>
                     ))}
                   </div>
                 )}
                 {canEdit && noteFor !== l.id && (
-                  <button onClick={() => startNote(l)} className="ff mt-2 inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><Pencil size={11} /> {l.note ? "Opmerking aanpassen" : "Opmerking toevoegen"}</button>
+                  <button onClick={() => startNote(l)} className="ff mt-2 inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={11} /> {l.note ? "Opmerking aanpassen" : "Opmerking toevoegen"}</button>
                 )}
                 {canEdit && noteFor === l.id && (
                   <div className="mt-2">
@@ -2596,7 +2612,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onClose, onOpe
                 <div key={x.t.id} className={"flex items-center gap-2 px-3 py-2.5 " + (i > 0 ? "divi" : "")}>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm ink truncate">{x.t.name}</div>
-                    <div className="text-[11px] mute">{x.t.area} · {x.t.minutes} min{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
+                    <div className="text-[12.5px] mute">{x.t.area} · {x.t.minutes} min{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
                   </div>
                   {canEdit && <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> {user.name}</button>}
                 </div>
@@ -2620,14 +2636,14 @@ function BackBar({ onBack, onEdit }) {
   );
 }
 function EditMeta({ by, at }) { return <div className="flex items-center gap-1.5 text-xs mute mt-2"><Clock size={12} /> Laatst bewerkt door <span className="ink font-medium">{by}</span> · {at}</div>; }
-function Eyebrow({ children }) { return <h3 className="text-[11px] font-semibold uppercase tracking-widest acc mb-2">{children}</h3>; }
+function Eyebrow({ children }) { return <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-2">{children}</h3>; }
 
 function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, onDelete }) {
   if (!dish) return null;
   return (
     <div>
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} />
-      <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1">{dish.course}</div>
+      <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">{dish.course}</div>
       <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
       <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}</div>
       <p className="mute mt-2 leading-relaxed">{dish.description}</p>
@@ -2690,7 +2706,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       <EditMeta by={recipe.updatedBy} at={recipe.updatedAt} />
 
       <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
-        <span className="text-[11px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
+        <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
         <div className="flex items-center gap-1.5">
           <button onClick={() => setFactor((f) => Math.max(0.015625, f / 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Halveren">×½</button>
           <button onClick={() => setFactor((f) => Math.min(64, f * 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Verdubbelen">×2</button>
@@ -2741,7 +2757,7 @@ function criticalValues(r) {
   return out;
 }
 
-function SectionTitle({ children }) { return <h2 className="text-[11px] font-semibold uppercase tracking-widest acc mt-7 mb-2.5">{children}</h2>; }
+function SectionTitle({ children }) { return <h2 className="text-[12.5px] font-semibold uppercase tracking-widest acc mt-7 mb-2.5">{children}</h2>; }
 function Chip({ children }) { return <span className="chip inline-flex items-center rounded-full text-xs font-medium px-2.5 py-1">{children}</span>; }
 function Empty({ label }) { return <div className="text-center text-sm mute card py-10 px-4" style={{ borderStyle: "dashed" }}>{label}</div>; }
 function Field({ label, children }) { return <label className="block mb-4"><span className="block text-sm font-medium ink mb-1.5">{label}</span>{children}</label>; }
@@ -2990,7 +3006,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
   return (
     <div>
       <BackBar onBack={onBack} />
-      <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1">Fermentatie-logboek</div>
+      <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">Fermentatie-logboek</div>
       <h1 className="serif ink text-2xl leading-tight">{batch.product}</h1>
       <div className="flex flex-wrap gap-2 mt-2 text-xs mute">
         <span className="inline-flex items-center gap-1"><Calendar size={12} /> Start {batch.startDate}</span>
@@ -3017,7 +3033,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
       <SectionTitle>Metingen ({rows.length})</SectionTitle>
       {rows.length === 0 ? <Empty label="Nog geen metingen vastgelegd." /> : (
         <div className="card overflow-hidden">
-          <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-x-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide acc" style={{ borderBottom: "1px solid " + T.line }}>
+          <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-x-3 px-4 py-2 text-[12.5px] font-semibold uppercase tracking-wide acc" style={{ borderBottom: "1px solid " + T.line }}>
             <span>Datum</span><span>pH</span><span>°Bx</span><span>°C</span><span></span>
           </div>
           {rows.map((r, i) => (
