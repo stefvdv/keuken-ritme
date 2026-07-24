@@ -137,28 +137,40 @@ function softMatch(haystack, needle) {
 const softMatchAny = (fields, needle) => !norm(needle).trim() || fields.some((f) => softMatch(f || "", needle));
 
 // ---------- schoonmaak ----------
-const CLEANING_AREAS = ["Keuken", "Koeling", "Fermentatieruimte", "Spoelkeuken", "Algemeen"];
+const CLEANING_AREAS = ["Keuken", "Bijkeuken", "Afwasruimte", "Koelruimte", "Opslag"];
 const CLEANING_SEED = [
-  { id:"c01", name:"Werkbanken reinigen en desinfecteren", area:"Keuken", intervalDays:1, minutes:15 },
-  { id:"c02", name:"Vloer keuken dweilen", area:"Keuken", intervalDays:1, minutes:20 },
-  { id:"c03", name:"Fornuis, plancha en bakplaat", area:"Keuken", intervalDays:1, minutes:20 },
-  { id:"c04", name:"Snijplanken wassen op 60 °C", area:"Keuken", intervalDays:1, minutes:10 },
-  { id:"c05", name:"Afvoerputjes uitspoelen", area:"Keuken", intervalDays:2, minutes:10 },
-  { id:"c06", name:"Afzuigfilters ontvetten", area:"Keuken", intervalDays:14, minutes:40 },
-  { id:"c07", name:"Koelingen: temperatuur noteren en deurrubbers", area:"Koeling", intervalDays:1, minutes:10 },
-  { id:"c08", name:"Koelingen binnenzijde leeghalen en reinigen", area:"Koeling", intervalDays:7, minutes:45 },
-  { id:"c09", name:"Vriezer controleren en ontdooien", area:"Koeling", intervalDays:30, minutes:60 },
-  { id:"c10", name:"Fermentatiewerkblad desinfecteren", area:"Fermentatieruimte", intervalDays:1, minutes:10 },
-  { id:"c11", name:"Vloer fermentatieruimte", area:"Fermentatieruimte", intervalDays:3, minutes:15 },
-  { id:"c12", name:"Fermentatiepotten, gewichten en waterslot uitkoken", area:"Fermentatieruimte", intervalDays:7, minutes:30 },
-  { id:"c13", name:"pH-meter reinigen en ijken", area:"Fermentatieruimte", intervalDays:14, minutes:15 },
-  { id:"c14", name:"Vaatwasser: filters en zeef", area:"Spoelkeuken", intervalDays:1, minutes:15 },
-  { id:"c15", name:"Spoelbakken en kranen ontkalken", area:"Spoelkeuken", intervalDays:7, minutes:20 },
-  { id:"c16", name:"Muren en tegelwerk", area:"Algemeen", intervalDays:14, minutes:45 },
-  { id:"c17", name:"Voorraadkast: houdbaarheid en orde", area:"Algemeen", intervalDays:7, minutes:30 },
-  { id:"c18", name:"Afvalruimte en containers", area:"Algemeen", intervalDays:7, minutes:25 },
-  { id:"c19", name:"Ramen en hordeuren", area:"Algemeen", intervalDays:30, minutes:30 },
-  { id:"c20", name:"Plafond en verlichtingskappen", area:"Algemeen", intervalDays:90, minutes:60 },
+  { id:"k-werkbanken", name:"Werkbanken", area:"Keuken", intervalDays:1, minutes:15 },
+  { id:"k-oven", name:"Oven", area:"Keuken", intervalDays:1, minutes:15 },
+  { id:"k-wasbak", name:"Wasbak", area:"Keuken", intervalDays:1, minutes:10 },
+  { id:"k-snijmachine", name:"Snijmachine", area:"Keuken", intervalDays:1, minutes:10 },
+  { id:"k-vario", name:"Vario", area:"Keuken", intervalDays:1, minutes:10 },
+  { id:"k-vloer", name:"Vloer", area:"Keuken", intervalDays:1, minutes:20 },
+  { id:"k-spatwanden", name:"Spatwanden", area:"Keuken", intervalDays:1, minutes:10 },
+  { id:"k-deur", name:"Deur", area:"Keuken", intervalDays:7, minutes:10 },
+  { id:"k-onderwerkbank", name:"Onder de midden werkbank", area:"Keuken", intervalDays:7, minutes:20 },
+  { id:"k-vacuum", name:"Vacumeerapparaat", area:"Keuken", intervalDays:7, minutes:15 },
+  { id:"k-afzuigkap", name:"Afzuigkap", area:"Keuken", intervalDays:14, minutes:40 },
+  { id:"k-koelwerkbank", name:"Koelwerkbank", area:"Keuken", intervalDays:14, minutes:30 },
+  { id:"k-prullenbak", name:"Prullenbak", area:"Keuken", intervalDays:14, minutes:15 },
+  { id:"b-vloer", name:"Vloer", area:"Bijkeuken", intervalDays:7, minutes:15 },
+  { id:"b-werkbank", name:"Werkbank", area:"Bijkeuken", intervalDays:7, minutes:10 },
+  { id:"b-wc", name:"Wc's", area:"Bijkeuken", intervalDays:7, minutes:20 },
+  { id:"a-machine", name:"Machine schoon", area:"Afwasruimte", intervalDays:1, minutes:15 },
+  { id:"a-werkbanken", name:"Werkbanken", area:"Afwasruimte", intervalDays:1, minutes:10 },
+  { id:"a-vloer", name:"Vloer", area:"Afwasruimte", intervalDays:1, minutes:15 },
+  { id:"a-onderwerkbank", name:"Onder de werkbank", area:"Afwasruimte", intervalDays:7, minutes:20 },
+  { id:"a-seal", name:"Sealapparaat", area:"Afwasruimte", intervalDays:7, minutes:10 },
+  { id:"a-vriezerijs", name:"Vriezer ijs", area:"Afwasruimte", intervalDays:30, minutes:45 },
+  { id:"a-magazijnrek", name:"Magazijnrek", area:"Afwasruimte", intervalDays:30, minutes:30 },
+  { id:"a-deuren", name:"Deuren", area:"Afwasruimte", intervalDays:30, minutes:15 },
+  { id:"c-celvloer", name:"Koelcel vloer", area:"Koelruimte", intervalDays:7, minutes:20 },
+  { id:"c-celopruimen", name:"Koelcel opruimen", area:"Koelruimte", intervalDays:7, minutes:25 },
+  { id:"c-houdbaarheid", name:"Houdbaarheid checken", area:"Koelruimte", intervalDays:7, minutes:20 },
+  { id:"c-voorruimte", name:"Voorruimte vloer", area:"Koelruimte", intervalDays:7, minutes:15 },
+  { id:"c-rekken", name:"Rekken", area:"Koelruimte", intervalDays:30, minutes:30 },
+  { id:"c-vriezer", name:"Vriezer opruimen", area:"Koelruimte", intervalDays:30, minutes:45 },
+  { id:"o-opruimen", name:"Opruimen", area:"Opslag", intervalDays:30, minutes:45 },
+  { id:"o-vloer", name:"Vloer vegen", area:"Opslag", intervalDays:30, minutes:20 },
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 
@@ -1164,6 +1176,7 @@ export default function App() {
   const [techNotes, setTechNotes] = useState(TECH_NOTES_SEED);
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkDone, setCheckDone] = useState(null);
+  const [newPairing, setNewPairing] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -1558,8 +1571,9 @@ export default function App() {
     if (section === "gerechten") push({ screen: "dishForm", editing: null });
     else if (section === "recepten") push({ screen: "recipeForm", editing: null });
     else if (section === "fermentatie") push({ screen: "batchForm", prefill: null });
+    else if (section === "smaak") setNewPairing((n) => n + 1);
   };
-  const showFab = current.screen === "list" && canEdit && section !== "smaak" && section !== "technieken" && section !== "schoonmaak";
+  const showFab = current.screen === "list" && canEdit && section !== "technieken" && section !== "schoonmaak";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -1576,7 +1590,7 @@ export default function App() {
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
-            {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
+            {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes} />}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} canEdit={canEdit} user={user}
               onSign={signCleaning} onEditLog={editCleaningLog}
@@ -1609,7 +1623,7 @@ export default function App() {
 
       {showFab && (
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-1/2 translate-x-1/2 sm:right-6 sm:translate-x-0 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
-          <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : "Nieuwe batch"}
+          <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : section === "smaak" ? "Nieuwe smaakcombinatie" : "Nieuwe batch"}
         </button>
       )}
       {checkOpen && canEdit && (
@@ -2067,51 +2081,45 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
   const lastPh = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.ph != null) : null;
   const lastBrix = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.brix != null) : null;
   return (
-    <div className="card p-3 flex flex-col">
-      <div className="flex items-start justify-between gap-1.5">
-        <div className="min-w-0">
-          <div className="serif ink text-base leading-tight truncate">{b.product}</div>
-          <div className="text-[11px] mute mt-0.5 truncate">{b.method || b.type}</div>
-        </div>
+    <div className="card p-2.5 flex flex-col">
+      <div className="serif ink text-[15px] leading-tight break-words">{b.product}</div>
+      <div className="flex items-center gap-1 mt-1 flex-wrap">
         {b.done
-          ? <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
+          ? <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
           : readyRaw
-            ? <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#dfead6", color: "#3a4b30" }}>Dag {day}/{b.days} ✓</span>
-            : <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5 pillon">Dag {day}/{b.days}</span>}
+            ? <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#dfead6", color: "#3a4b30" }}>Dag {day}/{b.days} ✓</span>
+            : <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5 pillon">Dag {day}/{b.days}</span>}
+        <span className="text-[10px] mute truncate">{b.method || b.type}</span>
       </div>
       {!b.done && due.length > 0 && (
-        <div className="mt-1.5 flex items-start gap-1 text-[11px] font-medium rounded-md px-2 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>
+        <div className="mt-1.5 flex items-start gap-1 text-[10px] font-medium leading-tight rounded-md px-1.5 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>
           <span className="flex-1">{due[0]}</span>
-          {canEdit && onAck && <button onClick={() => onAck(b.id, due[0])} className="ff shrink-0 hover:opacity-70" title="Gedaan"><Check size={13} /></button>}
+          {canEdit && onAck && <button onClick={() => onAck(b.id, due[0])} className="ff shrink-0 hover:opacity-70" title="Gedaan"><Check size={12} /></button>}
         </div>
       )}
       {!b.done && due.length === 0 && acked.length > 0 && (
-        <div className="mt-1.5 text-[11px] rounded-md px-2 py-1 inline-flex items-center gap-1" style={{ background: "#e8ebe0", color: T.green }}><Check size={12} /> Vandaag afgevinkt</div>
+        <div className="mt-1.5 text-[10px] rounded-md px-1.5 py-0.5 inline-flex items-center gap-1 self-start" style={{ background: "#e8ebe0", color: T.green }}><Check size={11} /> Afgevinkt</div>
       )}
-      <div className="mt-2 space-y-0.5 text-[11px] mute">
-        {tgt && tgt.phEnd != null && <div className="inline-flex items-center gap-1"><FlaskConical size={11} /> Doel pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · nu {String(lastPh.ph).replace(".", ",")}</span>}</div>}
-        {lastBrix != null && <div className="inline-flex items-center gap-1"><Percent size={11} /> Suiker {String(lastBrix.brix).replace(".", ",")}°Bx</div>}
-        {b.done && b.finishedDate && <div className="inline-flex items-center gap-1"><Check size={11} /> Afgerond {b.finishedDate}</div>}
+      <div className="mt-1.5 space-y-0.5 text-[10px] mute leading-snug">
+        {tgt && tgt.phEnd != null && <div>pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · nu {String(lastPh.ph).replace(".", ",")}</span>}</div>}
+        {lastBrix != null && <div>Suiker {String(lastBrix.brix).replace(".", ",")}°Bx</div>}
+        {b.done && b.finishedDate && <div>Afgerond {b.finishedDate}</div>}
       </div>
-      <button onClick={() => setOpen((o) => !o)} className="ff mt-2 inline-flex items-center gap-1 text-[11px] font-medium acc self-start">{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{open ? "Minder" : "Details"}</button>
+      <button onClick={() => setOpen((o) => !o)} className="ff mt-1.5 inline-flex items-center gap-0.5 text-[10px] font-medium acc self-start">{open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}{open ? "Minder" : "Details"}</button>
       {open && (
-        <div className="mt-2 pt-2 border-t" style={{ borderColor: T.line }}>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] mute">
-            <span className="inline-flex items-center gap-1"><Calendar size={11} /> Start {b.startDate}</span>
-            {b.finishedDate && <span className="inline-flex items-center gap-1"><Check size={11} /> Klaar {b.finishedDate}</span>}
-            <span className="inline-flex items-center gap-1"><Percent size={11} /> Zout {b.saltPct}%</span>
-            <span className="inline-flex items-center gap-1"><Thermometer size={11} /> {b.tempC}°C</span>
-            <span className="inline-flex items-center gap-1"><FlaskConical size={11} /> pH {b.pH ?? "—"}</span>
-            <span className="inline-flex items-center gap-1"><LineChart size={11} /> {(b.log || []).length} metingen</span>
+        <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: T.line }}>
+          <div className="space-y-0.5 text-[10px] mute leading-snug">
+            <div>Start {b.startDate}{b.finishedDate ? " · klaar " + b.finishedDate : ""}</div>
+            <div>Zout {b.saltPct}% · {b.tempC}°C · pH {b.pH ?? "—"}</div>
+            <div>{(b.log || []).length} metingen{b.amount && b.amount !== "—" ? " · " + b.amount : ""} · {b.by}</div>
           </div>
-          {b.amount && b.amount !== "—" && <div className="text-[11px] mute mt-1">Hoeveelheid: {b.amount} · door {b.by}</div>}
-          {b.notes && <p className="text-[11px] mute mt-1 italic">{b.notes}</p>}
+          {b.notes && <p className="text-[10px] mute mt-1 italic leading-snug">{b.notes}</p>}
           {canEdit && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5">
-              <button onClick={() => onOpenLog(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><LineChart size={12} /> Metingen / logboek</button>
-              <button onClick={() => onEdit(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerken</button>
-              <button onClick={() => onToggleDone(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><Check size={12} /> {b.done ? "Heropen" : "Afronden"}</button>
-              <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijder</button>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
+              <button onClick={() => onOpenLog(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium acc hover:opacity-70"><LineChart size={11} /> Logboek</button>
+              <button onClick={() => onEdit(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium acc hover:opacity-70"><Pencil size={11} /> Bewerk</button>
+              <button onClick={() => onToggleDone(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium acc hover:opacity-70"><Check size={11} /> {b.done ? "Heropen" : "Afronden"}</button>
+              <button onClick={() => onDelete(b.id)} className="inline-flex items-center gap-0.5 text-[10px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={11} /> Wis</button>
             </div>
           )}
         </div>
@@ -2120,7 +2128,7 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
   );
 }
 
-function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
+function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openNew, onOpenedNew }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
   const [editing, setEditing] = useState(null); // naam van item in bewerking, of "__new"
@@ -2130,6 +2138,11 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
   const [fSeason, setFSeason] = useState([]);
   const startEdit = (p) => { setEditing(p ? p.name : "__new"); setFName(p ? p.name : ""); setFPairs(p ? p.pairs.join(", ") : ""); setFNote(p ? p.note : ""); setFSeason(p && p.season ? p.season.filter((x) => x !== "Hele jaar") : []); if (p) setOpen(p.name); };
   const submit = () => { onSave(fName, fPairs.split(","), fNote, SEASONS.filter((x) => fSeason.includes(x))); setEditing(null); };
+  useEffect(() => {
+    if (!openNew) return;
+    setEditing("__new"); setFName(""); setFPairs(""); setFNote(""); setFSeason([]);
+    onOpenedNew && onOpenedNew();
+  }, [openNew]);
   const isSeed = (name) => PAIRINGS.some((p) => p.name === name);
   const [seasonF, setSeasonF] = useState("Alle");
   const inSeason = (p) => { const ss = (p.season && p.season.length) ? p.season : seasonOf(p.name); return ss.includes(seasonF) || ss.includes("Hele jaar"); };
@@ -2139,13 +2152,6 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
     .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div>
-      <div className="card p-4 mt-4 mb-3">
-        <div className="flex items-center gap-2 serif ink text-lg"><Blend size={17} className="acc" /> Smaakcombinaties</div>
-        <p className="text-sm mute mt-1">Inspiratie per product uit de moestuin. Tik op een product voor de partners.{canEdit && " Koks kunnen combinaties aanpassen en toevoegen."}</p>
-        {canEdit && editing !== "__new" && (
-          <button onClick={() => startEdit(null)} className="btno ff mt-3 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Plus size={15} /> Product toevoegen</button>
-        )}
-      </div>
       {editing === "__new" && (
         <PairingForm title="Nieuw product" name={fName} setName={setFName} nameLocked={false} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} season={fSeason} setSeason={setFSeason} onSubmit={submit} onCancel={() => setEditing(null)} />
       )}
@@ -2405,11 +2411,13 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
   const searching = q.trim().length > 0;
 
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
-  const dueToday = withStatus.filter((x) => x.st.due).sort((a, b) => (b.st.overdue ? 1 : 0) - (a.st.overdue ? 1 : 0) || a.t.area.localeCompare(b.t.area));
+  const dueToday = withStatus.filter((x) => x.st.due).sort((a, b) => (b.st.overdue ? 1 : 0) - (a.st.overdue ? 1 : 0) || CLEANING_AREAS.indexOf(a.t.area) - CLEANING_AREAS.indexOf(b.t.area) || a.t.intervalDays - b.t.intervalDays);
   let all = withStatus;
   if (areaF !== "Alle") all = all.filter((x) => x.t.area === areaF);
   if (searching) all = all.filter((x) => softMatchAny([x.t.name, x.t.area, intervalLabel(x.t.intervalDays)], q));
-  all = all.sort((a, b) => a.area === b.area ? 0 : 0 || a.t.area.localeCompare(b.t.area) || a.t.name.localeCompare(b.t.name));
+  const areaOrder = (a) => { const i = CLEANING_AREAS.indexOf(a); return i < 0 ? 99 : i; };
+  all = all.sort((a, b) => areaOrder(a.t.area) - areaOrder(b.t.area) || a.t.intervalDays - b.t.intervalDays || a.t.name.localeCompare(b.t.name));
+  const grouped = CLEANING_AREAS.map((area) => ({ area, items: all.filter((x) => x.t.area === area) })).filter((g) => g.items.length);
 
   // Logboek per week
   const monday = new Date(); monday.setHours(0,0,0,0);
@@ -2417,7 +2425,7 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
   const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
   const wk = weekKey(isoDate(monday));
   const weekLogs = logs.filter((l) => weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
-  const taskName = (id) => (tasks.find((t) => t.id === id) || {}).name || "Onbekende taak";
+  const taskName = (id) => { const t = tasks.find((x) => x.id === id); return t ? t.area + " · " + t.name : "Onbekende taak"; };
 
   const startNote = (l) => { setNoteFor(l.id); setNoteText(l.note || ""); };
   const saveNote = () => { onEditLog(noteFor, noteText); setNoteFor(null); };
@@ -2462,24 +2470,31 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
             ))}
           </div>
           {canEdit && <button onClick={onNewTask} className="btno ff mb-2 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Plus size={15} /> Taak toevoegen</button>}
-          <div className="card overflow-hidden">
-            {all.map((x, i) => (
-              <div key={x.t.id} className={"flex items-center gap-3 px-4 py-3 " + (i > 0 ? "divi" : "")}>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium ink truncate">{x.t.name}</div>
-                  <div className="text-[11px] mute mt-0.5">
-                    {x.t.area} · {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min ·{" "}
-                    {x.st.last ? <>laatst {x.st.since === 0 ? "vandaag" : x.st.since === 1 ? "gisteren" : x.st.since + " dagen geleden"} door {x.st.last.doneBy}</> : "nog nooit afgetekend"}
-                  </div>
+          <div className="space-y-3">
+            {grouped.map((g) => (
+              <div key={g.area}>
+                <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1.5">{g.area} <span className="mute font-normal normal-case tracking-normal">· {g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span></div>
+                <div className="card overflow-hidden">
+                  {g.items.map((x, i) => (
+                    <div key={x.t.id} className={"flex items-center gap-2 px-3.5 py-2.5 " + (i > 0 ? "divi" : "")}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium ink truncate">{x.t.name}</div>
+                        <div className="text-[11px] mute mt-0.5 truncate">
+                          {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min ·{" "}
+                          {x.st.last ? <>laatst {x.st.since === 0 ? "vandaag" : x.st.since === 1 ? "gisteren" : x.st.since + " dagen geleden"} door {x.st.last.doneBy}</> : "nog nooit afgetekend"}
+                        </div>
+                      </div>
+                      {canEdit && <>
+                        <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Nu aftekenen"><Check size={15} /></button>
+                        <button onClick={() => onEditTask(x.t.id)} className="ff shrink-0 rounded-lg px-1 py-1.5 acc hover:opacity-70" title="Taak bewerken"><Pencil size={14} /></button>
+                        <button onClick={() => onDeleteTask(x.t.id)} className="ff shrink-0 rounded-lg px-1 py-1.5 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Taak verwijderen"><Trash2 size={14} /></button>
+                      </>}
+                    </div>
+                  ))}
                 </div>
-                {canEdit && <>
-                  <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-2 py-1.5 acc hover:opacity-70" title="Nu aftekenen"><Check size={15} /></button>
-                  <button onClick={() => onEditTask(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Taak bewerken"><Pencil size={14} /></button>
-                  <button onClick={() => onDeleteTask(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Taak verwijderen"><Trash2 size={14} /></button>
-                </>}
               </div>
             ))}
-            {all.length === 0 && <div className="px-4 py-6 text-center text-sm mute">Geen taak gevonden.</div>}
+            {all.length === 0 && <Empty label="Geen taak gevonden." />}
           </div>
         </>
       )}
