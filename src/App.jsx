@@ -45,8 +45,8 @@ const SEASONS = ["Lente", "Zomer", "Herfst", "Winter"];
 // Receptcategorieën voor het keuzemenu bij een nieuw recept
 const RECIPE_CATEGORIES = [
   "Fermentatie","Fermentatie · dranken","Fermentatie · azijn","Fermentatie · zuivel",
-  "Pickles & zuur","Compotes & jam","Kruiden & zout","Oliën & vinaigrettes",
-  "Sauzen & emulsies","Gels & sauzen","Purees","Schuim & espuma","Mousses",
+  "Pickles & zuur","Chutney & jam","Kruiden & zout","Oliën & vinaigrettes",
+  "Sauzen & emulsies","Gels","Purees","Schuim & espuma","Mousses",
   "Sorbet & ijs","Zoet & patisserie","Fruit & garnituur",
   "Tuin · rauw","Tuin · geroosterd","Tuin · gegrild","Tuin · gestoomd","Tuin · gerookt","Tuin · confit",
   "Krokant & garnituur","Crumbles & garnituur","Garnituur",
@@ -66,6 +66,75 @@ const FERMENT_ACTIONS = {
   Azijnfermentatie: [{ label: "Proef en controleer de moeder", everyDays: 3 }],
 };
 
+
+// ---------- sorteren op seizoen ----------
+// Welk seizoen is het nu? (meteorologisch: maart–mei lente, enz.)
+function currentSeason(d) {
+  const m = (d || new Date()).getMonth();
+  if (m >= 2 && m <= 4) return "Lente";
+  if (m >= 5 && m <= 7) return "Zomer";
+  if (m >= 8 && m <= 10) return "Herfst";
+  return "Winter";
+}
+// Rangorde: eerst wat nú in seizoen is, dan het hele jaar door, daarna de
+// komende seizoenen op volgorde. Binnen elke groep wordt alfabetisch gesorteerd.
+function seasonRank(seasons) {
+  const list = seasons && seasons.length ? seasons : ["Hele jaar"];
+  const now = SEASONS.indexOf(currentSeason());
+  let best = 9;
+  for (const s of list) {
+    if (s === "Hele jaar") { best = Math.min(best, 1); continue; }
+    const i = SEASONS.indexOf(s);
+    if (i < 0) continue;
+    const dist = (i - now + SEASONS.length) % SEASONS.length;
+    best = Math.min(best, dist === 0 ? 0 : dist + 1);
+  }
+  return best;
+}
+const bySeasonThenName = (aSeasons, aName, bSeasons, bName) =>
+  seasonRank(aSeasons) - seasonRank(bSeasons) || aName.localeCompare(bName, "nl");
+
+// ---------- bereidingstekst slim opdelen in stappen ----------
+// Een kok typt de hele bereiding vaak in één keer. Deze functie knipt dat in
+// losse stappen: eerst op nummering (1. 2. of "stap 1"), anders op regels, en
+// anders op zinnen — waarbij komma-getallen (2,5%) en afkortingen (bv.) heel blijven.
+const STEP_ABBR = ["bv","bijv","ca","evt","ong","zgn","incl","excl","etc","max","min","nr","tbv","dwz","oa","mln","gr","ml","cl","dl","kg","tl","el"];
+function splitSteps(raw) {
+  const text = String(raw || "").replace(/\r/g, "").trim();
+  if (!text) return [];
+
+  // 1. Genummerd: "1. ", "2) ", "Stap 3:"
+  const numbered = text.split(/(?:^|\n|\s)(?:stap\s*)?\(?(?:\d{1,2})[.):]\s+/i)
+    .map((x) => x.trim()).filter(Boolean);
+  if (numbered.length > 1) return numbered;
+
+  // 2. Losse regels of opsommingstekens
+  const lines = text.split(/\n+/).map((x) => x.replace(/^[-•*–\u2022\s]+/, "").trim()).filter(Boolean);
+  if (lines.length > 1) return lines;
+
+  // 3. Zinnen — met bescherming van getallen en afkortingen
+  let safe = text.replace(/(\d)[.,](\d)/g, "$1\u0001$2");
+  for (const a of STEP_ABBR) safe = safe.replace(new RegExp("\\b" + a + "\\.", "gi"), (m) => m.slice(0, -1) + "\u0002");
+  const words = safe.split(/\s+/);
+  const out = [];
+  let cur = "";
+  for (let i = 0; i < words.length; i++) {
+    cur += (cur ? " " : "") + words[i];
+    const ends = /[.!?][")\u2019\u201d]?$/.test(words[i]);
+    const next = words[i + 1];
+    const nextStartsNew = !next || /^[A-ZÀ-Ü\u201c"(]/.test(next);
+    if (ends && nextStartsNew && cur.replace(/\s/g, "").length > 12) { out.push(cur); cur = ""; }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  // losse flarden bij de vorige stap voegen
+  const merged = [];
+  for (const p of out) {
+    if (merged.length && p.replace(/\s/g, "").length < 15) merged[merged.length - 1] += " " + p;
+    else merged.push(p);
+  }
+  const restore = (x) => x.replace(/\u0001/g, ",").replace(/\u0002/g, ".").trim();
+  return merged.map(restore).filter(Boolean);
+}
 
 // ---------- zoeken dat tegen een typefout kan ----------
 // Toetsen die op een QWERTY-toetsenbord naast elkaar liggen: een vergissing
@@ -160,7 +229,7 @@ const CLEANING_SEED = [
   { id:"a-vloer", name:"Vloer", area:"Afwasruimte", intervalDays:1, minutes:15 },
   { id:"a-onderwerkbank", name:"Onder de werkbank", area:"Afwasruimte", intervalDays:7, minutes:20 },
   { id:"a-seal", name:"Sealapparaat", area:"Afwasruimte", intervalDays:7, minutes:10 },
-  { id:"a-vriezerijs", name:"Vriezer ijs", area:"Afwasruimte", intervalDays:30, minutes:45 },
+  { id:"a-vriezerijs", name:"Vriezer ontdooien", area:"Afwasruimte", intervalDays:30, minutes:45 },
   { id:"a-magazijnrek", name:"Magazijnrek", area:"Afwasruimte", intervalDays:30, minutes:30 },
   { id:"a-deuren", name:"Deuren", area:"Afwasruimte", intervalDays:30, minutes:15 },
   { id:"c-temperaturen", name:"Temperatuurcontrole", area:"Koelruimte", intervalDays:7, minutes:10 },
@@ -168,13 +237,14 @@ const CLEANING_SEED = [
   { id:"c-celopruimen", name:"Koelcel opruimen", area:"Koelruimte", intervalDays:7, minutes:25 },
   { id:"c-houdbaarheid", name:"Houdbaarheid checken", area:"Koelruimte", intervalDays:7, minutes:20 },
   { id:"c-voorruimte", name:"Voorruimte vloer", area:"Koelruimte", intervalDays:7, minutes:15 },
-  { id:"c-rekken", name:"Rekken", area:"Koelruimte", intervalDays:30, minutes:30 },
+  { id:"c-rekken", name:"Koelcel rekken", area:"Koelruimte", intervalDays:30, minutes:30 },
   { id:"c-vriezer", name:"Vriezer opruimen", area:"Koelruimte", intervalDays:30, minutes:45 },
   { id:"o-opruimen", name:"Opruimen", area:"Opslag", intervalDays:30, minutes:45 },
   { id:"o-vloer", name:"Vloer vegen", area:"Opslag", intervalDays:30, minutes:20 },
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
+const DAY_DONE_ID = "__dag-afgerond";  // markeert dat de schoonmaak van vandaag is afgerond
 
 // HACCP: welke apparaten wekelijks gemeten worden en wat de grenzen zijn.
 const HACCP_UNITS = [
@@ -199,6 +269,13 @@ function intervalLabel(d) {
   return "elke " + d + " dagen";
 }
 const isoDate = (d) => new Date(d).toISOString().slice(0, 10);
+// Schoonmaken gebeurt met 2 tot 3 man tegelijk; toon daarom ook de tijd per persoon.
+function crewTime(totalMin) {
+  if (!totalMin) return "";
+  const hi = Math.round(totalMin / 2), lo = Math.round(totalMin / 3);
+  if (lo === hi) return "≈ " + lo + " min per persoon";
+  return "≈ " + lo + "–" + hi + " min per persoon (2–3 man)";
+}
 const daysAgo = (iso) => Math.floor((new Date().setHours(0,0,0,0) - new Date(iso).setHours(0,0,0,0)) / 86400000);
 // Weeknummer (ISO) voor het logboek per week
 function weekKey(iso) {
@@ -211,6 +288,7 @@ function weekKey(iso) {
 }
 // Status van een schoonmaaktaak: wanneer voor het laatst gedaan en is hij nu nodig?
 function taskStatus(task, logs) {
+  if (task.id === DAY_DONE_ID) return { last: null, since: null, due: false, overdue: false, history: [] };
   const mine = logs.filter((l) => l.taskId === task.id).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
   const last = mine[0] || null;
   const since = last ? daysAgo(last.doneDate) : null;
@@ -271,7 +349,7 @@ const BASES = [
   { id:"mousse", baseName:"Vruchtenmousse", noun:"Mousse", generic:"fruit", category:"Mousses", yield:"≈ 650 g", chefsPick:true, endorsements:["Michael","Stef"], gear:"Thermoblender", mains:FRUIT.slice(0,24),
     ingredients:[{item:"Puree van {x}",amount:"250 g"},{item:"Slagroom",amount:"200 g"},{item:"Suiker",amount:"40 g"},{item:"Gelatineblaadjes",amount:"3 blaadjes"},{item:"Citroensap",amount:"10 g"}],
     steps:["Week de gelatine.","Verwarm een derde van de puree van {x} en los de gelatine op.","Meng met de rest en het citroensap; koel tot lobbig.","Spatel de halfgeslagen room erdoor; 3 uur opstijven."] },
-  { id:"gel", baseName:"Vruchtengel", noun:"Gel", generic:"fruit", category:"Gels & sauzen", yield:"≈ 400 g", chefsPick:true, gear:"Thermoblender", mains:FRUIT,
+  { id:"gel", baseName:"Vruchtengel", noun:"Gel", generic:"fruit", category:"Gels", yield:"≈ 400 g", chefsPick:true, gear:"Thermoblender", mains:FRUIT,
     ingredients:[{item:"Sap/puree van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"},{item:"Suiker",amount:"20 g"}],
     steps:["Kook sap van {x} met agar 2 min.","Laat opstijven en mix glad.","Passeer in een knijpfles."] },
   { id:"sorbet", baseName:"Fruitsorbet", noun:"Sorbet", generic:"fruit", category:"Sorbet & ijs", yield:"≈ 700 g", chefsPick:true, gear:"Sorbetmachine", mains:FRUIT_ONLY,
@@ -346,7 +424,7 @@ const BASES = [
     mains:["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","ui","knoflook","erwten","venkel","bleekselderij"],
     ingredients:[{item:"Puree van {x}",amount:"400 g"},{item:"Room",amount:"100 g"},{item:"Gelatineblaadje",amount:"1 blaadje"}],
     steps:["Meng warme puree van {x} met room en gelatine.","Passeer en vul een sifon; 2 patronen.","Koel 2 uur; schud voor gebruik."] },
-  { id:"ggel", baseName:"Tuingel", noun:"Gel", generic:"tuingroente", category:"Gels & sauzen", yield:"≈ 400 g", gear:"Thermoblender",
+  { id:"ggel", baseName:"Tuingel", noun:"Gel", generic:"tuingroente", category:"Gels", yield:"≈ 400 g", gear:"Thermoblender",
     mains:["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","ui","venkel","bleekselderij","courgette","komkommer","tomaat"],
     ingredients:[{item:"Sap van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"},{item:"Zout",amount:"snuf"}],
     steps:["Kook sap van {x} met agar 2 min.","Laat opstijven en mix glad.","Passeer in een knijpfles."] },
@@ -388,7 +466,7 @@ const BASES = [
     mains:["bieslook","peterselie","dragon","lavas","munt","oregano","koriander","tuinzuring"],
     ingredients:[{item:"{X}",amount:"80 g"},{item:"Pompoenpit of amandel",amount:"30 g"},{item:"Kaas",amount:"40 g"},{item:"Olijfolie",amount:"120 g"}],
     steps:["Rooster de pitten.","Mix {x}, pitten en kaas grof.","Monteer met olie; op smaak."] },
-  { id:"gherbgel", baseName:"Kruidengel", noun:"Gel", generic:"kruid", category:"Gels & sauzen", yield:"≈ 300 g", gear:"Thermoblender",
+  { id:"gherbgel", baseName:"Kruidengel", noun:"Gel", generic:"kruid", category:"Gels", yield:"≈ 300 g", gear:"Thermoblender",
     mains:GHERB.slice(0,10),
     ingredients:[{item:"Sap of aftreksel van {x}",amount:"300 g"},{item:"Agar-agar",amount:"3 g"}],
     steps:["Kook het sap of aftreksel van {x} met agar 2 min.","Opstijven en glad mixen.","Passeer in een knijpfles."] },
@@ -410,15 +488,15 @@ const BASES = [
     mains:GFRUIT,
     ingredients:[{item:"Puree van {x}",amount:"500 g"},{item:"Suikersiroop",amount:"150 g"},{item:"Glucose",amount:"30 g"},{item:"Citroensap",amount:"15 g"}],
     steps:["Mix alles glad.","Draai in de sorbetmachine.","Bewaar op -18°C."] },
-  { id:"gcompote", baseName:"Tuincompote", noun:"Compote", generic:"tuinfruit", category:"Compotes & jam", yield:"≈ 400 g",
+  { id:"gcompote", baseName:"Tuincompote", noun:"Compote", generic:"tuinfruit", category:"Chutney & jam", yield:"≈ 400 g",
     mains:GFRUIT,
     ingredients:[{item:"{X}",amount:"400 g"},{item:"Suiker",amount:"80 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Wel de {x} met suiker.","Laat zachtjes inkoken tot compote.","Op smaak met citroen; koel."] },
-  { id:"gjam", baseName:"Tuinconfituur", noun:"Confituur", generic:"tuinfruit", category:"Compotes & jam", yield:"≈ 3 potten",
+  { id:"gjam", baseName:"Tuinconfituur", noun:"Confituur", generic:"tuinfruit", category:"Chutney & jam", yield:"≈ 3 potten",
     mains:GFRUIT,
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Geleisuiker",amount:"500 g"},{item:"Citroensap",amount:"20 g"}],
     steps:["Kook de {x} met geleisuiker.","4 min doorkoken; test op koud bordje.","Vul potten heet af."] },
-  { id:"gcoulis", baseName:"Tuincoulis", noun:"Coulis", generic:"tuinfruit", category:"Gels & sauzen", yield:"≈ 350 g",
+  { id:"gcoulis", baseName:"Tuincoulis", noun:"Coulis", generic:"tuinfruit", category:"Gels", yield:"≈ 350 g",
     mains:GFRUIT,
     ingredients:[{item:"Puree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Mix alles glad.","Op smaak; verdun voor een lopende saus.","Passeer en koel."] },
@@ -550,13 +628,13 @@ const BASES = [
     variations:[{name:"Klassieke kombucha-azijn"},{name:"Kruiden-kombucha-azijn",add:"Trek na het bottelen met tijm of dragon."}] },
 
   // ---- voorraad-basistechnieken (extra breedte) ----
-  { id:"coulis", baseName:"Fruitcoulis", noun:"Coulis", generic:"fruit", category:"Gels & sauzen", yield:"≈ 350 g", mains:FRUIT_ONLY,
+  { id:"coulis", baseName:"Fruitcoulis", noun:"Coulis", generic:"fruit", category:"Gels", yield:"≈ 350 g", mains:FRUIT_ONLY,
     ingredients:[{item:"Puree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Mix puree van {x} met suiker en citroen.","Verdun voor een lopende saus.","Passeer en koel."] },
-  { id:"compote", baseName:"Fruitcompote", noun:"Compote", generic:"fruit", category:"Compotes & jam", yield:"≈ 400 g", mains:FRUIT_ONLY,
+  { id:"compote", baseName:"Fruitcompote", noun:"Compote", generic:"fruit", category:"Chutney & jam", yield:"≈ 400 g", mains:FRUIT_ONLY,
     ingredients:[{item:"{X} in stukken",amount:"400 g"},{item:"Suiker",amount:"80 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Wel de {x} met suiker.","Kook zachtjes in tot compote.","Op smaak en koel."] },
-  { id:"jam", baseName:"Fruitconfituur", noun:"Confituur", generic:"fruit", category:"Compotes & jam", yield:"≈ 3 potten", mains:FRUIT_ONLY,
+  { id:"jam", baseName:"Fruitconfituur", noun:"Confituur", generic:"fruit", category:"Chutney & jam", yield:"≈ 3 potten", mains:FRUIT_ONLY,
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Geleisuiker",amount:"500 g"},{item:"Citroensap",amount:"20 g"}],
     steps:["Kook met geleisuiker.","4 min doorkoken; test op een koud bordje.","Vul potten heet af."] },
   { id:"fpowder", baseName:"Fruitpoeder", varTemplate:"Poeder van {x}", generic:"fruit", category:"Krokant & garnituur", yield:"≈ 60 g", gear:"Droogoven", mains:FRUIT_ONLY,
@@ -574,7 +652,7 @@ const BASES = [
   { id:"fvinegar2", baseName:"Fruitazijn", varTemplate:"Azijn van {x}", generic:"fruit", category:"Oliën & vinaigrettes", yield:"≈ 300 g", mains:FRUIT,
     ingredients:[{item:"{X}",amount:"150 g"},{item:"Witte-wijnazijn",amount:"300 g"}],
     steps:["Doe de {x} in de azijn.","Laat 2 weken trekken.","Zeef en bottel."] },
-  { id:"chutney", baseName:"Fruitchutney", varTemplate:"Chutney van {x}", generic:"fruit", category:"Compotes & jam", yield:"≈ 3 potten", mains:FRUIT,
+  { id:"chutney", baseName:"Fruitchutney", varTemplate:"Chutney van {x}", generic:"fruit", category:"Chutney & jam", yield:"≈ 3 potten", mains:FRUIT,
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Ui",amount:"100 g"},{item:"Azijn",amount:"100 g"},{item:"Suiker",amount:"120 g"},{item:"Specerijen",amount:"naar smaak"}],
     steps:["Fruit de ui aan.","Voeg {x}, azijn, suiker en specerijen toe.","Kook in tot chutney; vul heet af."] },
   { id:"vpuree", baseName:"Groentepuree (voorraad)", noun:"Puree", generic:"groente", category:"Purees", yield:"≈ 500 g", gear:"Thermoblender", mains:VEG_ONLY,
@@ -589,13 +667,13 @@ const BASES = [
   { id:"vchip", baseName:"Groentechip (voorraad)", varTemplate:"Groentechip van {x}", generic:"groente", category:"Krokant & garnituur", yield:"≈ 20 chips", gear:"iVario", mains:VEG_ONLY.filter((v) => !["doperwt","mais"].includes(v)),
     ingredients:[{item:"Dunne plakjes {x}",amount:"1 stuk"},{item:"Zout",amount:"naar smaak"}],
     steps:["Snijd flinterdun.","Frituur of droog krokant.","Zout licht."] },
-  { id:"vgel", baseName:"Groentegel (voorraad)", noun:"Gel", generic:"groente", category:"Gels & sauzen", yield:"≈ 400 g", gear:"Thermoblender", mains:VEG_ONLY.filter((v) => !["aardappel","aubergine","doperwt"].includes(v)),
+  { id:"vgel", baseName:"Groentegel (voorraad)", noun:"Gel", generic:"groente", category:"Gels", yield:"≈ 400 g", gear:"Thermoblender", mains:VEG_ONLY.filter((v) => !["aardappel","aubergine","doperwt"].includes(v)),
     ingredients:[{item:"Sap van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"}],
     steps:["Kook sap van {x} met agar 2 min.","Opstijven en glad mixen.","Passeer in een knijpfles."] },
   { id:"herboil2", baseName:"Kruidenolie (voorraad)", varTemplate:"Olie van {x}", generic:"kruid", category:"Oliën & vinaigrettes", yield:"≈ 250 g", gear:"Thermoblender", mains:HERB_ONLY,
     ingredients:[{item:"{X}",amount:"100 g"},{item:"Neutrale olie",amount:"250 g"}],
     steps:["Blancheer de {x} kort en dep droog.","Mix met olie tot 70°C.","Laat uitlekken door een doek."] },
-  { id:"herbgel2", baseName:"Kruidengel (voorraad)", noun:"Gel", generic:"kruid", category:"Gels & sauzen", yield:"≈ 300 g", mains:HERB_ONLY,
+  { id:"herbgel2", baseName:"Kruidengel (voorraad)", noun:"Gel", generic:"kruid", category:"Gels", yield:"≈ 300 g", mains:HERB_ONLY,
     ingredients:[{item:"Sap van {x}",amount:"300 g"},{item:"Agar-agar",amount:"3 g"}],
     steps:["Kook sap van {x} met agar 2 min.","Opstijven en mixen.","Passeer."] },
   { id:"pesto2", baseName:"Pesto (voorraad)", varTemplate:"Pesto van {x}", generic:"kruid", category:"Sauzen & emulsies", yield:"≈ 300 g", mains:HERB_ONLY,
@@ -1476,6 +1554,25 @@ export default function App() {
     if (!quiet) flash("Afgetekend door " + user.name, () => removeCleaningLog(row.id, true));
     return row.id;
   };
+  const markDayDone = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === today)) return;
+    const row = { id: "dd" + Date.now(), taskId: DAY_DONE_ID, doneDate: today, doneBy: user.name, note: "", edits: [] };
+    if (live) {
+      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_DONE_ID, done_date: today, done_by: user.name, note: "", edits: [] });
+      if (dbFail(error)) return;
+    }
+    setCleaningLogs((ls) => [row, ...ls]);
+    setCheckOpen(false);
+    flash("Dag afgerond", () => removeCleaningLog(row.id, true));
+  };
+  const undoDayDone = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const l = cleaningLogs.find((x) => x.taskId === DAY_DONE_ID && x.doneDate === today);
+    if (!l) return;
+    await removeCleaningLog(l.id, true);
+    flash("Dag heropend");
+  };
   const saveHaccp = async (data, editingId) => {
     const now = new Date().toISOString().slice(0, 16).replace("T", " ");
     if (editingId) {
@@ -1632,12 +1729,13 @@ export default function App() {
       const now = new Date();
       const key = now.toISOString().slice(0, 10);
       const past = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
-      if (past && checkDone !== key) { setCheckOpen(true); setCheckDone(key); }
+      const afgerond = cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === key);
+      if (past && !afgerond && checkDone !== key) { setCheckOpen(true); setCheckDone(key); }
     };
     tick();
     const t = setInterval(tick, 60000);
     return () => clearInterval(t);
-  }, [user, checkDone]);
+  }, [user, checkDone, cleaningLogs]);
 
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
@@ -1667,6 +1765,8 @@ export default function App() {
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes} />}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
+              dayDone={cleaningLogs.find((l) => l.taskId === DAY_DONE_ID && l.doneDate === todayKey) || null}
+              onDayDone={markDayDone} onUndoDayDone={undoDayDone}
               onSign={signCleaning} onEditLog={editCleaningLog} onDeleteLog={deleteCleaningLog}
               onOpenHaccp={() => push({ screen: "haccpForm", editing: null })}
               onEditHaccp={(id) => push({ screen: "haccpForm", editing: id })}
@@ -1700,13 +1800,13 @@ export default function App() {
       </main>
 
       {showFab && (
-        <button onClick={fabAction} className="btnp ff fixed bottom-6 right-1/2 translate-x-1/2 sm:right-6 sm:translate-x-0 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
+        <button onClick={fabAction} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : section === "smaak" ? "Nieuwe smaakcombinatie" : "Nieuwe batch"}
         </button>
       )}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit}
-          onSign={signCleaning} onClose={() => setCheckOpen(false)}
+          onSign={signCleaning} onDayDone={markDayDone} onClose={() => setCheckOpen(false)}
           onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
       )}
       {toast && (
@@ -1916,6 +2016,7 @@ function DishList({ dishes, search, setSearch, onOpen }) {
   const q = search.trim().toLowerCase();
   let shown = dishes.filter((d) => softMatchAny([d.name, d.course, d.description], q));
   if (courseF !== "Alle") shown = shown.filter((d) => d.course.toLowerCase().includes(courseF.toLowerCase()));
+  shown = [...shown].sort((a, b) => bySeasonThenName(a.season, a.name, b.season, b.name));
   return (
     <div>
       <SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" />
@@ -1948,7 +2049,7 @@ function DishList({ dishes, search, setSearch, onOpen }) {
 }
 
 function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
-  const [sortMode, setSortMode] = useState("used");
+  const [sortMode, setSortMode] = useState("seizoen");
   const [seasonF, setSeasonF] = useState("Alle");
   const [limit, setLimit] = useState(60);
   const q = search.trim().toLowerCase();
@@ -1957,14 +2058,13 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
   if (seasonF !== "Alle") shown = shown.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   const pop = (r) => (oc[r.id] || 0) + (r.endorsements.length * 3);
   const sorted = [...shown].sort((a, b) => {
-    if (sortMode === "az") return a.name.localeCompare(b.name);
+    if (sortMode === "az") return a.name.localeCompare(b.name, "nl");
     if (sortMode === "used") {
       if (pop(b) !== pop(a)) return pop(b) - pop(a);
       if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name, "nl");
     }
-    if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
-    return a.name.localeCompare(b.name);
+    return bySeasonThenName(a.season, a.name, b.season, b.name);
   });
   const visible = sorted.slice(0, limit);
   return (
@@ -1978,6 +2078,7 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
       <div className="flex items-center justify-between mb-3 text-xs">
         <div className="flex items-center gap-1.5">
           <span className="mute">Sorteer</span>
+          <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
           <button onClick={() => setSortMode("used")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
           <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
         </div>
@@ -2023,7 +2124,11 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
   const [q, setQ] = useState("");
-  const [openActive, setOpenActive] = useState(true);
+  const openAction = batches.some((b) => !b.done && (batchStatus(b).due.length > 0 || batchStatus(b).ready));
+  const [openActive, setOpenActive] = useState(openAction);
+  const [touchedActive, setTouchedActive] = useState(false);
+  // Zolang niemand het handmatig heeft omgezet, volgt het paneel de openstaande handelingen.
+  useEffect(() => { if (!touchedActive) setOpenActive(openAction); }, [openAction, touchedActive]);
   const [openDone, setOpenDone] = useState(false);
   const searching = q.trim().length > 0;
   const showActive = openActive && !searching;
@@ -2036,13 +2141,13 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
   fermentRecipes = fermentRecipes.sort((a, b) => {
     if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
-    return a.name.localeCompare(b.name);
+    return bySeasonThenName(a.season, a.name, b.season, b.name);
   });
   return (
     <div>
       <SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek een fermentatierecept" />
       <div className="flex items-center justify-between mb-2">
-        <button onClick={() => setOpenActive((o) => !o)} className="ff inline-flex items-center gap-1" disabled={searching}>
+        <button onClick={() => { setTouchedActive(true); setOpenActive((o) => !o); }} className="ff inline-flex items-center gap-1" disabled={searching}>
           {!searching && (openActive ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
           <Eyebrow>Actieve batches ({active.length})</Eyebrow>
         </button>
@@ -2243,7 +2348,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
   const shown = pairings
     .filter((p) => softMatchAny([p.name, p.pairs.join(" "), p.note], q))
     .filter((p) => seasonF === "Alle" || inSeason(p))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => bySeasonThenName((a.season && a.season.length) ? a.season : seasonOf(a.name), a.name, (b.season && b.season.length) ? b.season : seasonOf(b.name), b.name));
   return (
     <div>
       {editing === "__new" && (
@@ -2495,7 +2600,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes }) {
   );
 }
 
-function CleaningList({ tasks, logs, haccpLogs, canEdit, user, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp }) {
+function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDone, onUndoDayDone, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp }) {
   const [q, setQ] = useState("");
   const [areaF, setAreaF] = useState("Alle");
   const [openAll, setOpenAll] = useState(false);
@@ -2503,6 +2608,8 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, onSign, onEditLog
   const [noteFor, setNoteFor] = useState(null);
   const [noteText, setNoteText] = useState("");
   const searching = q.trim().length > 0;
+  const [openDue, setOpenDue] = useState(true);
+  const showDue = openDue && !dayDone;
 
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
   const dueToday = withStatus.filter((x) => x.st.due).sort((a, b) =>
@@ -2522,7 +2629,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, onSign, onEditLog
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7) + weekOffset * 7);
   const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
   const wk = weekKey(isoDate(monday));
-  const weekLogs = logs.filter((l) => weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
+  const weekLogs = logs.filter((l) => l.taskId !== DAY_DONE_ID && weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
   const taskName = (id) => { const t = tasks.find((x) => x.id === id); return t ? t.area + " · " + t.name : "Onbekende taak"; };
 
   const startNote = (l) => { setNoteFor(l.id); setNoteText(l.note || ""); };
@@ -2532,11 +2639,24 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, onSign, onEditLog
     <div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een schoonmaaktaak" />
 
+      {dayDone
+        ? <div className="rounded-xl p-3.5 mb-3 flex items-start gap-2 text-sm" style={{ background: "#e8ebe0", color: T.green }}>
+            <Check size={16} className="shrink-0 mt-0.5" />
+            <span className="flex-1">Dag afgerond door <span className="font-medium">{dayDone.doneBy}</span>. De controle komt morgen vanzelf terug.</span>
+            <button onClick={onUndoDayDone} className="ff shrink-0 text-xs font-semibold underline">Heropen</button>
+          </div>
+        : <button onClick={onDayDone} className="btnp ff w-full mb-3 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>}
+
       <div className="flex items-center justify-between mb-2">
-        <Eyebrow>Vandaag te doen ({dueToday.length})</Eyebrow>
-        <span className="text-xs mute">{dueToday.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span>
+        <button onClick={() => setOpenDue((o) => !o)} className="ff inline-flex items-center gap-1" disabled={!!dayDone}>
+          {!dayDone && (openDue ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
+          <Eyebrow>Vandaag te doen ({dueToday.length})</Eyebrow>
+        </button>
+        <span className="text-xs mute text-right">{dueToday.reduce((n, x) => n + (x.t.minutes || 0), 0)} min totaal<br /><span className="acc font-medium">{crewTime(dueToday.reduce((n, x) => n + (x.t.minutes || 0), 0))}</span></span>
       </div>
-      {dueToday.length === 0
+      {!showDue
+        ? null
+        : dueToday.length === 0
         ? <div className="rounded-xl p-4 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is bij — niets te doen vandaag.</div>
         : <div className="card overflow-hidden">
             {dueToday.map((x, i) => (
@@ -2576,7 +2696,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, onSign, onEditLog
               <div key={g.area}>
                 <div className="flex items-baseline gap-2 mb-1.5">
                   <span className="serif ink text-xl leading-none">{g.area}</span>
-                  <span className="text-[12.5px] mute">{g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span>
+                  <span className="text-[12.5px] mute">{g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min · {crewTime(g.items.reduce((n, x) => n + (x.t.minutes || 0), 0))}</span>
                 </div>
                 <div className="card overflow-hidden">
                   {g.items.map((x, i) => (
@@ -2761,14 +2881,15 @@ function HaccpForm({ editing, onCancel, onSave }) {
         {HACCP_UNITS.map((u, i) => {
           const ok = inRange(u, num(values[u.id]));
           return (
-            <div key={u.id} className={"flex items-center gap-3 px-3.5 py-2.5 " + (i > 0 ? "divi" : "")}>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium ink">{u.name}</div>
-                <div className="text-[12.5px] mute">streef: {u.target}</div>
+            <div key={u.id} className={"px-3.5 py-3 " + (i > 0 ? "divi" : "")}>
+              <div className="text-sm font-medium ink">{u.name}</div>
+              <div className="text-[12.5px] mute mb-1.5">streef: {u.target}</div>
+              <div className="flex items-center gap-2">
+                <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={values[u.id]}
+                  onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value }))} placeholder="gemeten temperatuur"
+                  style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
+                <span className="text-sm mute shrink-0">°C</span>
               </div>
-              <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 w-24 text-right" value={values[u.id]}
-                onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value }))} placeholder="°C"
-                style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
             </div>
           );
         })}
@@ -2781,8 +2902,8 @@ function HaccpForm({ editing, onCancel, onSave }) {
       <div className="text-sm font-medium ink mb-1.5">Thermometer ijken</div>
       <div className="card p-3.5 mb-4">
         <div className="text-[12.5px] mute mb-2">Steek de thermometer in een glas met smeltend ijswater. Hij hoort 0 °C aan te geven; meer dan {CALIB_TOLERANCE} °C afwijking betekent afstellen of vervangen.</div>
-        <div className="flex items-center gap-3">
-          <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 w-28 text-right" value={calib} onChange={(e) => setCalib(e.target.value)} placeholder="°C in ijswater"
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1 min-w-[8rem]" value={calib} onChange={(e) => setCalib(e.target.value)} placeholder="gemeten in ijswater (°C)"
             style={calibOk === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
           {calibOk === true && <span className="text-sm font-medium" style={{ color: T.green }}>✓ binnen tolerantie</span>}
           {calibOk === false && <span className="text-sm font-medium" style={{ color: "#8a4a3a" }}>⚠ afwijking van {String(Math.abs(calibNum)).replace(".", ",")} °C</span>}
@@ -2820,10 +2941,10 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
 }
 
 // Dagelijkse controle om 16:45
-function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onClose, onOpenSection }) {
+function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onClose, onOpenSection }) {
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
   const open = withStatus.filter((x) => x.st.due);
-  const doneToday = logs.filter((l) => l.doneDate === new Date().toISOString().slice(0, 10));
+  const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === new Date().toISOString().slice(0, 10));
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
@@ -2834,8 +2955,10 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onClose, onOpe
           </div>
           <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
         </div>
+        <button onClick={onDayDone} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>
         <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
           Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span>
+          {open.length > 0 && <> · <span className="acc font-medium">{crewTime(open.reduce((n, x) => n + (x.t.minutes || 0), 0))}</span></>}
         </div>
         {open.length === 0
           ? <div className="mt-3 rounded-xl p-3.5 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is afgetekend. Mooi werk.</div>
@@ -3022,6 +3145,13 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
   const setStep = (i, v) => setSteps((a) => a.map((x, idx) => (idx === i ? v : x)));
+  // Eén veld opdelen zodra de kok het verlaat, en een knop om alles te verdelen.
+  const splitOne = (i) => setSteps((a) => {
+    const parts = splitSteps(a[i]);
+    if (parts.length < 2) return a;
+    return [...a.slice(0, i), ...parts, ...a.slice(i + 1)];
+  });
+  const splitAll = () => setSteps((a) => a.flatMap((x) => { const p = splitSteps(x); return p.length ? p : [x]; }));
   const toggleSeason = (s) => setSeasons((a) => (a.includes(s) ? a.filter((x) => x !== s) : [...a, s]));
   async function handleTranslate() {
     setTranslating(true); setErr(null);
@@ -3095,11 +3225,17 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
         </div>))}
       </div>
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
-      <div className="text-sm font-medium ink mb-1.5 mt-5">Bereiding</div>
+      <div className="flex items-center justify-between gap-2 mt-5 mb-1.5">
+        <span className="text-sm font-medium ink">Bereiding</span>
+        {steps.some((x) => splitSteps(x).length > 1) && (
+          <button type="button" onClick={splitAll} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><GitBranch size={13} /> Verdeel in stappen</button>
+        )}
+      </div>
+      <p className="text-xs mute mb-2 -mt-1">Typ of plak gerust de hele bereiding in één vak — bij het verlaten van het vak deelt de app hem zelf op in stappen, die je daarna gewoon kunt bijschaven.</p>
       <div className="space-y-2 mb-2">{steps.map((s, i) => (
         <div key={i} className="flex gap-2 items-start">
           <span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-2" style={{ background: "#e8ebe0", color: T.green }}>{i + 1}</span>
-          <textarea rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} placeholder="Beschrijf de stap" />
+          <textarea rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onBlur={() => splitOne(i)} placeholder="Beschrijf de stap — of plak de hele bereiding" />
           <button onClick={() => setSteps((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1 mt-2"><Trash2 size={16} /></button>
         </div>))}
       </div>
