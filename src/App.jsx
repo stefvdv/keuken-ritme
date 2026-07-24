@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -66,6 +66,132 @@ const FERMENT_ACTIONS = {
   Azijnfermentatie: [{ label: "Proef en controleer de moeder", everyDays: 3 }],
 };
 
+
+// ---------- zoeken dat tegen een typefout kan ----------
+// Toetsen die op een QWERTY-toetsenbord naast elkaar liggen: een vergissing
+// daartussen (biet/bier) telt maar half, zodat zoeken vergevingsgezind is.
+const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+const KEY_NEIGHBOURS = (() => {
+  const map = {};
+  KEY_ROWS.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      const set = new Set();
+      if (c > 0) set.add(row[c - 1]);
+      if (c < row.length - 1) set.add(row[c + 1]);
+      [r - 1, r + 1].forEach((rr) => {
+        const other = KEY_ROWS[rr];
+        if (!other) return;
+        [c - 1, c, c + 1].forEach((cc) => { if (cc >= 0 && other[cc]) set.add(other[cc]); });
+      });
+      map[row[c]] = set;
+    }
+  });
+  return map;
+})();
+const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const nearKey = (a, b) => !!(KEY_NEIGHBOURS[a] && KEY_NEIGHBOURS[a].has(b));
+
+// Afstand tussen twee woorden: verwisselde letters en buurtoetsen tellen half.
+function typoDistance(a, b, cap) {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > cap) return cap + 1;
+  let two = null, one = [];
+  for (let j = 0; j <= n; j++) one[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= n; j++) {
+      const sub = a[i - 1] === b[j - 1] ? 0 : nearKey(a[i - 1], b[j - 1]) ? 0.5 : 1;
+      let v = Math.min(one[j] + 1, cur[j - 1] + 1, one[j - 1] + sub);
+      if (two && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, two[j - 2] + 0.5);
+      cur[j] = v;
+      if (v < best) best = v;
+    }
+    if (best > cap) return cap + 1;
+    two = one; one = cur;
+  }
+  return one[n];
+}
+// Hoe langer het woord, hoe meer we vergeven.
+const typoBudget = (len) => (len <= 3 ? 0 : len <= 5 ? 1 : len <= 8 ? 1.5 : 2);
+
+// Zit 'needle' in 'haystack'? Kleine typefouten worden vergeven.
+function softMatch(haystack, needle) {
+  const q = norm(needle).trim();
+  if (!q) return true;
+  const h = norm(haystack);
+  if (h.includes(q)) return true;
+  const hWords = h.split(/[^a-z0-9]+/).filter(Boolean);
+  return q.split(/\s+/).filter(Boolean).every((w) => {
+    if (h.includes(w)) return true;
+    if (w.length < 4) return false;
+    const cap = typoBudget(w.length);
+    for (const hw of hWords) {
+      if (typoDistance(hw, w, cap) <= cap) return true;
+      if (hw.length > w.length && typoDistance(hw.slice(0, Math.ceil(w.length + cap)), w, cap) <= cap) return true;
+    }
+    return false;
+  });
+}
+// Meerdere velden tegelijk doorzoeken.
+const softMatchAny = (fields, needle) => !norm(needle).trim() || fields.some((f) => softMatch(f || "", needle));
+
+// ---------- schoonmaak ----------
+const CLEANING_AREAS = ["Keuken", "Koeling", "Fermentatieruimte", "Spoelkeuken", "Algemeen"];
+const CLEANING_SEED = [
+  { id:"c01", name:"Werkbanken reinigen en desinfecteren", area:"Keuken", intervalDays:1, minutes:15 },
+  { id:"c02", name:"Vloer keuken dweilen", area:"Keuken", intervalDays:1, minutes:20 },
+  { id:"c03", name:"Fornuis, plancha en bakplaat", area:"Keuken", intervalDays:1, minutes:20 },
+  { id:"c04", name:"Snijplanken wassen op 60 °C", area:"Keuken", intervalDays:1, minutes:10 },
+  { id:"c05", name:"Afvoerputjes uitspoelen", area:"Keuken", intervalDays:2, minutes:10 },
+  { id:"c06", name:"Afzuigfilters ontvetten", area:"Keuken", intervalDays:14, minutes:40 },
+  { id:"c07", name:"Koelingen: temperatuur noteren en deurrubbers", area:"Koeling", intervalDays:1, minutes:10 },
+  { id:"c08", name:"Koelingen binnenzijde leeghalen en reinigen", area:"Koeling", intervalDays:7, minutes:45 },
+  { id:"c09", name:"Vriezer controleren en ontdooien", area:"Koeling", intervalDays:30, minutes:60 },
+  { id:"c10", name:"Fermentatiewerkblad desinfecteren", area:"Fermentatieruimte", intervalDays:1, minutes:10 },
+  { id:"c11", name:"Vloer fermentatieruimte", area:"Fermentatieruimte", intervalDays:3, minutes:15 },
+  { id:"c12", name:"Fermentatiepotten, gewichten en waterslot uitkoken", area:"Fermentatieruimte", intervalDays:7, minutes:30 },
+  { id:"c13", name:"pH-meter reinigen en ijken", area:"Fermentatieruimte", intervalDays:14, minutes:15 },
+  { id:"c14", name:"Vaatwasser: filters en zeef", area:"Spoelkeuken", intervalDays:1, minutes:15 },
+  { id:"c15", name:"Spoelbakken en kranen ontkalken", area:"Spoelkeuken", intervalDays:7, minutes:20 },
+  { id:"c16", name:"Muren en tegelwerk", area:"Algemeen", intervalDays:14, minutes:45 },
+  { id:"c17", name:"Voorraadkast: houdbaarheid en orde", area:"Algemeen", intervalDays:7, minutes:30 },
+  { id:"c18", name:"Afvalruimte en containers", area:"Algemeen", intervalDays:7, minutes:25 },
+  { id:"c19", name:"Ramen en hordeuren", area:"Algemeen", intervalDays:30, minutes:30 },
+  { id:"c20", name:"Plafond en verlichtingskappen", area:"Algemeen", intervalDays:90, minutes:60 },
+];
+const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
+
+// Interval in gewone taal
+function intervalLabel(d) {
+  if (d === 1) return "dagelijks";
+  if (d === 2) return "om de dag";
+  if (d === 7) return "wekelijks";
+  if (d === 14) return "elke 2 weken";
+  if (d === 30) return "maandelijks";
+  if (d === 90) return "per kwartaal";
+  return "elke " + d + " dagen";
+}
+const isoDate = (d) => new Date(d).toISOString().slice(0, 10);
+const daysAgo = (iso) => Math.floor((new Date().setHours(0,0,0,0) - new Date(iso).setHours(0,0,0,0)) / 86400000);
+// Weeknummer (ISO) voor het logboek per week
+function weekKey(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const t = new Date(d.valueOf());
+  t.setDate(t.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(t.getFullYear(), 0, 4);
+  const wk = 1 + Math.round(((t - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  return t.getFullYear() + "-W" + String(wk).padStart(2, "0");
+}
+// Status van een schoonmaaktaak: wanneer voor het laatst gedaan en is hij nu nodig?
+function taskStatus(task, logs) {
+  const mine = logs.filter((l) => l.taskId === task.id).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
+  const last = mine[0] || null;
+  const since = last ? daysAgo(last.doneDate) : null;
+  const due = last === null || since >= task.intervalDays;
+  const overdue = last !== null && since > task.intervalDays;
+  return { last, since, due, overdue, history: mine };
+}
 
 // ------- tuinproducten per groep -------
 const ROOT = ["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","radijs","ui","utrechtse ui","knoflook"];
@@ -1033,6 +1159,11 @@ export default function App() {
   const [openCounts, setOpenCounts] = useState({});
   const [dismissedNotices, setDismissedNotices] = useState({});
   const [dishDraft, setDishDraft] = useState(null);
+  const [cleaningTasks, setCleaningTasks] = useState(CLEANING_SEED);
+  const [cleaningLogs, setCleaningLogs] = useState([]);
+  const [techNotes, setTechNotes] = useState(TECH_NOTES_SEED);
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [checkDone, setCheckDone] = useState(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -1068,7 +1199,7 @@ export default function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) return;
-    const [ov, cu, en, pk, di, ba, hi, fp, dh] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -1078,6 +1209,9 @@ export default function App() {
       supabase.from("recipe_hidden").select("recipe_id"),
       supabase.from("flavor_pairings").select("*"),
       supabase.from("dish_hidden").select("dish_id"),
+      supabase.from("cleaning_tasks").select("*"),
+      supabase.from("cleaning_logs").select("*").order("done_date", { ascending: false }),
+      supabase.from("technique_notes").select("*"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -1095,9 +1229,21 @@ export default function App() {
     const fpRows = fp.data || [];
     const fpMap = new Map(fpRows.map((x) => [x.name, x]));
     setPairings([
-      ...PAIRINGS.map((p) => fpMap.has(p.name) ? { name: p.name, pairs: fpMap.get(p.name).pairs || [], note: fpMap.get(p.name).note || "" } : p),
-      ...fpRows.filter((x) => !PAIRINGS.some((p) => p.name === x.name)).map((x) => ({ name: x.name, pairs: x.pairs || [], note: x.note || "" })),
+      ...PAIRINGS.map((p) => fpMap.has(p.name) ? { name: p.name, pairs: fpMap.get(p.name).pairs || [], note: fpMap.get(p.name).note || "", season: fpMap.get(p.name).season || [] } : p),
+      ...fpRows.filter((x) => !PAIRINGS.some((p) => p.name === x.name)).map((x) => ({ name: x.name, pairs: x.pairs || [], note: x.note || "", season: x.season || [] })),
     ]);
+    // Schoonmaak: databasetaken overschrijven of vullen de standaardlijst aan.
+    const ctRows = ct.data || [];
+    const ctMap = new Map(ctRows.map((r) => [r.id, r]));
+    const merged = [
+      ...CLEANING_SEED.map((t) => { const r = ctMap.get(t.id); return r ? { id: r.id, name: r.name, area: r.area, intervalDays: r.interval_days, minutes: r.minutes, active: r.active !== false } : { ...t, active: true }; }),
+      ...ctRows.filter((r) => !CLEANING_SEED.some((t) => t.id === r.id)).map((r) => ({ id: r.id, name: r.name, area: r.area, intervalDays: r.interval_days, minutes: r.minutes, active: r.active !== false })),
+    ];
+    setCleaningTasks(merged.filter((t) => t.active !== false));
+    setCleaningLogs((cl.data || []).map((r) => ({ id: r.id, taskId: r.task_id, doneDate: r.done_date, doneBy: r.done_by, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
+    const tnMap = { ...TECH_NOTES_SEED };
+    (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
+    setTechNotes(tnMap);
     const dbDishes = (di.data || []).map((d) => ({
       id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating,
       recipeIds: d.recipe_ids || [], season: d.season || [], diet: d.diet || "Vegetarisch",
@@ -1114,7 +1260,7 @@ export default function App() {
       id: b.id, product: b.product, type: b.type, startDate: b.start_date, days: b.days,
       saltPct: Number(b.salt_pct), tempC: Number(b.temp_c), amount: b.amount,
       pH: b.ph === null ? null : Number(b.ph), notes: b.notes || "", done: !!b.done, by: b.by || "—",
-      finishedDate: b.finished_date || null, log: Array.isArray(b.log) ? b.log : [],
+      finishedDate: b.finished_date || null, log: Array.isArray(b.log) ? b.log : [], actionsDone: Array.isArray(b.actions_done) ? b.actions_done : [],
       recipeId: b.recipe_id || null, method: b.method || b.type || null,
     })));
   };
@@ -1205,7 +1351,7 @@ export default function App() {
     const { error } = await supabase.from("ferment_batches").upsert({
       id: b.id, product: b.product, type: b.type, start_date: b.startDate, days: b.days,
       salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, notes: b.notes,
-      done: b.done, by: b.by, finished_date: b.finishedDate, log: b.log || [],
+      done: b.done, by: b.by, finished_date: b.finishedDate, log: b.log || [], actions_done: b.actionsDone || [],
       recipe_id: b.recipeId || null, method: b.method || b.type || null,
     });
     return !dbFail(error);
@@ -1259,6 +1405,67 @@ export default function App() {
     setBatches((bs) => bs.filter((x) => x.id !== id));
     flash(live ? "Batch verwijderd voor het hele team" : "Batch verwijderd (demo: alleen dit apparaat)");
   };
+  const ackAction = async (id, label) => {
+    const b = batches.find((x) => x.id === id);
+    if (!b) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if ((b.actionsDone || []).some((a) => a.date === today && a.label === label)) return;
+    const nb = { ...b, actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), { date: today, label, by: user.name }] };
+    if (!(await persistBatch(nb))) return;
+    setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
+    flash(label === READY_KEY ? "Melding afgevinkt" : "Handeling afgevinkt");
+  };
+  const signCleaning = async (taskId) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: user.name, note: "", edits: [] };
+    if (live) {
+      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: taskId, done_date: today, done_by: user.name, note: "", edits: [] });
+      if (dbFail(error)) return;
+    }
+    setCleaningLogs((ls) => [row, ...ls]);
+    flash("Afgetekend door " + user.name);
+  };
+  const editCleaningLog = async (logId, note) => {
+    const l = cleaningLogs.find((x) => x.id === logId);
+    if (!l || (l.note || "") === note) { return; }
+    const edit = { at: new Date().toISOString().slice(0, 16).replace("T", " "), by: user.name, from: l.note || "", to: note };
+    const nl = { ...l, note, edits: [...(l.edits || []), edit] };
+    if (live) {
+      const { error } = await supabase.from("cleaning_logs").update({ note: nl.note, edits: nl.edits }).eq("id", logId);
+      if (dbFail(error)) return;
+    }
+    setCleaningLogs((ls) => ls.map((x) => (x.id === logId ? nl : x)));
+    flash("Opmerking bijgewerkt");
+  };
+  const saveCleaningTask = async (data, editingId) => {
+    const id = editingId || "ct" + Date.now();
+    const row = { id, name: data.name, area: data.area, intervalDays: data.intervalDays, minutes: data.minutes, active: true };
+    if (live) {
+      const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: row.name, area: row.area, interval_days: row.intervalDays, minutes: row.minutes, active: true, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setCleaningTasks((ts) => (ts.some((t) => t.id === id) ? ts.map((t) => (t.id === id ? row : t)) : [...ts, row]));
+    flash(live ? "Taak opgeslagen voor het hele team" : "Taak opgeslagen (demo)");
+  };
+  const deleteCleaningTask = async (id) => {
+    const t = cleaningTasks.find((x) => x.id === id);
+    if (!t) return;
+    if (!window.confirm('Taak "' + t.name + '" verwijderen uit de schoonmaaklijst?')) return;
+    if (live) {
+      const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: t.name, area: t.area, interval_days: t.intervalDays, minutes: t.minutes, active: false, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setCleaningTasks((ts) => ts.filter((x) => x.id !== id));
+    flash("Taak verwijderd");
+  };
+  const saveTechNotes = async (key, lines) => {
+    if (live) {
+      const { error } = await supabase.from("technique_notes").upsert({ key, lines, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setTechNotes((n) => ({ ...n, [key]: lines }));
+    flash(live ? "Werkwijze opgeslagen voor het hele team" : "Werkwijze opgeslagen (demo)");
+  };
   const toggleEndorse = async (id) => {
     const r = recipes.find((x) => x.id === id);
     const has = r && r.endorsements.includes(user.name);
@@ -1270,11 +1477,11 @@ export default function App() {
     }
     setRecipes((rs) => rs.map((x) => x.id === id ? { ...x, endorsements: has ? x.endorsements.filter((n) => n !== user.name) : [...x.endorsements, user.name] } : x));
   };
-  const savePairing = async (name, pairs, note) => {
-    const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim() };
+  const savePairing = async (name, pairs, note, season) => {
+    const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim(), season: season || [] };
     if (!clean.name || clean.pairs.length === 0) { flash("Vul een naam en minstens één partner in"); return; }
     if (live) {
-      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, season: clean.season, updated_by: user.name, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setPairings((ps) => ps.some((p) => p.name === clean.name) ? ps.map((p) => (p.name === clean.name ? clean : p)) : [...ps, clean]);
@@ -1331,6 +1538,20 @@ export default function App() {
 
   const todayKey = new Date().toISOString().slice(0, 10);
 
+  // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks, één keer per dag).
+  useEffect(() => {
+    if (!user || !user.canEdit) return;
+    const tick = () => {
+      const now = new Date();
+      const key = now.toISOString().slice(0, 10);
+      const past = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
+      if (past && checkDone !== key) { setCheckOpen(true); setCheckDone(key); }
+    };
+    tick();
+    const t = setInterval(tick, 60000);
+    return () => clearInterval(t);
+  }, [user, checkDone]);
+
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
   const fabAction = () => {
@@ -1338,7 +1559,7 @@ export default function App() {
     else if (section === "recepten") push({ screen: "recipeForm", editing: null });
     else if (section === "fermentatie") push({ screen: "batchForm", prefill: null });
   };
-  const showFab = current.screen === "list" && canEdit && section !== "smaak" && section !== "technieken";
+  const showFab = current.screen === "list" && canEdit && section !== "smaak" && section !== "technieken" && section !== "schoonmaak";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -1349,14 +1570,19 @@ export default function App() {
         {current.screen === "list" && (
           <>
             {canEdit && !dismissedNotices[todayKey] && (
-              <NoticeBanner batches={batches} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
+              <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
             )}
             <SectionNav section={section} setSection={(s) => { setSection(s); setSearch(""); }} />
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
-            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} />}
+            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
-            {section === "technieken" && <TechniquesList />}
+            {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes} />}
+            {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} canEdit={canEdit} user={user}
+              onSign={signCleaning} onEditLog={editCleaningLog}
+              onNewTask={() => push({ screen: "cleaningForm", editing: null })}
+              onEditTask={(id) => push({ screen: "cleaningForm", editing: id })}
+              onDeleteTask={deleteCleaningTask} />}
           </>
         )}
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
@@ -1377,6 +1603,7 @@ export default function App() {
             goBack(); }} />}
         {current.screen === "batchForm" && <BatchForm prefill={current.prefill} editing={current.editing ? batches.find((b) => b.id === current.editing) : null} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d, current.editing); setSection("fermentatie"); goBack(); }} />}
         {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => addBatchMeasurement(current.id, m)} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
+        {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
 
@@ -1384,6 +1611,11 @@ export default function App() {
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-1/2 translate-x-1/2 sm:right-6 sm:translate-x-0 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : "Nieuwe batch"}
         </button>
+      )}
+      {checkOpen && canEdit && (
+        <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit}
+          onSign={signCleaning} onClose={() => setCheckOpen(false)}
+          onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
       )}
       {toast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full text-sm px-4 py-2 shadow-lg" style={{ background: T.ink, color: T.paper }}><Check size={16} /> {toast}</div>}
     </div>
@@ -1557,6 +1789,7 @@ function SectionNav({ section, setSection }) {
     { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={16} /> },
     { id: "smaak", label: "Smaak", icon: <Blend size={16} /> },
     { id: "technieken", label: "Technieken", icon: <BookOpen size={16} /> },
+    { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={16} /> },
   ];
   return (
     <div className="flex gap-1.5 overflow-x-auto pt-4 pb-1 -mx-1 px-1">
@@ -1584,7 +1817,7 @@ const COURSE_FILTERS = ["Alle", ...DISH_COURSES];
 function DishList({ dishes, search, setSearch, onOpen }) {
   const [courseF, setCourseF] = useState("Alle");
   const q = search.trim().toLowerCase();
-  let shown = dishes.filter((d) => d.name.toLowerCase().includes(q) || d.course.toLowerCase().includes(q));
+  let shown = dishes.filter((d) => softMatchAny([d.name, d.course, d.description], q));
   if (courseF !== "Alle") shown = shown.filter((d) => d.course.toLowerCase().includes(courseF.toLowerCase()));
   return (
     <div>
@@ -1623,7 +1856,7 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
   const [limit, setLimit] = useState(60);
   const q = search.trim().toLowerCase();
   const oc = openCounts || {};
-  let shown = recipes.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q));
+  let shown = recipes.filter((r) => softMatchAny([r.name, r.category, r.baseName], q));
   if (seasonF !== "Alle") shown = shown.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   const pop = (r) => (oc[r.id] || 0) + (r.endorsements.length * 3);
   const sorted = [...shown].sort((a, b) => {
@@ -1688,16 +1921,20 @@ function MeatPill({ diet }) { return <span className="inline-flex items-center r
 
 const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
 
-function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch }) {
+function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch, onAck }) {
   const [limit, setLimit] = useState(30);
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
   const [q, setQ] = useState("");
+  const [openActive, setOpenActive] = useState(true);
+  const [openDone, setOpenDone] = useState(false);
+  const searching = q.trim().length > 0;
+  const showActive = openActive && !searching;
   const active = batches.filter((b) => !b.done);
   const done = batches.filter((b) => b.done);
   let fermentRecipes = recipes.filter((r) => r.ferment);
   const query = q.trim().toLowerCase();
-  if (query) fermentRecipes = fermentRecipes.filter((r) => r.name.toLowerCase().includes(query) || r.category.toLowerCase().includes(query) || (r.fermentMethod || "").toLowerCase().includes(query));
+  if (query) fermentRecipes = fermentRecipes.filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], query));
   if (seasonF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
   fermentRecipes = fermentRecipes.sort((a, b) => {
@@ -1705,22 +1942,28 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
     return a.name.localeCompare(b.name);
   });
   return (
-    <div className="pt-4">
-      <div className="flex items-center justify-between mb-3">
-        <Eyebrow>Actieve batches</Eyebrow>
-        {canEdit && <button onClick={onStartBatch} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Plus size={14} /> Nieuwe batch</button>}
+    <div>
+      <SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek een fermentatierecept" />
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={() => setOpenActive((o) => !o)} className="ff inline-flex items-center gap-1" disabled={searching}>
+          {!searching && (openActive ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
+          <Eyebrow>Actieve batches ({active.length})</Eyebrow>
+        </button>
+        {canEdit && <button onClick={onStartBatch} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuwe batch</button>}
       </div>
-      {active.length > 0
-        ? <div className="grid grid-cols-2 gap-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} />)}</div>
-        : <Empty label="Nog geen actieve batches." />}
+      {showActive && (active.length > 0
+        ? <div className="grid grid-cols-2 gap-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} />)}</div>
+        : <Empty label="Nog geen actieve batches." />)}
       {done.length > 0 && <>
-        <div className="mt-6"><Eyebrow>Afgerond</Eyebrow></div>
-        <div className="grid grid-cols-2 gap-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} />)}</div>
+        <button onClick={() => setOpenDone((o) => !o)} className="ff mt-5 mb-2 flex items-center gap-1">
+          {openDone ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
+          <Eyebrow>Afgerond ({done.length})</Eyebrow>
+        </button>
+        {openDone && <div className="grid grid-cols-2 gap-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} />)}</div>}
       </>}
       <div className="mt-7 flex items-center justify-between"><Eyebrow>Fermentatierecepten</Eyebrow>
         {canEdit && <button onClick={onNewFermentRecipe} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuw fermentatierecept</button>}
       </div>
-      <SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek een fermentatierecept" />
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
         {["Alle", ...SEASONS].map((s) => (
           <button key={s} onClick={() => { setSeasonF(s); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
@@ -1769,7 +2012,7 @@ function collectNotices(batches) {
   return { ready, due };
 }
 
-function NoticeBanner({ batches, onOpen, onDismiss }) {
+function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
   const { ready, due } = collectNotices(batches);
   if (ready.length === 0 && due.length === 0) return null;
   return (
@@ -1779,10 +2022,18 @@ function NoticeBanner({ batches, onOpen, onDismiss }) {
           <div className="font-semibold flex items-center gap-1.5 text-sm"><Bell size={15} /> Fermentatie vraagt aandacht</div>
           <ul className="mt-1.5 space-y-1 text-sm">
             {ready.map(({ b, day }) => (
-              <li key={b.id} className="flex gap-1.5"><Check size={14} className="shrink-0 mt-0.5" /><span><span className="font-medium">{b.product}</span> is klaar — dag {day}/{b.days}</span></li>
+              <li key={b.id} className="flex items-start gap-1.5">
+                <Check size={14} className="shrink-0 mt-0.5" />
+                <span className="flex-1"><span className="font-medium">{b.product}</span> is klaar — dag {day}/{b.days}</span>
+                {canAck && <button onClick={() => onAck(b.id, READY_KEY)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#e6dcc2" }} title="Gezien — verberg tot morgen">Afvinken</button>}
+              </li>
             ))}
             {due.map(({ b, label }) => (
-              <li key={b.id} className="flex gap-1.5"><FlaskConical size={14} className="shrink-0 mt-0.5" /><span><span className="font-medium">{b.product}</span>: {label.toLowerCase()}</span></li>
+              <li key={b.id + label} className="flex items-start gap-1.5">
+                <FlaskConical size={14} className="shrink-0 mt-0.5" />
+                <span className="flex-1"><span className="font-medium">{b.product}</span>: {label.toLowerCase()}</span>
+                {canAck && <button onClick={() => onAck(b.id, label)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style={{ background: "#e6dcc2" }} title="Gedaan — verberg tot de volgende beurt">Afvinken</button>}
+              </li>
             ))}
           </ul>
           <button onClick={onOpen} className="ff mt-2.5 inline-flex items-center gap-1 text-xs font-semibold underline">Naar fermentatie</button>
@@ -1796,18 +2047,22 @@ function NoticeBanner({ batches, onOpen, onDismiss }) {
 // Wat moet er vandaag met deze batch gebeuren, en is hij klaar?
 function batchStatus(b) {
   const day = daysBetween(b.startDate);
-  const ready = !b.done && day >= b.days;
+  const today = new Date().toISOString().slice(0, 10);
+  const acked = (b.actionsDone || []).filter((a) => a.date === today).map((a) => a.label);
+  const readyRaw = !b.done && day >= b.days;
+  const ready = readyRaw && !acked.includes(READY_KEY);
   const actions = FERMENT_ACTIONS[b.method] || FERMENT_ACTIONS[b.type] || [];
   const due = [];
   if (!b.done) for (const a of actions) {
-    if (a.everyDays && day > 0 && day % a.everyDays === 0) due.push(a.label);
+    if (a.everyDays && day > 0 && day % a.everyDays === 0 && !acked.includes(a.label)) due.push(a.label);
   }
-  return { day, ready, due };
+  return { day, ready, readyRaw, due, acked };
 }
+const READY_KEY = "__klaar";
 
-function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog }) {
+function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAck }) {
   const [open, setOpen] = useState(false);
-  const { day, ready, due } = batchStatus(b);
+  const { day, ready, readyRaw, due, acked } = batchStatus(b);
   const tgt = FERMENT_TARGETS[b.method] || FERMENT_TARGETS[b.type];
   const lastPh = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.ph != null) : null;
   const lastBrix = (b.log && b.log.length) ? [...b.log].reverse().find((e) => e.brix != null) : null;
@@ -1820,12 +2075,18 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog }) {
         </div>
         {b.done
           ? <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
-          : ready
+          : readyRaw
             ? <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#dfead6", color: "#3a4b30" }}>Dag {day}/{b.days} ✓</span>
             : <span className="shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5 pillon">Dag {day}/{b.days}</span>}
       </div>
       {!b.done && due.length > 0 && (
-        <div className="mt-1.5 text-[11px] font-medium rounded-md px-2 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>{due[0]}</div>
+        <div className="mt-1.5 flex items-start gap-1 text-[11px] font-medium rounded-md px-2 py-1" style={{ background: "#f3ecdc", color: "#6a5326" }}>
+          <span className="flex-1">{due[0]}</span>
+          {canEdit && onAck && <button onClick={() => onAck(b.id, due[0])} className="ff shrink-0 hover:opacity-70" title="Gedaan"><Check size={13} /></button>}
+        </div>
+      )}
+      {!b.done && due.length === 0 && acked.length > 0 && (
+        <div className="mt-1.5 text-[11px] rounded-md px-2 py-1 inline-flex items-center gap-1" style={{ background: "#e8ebe0", color: T.green }}><Check size={12} /> Vandaag afgevinkt</div>
       )}
       <div className="mt-2 space-y-0.5 text-[11px] mute">
         {tgt && tgt.phEnd != null && <div className="inline-flex items-center gap-1"><FlaskConical size={11} /> Doel pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · nu {String(lastPh.ph).replace(".", ",")}</span>}</div>}
@@ -1866,13 +2127,14 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
   const [fName, setFName] = useState("");
   const [fPairs, setFPairs] = useState("");
   const [fNote, setFNote] = useState("");
-  const startEdit = (p) => { setEditing(p ? p.name : "__new"); setFName(p ? p.name : ""); setFPairs(p ? p.pairs.join(", ") : ""); setFNote(p ? p.note : ""); if (p) setOpen(p.name); };
-  const submit = () => { onSave(fName, fPairs.split(","), fNote); setEditing(null); };
+  const [fSeason, setFSeason] = useState([]);
+  const startEdit = (p) => { setEditing(p ? p.name : "__new"); setFName(p ? p.name : ""); setFPairs(p ? p.pairs.join(", ") : ""); setFNote(p ? p.note : ""); setFSeason(p && p.season ? p.season.filter((x) => x !== "Hele jaar") : []); if (p) setOpen(p.name); };
+  const submit = () => { onSave(fName, fPairs.split(","), fNote, SEASONS.filter((x) => fSeason.includes(x))); setEditing(null); };
   const isSeed = (name) => PAIRINGS.some((p) => p.name === name);
   const [seasonF, setSeasonF] = useState("Alle");
-  const inSeason = (p) => { const ss = seasonOf(p.name); return ss.includes(seasonF) || ss.includes("Hele jaar"); };
+  const inSeason = (p) => { const ss = (p.season && p.season.length) ? p.season : seasonOf(p.name); return ss.includes(seasonF) || ss.includes("Hele jaar"); };
   const shown = pairings
-    .filter((p) => p.name.includes(q.toLowerCase()) || p.pairs.some((x) => x.includes(q.toLowerCase())))
+    .filter((p) => softMatchAny([p.name, p.pairs.join(" "), p.note], q))
     .filter((p) => seasonF === "Alle" || inSeason(p))
     .sort((a, b) => a.name.localeCompare(b.name));
   return (
@@ -1885,7 +2147,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
         )}
       </div>
       {editing === "__new" && (
-        <PairingForm title="Nieuw product" name={fName} setName={setFName} nameLocked={false} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} onSubmit={submit} onCancel={() => setEditing(null)} />
+        <PairingForm title="Nieuw product" name={fName} setName={setFName} nameLocked={false} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} season={fSeason} setSeason={setFSeason} onSubmit={submit} onCancel={() => setEditing(null)} />
       )}
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een product of smaak" />
       <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
@@ -1898,7 +2160,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
         {shown.map((p) => (
           <div key={p.name} className="card overflow-hidden">
             <button onClick={() => setOpen(open === p.name ? null : p.name)} className="ff w-full flex items-center justify-between px-4 py-3 text-left">
-              <span className="serif ink text-lg flex items-center gap-2">{cap(p.name)} {SEASON[p.name] && SEASON[p.name].filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}</span>
+              <span className="serif ink text-lg flex items-center gap-2 flex-wrap">{cap(p.name)} {(((p.season && p.season.length) ? p.season : (SEASON[p.name] || [])).filter((s) => s !== "Hele jaar")).map((s) => <SeasonPill key={s} s={s} />)}</span>
               <ChevronRight size={16} className={"transition-transform " + (open === p.name ? "rotate-90" : "")} style={{ color: "#c4c2b2" }} />
             </button>
             {open === p.name && editing !== p.name && (
@@ -1913,7 +2175,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
             )}
             {open === p.name && editing === p.name && (
               <div className="px-4 pb-4 -mt-1">
-                <PairingForm title={"Bewerk " + p.name} name={fName} setName={setFName} nameLocked={true} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} onSubmit={submit} onCancel={() => setEditing(null)}
+                <PairingForm title={"Bewerk " + p.name} name={fName} setName={setFName} nameLocked={true} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} season={fSeason} setSeason={setFSeason} onSubmit={submit} onCancel={() => setEditing(null)}
                   extraLabel={isSeed(p.name) ? "Herstel origineel" : "Verwijderen"} onExtra={() => { setEditing(null); onReset(p.name); }} />
               </div>
             )}
@@ -1925,13 +2187,22 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes }) {
   );
 }
 
-function PairingForm({ title, name, setName, nameLocked, pairs, setPairs, note, setNote, onSubmit, onCancel, extraLabel, onExtra }) {
+function PairingForm({ title, name, setName, nameLocked, pairs, setPairs, note, setNote, season, setSeason, onSubmit, onCancel, extraLabel, onExtra }) {
+  const toggleS = (x) => setSeason((a) => (a.includes(x) ? a.filter((y) => y !== x) : [...a, x]));
   return (
     <div className="card p-4 mb-3">
       <div className="text-sm font-medium ink mb-3">{title}</div>
       {!nameLocked && <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Product</span><input className="input px-3 py-2.5" value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. vlierbloesem" /></label>}
       <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Partners (gescheiden door komma's)</span><textarea rows={2} className="input px-3 py-2.5 resize-none" value={pairs} onChange={(e) => setPairs(e.target.value)} placeholder="bv. citroen, honing, room" /></label>
       <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Notitie</span><input className="input px-3 py-2.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Korte typering" /></label>
+      {setSeason && <div className="mb-3">
+        <span className="block text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = volgt de seizoenslijst)</span></span>
+        <div className="flex flex-wrap gap-1.5">
+          {SEASONS.map((x) => (
+            <button key={x} type="button" onClick={() => toggleS(x)} className={"ff rounded-full px-3 py-1.5 text-xs font-medium " + ((season || []).includes(x) ? "pillon" : "pill")}>{x}</button>
+          ))}
+        </div>
+      </div>}
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={onSubmit} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><Check size={15} /> Opslaan</button>
         <button onClick={onCancel} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><X size={15} /> Annuleren</button>
@@ -1975,26 +2246,52 @@ const ICE_ROWS = [
 ];
 // Vochtverlies bij roosteren (200 °C, geolied, één laag, schoongemaakt product).
 const ROAST_ROWS = [
-  { groente:"Tomaat (halve, langzaam)", type:"nat", verlies:"55–65%", rendement:"40%", rauw:"2,5 kg" },
-  { groente:"Courgette", type:"nat", verlies:"50–60%", rendement:"45%", rauw:"2,2 kg" },
-  { groente:"Champignon / paddenstoel", type:"nat", verlies:"45–55%", rendement:"50%", rauw:"2,0 kg" },
-  { groente:"Aubergine", type:"nat", verlies:"45–55%", rendement:"50%", rauw:"2,0 kg" },
-  { groente:"Ui", type:"nat", verlies:"40–50%", rendement:"55%", rauw:"1,8 kg" },
-  { groente:"Prei", type:"nat", verlies:"40–50%", rendement:"55%", rauw:"1,8 kg" },
-  { groente:"Venkel", type:"nat", verlies:"35–45%", rendement:"60%", rauw:"1,7 kg" },
-  { groente:"Paprika", type:"nat", verlies:"35–45%", rendement:"60%", rauw:"1,7 kg" },
-  { groente:"Pompoen", type:"middel", verlies:"30–40%", rendement:"65%", rauw:"1,5 kg" },
-  { groente:"Bloemkool / broccoli", type:"middel", verlies:"25–35%", rendement:"70%", rauw:"1,4 kg" },
-  { groente:"Wortel", type:"hard", verlies:"25–35%", rendement:"70%", rauw:"1,4 kg" },
-  { groente:"Pastinaak", type:"hard", verlies:"25–35%", rendement:"70%", rauw:"1,4 kg" },
-  { groente:"Knolselderij", type:"hard", verlies:"25–30%", rendement:"72%", rauw:"1,4 kg" },
-  { groente:"Koolrabi", type:"hard", verlies:"25–30%", rendement:"72%", rauw:"1,4 kg" },
-  { groente:"Aardpeer", type:"hard", verlies:"20–30%", rendement:"75%", rauw:"1,3 kg" },
-  { groente:"Asperge", type:"hard", verlies:"20–30%", rendement:"75%", rauw:"1,3 kg" },
-  { groente:"Zoete aardappel", type:"hard", verlies:"25–30%", rendement:"72%", rauw:"1,4 kg" },
-  { groente:"Aardappel", type:"hard", verlies:"20–25%", rendement:"78%", rauw:"1,3 kg" },
-  { groente:"Rode biet (in folie)", type:"hard", verlies:"12–18%", rendement:"85%", rauw:"1,2 kg" },
+  { groente:"Tomaat (halve, langzaam)", type:"nat", snij:"5%", verlies:"55–65%", schoon:"2,5 kg", onbewerkt:"2,6 kg" },
+  { groente:"Courgette", type:"nat", snij:"5%", verlies:"50–60%", schoon:"2,2 kg", onbewerkt:"2,3 kg" },
+  { groente:"Champignon / paddenstoel", type:"nat", snij:"5%", verlies:"45–55%", schoon:"2,0 kg", onbewerkt:"2,1 kg" },
+  { groente:"Aubergine", type:"nat", snij:"10%", verlies:"45–55%", schoon:"2,0 kg", onbewerkt:"2,2 kg" },
+  { groente:"Ui", type:"nat", snij:"15%", verlies:"40–50%", schoon:"1,8 kg", onbewerkt:"2,1 kg" },
+  { groente:"Prei", type:"nat", snij:"40%", verlies:"40–50%", schoon:"1,8 kg", onbewerkt:"3,0 kg" },
+  { groente:"Venkel", type:"nat", snij:"25%", verlies:"35–45%", schoon:"1,7 kg", onbewerkt:"2,2 kg" },
+  { groente:"Paprika", type:"nat", snij:"20%", verlies:"35–45%", schoon:"1,7 kg", onbewerkt:"2,1 kg" },
+  { groente:"Pompoen", type:"middel", snij:"30%", verlies:"30–40%", schoon:"1,5 kg", onbewerkt:"2,2 kg" },
+  { groente:"Bloemkool / broccoli", type:"middel", snij:"40%", verlies:"25–35%", schoon:"1,4 kg", onbewerkt:"2,4 kg" },
+  { groente:"Wortel", type:"hard", snij:"15%", verlies:"25–35%", schoon:"1,4 kg", onbewerkt:"1,7 kg" },
+  { groente:"Pastinaak", type:"hard", snij:"18%", verlies:"25–35%", schoon:"1,4 kg", onbewerkt:"1,7 kg" },
+  { groente:"Knolselderij", type:"hard", snij:"30%", verlies:"25–30%", schoon:"1,4 kg", onbewerkt:"2,0 kg" },
+  { groente:"Koolrabi", type:"hard", snij:"30%", verlies:"25–30%", schoon:"1,4 kg", onbewerkt:"2,0 kg" },
+  { groente:"Aardpeer", type:"hard", snij:"15%", verlies:"20–30%", schoon:"1,3 kg", onbewerkt:"1,6 kg" },
+  { groente:"Asperge", type:"hard", snij:"35%", verlies:"20–30%", schoon:"1,3 kg", onbewerkt:"2,1 kg" },
+  { groente:"Zoete aardappel", type:"hard", snij:"20%", verlies:"25–30%", schoon:"1,4 kg", onbewerkt:"1,7 kg" },
+  { groente:"Aardappel", type:"hard", snij:"18%", verlies:"20–25%", schoon:"1,3 kg", onbewerkt:"1,6 kg" },
+  { groente:"Rode biet (in folie)", type:"hard", snij:"12%", verlies:"12–18%", schoon:"1,2 kg", onbewerkt:"1,3 kg" },
 ];
+
+// Werkwijzes onder de technieken-tabellen; koks kunnen deze aanpassen.
+const TECH_NOTES_SEED = {
+  jam: [
+    "Weeg het schoongemaakte fruit; reken 500 g geleisuiker 2:1 per kg.",
+    "Meng losse pectine eerst door een klein deel van de suiker — anders klontert het.",
+    "Breng fruit met suiker aan de kook en kook exact 4 minuten hard door.",
+    "Voeg citroenzuur pas op het eind toe; pectine geleert bij pH 2,8–3,4.",
+    "Koude-schoteltest: een druppel op een ijskoud bordje moet in 30 seconden rimpelen.",
+    "Vul af boven 85 °C, sluit direct en keer de potten 5 minuten om.",
+  ],
+  ijs: [
+    "Percentages zijn van het totale mengsel; meet na met een refractometer (°Bx).",
+    "Het aandeel glucose is een deel van het suikergewicht: 28% suiker met 25% glucose = 210 g kristalsuiker + 70 g glucose per kg.",
+    "Glucosepoeder (DE 38–40) verlaagt de zoetkracht en houdt het ijs smeuïg. Ga niet boven ~25%, anders wordt het taai.",
+    "Te weinig suiker geeft een harde, scherpe textuur; te veel suiker laat het ijs niet opstijven.",
+    "Laat roomijsbasis 12 uur koud rijpen voor het draaien; draai af op −8 tot −10 °C.",
+  ],
+  roosteren: [
+    "Gemeten bij 200 °C, licht geolied, in één laag, en per stap gewogen.",
+    "Snijverlies is van onbewerkt naar schoongemaakt (loof, schil, zaadlijst, houtige delen).",
+    "Vochtverlies is wat er daarna in de oven uit verdampt.",
+    "Voorbeeld: 4 kg geroosterde courgette? Bestel 4 × 2,3 = ruim 9 kg onbewerkt.",
+    "Weeg een keer per seizoen na en pas de waarden aan; jonge tuingroente bevat meer vocht.",
+  ],
+};
 
 function TechTable({ head, rows }) {
   return (
@@ -2015,11 +2312,10 @@ function TechTable({ head, rows }) {
   );
 }
 
-function TechCard({ title, intro, children, defaultOpen }) {
-  const [open, setOpen] = useState(!!defaultOpen);
+function TechCard({ title, intro, open, onToggle, children }) {
   return (
     <div className="card overflow-hidden">
-      <button onClick={() => setOpen((o) => !o)} className="ff w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left">
+      <button onClick={onToggle} className="ff w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left">
         <span className="min-w-0">
           <span className="serif ink text-lg block leading-tight">{title}</span>
           <span className="text-xs mute block mt-0.5">{intro}</span>
@@ -2031,65 +2327,270 @@ function TechCard({ title, intro, children, defaultOpen }) {
   );
 }
 
-function TechniquesList() {
+// Werkwijze onder een tabel: leesbaar, en door koks aan te passen.
+function TechNotes({ notes, canEdit, onSave, label }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const start = () => { setText(notes.join("\n")); setEditing(true); };
+  const save = () => { onSave(text.split("\n").map((l) => l.trim()).filter(Boolean)); setEditing(false); };
+  return (
+    <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="font-semibold">{label}</div>
+        {canEdit && !editing && <button onClick={start} className="ff inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-70"><Pencil size={11} /> Aanpassen</button>}
+      </div>
+      {editing ? (
+        <>
+          <textarea rows={Math.max(4, text.split("\n").length + 1)} className={inputCls + " resize-none text-sm"} value={text} onChange={(e) => setText(e.target.value)} placeholder="Eén regel per stap" />
+          <p className="text-[11px] mt-1 opacity-70">Eén regel per stap. Regels die je leeg laat, vervallen.</p>
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={save} className="btnp ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><Check size={13} /> Opslaan</button>
+            <button onClick={() => setEditing(false)} className="btno ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><X size={13} /> Annuleren</button>
+          </div>
+        </>
+      ) : (
+        <ul className="list-disc list-inside space-y-1">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+      )}
+    </div>
+  );
+}
+
+function TechniquesList({ notes, canEdit, onSaveNotes }) {
   const [q, setQ] = useState("");
-  const query = q.trim().toLowerCase();
-  const hit = (t) => !query || t.toLowerCase().includes(query);
-  const jam = JAM_ROWS.filter((r) => hit(r.fruit));
-  const ice = ICE_ROWS.filter((r) => hit(r.soort));
-  const roast = ROAST_ROWS.filter((r) => hit(r.groente) || hit(r.type));
+  const [openCards, setOpenCards] = useState({});
+  const searching = q.trim().length > 0;
+  const hit = (t) => softMatch(t, q);
+  const jam = searching ? JAM_ROWS.filter((r) => hit(r.fruit)) : JAM_ROWS;
+  const ice = searching ? ICE_ROWS.filter((r) => hit(r.soort)) : ICE_ROWS;
+  const roast = searching ? ROAST_ROWS.filter((r) => hit(r.groente) || hit(r.type)) : ROAST_ROWS;
+  // Bij zoeken klapt alleen de tabel open die een treffer heeft.
+  const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
+  const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: !o[key] }));
+  const n = (k) => (notes && notes[k]) || TECH_NOTES_SEED[k];
+  const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0;
   return (
     <div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
+      {nothing && <Empty label="Niets gevonden in de technieken." />}
       <div className="space-y-2.5">
-        <TechCard title="Jam & confituur" intro="Met 2:1 geleisuiker — per kg schoongemaakt fruit" defaultOpen>
+        <TechCard title="Jam & confituur" intro="Met 2:1 geleisuiker — per kg schoongemaakt fruit" open={isOpen("jam", jam.length)} onToggle={() => toggle("jam")}>
           <TechTable head={["Fruit", "Pectine", "Geleisuiker 2:1", "Extra pectine", "Citroenzuur"]}
             rows={jam.map((r) => [r.fruit, r.pectine, r.suiker, r.pectineX, r.zuur])} />
-          {jam.length === 0 && <p className="text-sm mute py-3">Geen fruitsoort gevonden.</p>}
-          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
-            <div className="font-semibold mb-1">Werkwijze</div>
-            <ol className="list-decimal list-inside space-y-1">
-              <li>Weeg het schoongemaakte fruit; reken 500 g geleisuiker 2:1 per kg.</li>
-              <li>Meng losse pectine eerst door een klein deel van de suiker — anders klontert het.</li>
-              <li>Breng fruit met suiker aan de kook en kook exact 4 minuten hard door.</li>
-              <li>Voeg citroenzuur pas op het eind toe; pectine geleert bij pH 2,8–3,4.</li>
-              <li>Koude-schoteltest: een druppel op een ijskoud bordje moet in 30 seconden rimpelen.</li>
-              <li>Vul af boven 85 °C, sluit direct en keer de potten 5 minuten om.</li>
-            </ol>
-          </div>
+          <TechNotes label="Werkwijze" notes={n("jam")} canEdit={canEdit} onSave={(lines) => onSaveNotes("jam", lines)} />
         </TechCard>
 
-        <TechCard title="Roomijs & sorbet" intro="Suikergehaltes en glucoseverhouding">
+        <TechCard title="Roomijs & sorbet" intro="Suikergehaltes en glucoseverhouding" open={isOpen("ijs", ice.length)} onToggle={() => toggle("ijs")}>
           <TechTable head={["Soort", "Totaal suiker", "Aandeel glucose", "Aandachtspunt"]}
             rows={ice.map((r) => [r.soort, r.suiker, r.glucose, r.extra])} />
-          {ice.length === 0 && <p className="text-sm mute py-3">Niets gevonden.</p>}
-          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
-            <div className="font-semibold mb-1">Lezen als volgt</div>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Percentages zijn van het <span className="font-medium">totale mengsel</span>; meet na met een refractometer (°Bx).</li>
-              <li>Aandeel glucose is een deel <span className="font-medium">van het suikergewicht</span>: 28% suiker met 25% glucose = 210 g kristalsuiker + 70 g glucose per kg.</li>
-              <li>Glucosepoeder (DE 38–40) verlaagt de zoetkracht en houdt het ijs smeuïg. Ga niet boven ~25%, anders wordt het taai.</li>
-              <li>Te weinig suiker geeft een harde, scherpe textuur; te veel suiker laat het ijs niet opstijven.</li>
-              <li>Laat roomijsbasis 12 uur koud rijpen voor het draaien; draai af op −8 tot −10 °C.</li>
-            </ul>
-          </div>
+          <TechNotes label="Lezen als volgt" notes={n("ijs")} canEdit={canEdit} onSave={(lines) => onSaveNotes("ijs", lines)} />
         </TechCard>
 
-        <TechCard title="Vochtverlies bij roosteren" intro="Hoeveel rauw product je nodig hebt">
-          <TechTable head={["Groente", "Type", "Vochtverlies", "Rendement", "Rauw voor 1 kg"]}
-            rows={roast.map((r) => [r.groente, r.type, r.verlies, r.rendement, r.rauw])} />
-          {roast.length === 0 && <p className="text-sm mute py-3">Geen groente gevonden.</p>}
-          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
-            <div className="font-semibold mb-1">Zo gebruik je de tabel</div>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Gemeten bij 200 °C, licht geolied, in één laag, op schoongemaakt product.</li>
-              <li>Natte groenten (tomaat, courgette, paddenstoel) verliezen ruwweg de helft; harde knollen een kwart.</li>
-              <li>Dunner snijden of heter roosteren betekent meer verlies — reken bij twijfel de bovenkant van de marge.</li>
-              <li>Voorbeeld: 4 kg geroosterde courgette voor het weekend? Bestel 4 × 2,2 = ruim 8,5 kg rauw.</li>
-              <li>Weeg een keer per seizoen na en pas de waarde aan; jonge tuingroente bevat meer vocht.</li>
-            </ul>
-          </div>
+        <TechCard title="Snij- en vochtverlies bij roosteren" intro="Van onbewerkt naar schoongemaakt naar geroosterd" open={isOpen("roosteren", roast.length)} onToggle={() => toggle("roosteren")}>
+          <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
+            rows={roast.map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
+          <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
         </TechCard>
+      </div>
+    </div>
+  );
+}
+
+function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask, onEditTask, onDeleteTask }) {
+  const [q, setQ] = useState("");
+  const [areaF, setAreaF] = useState("Alle");
+  const [openAll, setOpenAll] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [noteFor, setNoteFor] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const searching = q.trim().length > 0;
+
+  const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
+  const dueToday = withStatus.filter((x) => x.st.due).sort((a, b) => (b.st.overdue ? 1 : 0) - (a.st.overdue ? 1 : 0) || a.t.area.localeCompare(b.t.area));
+  let all = withStatus;
+  if (areaF !== "Alle") all = all.filter((x) => x.t.area === areaF);
+  if (searching) all = all.filter((x) => softMatchAny([x.t.name, x.t.area, intervalLabel(x.t.intervalDays)], q));
+  all = all.sort((a, b) => a.area === b.area ? 0 : 0 || a.t.area.localeCompare(b.t.area) || a.t.name.localeCompare(b.t.name));
+
+  // Logboek per week
+  const monday = new Date(); monday.setHours(0,0,0,0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7) + weekOffset * 7);
+  const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
+  const wk = weekKey(isoDate(monday));
+  const weekLogs = logs.filter((l) => weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
+  const taskName = (id) => (tasks.find((t) => t.id === id) || {}).name || "Onbekende taak";
+
+  const startNote = (l) => { setNoteFor(l.id); setNoteText(l.note || ""); };
+  const saveNote = () => { onEditLog(noteFor, noteText); setNoteFor(null); };
+
+  return (
+    <div>
+      <SearchBar value={q} onChange={setQ} placeholder="Zoek een schoonmaaktaak" />
+
+      <div className="flex items-center justify-between mb-2">
+        <Eyebrow>Vandaag te doen ({dueToday.length})</Eyebrow>
+        <span className="text-xs mute">{dueToday.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span>
+      </div>
+      {dueToday.length === 0
+        ? <div className="rounded-xl p-4 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is bij — niets te doen vandaag.</div>
+        : <div className="card overflow-hidden">
+            {dueToday.map((x, i) => (
+              <div key={x.t.id} className={"flex items-center gap-3 px-4 py-3 " + (i > 0 ? "divi" : "")}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium ink truncate">{x.t.name}</div>
+                  <div className="text-[11px] mute mt-0.5">
+                    {x.t.area} · {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min
+                    {x.st.overdue && <span className="ml-1.5 font-semibold" style={{ color: "#8a4a3a" }}>{x.st.since - x.t.intervalDays} dag(en) over tijd</span>}
+                    {!x.st.last && <span className="ml-1.5 mute">nog nooit afgetekend</span>}
+                  </div>
+                </div>
+                {canEdit
+                  ? <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title={"Aftekenen als " + user.name}><Check size={14} /> {user.name}</button>
+                  : <span className="text-[11px] mute shrink-0">te doen</span>}
+              </div>
+            ))}
+          </div>}
+
+      <button onClick={() => setOpenAll((o) => !o)} className="ff mt-6 mb-2 flex items-center gap-1">
+        {openAll || searching ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
+        <Eyebrow>Alle taken ({all.length})</Eyebrow>
+      </button>
+      {(openAll || searching) && (
+        <>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+            {["Alle", ...CLEANING_AREAS].map((a) => (
+              <button key={a} onClick={() => setAreaF(a)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (areaF === a ? "pillon" : "pill")}>{a}</button>
+            ))}
+          </div>
+          {canEdit && <button onClick={onNewTask} className="btno ff mb-2 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Plus size={15} /> Taak toevoegen</button>}
+          <div className="card overflow-hidden">
+            {all.map((x, i) => (
+              <div key={x.t.id} className={"flex items-center gap-3 px-4 py-3 " + (i > 0 ? "divi" : "")}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium ink truncate">{x.t.name}</div>
+                  <div className="text-[11px] mute mt-0.5">
+                    {x.t.area} · {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min ·{" "}
+                    {x.st.last ? <>laatst {x.st.since === 0 ? "vandaag" : x.st.since === 1 ? "gisteren" : x.st.since + " dagen geleden"} door {x.st.last.doneBy}</> : "nog nooit afgetekend"}
+                  </div>
+                </div>
+                {canEdit && <>
+                  <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-2 py-1.5 acc hover:opacity-70" title="Nu aftekenen"><Check size={15} /></button>
+                  <button onClick={() => onEditTask(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Taak bewerken"><Pencil size={14} /></button>
+                  <button onClick={() => onDeleteTask(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Taak verwijderen"><Trash2 size={14} /></button>
+                </>}
+              </div>
+            ))}
+            {all.length === 0 && <div className="px-4 py-6 text-center text-sm mute">Geen taak gevonden.</div>}
+          </div>
+        </>
+      )}
+
+      <div className="mt-7 flex items-center justify-between">
+        <Eyebrow>Logboek per week</Eyebrow>
+        <div className="flex items-center gap-1.5 mb-2">
+          <button onClick={() => setWeekOffset((w) => w - 1)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Vorige week"><ArrowLeft size={13} /></button>
+          <span className="pillon rounded-md px-2 h-7 flex items-center text-[11px] font-semibold">{wk.replace("-W", " · week ")}</span>
+          <button onClick={() => setWeekOffset((w) => Math.min(0, w + 1))} disabled={weekOffset >= 0} className="ff pill rounded-md w-7 h-7 flex items-center justify-center disabled:opacity-40" title="Volgende week"><ChevronRight size={13} /></button>
+        </div>
+      </div>
+      <div className="text-xs mute mb-2">{isoDate(monday)} t/m {isoDate(sunday)} · {weekLogs.length} aftekeningen</div>
+      <div className="space-y-2">
+        {weekLogs.map((l) => (
+          <div key={l.id} className="card p-3.5">
+            <div className="flex items-start gap-2">
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Check size={15} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium ink">{taskName(l.taskId)}</div>
+                <div className="text-[11px] mute mt-0.5">{l.doneDate} · afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
+                {l.note && <p className="text-xs mt-1.5 italic" style={{ color: "#3b3d33" }}>{l.note}</p>}
+                {(l.edits || []).length > 0 && (
+                  <div className="mt-1.5 text-[11px] mute space-y-0.5">
+                    {l.edits.map((e, i) => (
+                      <div key={i} className="flex gap-1"><Pencil size={10} className="shrink-0 mt-0.5" /><span>{e.at} — {e.by} wijzigde de opmerking{e.from ? <> van “{e.from}”</> : <> (was leeg)</>} naar “{e.to}”</span></div>
+                    ))}
+                  </div>
+                )}
+                {canEdit && noteFor !== l.id && (
+                  <button onClick={() => startNote(l)} className="ff mt-2 inline-flex items-center gap-1 text-[11px] font-medium acc hover:opacity-70"><Pencil size={11} /> {l.note ? "Opmerking aanpassen" : "Opmerking toevoegen"}</button>
+                )}
+                {canEdit && noteFor === l.id && (
+                  <div className="mt-2">
+                    <textarea rows={2} className={inputCls + " resize-none text-sm"} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Wat is er gedaan of opgevallen?" />
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button onClick={saveNote} className="btnp ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><Check size={13} /> Opslaan</button>
+                      <button onClick={() => setNoteFor(null)} className="btno ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><X size={13} /> Annuleren</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        {weekLogs.length === 0 && <Empty label="Deze week is er nog niets afgetekend." />}
+      </div>
+    </div>
+  );
+}
+
+function CleaningTaskForm({ task, onCancel, onSave }) {
+  const [name, setName] = useState(task?.name || "");
+  const [area, setArea] = useState(task?.area || CLEANING_AREAS[0]);
+  const [intervalDays, setIntervalDays] = useState(task ? String(task.intervalDays) : "7");
+  const [minutes, setMinutes] = useState(task ? String(task.minutes) : "15");
+  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), area, intervalDays: Number(intervalDays) || 1, minutes: Number(minutes) || 0 }); };
+  return (
+    <div>
+      <FormBar title={task ? "Taak bewerken" : "Nieuwe schoonmaaktaak"} onCancel={onCancel} onSave={submit} />
+      <Field label="Wat moet er schoongemaakt worden?"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Vloer fermentatieruimte" /></Field>
+      <Field label="Ruimte"><select className={inputCls} value={area} onChange={(e) => setArea(e.target.value)}>{CLEANING_AREAS.map((a) => <option key={a}>{a}</option>)}</select></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Om de hoeveel dagen"><input type="number" min="1" className={inputCls} value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} /></Field>
+        <Field label="Tijd (minuten)"><input type="number" min="0" className={inputCls} value={minutes} onChange={(e) => setMinutes(e.target.value)} /></Field>
+      </div>
+      <div className="flex flex-wrap gap-1.5 -mt-2">
+        {[1, 2, 3, 7, 14, 30, 90].map((d) => (
+          <button key={d} type="button" onClick={() => setIntervalDays(String(d))} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (String(d) === intervalDays ? "pillon" : "pill")}>{intervalLabel(d)}</button>
+        ))}
+      </div>
+      <p className="text-xs mute mt-4">De taak verschijnt vanzelf bovenaan zodra hij weer aan de beurt is, en verdwijnt daar zodra iemand hem aftekent.</p>
+    </div>
+  );
+}
+
+// Dagelijkse controle om 16:45
+function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onClose, onOpenSection }) {
+  const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
+  const open = withStatus.filter((x) => x.st.due);
+  const doneToday = logs.filter((l) => l.doneDate === new Date().toISOString().slice(0, 10));
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
+      <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="serif ink text-xl leading-tight">Schoonmaakcontrole</div>
+            <div className="text-xs mute mt-0.5">Het is {String(CHECK_HOUR).padStart(2, "0")}:{String(CHECK_MIN).padStart(2, "0")} — tijd om af te tekenen.</div>
+          </div>
+          <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
+        </div>
+        <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
+          Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span>
+        </div>
+        {open.length === 0
+          ? <div className="mt-3 rounded-xl p-3.5 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is afgetekend. Mooi werk.</div>
+          : <div className="card overflow-hidden mt-3">
+              {open.map((x, i) => (
+                <div key={x.t.id} className={"flex items-center gap-2 px-3 py-2.5 " + (i > 0 ? "divi" : "")}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm ink truncate">{x.t.name}</div>
+                    <div className="text-[11px] mute">{x.t.area} · {x.t.minutes} min{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
+                  </div>
+                  {canEdit && <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> {user.name}</button>}
+                </div>
+              ))}
+            </div>}
+        <div className="flex items-center gap-2 mt-4">
+          <button onClick={onOpenSection} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2">Naar schoonmaaklijst</button>
+          <button onClick={onClose} className="ff text-sm mute underline">Sluiten</button>
+        </div>
       </div>
     </div>
   );
@@ -2359,7 +2860,7 @@ function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNew
   const toggleSeason = (s) => setSeasons((a) => (a.includes(s) ? a.filter((x) => x !== s) : [...a, s]));
   const suggestCourse = (g) => setCourse(seasons.length === 1 ? seasons[0] + g.toLowerCase() : g);
   const q = pick.trim().toLowerCase();
-  const found = q ? allRecipes.filter((r) => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q)) : allRecipes;
+  const found = q ? allRecipes.filter((r) => softMatchAny([r.name, r.category], q)) : allRecipes;
   const matches = found.slice(0, limit);
   const currentState = () => ({ name, course, description, plating, recipeIds, season: SEASONS.filter((s) => seasons.includes(s)), diet });
   const submit = () => { if (!name.trim()) return; onSave({ ...currentState(), name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim() }); };
@@ -2423,7 +2924,7 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
     if (r.fermentDefaults) { setSaltPct(String(r.fermentDefaults.saltPct)); setTempC(String(r.fermentDefaults.tempC)); setDays(String(r.fermentDefaults.days)); }
     setPick("");
   };
-  const pickMatches = pick.trim() ? (fermentRecipes || []).filter((r) => r.name.toLowerCase().includes(pick.trim().toLowerCase())).slice(0, 8) : [];
+  const pickMatches = pick.trim() ? (fermentRecipes || []).filter((r) => softMatchAny([r.name, r.fermentMethod, r.category], pick)).slice(0, 8) : [];
   const isMethod = FERMENT_METHODS.includes(type);
   const tgt = FERMENT_TARGETS[type];
   const submit = () => { if (!product.trim()) return; onSave({ product: product.trim(), type, method: isMethod ? type : type, recipeId, startDate, days: Number(days) || 0, saltPct: Number(saltPct) || 0, tempC: Number(tempC) || 0, amount: amount.trim() || "—", pH: pH ? Number(pH) : null, notes: notes.trim(), done: editing ? editing.done : false }); };
