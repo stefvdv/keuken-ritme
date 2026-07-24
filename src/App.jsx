@@ -155,7 +155,7 @@ const CLEANING_SEED = [
   { id:"b-vloer", name:"Vloer", area:"Bijkeuken", intervalDays:7, minutes:15 },
   { id:"b-werkbank", name:"Werkbank", area:"Bijkeuken", intervalDays:7, minutes:10 },
   { id:"b-wc", name:"Wc's", area:"Bijkeuken", intervalDays:7, minutes:20 },
-  { id:"a-machine", name:"Machine schoon", area:"Afwasruimte", intervalDays:1, minutes:15 },
+  { id:"a-machine", name:"Afwasmachine schoon", area:"Afwasruimte", intervalDays:1, minutes:15 },
   { id:"a-werkbanken", name:"Werkbanken", area:"Afwasruimte", intervalDays:1, minutes:10 },
   { id:"a-vloer", name:"Vloer", area:"Afwasruimte", intervalDays:1, minutes:15 },
   { id:"a-onderwerkbank", name:"Onder de werkbank", area:"Afwasruimte", intervalDays:7, minutes:20 },
@@ -163,6 +163,7 @@ const CLEANING_SEED = [
   { id:"a-vriezerijs", name:"Vriezer ijs", area:"Afwasruimte", intervalDays:30, minutes:45 },
   { id:"a-magazijnrek", name:"Magazijnrek", area:"Afwasruimte", intervalDays:30, minutes:30 },
   { id:"a-deuren", name:"Deuren", area:"Afwasruimte", intervalDays:30, minutes:15 },
+  { id:"c-temperaturen", name:"Temperatuurcontrole", area:"Koelruimte", intervalDays:7, minutes:10 },
   { id:"c-celvloer", name:"Koelcel vloer", area:"Koelruimte", intervalDays:7, minutes:20 },
   { id:"c-celopruimen", name:"Koelcel opruimen", area:"Koelruimte", intervalDays:7, minutes:25 },
   { id:"c-houdbaarheid", name:"Houdbaarheid checken", area:"Koelruimte", intervalDays:7, minutes:20 },
@@ -173,6 +174,19 @@ const CLEANING_SEED = [
   { id:"o-vloer", name:"Vloer vegen", area:"Opslag", intervalDays:30, minutes:20 },
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
+const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
+
+// HACCP: welke apparaten wekelijks gemeten worden en wat de grenzen zijn.
+const HACCP_UNITS = [
+  { id:"koelcel",      name:"Koelcel",       target:"0 tot 4 °C",      min:0,    max:4 },
+  { id:"koelwerkbank", name:"Koelwerkbank",  target:"0 tot 4 °C",      min:0,    max:4 },
+  { id:"vrieskast",    name:"Vrieskast",     target:"−18 °C of lager", min:-99,  max:-18 },
+  { id:"vriescel",     name:"Vriescel",      target:"−18 °C of lager", min:-99,  max:-18 },
+];
+// IJkcontrole: thermometer in smeltend ijswater hoort 0 °C te geven (±1 °C).
+const CALIB_TOLERANCE = 1;
+const inRange = (u, v) => v === null || v === undefined || isNaN(v) ? null : (v >= u.min && v <= u.max);
+const fmtTemp = (v) => (v === null || v === undefined || v === "" ? "—" : String(v).replace(".", ",") + " °C");
 
 // Interval in gewone taal
 function intervalLabel(d) {
@@ -1178,6 +1192,7 @@ export default function App() {
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkDone, setCheckDone] = useState(null);
   const [newPairing, setNewPairing] = useState(0);
+  const [haccpLogs, setHaccpLogs] = useState([]);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -1213,7 +1228,7 @@ export default function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) return;
-    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -1226,6 +1241,7 @@ export default function App() {
       supabase.from("cleaning_tasks").select("*"),
       supabase.from("cleaning_logs").select("*").order("done_date", { ascending: false }),
       supabase.from("technique_notes").select("*"),
+      supabase.from("haccp_logs").select("*").order("check_date", { ascending: false }),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -1255,6 +1271,7 @@ export default function App() {
     ];
     setCleaningTasks(merged.filter((t) => t.active !== false));
     setCleaningLogs((cl.data || []).map((r) => ({ id: r.id, taskId: r.task_id, doneDate: r.done_date, doneBy: r.done_by, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
+    setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: r.check_date, doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -1302,7 +1319,11 @@ export default function App() {
   const dishById = (id) => dishes.find((d) => d.id === id);
   const usageCount = (id) => dishes.filter((d) => d.recipeIds.includes(id)).length;
   const variationsOf = (id) => recipes.filter((r) => r.baseId === id);
-  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+  const flash = (msg, undo) => {
+    const t = { msg, undo, at: Date.now() };
+    setToast(t);
+    setTimeout(() => setToast((cur) => (cur && cur.at === t.at ? null : cur)), undo ? 7000 : 2200);
+  };
   const canEdit = !!user && user.canEdit;
 
   const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
@@ -1429,7 +1450,22 @@ export default function App() {
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
     flash(label === READY_KEY ? "Melding afgevinkt" : "Handeling afgevinkt");
   };
-  const signCleaning = async (taskId) => {
+  const removeCleaningLog = async (id, quiet) => {
+    if (live) {
+      const { error } = await supabase.from("cleaning_logs").delete().eq("id", id);
+      if (dbFail(error)) return;
+    }
+    setCleaningLogs((ls) => ls.filter((x) => x.id !== id));
+    if (!quiet) flash("Aftekening verwijderd");
+  };
+  const deleteCleaningLog = async (id) => {
+    const l = cleaningLogs.find((x) => x.id === id);
+    if (!l) return;
+    const t = cleaningTasks.find((x) => x.id === l.taskId);
+    if (!window.confirm("Aftekening van " + (t ? t.name : "deze taak") + " op " + l.doneDate + " verwijderen?")) return;
+    removeCleaningLog(id);
+  };
+  const signCleaning = async (taskId, quiet) => {
     const today = new Date().toISOString().slice(0, 10);
     const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: user.name, note: "", edits: [] };
     if (live) {
@@ -1437,7 +1473,44 @@ export default function App() {
       if (dbFail(error)) return;
     }
     setCleaningLogs((ls) => [row, ...ls]);
-    flash("Afgetekend door " + user.name);
+    if (!quiet) flash("Afgetekend door " + user.name, () => removeCleaningLog(row.id, true));
+    return row.id;
+  };
+  const saveHaccp = async (data, editingId) => {
+    const now = new Date().toISOString().slice(0, 16).replace("T", " ");
+    if (editingId) {
+      const old = haccpLogs.find((x) => x.id === editingId);
+      const nl = { ...old, ...data, edits: [...((old && old.edits) || []), { at: now, by: user.name }] };
+      if (live) {
+        const { error } = await supabase.from("haccp_logs").update({ check_date: nl.checkDate, values: nl.values, calibration: nl.calibration, note: nl.note, edits: nl.edits }).eq("id", editingId);
+        if (dbFail(error)) return;
+      }
+      setHaccpLogs((ls) => ls.map((x) => (x.id === editingId ? nl : x)));
+      flash("Meting bijgewerkt");
+      return;
+    }
+    const row = { id: "hp" + Date.now(), checkDate: data.checkDate, doneBy: user.name, values: data.values, calibration: data.calibration, note: data.note, edits: [] };
+    if (live) {
+      const { error } = await supabase.from("haccp_logs").insert({ id: row.id, check_date: row.checkDate, done_by: user.name, values: row.values, calibration: row.calibration, note: row.note, edits: [] });
+      if (dbFail(error)) return;
+    }
+    setHaccpLogs((ls) => [row, ...ls]);
+    const clId = await signCleaning(TEMP_TASK_ID, true); // taak meteen aftekenen
+    flash("Temperaturen vastgelegd", () => { removeHaccpLog(row.id, true); if (clId) removeCleaningLog(clId, true); });
+  };
+  const removeHaccpLog = async (id, quiet) => {
+    if (live) {
+      const { error } = await supabase.from("haccp_logs").delete().eq("id", id);
+      if (dbFail(error)) return;
+    }
+    setHaccpLogs((ls) => ls.filter((x) => x.id !== id));
+    if (!quiet) flash("Meting verwijderd");
+  };
+  const deleteHaccpLog = async (id) => {
+    const l = haccpLogs.find((x) => x.id === id);
+    if (!l) return;
+    if (!window.confirm("Temperatuurmeting van " + l.checkDate + " verwijderen?")) return;
+    removeHaccpLog(id);
   };
   const editCleaningLog = async (logId, note) => {
     const l = cleaningLogs.find((x) => x.id === logId);
@@ -1470,7 +1543,7 @@ export default function App() {
       if (dbFail(error)) return;
     }
     setCleaningTasks((ts) => ts.filter((x) => x.id !== id));
-    flash("Taak verwijderd");
+    flash("Taak verwijderd", () => saveCleaningTask({ name: t.name, area: t.area, intervalDays: t.intervalDays, minutes: t.minutes }, id));
   };
   const saveTechNotes = async (key, lines) => {
     if (live) {
@@ -1593,8 +1666,11 @@ export default function App() {
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes} />}
-            {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} canEdit={canEdit} user={user}
-              onSign={signCleaning} onEditLog={editCleaningLog}
+            {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
+              onSign={signCleaning} onEditLog={editCleaningLog} onDeleteLog={deleteCleaningLog}
+              onOpenHaccp={() => push({ screen: "haccpForm", editing: null })}
+              onEditHaccp={(id) => push({ screen: "haccpForm", editing: id })}
+              onDeleteHaccp={deleteHaccpLog}
               onNewTask={() => push({ screen: "cleaningForm", editing: null })}
               onEditTask={(id) => push({ screen: "cleaningForm", editing: id })}
               onDeleteTask={deleteCleaningTask} />}
@@ -1618,6 +1694,7 @@ export default function App() {
             goBack(); }} />}
         {current.screen === "batchForm" && <BatchForm prefill={current.prefill} editing={current.editing ? batches.find((b) => b.id === current.editing) : null} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d, current.editing); setSection("fermentatie"); goBack(); }} />}
         {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => addBatchMeasurement(current.id, m)} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
+        {current.screen === "haccpForm" && <HaccpForm editing={current.editing ? haccpLogs.find((l) => l.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccp(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
@@ -1632,7 +1709,12 @@ export default function App() {
           onSign={signCleaning} onClose={() => setCheckOpen(false)}
           onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
       )}
-      {toast && <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full text-sm px-4 py-2 shadow-lg" style={{ background: T.ink, color: T.paper }}><Check size={16} /> {toast}</div>}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-full text-sm px-4 py-2 shadow-lg" style={{ background: T.ink, color: T.paper }}>
+          <span className="inline-flex items-center gap-2"><Check size={16} /> {toast.msg}</span>
+          {toast.undo && <button onClick={() => { const u = toast.undo; setToast(null); u(); }} className="ff font-semibold underline shrink-0">Ongedaan maken</button>}
+        </div>
+      )}
     </div>
   );
 }
@@ -2413,7 +2495,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes }) {
   );
 }
 
-function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask, onEditTask, onDeleteTask }) {
+function CleaningList({ tasks, logs, haccpLogs, canEdit, user, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp }) {
   const [q, setQ] = useState("");
   const [areaF, setAreaF] = useState("Alle");
   const [openAll, setOpenAll] = useState(false);
@@ -2460,15 +2542,18 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
             {dueToday.map((x, i) => (
               <div key={x.t.id} className={"flex items-center gap-3 px-4 py-3 " + (i > 0 ? "divi" : "")}>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium ink truncate">{x.t.name}</div>
+                  <div className="text-[13px] font-semibold uppercase tracking-wide acc">{x.t.area}</div>
+                  <div className="text-[15px] font-medium ink truncate leading-snug">{x.t.name}</div>
                   <div className="text-[12.5px] mute mt-0.5">
-                    {x.t.area} · {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min
+                    {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min
                     {x.st.overdue && <span className="ml-1.5 font-semibold" style={{ color: "#8a4a3a" }}>{x.st.since - x.t.intervalDays} dag(en) over tijd</span>}
                     {!x.st.last && <span className="ml-1.5 mute">nog nooit afgetekend</span>}
                   </div>
                 </div>
                 {canEdit
-                  ? <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title={"Aftekenen als " + user.name}><Check size={14} /> {user.name}</button>
+                  ? (x.t.id === TEMP_TASK_ID
+                      ? <button onClick={() => onOpenHaccp(null)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title="Temperaturen invullen"><Thermometer size={14} /> Invullen</button>
+                      : <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title={"Aftekenen als " + user.name}><Check size={14} /> {user.name}</button>)
                   : <span className="text-[12.5px] mute shrink-0">te doen</span>}
               </div>
             ))}
@@ -2489,7 +2574,10 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
           <div className="space-y-3">
             {grouped.map((g) => (
               <div key={g.area}>
-                <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">{g.area} <span className="mute font-normal normal-case tracking-normal">· {g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span></div>
+                <div className="flex items-baseline gap-2 mb-1.5">
+                  <span className="serif ink text-xl leading-none">{g.area}</span>
+                  <span className="text-[12.5px] mute">{g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min</span>
+                </div>
                 <div className="card overflow-hidden">
                   {g.items.map((x, i) => (
                     <div key={x.t.id} className={"flex items-center gap-2 px-3.5 py-2.5 " + (i > 0 ? "divi" : "")}>
@@ -2501,7 +2589,9 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
                         </div>
                       </div>
                       {canEdit && <>
-                        <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Nu aftekenen"><Check size={15} /></button>
+                        {x.t.id === TEMP_TASK_ID
+                          ? <button onClick={() => onOpenHaccp(null)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Temperaturen invullen"><Thermometer size={15} /></button>
+                          : <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Nu aftekenen"><Check size={15} /></button>}
                         <button onClick={() => onEditTask(x.t.id)} className="ff shrink-0 rounded-lg px-1 py-1.5 acc hover:opacity-70" title="Taak bewerken"><Pencil size={14} /></button>
                         <button onClick={() => onDeleteTask(x.t.id)} className="ff shrink-0 rounded-lg px-1 py-1.5 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Taak verwijderen"><Trash2 size={14} /></button>
                       </>}
@@ -2514,6 +2604,10 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
           </div>
         </>
       )}
+
+      <div className="mt-7">
+        <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} />
+      </div>
 
       <div className="mt-7 flex items-center justify-between">
         <Eyebrow>Logboek per week</Eyebrow>
@@ -2530,7 +2624,10 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
             <div className="flex items-start gap-2">
               <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Check size={15} /></span>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium ink">{taskName(l.taskId)}</div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-medium ink">{taskName(l.taskId)}</div>
+                  {canEdit && <button onClick={() => onDeleteLog(l.id)} className="ff shrink-0 rounded-lg px-1 py-0.5 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Aftekening verwijderen (bij een misklik)"><Trash2 size={13} /></button>}
+                </div>
                 <div className="text-[12.5px] mute mt-0.5">{l.doneDate} · afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
                 {l.note && <p className="text-xs mt-1.5 italic" style={{ color: "#3b3d33" }}>{l.note}</p>}
                 {(l.edits || []).length > 0 && (
@@ -2558,6 +2655,141 @@ function CleaningList({ tasks, logs, canEdit, user, onSign, onEditLog, onNewTask
         ))}
         {weekLogs.length === 0 && <Empty label="Deze week is er nog niets afgetekend." />}
       </div>
+    </div>
+  );
+}
+
+// ---------- HACCP: wekelijkse temperatuurregistratie ----------
+function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete }) {
+  const [openAll, setOpenAll] = useState(false);
+  const thisWeek = weekKey(new Date().toISOString().slice(0, 10));
+  const sorted = [...logs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1));
+  const doneThisWeek = sorted.find((l) => weekKey(l.checkDate) === thisWeek) || null;
+  const shown = openAll ? sorted : sorted.slice(0, 3);
+  const warn = (l) => HACCP_UNITS.some((u) => inRange(u, l.values[u.id]) === false) || (l.calibration && l.calibration.ok === false);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <Eyebrow>HACCP · temperaturen</Eyebrow>
+        {canEdit && <button onClick={() => onOpen(null)} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70 mb-2"><Plus size={15} /> Meting invullen</button>}
+      </div>
+      {doneThisWeek
+        ? <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#e8ebe0", color: T.green }}>
+            <Check size={16} className="shrink-0 mt-0.5" />
+            <span>Deze week gecontroleerd op {doneThisWeek.checkDate} door <span className="font-medium">{doneThisWeek.doneBy}</span>{warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
+          </div>
+        : <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+            <Bell size={16} className="shrink-0 mt-0.5" />
+            <span>Deze week nog niet gecontroleerd. Meet koelcel, koelwerkbank, vrieskast en vriescel, en ijk de thermometer.</span>
+          </div>}
+
+      <div className="mt-3 space-y-2">
+        {shown.map((l) => (
+          <div key={l.id} className="card p-3.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium ink">{l.checkDate} · week {weekKey(l.checkDate).split("-W")[1]}</div>
+                <div className="text-[12.5px] mute mt-0.5">afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
+              </div>
+              {canEdit && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => onEdit(l.id)} className="ff rounded-lg px-1.5 py-1 acc hover:opacity-70" title="Meting corrigeren"><Pencil size={14} /></button>
+                  <button onClick={() => onDelete(l.id)} className="ff rounded-lg px-1.5 py-1 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Meting verwijderen"><Trash2 size={14} /></button>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-[12.5px]">
+              {HACCP_UNITS.map((u) => {
+                const ok = inRange(u, l.values[u.id]);
+                return (
+                  <div key={u.id} className="flex items-center justify-between gap-2">
+                    <span className="mute truncate">{u.name}</span>
+                    <span className="font-medium shrink-0" style={{ color: ok === false ? "#8a4a3a" : "#2b3823" }}>{fmtTemp(l.values[u.id])}{ok === false && " ⚠"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-1.5 text-[12.5px] flex items-center justify-between gap-2">
+              <span className="mute">Thermometer geijkt (ijswater)</span>
+              <span className="font-medium shrink-0" style={{ color: l.calibration && l.calibration.ok === false ? "#8a4a3a" : "#2b3823" }}>
+                {l.calibration && l.calibration.measured !== null && l.calibration.measured !== undefined ? fmtTemp(l.calibration.measured) : "—"}
+                {l.calibration && l.calibration.ok === false ? " ⚠ afwijking" : l.calibration && l.calibration.ok ? " ✓" : ""}
+              </span>
+            </div>
+            {l.note && <p className="text-[12.5px] mute mt-1.5 italic">{l.note}</p>}
+            {(l.edits || []).length > 0 && (
+              <div className="mt-1.5 text-[12px] mute space-y-0.5">
+                {l.edits.map((e, i) => <div key={i} className="flex gap-1"><Pencil size={10} className="shrink-0 mt-0.5" /><span>{e.at} — {e.by} corrigeerde deze meting</span></div>)}
+              </div>
+            )}
+          </div>
+        ))}
+        {sorted.length === 0 && <Empty label="Nog geen temperatuurmetingen vastgelegd." />}
+        {sorted.length > 3 && (
+          <button onClick={() => setOpenAll((o) => !o)} className="ff w-full rounded-xl text-sm mute py-2.5" style={{ border: "1px dashed #cfccbe" }}>
+            {openAll ? "Toon minder" : "Toon alle " + sorted.length + " metingen"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HaccpForm({ editing, onCancel, onSave }) {
+  const [checkDate, setCheckDate] = useState(editing ? editing.checkDate : new Date().toISOString().slice(0, 10));
+  const [values, setValues] = useState(() => {
+    const v = {};
+    HACCP_UNITS.forEach((u) => { v[u.id] = editing && editing.values[u.id] !== undefined && editing.values[u.id] !== null ? String(editing.values[u.id]) : ""; });
+    return v;
+  });
+  const [calib, setCalib] = useState(editing && editing.calibration && editing.calibration.measured !== null && editing.calibration.measured !== undefined ? String(editing.calibration.measured) : "");
+  const [note, setNote] = useState(editing ? editing.note || "" : "");
+  const num = (x) => (x === "" || x === "-" ? null : Number(String(x).replace(",", ".")));
+  const calibNum = num(calib);
+  const calibOk = calibNum === null ? null : Math.abs(calibNum) <= CALIB_TOLERANCE;
+  const submit = () => {
+    const out = {};
+    HACCP_UNITS.forEach((u) => { out[u.id] = num(values[u.id]); });
+    onSave({ checkDate, values: out, calibration: { measured: calibNum, ok: calibOk === null ? null : calibOk }, note: note.trim() });
+  };
+  return (
+    <div>
+      <FormBar title={editing ? "Meting corrigeren" : "Temperatuurcontrole"} onCancel={onCancel} onSave={submit} saveLabel={editing ? "Opslaan" : "Aftekenen"} />
+      <Field label="Datum"><input type="date" className={inputCls} value={checkDate} onChange={(e) => setCheckDate(e.target.value)} /></Field>
+      <div className="text-sm font-medium ink mb-1.5">Gemeten temperaturen</div>
+      <div className="card overflow-hidden mb-4">
+        {HACCP_UNITS.map((u, i) => {
+          const ok = inRange(u, num(values[u.id]));
+          return (
+            <div key={u.id} className={"flex items-center gap-3 px-3.5 py-2.5 " + (i > 0 ? "divi" : "")}>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium ink">{u.name}</div>
+                <div className="text-[12.5px] mute">streef: {u.target}</div>
+              </div>
+              <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 w-24 text-right" value={values[u.id]}
+                onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value }))} placeholder="°C"
+                style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
+            </div>
+          );
+        })}
+      </div>
+      {HACCP_UNITS.some((u) => inRange(u, num(values[u.id])) === false) && (
+        <div className="rounded-xl p-3.5 mb-4 text-sm" style={{ background: "#f6ecea", border: "1px solid #e0c8c0", color: "#8a4a3a" }}>
+          Eén of meer waarden vallen buiten de grenzen. Noteer hieronder welke maatregel je hebt genomen (product verplaatst, monteur gebeld, opnieuw gemeten).
+        </div>
+      )}
+      <div className="text-sm font-medium ink mb-1.5">Thermometer ijken</div>
+      <div className="card p-3.5 mb-4">
+        <div className="text-[12.5px] mute mb-2">Steek de thermometer in een glas met smeltend ijswater. Hij hoort 0 °C aan te geven; meer dan {CALIB_TOLERANCE} °C afwijking betekent afstellen of vervangen.</div>
+        <div className="flex items-center gap-3">
+          <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 w-28 text-right" value={calib} onChange={(e) => setCalib(e.target.value)} placeholder="°C in ijswater"
+            style={calibOk === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
+          {calibOk === true && <span className="text-sm font-medium" style={{ color: T.green }}>✓ binnen tolerantie</span>}
+          {calibOk === false && <span className="text-sm font-medium" style={{ color: "#8a4a3a" }}>⚠ afwijking van {String(Math.abs(calibNum)).replace(".", ",")} °C</span>}
+        </div>
+      </div>
+      <Field label="Opmerking / genomen maatregel"><textarea rows={3} className={inputCls + " resize-none"} value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. vriescel stond op −16 °C, deur stond open, opnieuw gemeten na een uur: −19 °C" /></Field>
+      <p className="text-xs mute -mt-2">Na opslaan wordt de schoonmaaktaak “Temperatuurcontrole” automatisch afgetekend op jouw naam.</p>
     </div>
   );
 }
