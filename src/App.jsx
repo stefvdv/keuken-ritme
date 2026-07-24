@@ -268,14 +268,12 @@ function intervalLabel(d) {
   if (d === 90) return "per kwartaal";
   return "elke " + d + " dagen";
 }
-const isoDate = (d) => new Date(d).toISOString().slice(0, 10);
-// Schoonmaken gebeurt met 2 tot 3 man tegelijk; toon daarom ook de tijd per persoon.
-function crewTime(totalMin) {
-  if (!totalMin) return "";
-  const hi = Math.round(totalMin / 2), lo = Math.round(totalMin / 3);
-  if (lo === hi) return "≈ " + lo + " min per persoon";
-  return "≈ " + lo + "–" + hi + " min per persoon (2–3 man)";
+// Lokale datum als YYYY-MM-DD (niet toISOString: dat is UTC en verspringt 's avonds).
+function localDate(d) {
+  const x = d ? new Date(d) : new Date();
+  return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
 }
+const isoDate = (d) => localDate(d);
 const daysAgo = (iso) => Math.floor((new Date().setHours(0,0,0,0) - new Date(iso).setHours(0,0,0,0)) / 86400000);
 // Weeknummer (ISO) voor het logboek per week
 function weekKey(iso) {
@@ -1521,7 +1519,7 @@ export default function App() {
   const ackAction = async (id, label) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
     if ((b.actionsDone || []).some((a) => a.date === today && a.label === label)) return;
     const nb = { ...b, actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), { date: today, label, by: user.name }] };
     if (!(await persistBatch(nb))) return;
@@ -1544,7 +1542,7 @@ export default function App() {
     removeCleaningLog(id);
   };
   const signCleaning = async (taskId, quiet) => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
     const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: user.name, note: "", edits: [] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: taskId, done_date: today, done_by: user.name, note: "", edits: [] });
@@ -1555,7 +1553,7 @@ export default function App() {
     return row.id;
   };
   const markDayDone = async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
     if (cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === today)) return;
     const row = { id: "dd" + Date.now(), taskId: DAY_DONE_ID, doneDate: today, doneBy: user.name, note: "", edits: [] };
     if (live) {
@@ -1564,10 +1562,11 @@ export default function App() {
     }
     setCleaningLogs((ls) => [row, ...ls]);
     setCheckOpen(false);
+    setCheckDone(today); // popup vandaag niet meer openen
     flash("Dag afgerond", () => removeCleaningLog(row.id, true));
   };
   const undoDayDone = async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDate();
     const l = cleaningLogs.find((x) => x.taskId === DAY_DONE_ID && x.doneDate === today);
     if (!l) return;
     await removeCleaningLog(l.id, true);
@@ -1720,16 +1719,17 @@ export default function App() {
     if (live) { try { await supabase.rpc("bump_recipe_open", { rid: id }); } catch (e) {} }
   };
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = localDate();
 
   // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks, één keer per dag).
   useEffect(() => {
     if (!user || !user.canEdit) return;
     const tick = () => {
       const now = new Date();
-      const key = now.toISOString().slice(0, 10);
+      const key = localDate(now);
       const past = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
       const afgerond = cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === key);
+      // Niet openen als de dag al is afgerond of als de popup vandaag al is gezien/gesloten.
       if (past && !afgerond && checkDone !== key) { setCheckOpen(true); setCheckDone(key); }
     };
     tick();
@@ -2249,7 +2249,7 @@ function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
 // Wat moet er vandaag met deze batch gebeuren, en is hij klaar?
 function batchStatus(b) {
   const day = daysBetween(b.startDate);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const acked = (b.actionsDone || []).filter((a) => a.date === today).map((a) => a.label);
   const readyRaw = !b.done && day >= b.days;
   const ready = readyRaw && !acked.includes(READY_KEY);
@@ -2652,7 +2652,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
           {!dayDone && (openDue ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
           <Eyebrow>Vandaag te doen ({dueToday.length})</Eyebrow>
         </button>
-        <span className="text-xs mute text-right">{dueToday.reduce((n, x) => n + (x.t.minutes || 0), 0)} min totaal<br /><span className="acc font-medium">{crewTime(dueToday.reduce((n, x) => n + (x.t.minutes || 0), 0))}</span></span>
+        <span className="text-xs mute text-right">{dueToday.length} {dueToday.length === 1 ? "taak" : "taken"}</span>
       </div>
       {!showDue
         ? null
@@ -2665,7 +2665,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
                   <div className="text-[13px] font-semibold uppercase tracking-wide acc">{x.t.area}</div>
                   <div className="text-[15px] font-medium ink truncate leading-snug">{x.t.name}</div>
                   <div className="text-[12.5px] mute mt-0.5">
-                    {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min
+                    {intervalLabel(x.t.intervalDays)}
                     {x.st.overdue && <span className="ml-1.5 font-semibold" style={{ color: "#8a4a3a" }}>{x.st.since - x.t.intervalDays} dag(en) over tijd</span>}
                     {!x.st.last && <span className="ml-1.5 mute">nog nooit afgetekend</span>}
                   </div>
@@ -2696,7 +2696,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
               <div key={g.area}>
                 <div className="flex items-baseline gap-2 mb-1.5">
                   <span className="serif ink text-xl leading-none">{g.area}</span>
-                  <span className="text-[12.5px] mute">{g.items.length} taken · {g.items.reduce((n, x) => n + (x.t.minutes || 0), 0)} min · {crewTime(g.items.reduce((n, x) => n + (x.t.minutes || 0), 0))}</span>
+                  <span className="text-[12.5px] mute">{g.items.length} taken</span>
                 </div>
                 <div className="card overflow-hidden">
                   {g.items.map((x, i) => (
@@ -2704,7 +2704,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium ink truncate">{x.t.name}</div>
                         <div className="text-[12.5px] mute mt-0.5 truncate">
-                          {intervalLabel(x.t.intervalDays)} · {x.t.minutes} min ·{" "}
+                          {intervalLabel(x.t.intervalDays)} ·{" "}
                           {x.st.last ? <>laatst {x.st.since === 0 ? "vandaag" : x.st.since === 1 ? "gisteren" : x.st.since + " dagen geleden"} door {x.st.last.doneBy}</> : "nog nooit afgetekend"}
                         </div>
                       </div>
@@ -2782,7 +2782,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
 // ---------- HACCP: wekelijkse temperatuurregistratie ----------
 function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete }) {
   const [openAll, setOpenAll] = useState(false);
-  const thisWeek = weekKey(new Date().toISOString().slice(0, 10));
+  const thisWeek = weekKey(localDate());
   const sorted = [...logs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1));
   const doneThisWeek = sorted.find((l) => weekKey(l.checkDate) === thisWeek) || null;
   const shown = openAll ? sorted : sorted.slice(0, 3);
@@ -2919,17 +2919,13 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
   const [name, setName] = useState(task?.name || "");
   const [area, setArea] = useState(task?.area || CLEANING_AREAS[0]);
   const [intervalDays, setIntervalDays] = useState(task ? String(task.intervalDays) : "7");
-  const [minutes, setMinutes] = useState(task ? String(task.minutes) : "15");
-  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), area, intervalDays: Number(intervalDays) || 1, minutes: Number(minutes) || 0 }); };
+  const submit = () => { if (!name.trim()) return; onSave({ name: name.trim(), area, intervalDays: Number(intervalDays) || 1 }); };
   return (
     <div>
       <FormBar title={task ? "Taak bewerken" : "Nieuwe schoonmaaktaak"} onCancel={onCancel} onSave={submit} />
       <Field label="Wat moet er schoongemaakt worden?"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Vloer fermentatieruimte" /></Field>
       <Field label="Ruimte"><select className={inputCls} value={area} onChange={(e) => setArea(e.target.value)}>{CLEANING_AREAS.map((a) => <option key={a}>{a}</option>)}</select></Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Om de hoeveel dagen"><input type="number" min="1" className={inputCls} value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} /></Field>
-        <Field label="Tijd (minuten)"><input type="number" min="0" className={inputCls} value={minutes} onChange={(e) => setMinutes(e.target.value)} /></Field>
-      </div>
+      <Field label="Om de hoeveel dagen"><input type="number" min="1" className={inputCls} value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} /></Field>
       <div className="flex flex-wrap gap-1.5 -mt-2">
         {[1, 2, 3, 7, 14, 30, 90].map((d) => (
           <button key={d} type="button" onClick={() => setIntervalDays(String(d))} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (String(d) === intervalDays ? "pillon" : "pill")}>{intervalLabel(d)}</button>
@@ -2944,7 +2940,7 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
 function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onClose, onOpenSection }) {
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
   const open = withStatus.filter((x) => x.st.due);
-  const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === new Date().toISOString().slice(0, 10));
+  const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === localDate());
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
@@ -2958,7 +2954,6 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onC
         <button onClick={onDayDone} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>
         <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
           Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span>
-          {open.length > 0 && <> · <span className="acc font-medium">{crewTime(open.reduce((n, x) => n + (x.t.minutes || 0), 0))}</span></>}
         </div>
         {open.length === 0
           ? <div className="mt-3 rounded-xl p-3.5 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is afgetekend. Mooi werk.</div>
@@ -2967,7 +2962,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onC
                 <div key={x.t.id} className={"flex items-center gap-2 px-3 py-2.5 " + (i > 0 ? "divi" : "")}>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm ink truncate">{x.t.name}</div>
-                    <div className="text-[12.5px] mute">{x.t.area} · {x.t.minutes} min{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
+                    <div className="text-[12.5px] mute">{x.t.area}{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
                   </div>
                   {canEdit && <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> {user.name}</button>}
                 </div>
