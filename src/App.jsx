@@ -252,6 +252,7 @@ const CLEANING_SEED = [
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 const DAY_DONE_ID = "__dag-afgerond";  // markeert dat de schoonmaak van vandaag is afgerond
+const DAY_OFF_ID  = "__vrije-dag";     // markeert een dag waarop het bedrijf dicht was
 
 // HACCP: welke apparaten wekelijks gemeten worden en wat de grenzen zijn.
 const HACCP_UNITS = [
@@ -293,7 +294,7 @@ function weekKey(iso) {
 }
 // Status van een schoonmaaktaak: wanneer voor het laatst gedaan en is hij nu nodig?
 function taskStatus(task, logs) {
-  if (task.id === DAY_DONE_ID) return { last: null, since: null, due: false, overdue: false, history: [] };
+  if (task.id === DAY_DONE_ID || task.id === DAY_OFF_ID) return { last: null, since: null, due: false, overdue: false, history: [] };
   const mine = logs.filter((l) => l.taskId === task.id).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
   const last = mine[0] || null;
   const since = last ? daysAgo(last.doneDate) : null;
@@ -1354,6 +1355,7 @@ export default function App() {
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
   const [batches, setBatches] = useState(seedBatches);
+  const [loaded, setLoaded] = useState(false);
   const [stack, setStack] = useState([{ screen: "list" }]);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
@@ -1402,7 +1404,7 @@ export default function App() {
 
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
-    if (!live) return;
+    if (!live) { setLoaded(true); return; }
     const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
@@ -1450,6 +1452,7 @@ export default function App() {
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
+    setLoaded(true);
     const dbDishes = (di.data || []).map((d) => ({
       id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating,
       recipeIds: d.recipe_ids || [], season: d.season || [], diet: d.diet || "Vegetarisch",
@@ -1503,16 +1506,19 @@ export default function App() {
 
   const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
 
+  // Gemiste (vrije) dagen automatisch registreren zodra de data er is.
+  useEffect(() => { if (loaded && user && user.canEdit) backfillDaysOff(); }, [loaded, user]);
+
   // Melding bij inloggen (alleen koks): batches die klaar zijn of een handeling vragen.
   const [noticeShown, setNoticeShown] = useState(false);
   useEffect(() => {
-    if (!user || !user.canEdit || noticeShown || batches.length === 0) return;
+    if (!user || !user.canEdit || !loaded || noticeShown) return;
     const { ready, due } = collectNotices(batches);
     const n = ready.length + due.length;
+    setNoticeShown(true); // hoe dan ook maar één keer per sessie proberen
     if (n === 0) return;
-    setNoticeShown(true);
     flash(n === 1 ? "1 batch vraagt aandacht" : n + " batches vragen aandacht");
-  }, [user, batches, noticeShown]);
+  }, [user, loaded, batches, noticeShown]);
 
   const saveRecipe = async (data, editingId) => {
     const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
@@ -1671,6 +1677,44 @@ export default function App() {
     await removeCleaningLog(l.id, true);
     flash("Dag heropend");
   };
+  // Een dag handmatig als vrije dag (bedrijf dicht) registreren of terugdraaien.
+  const markDayOff = async (dateStr) => {
+    const d = dateStr || localDate();
+    if (cleaningLogs.some((l) => (l.taskId === DAY_OFF_ID || l.taskId === DAY_DONE_ID) && l.doneDate === d)) return;
+    const row = { id: "off" + Date.now(), taskId: DAY_OFF_ID, doneDate: d, doneBy: user.name, note: "Bedrijf dicht", edits: [] };
+    if (live) {
+      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_OFF_ID, done_date: d, done_by: user.name, note: "Bedrijf dicht", edits: [] });
+      if (dbFail(error)) return;
+    }
+    setCleaningLogs((ls) => [row, ...ls]);
+    if (d === localDate()) { setCheckOpen(false); setCheckDone(d); }
+    flash("Geregistreerd als vrije dag", () => removeCleaningLog(row.id, true));
+  };
+  // Bij het openen automatisch de gemiste dagen als "vrije dag" vastleggen:
+  // elke dag tussen de laatste registratie en gisteren waarop niets is gelogd.
+  const backfillDaysOff = async () => {
+    if (!user || !user.canEdit) return;
+    const marked = new Set(cleaningLogs.filter((l) => l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID).map((l) => l.doneDate));
+    const worked = new Set(cleaningLogs.filter((l) => l.taskId !== DAY_DONE_ID && l.taskId !== DAY_OFF_ID).map((l) => l.doneDate));
+    // vroegste datum waar we vanaf kijken: eerste log, anders niets te doen
+    const dates = cleaningLogs.map((l) => l.doneDate).sort();
+    if (dates.length === 0) return;
+    const start = new Date(dates[0] + "T12:00:00");
+    const today = new Date(localDate() + "T12:00:00");
+    const toAdd = [];
+    for (let d = new Date(start); d < today; d.setDate(d.getDate() + 1)) {
+      const key = localDate(d);
+      if (marked.has(key) || worked.has(key)) continue; // al afgerond, al vrij, of er is gewerkt
+      toAdd.push(key);
+    }
+    if (toAdd.length === 0) return;
+    const rows = toAdd.map((d, i) => ({ id: "off" + Date.now() + i, taskId: DAY_OFF_ID, doneDate: d, doneBy: "automatisch", note: "Bedrijf dicht (automatisch)", edits: [] }));
+    if (live) {
+      const { error } = await supabase.from("cleaning_logs").insert(rows.map((r) => ({ id: r.id, task_id: DAY_OFF_ID, done_date: r.doneDate, done_by: r.doneBy, note: r.note, edits: [] })));
+      if (error) return; // stil falen; volgende keer opnieuw
+    }
+    setCleaningLogs((ls) => [...rows, ...ls]);
+  };
   const saveHaccp = async (data, editingId) => {
     const now = new Date().toISOString().slice(0, 16).replace("T", " ");
     if (editingId) {
@@ -1828,7 +1872,7 @@ export default function App() {
       const now = new Date();
       const key = localDate(now);
       const past = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
-      const afgerond = cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === key);
+      const afgerond = cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && l.doneDate === key);
       // Niet openen als de dag al is afgerond of als de popup vandaag al is gezien/gesloten.
       if (past && !afgerond && checkDone !== key) { setCheckOpen(true); setCheckDone(key); }
     };
@@ -1866,7 +1910,8 @@ export default function App() {
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes} />}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
               dayDone={cleaningLogs.find((l) => l.taskId === DAY_DONE_ID && l.doneDate === todayKey) || null}
-              onDayDone={markDayDone} onUndoDayDone={undoDayDone}
+              dayOff={cleaningLogs.find((l) => l.taskId === DAY_OFF_ID && l.doneDate === todayKey) || null}
+              onDayDone={markDayDone} onUndoDayDone={undoDayDone} onDayOff={markDayOff}
               onSign={signCleaning} onEditLog={editCleaningLog} onDeleteLog={deleteCleaningLog}
               onOpenHaccp={() => push({ screen: "haccpForm", editing: null })}
               onEditHaccp={(id) => push({ screen: "haccpForm", editing: id })}
@@ -1906,7 +1951,7 @@ export default function App() {
       )}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit}
-          onSign={signCleaning} onDayDone={markDayDone} onClose={() => setCheckOpen(false)}
+          onSign={signCleaning} onDayDone={markDayDone} onDayOff={() => markDayOff()} onClose={() => setCheckOpen(false)}
           onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
       )}
       {toast && (
@@ -2820,7 +2865,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes }) {
   );
 }
 
-function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDone, onUndoDayDone, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp }) {
+function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, dayOff, onDayDone, onUndoDayDone, onDayOff, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp }) {
   const [q, setQ] = useState("");
   const [areaF, setAreaF] = useState("Alle");
   const [openAll, setOpenAll] = useState(false);
@@ -2850,7 +2895,8 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
   const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
   const wk = weekKey(isoDate(monday));
   const weekLogs = logs.filter((l) => l.taskId !== DAY_DONE_ID && weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
-  const taskName = (id) => { const t = tasks.find((x) => x.id === id); return t ? t.area + " · " + t.name : "Onbekende taak"; };
+  const dayOffDates = new Set(logs.filter((l) => l.taskId === DAY_OFF_ID).map((l) => l.doneDate));
+  const taskName = (id) => { if (id === DAY_OFF_ID) return "Vrije dag — bedrijf dicht"; const t = tasks.find((x) => x.id === id); return t ? t.area + " · " + t.name : "Onbekende taak"; };
 
   const startNote = (l) => { setNoteFor(l.id); setNoteText(l.note || ""); };
   const saveNote = () => { onEditLog(noteFor, noteText); setNoteFor(null); };
@@ -2865,7 +2911,15 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
             <span className="flex-1">Dag afgerond door <span className="font-medium">{dayDone.doneBy}</span>. De controle komt morgen vanzelf terug.</span>
             <button onClick={onUndoDayDone} className="ff shrink-0 text-xs font-semibold underline">Heropen</button>
           </div>
-        : <button onClick={onDayDone} className="btnp ff w-full mb-3 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>}
+        : dayOff
+          ? <div className="rounded-xl p-3.5 mb-3 flex items-start gap-2 text-sm" style={{ background: "#efece2", color: "#6a6550" }}>
+              <Info size={16} className="shrink-0 mt-0.5" />
+              <span className="flex-1">Vandaag geregistreerd als <span className="font-medium">vrije dag</span>. Wel gewerkt? Verwijder dit in het logboek hieronder.</span>
+            </div>
+          : <div className="flex gap-2 mb-3">
+              <button onClick={onDayDone} className="btnp ff flex-1 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>
+              <button onClick={() => onDayOff()} className="btno ff shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl text-sm font-medium px-3 py-3" title="Bedrijf dicht vandaag"><Calendar size={15} /> Vrije dag</button>
+            </div>}
 
       <div className="flex items-center justify-between mb-2">
         <button onClick={() => setOpenDue((o) => !o)} className="ff inline-flex items-center gap-1" disabled={!!dayDone}>
@@ -2962,7 +3016,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
         {weekLogs.map((l) => (
           <div key={l.id} className="card p-3.5">
             <div className="flex items-start gap-2">
-              <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Check size={15} /></span>
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={l.taskId === DAY_OFF_ID ? { background: "#efece2", color: "#6a6550" } : { background: "#e8ebe0", color: T.green }}>{l.taskId === DAY_OFF_ID ? <Calendar size={15} /> : <Check size={15} />}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="text-sm font-medium ink">{taskName(l.taskId)}</div>
@@ -3157,7 +3211,7 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
 }
 
 // Dagelijkse controle om 16:45
-function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onClose, onOpenSection }) {
+function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onDayOff, onClose, onOpenSection }) {
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
   const open = withStatus.filter((x) => x.st.due);
   const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === localDate());
@@ -3171,7 +3225,10 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onC
           </div>
           <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
         </div>
-        <button onClick={onDayDone} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>
+        <div className="flex gap-2 mt-3">
+          <button onClick={onDayDone} className="btnp ff flex-1 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>
+          <button onClick={onDayOff} className="btno ff shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl text-sm font-medium px-3 py-3"><Calendar size={15} /> Vrije dag</button>
+        </div>
         <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
           Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span>
         </div>
