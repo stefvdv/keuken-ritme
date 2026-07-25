@@ -2896,6 +2896,21 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, dayOff, 
   const wk = weekKey(isoDate(monday));
   const weekLogs = logs.filter((l) => l.taskId !== DAY_DONE_ID && weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
   const dayOffDates = new Set(logs.filter((l) => l.taskId === DAY_OFF_ID).map((l) => l.doneDate));
+  // Groepeer het weeklogboek per dag: nieuwste dag eerst, met wie er tekende.
+  const dayNames = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+  const weekDays = (() => {
+    const byDate = {};
+    for (const l of weekLogs) (byDate[l.doneDate] = byDate[l.doneDate] || []).push(l);
+    return Object.keys(byDate).sort((a, b) => (a < b ? 1 : -1)).map((date) => {
+      const all = byDate[date];
+      const off = all.find((l) => l.taskId === DAY_OFF_ID) || null;
+      const items = all.filter((l) => l.taskId !== DAY_OFF_ID);
+      const people = [...new Set(items.map((l) => l.doneBy))];
+      const who = people.length === 0 ? "" : people.length <= 2 ? people.join(" & ") : people.length + " personen";
+      const d = new Date(date + "T12:00:00");
+      return { date, off, items, who, label: dayNames[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) };
+    });
+  })();
   const taskName = (id) => { if (id === DAY_OFF_ID) return "Vrije dag — bedrijf dicht"; const t = tasks.find((x) => x.id === id); return t ? t.area + " · " + t.name : "Onbekende taak"; };
 
   const startNote = (l) => { setNoteFor(l.id); setNoteText(l.note || ""); };
@@ -3012,43 +3027,49 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, dayOff, 
         </div>
       </div>
       <div className="text-xs mute mb-2">{isoDate(monday)} t/m {isoDate(sunday)} · {weekLogs.length} aftekeningen</div>
-      <div className="space-y-2">
-        {weekLogs.map((l) => (
-          <div key={l.id} className="card p-3.5">
-            <div className="flex items-start gap-2">
-              <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={l.taskId === DAY_OFF_ID ? { background: "#efece2", color: "#6a6550" } : { background: "#e8ebe0", color: T.green }}>{l.taskId === DAY_OFF_ID ? <Calendar size={15} /> : <Check size={15} />}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="text-sm font-medium ink">{taskName(l.taskId)}</div>
-                  {canEdit && <button onClick={() => onDeleteLog(l.id)} className="ff shrink-0 rounded-lg px-1 py-0.5 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Aftekening verwijderen (bij een misklik)"><Trash2 size={13} /></button>}
+      {weekLogs.length === 0
+        ? <Empty label="Deze week is er nog niets afgetekend." />
+        : <div className="space-y-3">
+            {weekDays.map((day) => (
+              <div key={day.date}>
+                <div className="flex items-baseline justify-between mb-1">
+                  <span className="text-[13px] font-semibold ink">{day.label}</span>
+                  <span className="text-[11.5px] mute">{day.off ? "vrije dag" : day.items.length + (day.items.length === 1 ? " taak" : " taken") + " · " + day.who}</span>
                 </div>
-                <div className="text-[12.5px] mute mt-0.5">{l.doneDate} · afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
-                {l.note && <p className="text-xs mt-1.5 italic" style={{ color: "#3b3d33" }}>{l.note}</p>}
-                {(l.edits || []).length > 0 && (
-                  <div className="mt-1.5 text-[12.5px] mute space-y-0.5">
-                    {l.edits.map((e, i) => (
-                      <div key={i} className="flex gap-1"><Pencil size={10} className="shrink-0 mt-0.5" /><span>{e.at} — {e.by} wijzigde de opmerking{e.from ? <> van “{e.from}”</> : <> (was leeg)</>} naar “{e.to}”</span></div>
-                    ))}
-                  </div>
-                )}
-                {canEdit && noteFor !== l.id && (
-                  <button onClick={() => startNote(l)} className="ff mt-2 inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={11} /> {l.note ? "Opmerking aanpassen" : "Opmerking toevoegen"}</button>
-                )}
-                {canEdit && noteFor === l.id && (
-                  <div className="mt-2">
-                    <textarea rows={2} className={inputCls + " resize-none text-sm"} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Wat is er gedaan of opgevallen?" />
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <button onClick={saveNote} className="btnp ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><Check size={13} /> Opslaan</button>
-                      <button onClick={() => setNoteFor(null)} className="btno ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><X size={13} /> Annuleren</button>
+                {day.off
+                  ? <div className="card px-3 py-2 flex items-center gap-2 text-[13px]" style={{ color: "#6a6550" }}>
+                      <Calendar size={14} className="shrink-0" /> <span className="flex-1">Bedrijf dicht</span>
+                      {canEdit && <button onClick={() => onDeleteLog(day.off.id)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Vrije dag verwijderen"><Trash2 size={13} /></button>}
                     </div>
-                  </div>
-                )}
+                  : <div className="card overflow-hidden divide-y" style={{ borderColor: T.line }}>
+                      {day.items.map((l) => (
+                        <div key={l.id}>
+                          <div className="flex items-center gap-2 px-3 py-2">
+                            <Check size={14} className="shrink-0 acc" />
+                            <span className="flex-1 min-w-0 text-[13px] ink truncate">{taskName(l.taskId)}</span>
+                            <span className="shrink-0 text-[11.5px] mute">{l.doneBy}</span>
+                            {canEdit && <button onClick={() => startNote(l)} className="ff shrink-0 hover:opacity-70 acc" title={l.note ? "Opmerking aanpassen" : "Opmerking toevoegen"}><Pencil size={13} /></button>}
+                            {canEdit && <button onClick={() => onDeleteLog(l.id)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Verwijderen"><Trash2 size={13} /></button>}
+                          </div>
+                          {l.note && noteFor !== l.id && <div className="px-3 pb-2 -mt-1 text-[12px] italic mute flex gap-1"><span className="acc">›</span> {l.note}</div>}
+                          {(l.edits || []).length > 0 && noteFor !== l.id && (
+                            <div className="px-3 pb-2 -mt-1 text-[11px] mute">{l.edits.length === 1 ? "1 correctie" : l.edits.length + " correcties"} · laatst door {l.edits[l.edits.length - 1].by}</div>
+                          )}
+                          {canEdit && noteFor === l.id && (
+                            <div className="px-3 pb-3">
+                              <textarea rows={2} className={inputCls + " resize-none text-sm"} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Wat is er gedaan of opgevallen?" />
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <button onClick={saveNote} className="btnp ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><Check size={13} /> Opslaan</button>
+                                <button onClick={() => setNoteFor(null)} className="btno ff inline-flex items-center gap-1 rounded-lg text-xs font-medium px-2.5 py-1.5"><X size={13} /> Annuleren</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>}
               </div>
-            </div>
-          </div>
-        ))}
-        {weekLogs.length === 0 && <Empty label="Deze week is er nog niets afgetekend." />}
-      </div>
+            ))}
+          </div>}
     </div>
   );
 }
