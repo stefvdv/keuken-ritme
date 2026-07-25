@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ChefHat, Utensils, Layers, Plus, Search, ChevronRight, ArrowLeft, Pencil, X, Check,
   Settings, Download, Share, Smartphone, Info,
@@ -93,6 +93,13 @@ function seasonRank(seasons) {
 }
 const bySeasonThenName = (aSeasons, aName, bSeasons, bName) =>
   seasonRank(aSeasons) - seasonRank(bSeasons) || aName.localeCompare(bName, "nl");
+// "Laatst toegevoegd": zelfgemaakte items hebben een id met een tijdstempel
+// (r/d/cl + Date.now()); hoe hoger, hoe recenter. Seed-items komen daarna.
+function recencyKey(id) {
+  const m = String(id || "").match(/(\d{10,})/);
+  return m ? Number(m[1]) : 0;
+}
+const byNewest = (a, b) => recencyKey(b.id) - recencyKey(a.id) || a.name.localeCompare(b.name, "nl");
 
 // ---------- bereidingstekst slim opdelen in stappen ----------
 // Een kok typt de hele bereiding vaak in één keer. Deze functie knipt dat in
@@ -1090,6 +1097,96 @@ const seedDishes = [
     recipeIds:["gpuree-wortel","gchip-wortel","kvass-wortel","gingerbeer-klassiek-gemberbier","fherbpaste-koriander"], updatedBy:"Simon", updatedAt:"zojuist" },
 ];
 
+const PRODUCT_INFO = {
+  "rode biet": { kcal:"43 kcal", note:"Aardse knol, rijk aan foliumzuur, kalium, vezels en nitraat (goed voor de bloeddruk) en de antioxidant betanine die de rode kleur geeft.", gebruik:"Rauw geraspt, geroosterd, gepekeld of als kvass; combineert met geitenkaas, appel en noot.", oogst:"hele jaar, hoofdoogst najaar; goed te bewaren" },
+  "tomaat": { kcal:"18 kcal", note:"Zomervrucht boordevol vitamine C en lycopeen (een antioxidant die door verhitten juist beter opneembaar wordt).", gebruik:"Rauw, geroosterd, als saus, coulis of gefermenteerde hotsauce.", oogst:"zomer tot vroege herfst" },
+  "aardbei": { kcal:"32 kcal", note:"Zoete zomervrucht, zeer rijk aan vitamine C en mangaan, laag in calorieën.", gebruik:"Rauw, als coulis, sorbet, jam of in een waterkefir; houdt van zuur en peper.", oogst:"late lente en zomer" },
+  "courgette": { kcal:"17 kcal", note:"Milde zomergroente die voor ~95% uit water bestaat; licht verteerbaar, wat kalium en vitamine C.", gebruik:"Gegrild, rauw als carpaccio, of gefermenteerd; leunt op kruid en zuur.", oogst:"zomer" },
+  "venkel": { kcal:"20–40 kcal", note:"Seizoensproduct uit eigen moestuin.", gebruik:"Rauw of gegaard, passend bij het seizoen.", oogst:"afhankelijk van het seizoen" },
+  "appel": { kcal:"52 kcal", note:"Zoetzuur pitfruit met pectine (goed voor jam en de spijsvertering) en vitamine C net onder de schil.", gebruik:"Rauw, compote, cider, azijn of schillenbrouwsel; klassiek bij varken en kool.", oogst:"najaar; lang houdbaar" },
+  "peer": { kcal:"57 kcal", note:"Zoet, bloemig pitfruit met vezels en wat vitamine C; rijp snel van binnen naar buiten.", gebruik:"Gepocheerd, als cider, azijn of in dessert; bij blauwe kaas, walnoot en chocolade.", oogst:"najaar" },
+  "rode kool": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "boerenkool": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "pastinaak": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "wortel": { kcal:"41 kcal", note:"Zoete wortelgroente vol bètacaroteen (vitamine A) dat met een beetje vet beter opneembaar is.", gebruik:"Rauw, geroosterd, als puree of kvass; houdt van komijn, sinaasappel en dragon.", oogst:"hele jaar, hoofdoogst zomer–najaar" },
+  "knolselderij": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "rabarber": { kcal:"21 kcal", note:"Zure lentesteel; alleen de stelen eten (het blad bevat oxaalzuur). Vezelrijk en caloriearm.", gebruik:"Compote, sorbet of gepocheerd; vraagt suiker en houdt van aardbei en munt.", oogst:"lente tot vroege zomer" },
+  "braam": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "framboos": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "pruim": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "druif": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "kweepeer": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "erwten": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "sperziebonen": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "radijs": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "komkommer": { kcal:"20–40 kcal", note:"Seizoensproduct uit eigen moestuin.", gebruik:"Rauw of gegaard, passend bij het seizoen.", oogst:"afhankelijk van het seizoen" },
+  "ui": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "knoflook": { kcal:"149 kcal", note:"Krachtige smaakmaker met allicine, dat vrijkomt bij snijden en antibacterieel werkt.", gebruik:"Rauw, geconfijt, zwart gefermenteerd of in honing; basis van vrijwel elke hartige bereiding.", oogst:"zomer; goed te bewaren" },
+  "munt": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "dille": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "dragon": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "oost-indische kers": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "varkensvlees": { kcal:"242 kcal", note:"Van de eigen varkens; eiwitrijk met B-vitamines. Buik en schouder lenen zich voor langzaam garen.", gebruik:"Gelakt, pulled of gebraden; bij appel, venkel, mosterd en zuurkool.", oogst:"hele jaar" },
+  "rundvlees": { kcal:"250 kcal", note:"Eiwit- en ijzerrijk; taaie delen als sukade en short rib worden mals bij lang smoren.", gebruik:"Gesmoord of van het bot; bij rodewijnjus, wortel en gefermenteerde ui.", oogst:"hele jaar" },
+  "aalbes": { kcal:"44 kcal", note:"Kleine, frisse rode bes rijk aan vitamine C en antioxidanten; caloriearm en vezelrijk, laag suikergehalte.", gebruik:"Als garnering, in jam, compote, sorbet of sap; van nature hoog in pectine, dus mooi voor gelei.", oogst:"juli" },
+  "savooikool": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "spitskool": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "koolrabi": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "snijbiet": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "chioggia biet": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "gele biet": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "palmkool": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "andijvie": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "bindsla": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "rucola": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "japanse wijnbes": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "utrechtse ui": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "bieslook": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "peterselie": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "rozemarijn": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "tijm": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "laurier": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "lavas": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "citroenmelisse": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "salie": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "uiensoepboom": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "mispel": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "courgettebloem": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "meiknol": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "amaranth": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "rode eikenbladsla": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "paksoi": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "goudsbloem": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "korenbloem": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "dahlia": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "leeuwenbek": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "kamille": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "lavendel": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "afrikaantjes": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "princessenbonen": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "snijbonen": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "pronkbonen": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "peultjes": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "kapucijners": { kcal:"60–90 kcal", note:"Peulvrucht met plantaardig eiwit en vezels; niet geschikt om rauw te fermenteren.", gebruik:"Kort geblancheerd, geblisterd of gepekeld; bij hartige, nootachtige smaken.", oogst:"zomer" },
+  "ijsbergsla": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "veldsla": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "rode melde": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "oregano": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "reine claude": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "tuinzuring": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "koriander": { kcal:"—", note:"Tuinkruid dat vooral smaak en aroma brengt; in kleine hoeveelheden gebruikt.", gebruik:"Vers door gerechten, als olie, pesto, gefermenteerde pasta of infuus.", oogst:"lente tot najaar, vaak vers te oogsten" },
+  "blauwe bes": { kcal:"40–60 kcal", note:"Seizoensfruit uit eigen tuin, rijk aan vitamine C en antioxidanten; caloriearm.", gebruik:"Rauw, als compote, sorbet, jam of azijn; balanceer het zoet met wat zuur.", oogst:"zomer tot najaar" },
+  "aardpeer": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "aardpeer bloem": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+  "spinazie": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "chinese kool": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "amsoi": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "kardoen": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "bleekselderij": { kcal:"30–45 kcal", note:"Knol- of wortelgroente met vezels en kalium; goed te bewaren.", gebruik:"Rauw, geroosterd, als puree, pickle of ferment.", oogst:"zomer tot najaar; lang houdbaar" },
+  "groenlof": { kcal:"20–35 kcal", note:"Blad- of koolgroente met vitamine K, C en vezels; kool bevat glucosinolaten.", gebruik:"Rauw, kort gegaard, geroosterd of gefermenteerd (kimchi, zuurkool).", oogst:"afhankelijk van soort, veel in koelere maanden" },
+  "madelief": { kcal:"—", note:"Eetbare bloem uit de pluktuin; brengt kleur, aroma en soms peperigheid.", gebruik:"Als garnering, gepekeld, in azijn, siroop of een wilde bruis.", oogst:"zomer bij bloei" },
+};
+
 const PAIRINGS = [
   { name:"rode biet", pairs:["geitenkaas","appel","walnoot","dille","sinaasappel","mierikswortel","dragon"], note:"Aards en zoet; houdt van zuur en noot." },
   { name:"tomaat", pairs:["basilicum","mozzarella","olijf","knoflook","ui","oregano","aardbei"], note:"Zomers, zuur en umami." },
@@ -1335,8 +1432,8 @@ export default function App() {
     const fpRows = fp.data || [];
     const fpMap = new Map(fpRows.map((x) => [x.name, x]));
     setPairings([
-      ...PAIRINGS.map((p) => fpMap.has(p.name) ? { name: p.name, pairs: fpMap.get(p.name).pairs || [], note: fpMap.get(p.name).note || "", season: fpMap.get(p.name).season || [] } : p),
-      ...fpRows.filter((x) => !PAIRINGS.some((p) => p.name === x.name)).map((x) => ({ name: x.name, pairs: x.pairs || [], note: x.note || "", season: x.season || [] })),
+      ...PAIRINGS.map((p) => fpMap.has(p.name) ? { name: p.name, pairs: fpMap.get(p.name).pairs || [], note: fpMap.get(p.name).note || "", season: fpMap.get(p.name).season || [], addedAt: fpMap.get(p.name).added_at || 0 } : p),
+      ...fpRows.filter((x) => !PAIRINGS.some((p) => p.name === x.name)).map((x) => ({ name: x.name, pairs: x.pairs || [], note: x.note || "", season: x.season || [], addedAt: x.added_at || Date.now() })),
     ]);
     // Schoonmaak: databasetaken overschrijven of vullen de standaardlijst aan.
     const ctRows = ct.data || [];
@@ -1661,10 +1758,10 @@ export default function App() {
     setRecipes((rs) => rs.map((x) => x.id === id ? { ...x, endorsements: has ? x.endorsements.filter((n) => n !== user.name) : [...x.endorsements, user.name] } : x));
   };
   const savePairing = async (name, pairs, note, season) => {
-    const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim(), season: season || [] };
+    const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim(), season: season || [], addedAt: Date.now() };
     if (!clean.name || clean.pairs.length === 0) { flash("Vul een naam en minstens één partner in"); return; }
     if (live) {
-      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, season: clean.season, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, season: clean.season, added_at: clean.addedAt, updated_by: user.name, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setPairings((ps) => ps.some((p) => p.name === clean.name) ? ps.map((p) => (p.name === clean.name ? clean : p)) : [...ps, clean]);
@@ -1720,6 +1817,7 @@ export default function App() {
   };
 
   const todayKey = localDate();
+  const swipe = useSwipeSections(section, (s) => { setSection(s); setSearch(""); });
 
   // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks, één keer per dag).
   useEffect(() => {
@@ -1754,11 +1852,11 @@ export default function App() {
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
         {current.screen === "list" && (
-          <>
+          <div {...swipe}>
+            <SectionNav section={section} setSection={(s) => { setSection(s); setSearch(""); }} />
             {canEdit && !dismissedNotices[todayKey] && (
               <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
             )}
-            <SectionNav section={section} setSection={(s) => { setSection(s); setSearch(""); }} />
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
@@ -1774,7 +1872,7 @@ export default function App() {
               onNewTask={() => push({ screen: "cleaningForm", editing: null })}
               onEditTask={(id) => push({ screen: "cleaningForm", editing: id })}
               onDeleteTask={deleteCleaningTask} />}
-          </>
+          </div>
         )}
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
         {current.screen === "recipeDetail" && (() => { const r = recipeById(current.id); return (
@@ -1979,17 +2077,47 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall }) {
   );
 }
 
+const SECTIONS = [
+  { id: "gerechten", label: "Gerechten", icon: <Utensils size={16} /> },
+  { id: "recepten", label: "Recepten", icon: <Layers size={16} /> },
+  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={16} /> },
+  { id: "smaak", label: "Smaak", icon: <Blend size={16} /> },
+  { id: "technieken", label: "Technieken", icon: <BookOpen size={16} /> },
+  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={16} /> },
+];
+
+// Horizontaal vegen om tussen de secties te wisselen. Verticaal scrollen en
+// horizontaal scrollende stroken (filters) blijven gewoon werken.
+function useSwipeSections(section, setSection) {
+  const start = React.useRef(null);
+  const onStart = (e) => {
+    const t = e.touches ? e.touches[0] : e;
+    start.current = { x: t.clientX, y: t.clientY, el: e.target };
+  };
+  const onEnd = (e) => {
+    if (!start.current) return;
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    const dx = t.clientX - start.current.x;
+    const dy = t.clientY - start.current.y;
+    const st = start.current; start.current = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.8) return; // vooral horizontaal
+    // Niet vegen binnen een horizontaal scrollbaar element (bv. de filterstroken).
+    let el = st.el;
+    while (el && el !== document.body) {
+      if (el.scrollWidth > el.clientWidth + 4 && getComputedStyle(el).overflowX !== "visible") return;
+      el = el.parentElement;
+    }
+    const i = SECTIONS.findIndex((x) => x.id === section);
+    const ni = dx < 0 ? i + 1 : i - 1;
+    if (ni >= 0 && ni < SECTIONS.length) setSection(SECTIONS[ni].id);
+  };
+  return { onTouchStart: onStart, onTouchEnd: onEnd };
+}
+
 function SectionNav({ section, setSection }) {
-  const items = [
-    { id: "gerechten", label: "Gerechten", icon: <Utensils size={16} /> },
-    { id: "recepten", label: "Recepten", icon: <Layers size={16} /> },
-    { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={16} /> },
-    { id: "smaak", label: "Smaak", icon: <Blend size={16} /> },
-    { id: "technieken", label: "Technieken", icon: <BookOpen size={16} /> },
-    { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={16} /> },
-  ];
+  const items = SECTIONS;
   return (
-    <div className="flex gap-1.5 overflow-x-auto pt-4 pb-1 -mx-1 px-1">
+    <div className="flex gap-1.5 overflow-x-auto pt-2 pb-1 -mx-1 px-1">
       {items.map((it) => (
         <button key={it.id} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}{it.label}
@@ -2013,10 +2141,14 @@ const COURSE_FILTERS = ["Alle", ...DISH_COURSES];
 
 function DishList({ dishes, search, setSearch, onOpen }) {
   const [courseF, setCourseF] = useState("Alle");
+  const [sortMode, setSortMode] = useState("seizoen");
   const q = search.trim().toLowerCase();
   let shown = dishes.filter((d) => softMatchAny([d.name, d.course, d.description], q));
   if (courseF !== "Alle") shown = shown.filter((d) => d.course.toLowerCase().includes(courseF.toLowerCase()));
-  shown = [...shown].sort((a, b) => bySeasonThenName(a.season, a.name, b.season, b.name));
+  shown = [...shown].sort((a, b) =>
+    sortMode === "nieuw" ? byNewest(a, b)
+    : sortMode === "az" ? a.name.localeCompare(b.name, "nl")
+    : bySeasonThenName(a.season, a.name, b.season, b.name));
   return (
     <div>
       <SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" />
@@ -2024,6 +2156,12 @@ function DishList({ dishes, search, setSearch, onOpen }) {
         {COURSE_FILTERS.map((c) => (
           <button key={c} onClick={() => setCourseF(c)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (courseF === c ? "pillon" : "pill")}>{c}</button>
         ))}
+      </div>
+      <div className="flex items-center gap-1.5 mb-2 text-xs">
+        <span className="mute">Sorteer:</span>
+        <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setSortMode("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} {shown.length === 1 ? "gerecht" : "gerechten"}</div>
       <div className="space-y-2.5">
@@ -2059,6 +2197,7 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
   const pop = (r) => (oc[r.id] || 0) + (r.endorsements.length * 3);
   const sorted = [...shown].sort((a, b) => {
     if (sortMode === "az") return a.name.localeCompare(b.name, "nl");
+    if (sortMode === "nieuw") return byNewest(a, b);
     if (sortMode === "used") {
       if (pop(b) !== pop(a)) return pop(b) - pop(a);
       if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
@@ -2079,6 +2218,7 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
         <div className="flex items-center gap-1.5">
           <span className="mute">Sorteer</span>
           <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+          <button onClick={() => setSortMode("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
           <button onClick={() => setSortMode("used")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
           <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
         </div>
@@ -2123,6 +2263,7 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   const [limit, setLimit] = useState(30);
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
+  const [fSort, setFSort] = useState("seizoen");
   const [q, setQ] = useState("");
   const openAction = batches.some((b) => !b.done && (batchStatus(b).due.length > 0 || batchStatus(b).ready));
   const [openActive, setOpenActive] = useState(openAction);
@@ -2141,6 +2282,8 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
   fermentRecipes = fermentRecipes.sort((a, b) => {
     if (a.isBase !== b.isBase) return a.isBase ? -1 : 1;
+    if (fSort === "nieuw") return byNewest(a, b);
+    if (fSort === "az") return a.name.localeCompare(b.name, "nl");
     return bySeasonThenName(a.season, a.name, b.season, b.name);
   });
   return (
@@ -2175,6 +2318,12 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
         {["Alle", ...FERMENT_METHODS].map((m) => (
           <button key={m} onClick={() => { setMethodF(m); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (methodF === m ? "pillon" : "pill")}>{m === "Alle" ? "Alle methodes" : m}</button>
         ))}
+      </div>
+      <div className="flex items-center gap-1.5 mb-2 text-xs">
+        <span className="mute">Sorteer:</span>
+        <button onClick={() => setFSort("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (fSort === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setFSort("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (fSort === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setFSort("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (fSort === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{fermentRecipes.length} recepten</div>
       <div className="space-y-2.5">
@@ -2329,7 +2478,9 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
 
 function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openNew, onOpenedNew }) {
   const [q, setQ] = useState("");
+  const [sortMode, setSortMode] = useState("seizoen");
   const [open, setOpen] = useState(null);
+  const [infoFor, setInfoFor] = useState(null);
   const [editing, setEditing] = useState(null); // naam van item in bewerking, of "__new"
   const [fName, setFName] = useState("");
   const [fPairs, setFPairs] = useState("");
@@ -2345,10 +2496,14 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
   const isSeed = (name) => PAIRINGS.some((p) => p.name === name);
   const [seasonF, setSeasonF] = useState("Alle");
   const inSeason = (p) => { const ss = (p.season && p.season.length) ? p.season : seasonOf(p.name); return ss.includes(seasonF) || ss.includes("Hele jaar"); };
+  const seasonsOf = (p) => (p.season && p.season.length) ? p.season : seasonOf(p.name);
   const shown = pairings
     .filter((p) => softMatchAny([p.name, p.pairs.join(" "), p.note], q))
     .filter((p) => seasonF === "Alle" || inSeason(p))
-    .sort((a, b) => bySeasonThenName((a.season && a.season.length) ? a.season : seasonOf(a.name), a.name, (b.season && b.season.length) ? b.season : seasonOf(b.name), b.name));
+    .sort((a, b) =>
+      sortMode === "nieuw" ? ((b.addedAt || 0) - (a.addedAt || 0) || a.name.localeCompare(b.name, "nl"))
+      : sortMode === "az" ? a.name.localeCompare(b.name, "nl")
+      : bySeasonThenName(seasonsOf(a), a.name, seasonsOf(b), b.name));
   return (
     <div>
       {editing === "__new" && (
@@ -2359,6 +2514,12 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
         {["Alle", ...SEASONS].map((sx) => (
           <button key={sx} onClick={() => setSeasonF(sx)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === sx ? "pillon" : "pill")}>{sx}</button>
         ))}
+      </div>
+      <div className="flex items-center gap-1.5 mb-2 text-xs">
+        <span className="mute">Sorteer:</span>
+        <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setSortMode("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} producten</div>
       <div className="space-y-2">
@@ -2374,8 +2535,21 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
                 <div className="flex flex-wrap gap-1.5">{p.pairs.map((x) => <span key={x} className="chip rounded-full text-xs font-medium px-2.5 py-1">{x}</span>)}</div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <button onClick={() => onSearchRecipes(p.name)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Search size={12} /> Bekijk recepten met {p.name}</button>
+                  {PRODUCT_INFO[p.name] && <button onClick={() => setInfoFor(infoFor === p.name ? null : p.name)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Info size={12} /> Info</button>}
                   {canEdit && <button onClick={() => startEdit(p)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerken</button>}
                 </div>
+                {infoFor === p.name && PRODUCT_INFO[p.name] && (
+                  <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
+                    <div className="serif ink text-base leading-tight mb-1.5">{cap(p.name)}</div>
+                    <p className="mb-2">{PRODUCT_INFO[p.name].note}</p>
+                    <div className="space-y-1 text-[13px]">
+                      {PRODUCT_INFO[p.name].kcal !== "—" && <div><span className="font-semibold">Voedingswaarde:</span> ± {PRODUCT_INFO[p.name].kcal} per 100 g</div>}
+                      <div><span className="font-semibold">Gebruik:</span> {PRODUCT_INFO[p.name].gebruik}</div>
+                      <div><span className="font-semibold">Oogst:</span> {PRODUCT_INFO[p.name].oogst}</div>
+                    </div>
+                    <p className="text-[11px] mt-2 opacity-70">Indicatieve waarden; verschilt per ras, rijpheid en seizoen.</p>
+                  </div>
+                )}
               </div>
             )}
             {open === p.name && editing === p.name && (
@@ -2560,6 +2734,19 @@ function TechNotes({ notes, canEdit, onSave, label }) {
   );
 }
 
+// Overzicht van fermentatiemethodes voor de technieken-pagina.
+const FERMENT_GUIDE = [
+  { methode:"Melkzuur (groente)", zout:"2,5% pekel", pH:"onder 4,2; streef 3,2–3,6", tijd:"1–4 weken", temp:"18–22 °C", let:"Alles onder de pekel houden; wit gistvlies is onschuldig, pluizige schimmel niet." },
+  { methode:"Kimchi", zout:"2,5–3,5%", pH:"onder 4,2", tijd:"3–14 dagen", temp:"18–22 °C, daarna koel", let:"Dagelijks aandrukken; koel zodra de gewenste zuurte is bereikt." },
+  { methode:"Zuurkool", zout:"2,5%", pH:"onder 4,1", tijd:"2–4 weken", temp:"18–20 °C", let:"Fijn snijden en kneden tot er genoeg eigen vocht is." },
+  { methode:"Hete saus", zout:"2,5–3,5%", pH:"onder 3,8", tijd:"1–2 weken", temp:"20–22 °C", let:"Ontlucht regelmatig; peper kan flink bruisen." },
+  { methode:"Suikerfermentatie (dranken)", zout:"—", pH:"3,0–3,5", tijd:"2–7 dagen (1e), 1–3 dagen fles", temp:"20–24 °C", let:"DRUK: beugelfles of PET, dagelijks ontluchten, koel serveren." },
+  { methode:"Kombucha", zout:"—", pH:"2,8–3,5", tijd:"7–14 dagen", temp:"22–26 °C", let:"Levende SCOBY nodig; schimmel bovenop betekent weggooien." },
+  { methode:"Waterkefir", zout:"—", pH:"3,2–3,8", tijd:"1–2 dagen per stap", temp:"20–24 °C", let:"Korrels terugzetten voor de volgende ronde; nooit metaal gebruiken." },
+  { methode:"Azijnfermentatie", zout:"—", pH:"onder 3,5 (zuur)", tijd:"3–6 weken", temp:"22–28 °C", let:"Tweetraps (eerst alcohol, dan azijn); doek erop, azijn heeft zuurstof nodig." },
+  { methode:"Gekweekte zuivel", zout:"—", pH:"4,4–4,6", tijd:"12–24 uur", temp:"22–26 °C", let:"Schone materialen; alleen levende starter gebruiken." },
+];
+
 function TechniquesList({ notes, canEdit, onSaveNotes }) {
   const [q, setQ] = useState("");
   const [openCards, setOpenCards] = useState({});
@@ -2594,6 +2781,30 @@ function TechniquesList({ notes, canEdit, onSaveNotes }) {
           <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
             rows={roast.map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
           <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
+        </TechCard>
+
+        <TechCard title="Fermenteren" intro="Methodes, streefwaarden en aandachtspunten" open={isOpen("fermenteren", (softMatch("fermenteren", q) || softMatch("fermentatie", q)) ? 1 : FERMENT_GUIDE.filter((r) => hit(r.methode) || hit(r.let)).length)} onToggle={() => toggle("fermenteren")}>
+          <TechTable head={["Methode", "Zout", "Streef-pH", "Duur", "Temp.", "Let op"]}
+            rows={(searching ? FERMENT_GUIDE.filter((r) => hit(r.methode) || hit(r.let)) : FERMENT_GUIDE).map((r) => [r.methode, r.zout, r.pH, r.tijd, r.temp, r.let])} />
+          <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
+            <div className="font-semibold mb-1">Kort per soort</div>
+            <ul className="list-disc list-inside space-y-1">
+              <li><span className="font-medium">Melkzuur</span> (zuurkool, kimchi, pekelgroente): melkzuurbacteriën zetten suikers om in zuur. Zout (2,5%) en zuurstofvrij onder de pekel houden de rotters buiten; klaar bij pH onder 4,2.</li>
+              <li><span className="font-medium">Suikerfermentatie</span> (gemberbier, kefir, kombucha): gist maakt van suiker koolzuur en wat alcohol. Dit bruist — altijd drukbestendige flessen en dagelijks ontluchten.</li>
+              <li><span className="font-medium">Azijn</span>: tweetraps. Eerst vergist gist suiker tot alcohol, daarna zetten azijnbacteriën die om in azijnzuur. Heeft juist zuurstof nodig: doek erop, geen deksel.</li>
+              <li><span className="font-medium">Zuivel</span>: melkzuurcultuur dikt room of melk tot crème fraîche, karnemelk of yoghurt.</li>
+            </ul>
+          </div>
+          <div className="tintbox rounded-xl p-3.5 mt-2 text-sm" style={{ color: "#3f5238" }}>
+            <div className="font-semibold mb-1">Belangrijke punten</div>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Meet de pH met de geijkte meter en leg hem vast in het batchlogboek — dat is je HACCP-bewijs.</li>
+              <li>Wit vlies (kaamgist) op de pekel is onschuldig en eraf te scheppen; pluizige, gekleurde of behaarde schimmel betekent weggooien.</li>
+              <li>Werk schoon: gereedschap en potten heet uitspoelen, handen wassen, geen aangetast product gebruiken.</li>
+              <li>Koel zodra de gewenste zuurte is bereikt; kou remt de fermentatie en houdt het product stabiel.</li>
+              <li>Proef met een schone lepel, nooit dubbel erin.</li>
+            </ul>
+          </div>
         </TechCard>
       </div>
     </div>
