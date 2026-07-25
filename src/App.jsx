@@ -1326,6 +1326,8 @@ function BrandCSS() {
     <style>{`
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap');
 html{font-size:17px}
+.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
 .serif{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif}
 .ink{color:#2b3823}.mute{color:#6f7263}.acc{color:#3a4b30}
 .ff:focus{outline:none}
@@ -2017,15 +2019,15 @@ function Header({ user, onHome, onOpenSettings, onSignOut }) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <button onClick={onHome} className="ff shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-medium hover:opacity-70" style={{ background: "#e8ebe0", color: T.green }} title="Naar startscherm"><Home size={22} /></button>
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <button onClick={onHome} className="ff shrink-0 inline-flex items-center justify-center rounded-xl w-10 h-10 hover:opacity-70" style={{ background: "#e8ebe0", color: T.green }} title="Naar startscherm"><Home size={20} /></button>
           <Wordmark onHome={onHome} />
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           {!user.canEdit && <span className="inline-flex items-center gap-1 text-xs mute"><Eye size={13} /> Gast</span>}
-          <span className="w-7 h-7 rounded-full font-semibold text-xs flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }} title={user.name + " · " + user.role}>{user.name[0]}</span>
-          <button onClick={onOpenSettings} className="mute hover:opacity-70 focus:outline-none" title="Instellingen"><Settings size={18} /></button>
-          <button onClick={onSignOut} className="mute hover:opacity-70 focus:outline-none" title="Uitloggen"><LogOut size={18} /></button>
+          <span className="w-8 h-8 rounded-full font-semibold text-xs flex items-center justify-center serif shrink-0" style={{ background: "#e8ebe0", color: T.green }} title={user.name + " · " + user.role}>{user.name[0]}</span>
+          <button onClick={onOpenSettings} className="mute hover:opacity-70 focus:outline-none shrink-0" title="Instellingen"><Settings size={19} /></button>
+          <button onClick={onSignOut} className="mute hover:opacity-70 focus:outline-none shrink-0" title="Uitloggen"><LogOut size={19} /></button>
         </div>
       </div>
     </header>
@@ -2116,10 +2118,19 @@ function useSwipeSections(section, setSection) {
 
 function SectionNav({ section, setSection }) {
   const items = SECTIONS;
+  const scroller = React.useRef(null);
+  const btns = React.useRef({});
+  // De actieve knop netjes in het midden schuiven, ook na een swipe.
+  useEffect(() => {
+    const wrap = scroller.current, btn = btns.current[section];
+    if (!wrap || !btn) return;
+    const target = btn.offsetLeft - (wrap.clientWidth - btn.clientWidth) / 2;
+    wrap.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [section]);
   return (
-    <div className="flex gap-1.5 overflow-x-auto pt-2 pb-1 -mx-1 px-1">
+    <div ref={scroller} className="flex gap-1.5 overflow-x-auto pt-2 pb-1 -mx-4 px-4 no-scrollbar">
       {items.map((it) => (
-        <button key={it.id} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
+        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}{it.label}
         </button>
       ))}
@@ -2152,16 +2163,16 @@ function DishList({ dishes, search, setSearch, onOpen }) {
   return (
     <div>
       <SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" />
-      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {COURSE_FILTERS.map((c) => (
           <button key={c} onClick={() => setCourseF(c)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (courseF === c ? "pillon" : "pill")}>{c}</button>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 mb-2 text-xs">
-        <span className="mute">Sorteer:</span>
-        <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
-        <button onClick={() => setSortMode("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
-        <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
+      <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
+        <span className="mute shrink-0">Sorteer:</span>
+        <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} {shown.length === 1 ? "gerecht" : "gerechten"}</div>
       <div className="space-y-2.5">
@@ -2209,21 +2220,19 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
   return (
     <div>
       <SearchBar value={search} onChange={(v) => { setSearch(v); setLimit(60); }} placeholder="Zoek recept of basis (bv. puree, biet)" />
-      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {["Alle", ...SEASONS].map((s) => (
           <button key={s} onClick={() => { setSeasonF(s); setLimit(60); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
         ))}
       </div>
-      <div className="flex items-center justify-between mb-3 text-xs">
-        <div className="flex items-center gap-1.5">
-          <span className="mute">Sorteer</span>
-          <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
-          <button onClick={() => setSortMode("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
-          <button onClick={() => setSortMode("used")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
-          <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
-        </div>
-        <span className="mute">{sorted.length} recepten</span>
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-1 -mx-4 px-4 text-xs">
+        <span className="mute shrink-0">Sorteer</span>
+        <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setSortMode("used")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
+        <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
+      <div className="text-right text-xs mute mb-2">{sorted.length} {sorted.length === 1 ? "recept" : "recepten"}</div>
       <div className="space-y-2.5">
         {visible.map((r) => (
           <button key={r.id} onClick={() => onOpen(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
@@ -2309,21 +2318,21 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
       <div className="mt-7 flex items-center justify-between"><Eyebrow>Fermentatierecepten</Eyebrow>
         {canEdit && <button onClick={onNewFermentRecipe} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuw fermentatierecept</button>}
       </div>
-      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {["Alle", ...SEASONS].map((s) => (
           <button key={s} onClick={() => { setSeasonF(s); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
         ))}
       </div>
-      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {["Alle", ...FERMENT_METHODS].map((m) => (
           <button key={m} onClick={() => { setMethodF(m); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (methodF === m ? "pillon" : "pill")}>{m === "Alle" ? "Alle methodes" : m}</button>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 mb-2 text-xs">
-        <span className="mute">Sorteer:</span>
-        <button onClick={() => setFSort("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (fSort === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
-        <button onClick={() => setFSort("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (fSort === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
-        <button onClick={() => setFSort("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (fSort === "az" ? "pillon" : "pill")}>A–Z</button>
+      <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
+        <span className="mute shrink-0">Sorteer:</span>
+        <button onClick={() => setFSort("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setFSort("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setFSort("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{fermentRecipes.length} recepten</div>
       <div className="space-y-2.5">
@@ -2510,16 +2519,16 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
         <PairingForm title="Nieuw product" name={fName} setName={setFName} nameLocked={false} pairs={fPairs} setPairs={setFPairs} note={fNote} setNote={setFNote} season={fSeason} setSeason={setFSeason} onSubmit={submit} onCancel={() => setEditing(null)} />
       )}
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een product of smaak" />
-      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {["Alle", ...SEASONS].map((sx) => (
           <button key={sx} onClick={() => setSeasonF(sx)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === sx ? "pillon" : "pill")}>{sx}</button>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 mb-2 text-xs">
-        <span className="mute">Sorteer:</span>
-        <button onClick={() => setSortMode("seizoen")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
-        <button onClick={() => setSortMode("nieuw")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
-        <button onClick={() => setSortMode("az")} className={"ff rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
+      <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
+        <span className="mute shrink-0">Sorteer:</span>
+        <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
+        <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
+        <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} producten</div>
       <div className="space-y-2">
@@ -2674,7 +2683,7 @@ const TECH_NOTES_SEED = {
 
 function TechTable({ head, rows }) {
   return (
-    <div className="overflow-x-auto -mx-1 px-1">
+    <div className="overflow-x-auto no-scrollbar -mx-4 px-4">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr>{head.map((h) => <th key={h} className="text-left font-semibold ink text-[12.5px] uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>)}</tr>
@@ -2896,7 +2905,7 @@ function CleaningList({ tasks, logs, haccpLogs, canEdit, user, dayDone, onDayDon
       </button>
       {(openAll || searching) && (
         <>
-          <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 -mx-1 px-1 text-xs">
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
             {["Alle", ...CLEANING_AREAS].map((a) => (
               <button key={a} onClick={() => setAreaF(a)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (areaF === a ? "pillon" : "pill")}>{a}</button>
             ))}
