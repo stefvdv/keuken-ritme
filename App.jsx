@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -66,6 +66,103 @@ const FERMENT_ACTIONS = {
   Azijnfermentatie: [{ label: "Proef en controleer de moeder", everyDays: 3 }],
 };
 
+
+// ---------- printen ----------
+// Opent een schone printweergave in een nieuw venster (A4), los van de app-UI.
+function openPrint(title, bodyHTML) {
+  const esc = (x) => String(x == null ? "" : x);
+  const html =
+    "<!doctype html><html lang='nl'><head><meta charset='utf-8'>" +
+    "<title>" + esc(title) + "</title>" +
+    "<style>" +
+    "@page{size:A4;margin:16mm}" +
+    "*{box-sizing:border-box}" +
+    "body{font-family:Georgia,'Times New Roman',serif;color:#23261d;margin:0;font-size:12pt;line-height:1.45}" +
+    "h1{font-size:22pt;margin:0 0 2pt}h2{font-size:13pt;margin:16pt 0 4pt;border-bottom:1px solid #cfccbe;padding-bottom:3pt}" +
+    ".sub{color:#6a6550;font-size:10pt;margin:0 0 10pt}" +
+    ".meta{color:#6a6550;font-size:9.5pt;margin-top:2pt}" +
+    "ul,ol{margin:4pt 0 8pt;padding-left:18pt}li{margin:2pt 0}" +
+    "table{width:100%;border-collapse:collapse;margin:6pt 0 12pt;font-size:10.5pt}" +
+    "th,td{border:1px solid #cbc8ba;padding:4pt 6pt;text-align:left;vertical-align:top}" +
+    "th{background:#f0eee4;font-size:9.5pt;text-transform:uppercase;letter-spacing:.03em}" +
+    ".chips{color:#4a5a3f;font-size:10pt;margin:2pt 0 8pt}" +
+    ".warn{color:#8a4a3a;font-weight:bold}" +
+    ".foot{margin-top:18pt;color:#8a8570;font-size:8.5pt;border-top:1px solid #e0ddd0;padding-top:6pt}" +
+    ".day{margin:10pt 0 2pt;font-weight:bold}" +
+    "</style></head><body>" + bodyHTML +
+    "<div class='foot'>Ritme · In het ritme van het land — Wilde Wortels, Landgoed de Beug · afgedrukt op " + new Date().toLocaleString("nl-NL") + "</div>" +
+    "</body></html>";
+  const w = window.open("", "_blank");
+  if (!w) { alert("Sta pop-ups toe om te kunnen printen."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  w.focus();
+  setTimeout(() => { try { w.print(); } catch (e) {} }, 350);
+}
+const pEsc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function printRecipe(r) {
+  const ing = (r.ingredients || []).map((x) => "<li>" + pEsc(x.amount) + (x.amount ? " — " : "") + pEsc(x.item) + "</li>").join("");
+  const steps = (r.steps || []).map((x) => "<li>" + pEsc(x) + "</li>").join("");
+  const chips = [r.category, r.yield && ("opbrengst " + r.yield), r.fermentMethod, (r.season || []).join("/")].filter(Boolean).join(" · ");
+  openPrint(r.name, "<h1>" + pEsc(r.name) + "</h1><div class='chips'>" + pEsc(chips) + "</div>" +
+    (ing ? "<h2>Ingrediënten</h2><ul>" + ing + "</ul>" : "") +
+    (steps ? "<h2>Bereiding</h2><ol>" + steps + "</ol>" : "") +
+    (r.fermentDefaults ? "<p class='meta'>Richtwaarden: " + (r.fermentDefaults.saltPct ? r.fermentDefaults.saltPct + "% zout · " : "") + r.fermentDefaults.tempC + " °C · " + r.fermentDefaults.days + " dagen</p>" : ""));
+}
+
+function printDish(d, recipeById) {
+  const onderdelen = (d.recipeIds || []).map((id) => { const r = recipeById(id); return r ? "<li>" + pEsc(r.name) + " <span class='meta'>(" + pEsc(r.category) + ")</span></li>" : ""; }).join("");
+  const chips = [d.course, (d.season || []).join("/"), d.diet].filter(Boolean).join(" · ");
+  openPrint(d.name, "<h1>" + pEsc(d.name) + "</h1><div class='chips'>" + pEsc(chips) + "</div>" +
+    (d.description ? "<p class='sub'>" + pEsc(d.description) + "</p>" : "") +
+    (onderdelen ? "<h2>Onderdelen</h2><ul>" + onderdelen + "</ul>" : "") +
+    (d.plating ? "<h2>Dressering</h2><p>" + pEsc(d.plating) + "</p>" : ""));
+}
+
+// Schoonmaaklogboek van een week als tabel per dag.
+function printCleaning(weekLabel, range, days, taskName) {
+  let body = "<h1>Schoonmaaklogboek</h1><div class='sub'>" + pEsc(weekLabel) + " · " + pEsc(range) + "</div>";
+  if (!days.length) body += "<p>Geen registraties deze week.</p>";
+  for (const day of days) {
+    body += "<div class='day'>" + pEsc(day.label) + (day.off ? " — vrije dag (bedrijf dicht)" : "") + "</div>";
+    if (!day.off) {
+      body += "<table><thead><tr><th>Taak</th><th>Afgetekend door</th><th>Opmerking</th></tr></thead><tbody>";
+      for (const l of day.items) body += "<tr><td>" + pEsc(taskName(l.taskId)) + "</td><td>" + pEsc(l.doneBy) + "</td><td>" + pEsc(l.note) + "</td></tr>";
+      body += "</tbody></table>";
+    }
+  }
+  openPrint("Schoonmaaklogboek — " + weekLabel, body);
+}
+
+// HACCP: temperaturen + registraties als tabellen.
+function printHaccp(tempLogs, records) {
+  let body = "<h1>HACCP-logboek</h1><div class='sub'>Temperatuur, bereiding, terugkoelen en leveringen</div>";
+  body += "<h2>Wekelijkse temperatuurcontrole</h2>";
+  if (!tempLogs.length) body += "<p>Nog geen metingen.</p>";
+  else {
+    body += "<table><thead><tr><th>Datum</th>" + HACCP_UNITS.map((u) => "<th>" + pEsc(u.name) + "</th>").join("") + "<th>IJking</th><th>Door</th></tr></thead><tbody>";
+    for (const l of [...tempLogs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1))) {
+      body += "<tr><td>" + pEsc(l.checkDate) + "</td>" +
+        HACCP_UNITS.map((u) => { const v = l.values[u.id]; const bad = inRange(u, v) === false; return "<td" + (bad ? " class='warn'" : "") + ">" + (v == null ? "—" : String(v).replace(".", ",") + " °C") + "</td>"; }).join("") +
+        "<td>" + (l.calibration && l.calibration.measured != null ? String(l.calibration.measured).replace(".", ",") + " °C" : "—") + "</td><td>" + pEsc(l.doneBy) + "</td></tr>";
+    }
+    body += "</tbody></table>";
+  }
+  for (const [kind, cfg] of Object.entries(HACCP_KINDS)) {
+    const rows = records.filter((r) => r.kind === kind).sort((a, b) => (a.date < b.date ? 1 : -1));
+    body += "<h2>" + pEsc(cfg.label) + "</h2>";
+    if (!rows.length) { body += "<p>Nog niets geregistreerd.</p>"; continue; }
+    body += "<table><thead><tr><th>Datum</th>" + cfg.cols.map((c) => "<th>" + pEsc(c.label) + "</th>").join("") + "<th>Door</th></tr></thead><tbody>";
+    for (const r of rows) {
+      const bad = cfg.ok(r) === false;
+      body += "<tr><td>" + pEsc(r.date) + "</td>" +
+        cfg.cols.map((c) => "<td>" + (c.type === "num" ? (r[c.id] == null ? "—" : String(r[c.id]).replace(".", ",") + " °C") : pEsc(r[c.id])) + "</td>").join("") +
+        "<td>" + pEsc(r.by) + (bad ? " <span class='warn'>⚠</span>" : "") + "</td></tr>";
+    }
+    body += "</tbody></table>";
+  }
+  openPrint("HACCP-logboek", body);
+}
 
 // ---------- sorteren op seizoen ----------
 // Welk seizoen is het nu? (meteorologisch: maart–mei lente, enz.)
@@ -307,10 +404,19 @@ function taskStatus(task, logs) {
   if (task.id === DAY_DONE_ID || task.id === DAY_OFF_ID) return { last: null, since: null, due: false, overdue: false, history: [] };
   const mine = logs.filter((l) => l.taskId === task.id).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
   const last = mine[0] || null;
-  const since = last ? daysAgo(last.doneDate) : null;
+  // Vrije dagen (bedrijf dicht) tellen niet mee: die kun je niet poetsen.
+  const offDates = new Set(logs.filter((l) => l.taskId === DAY_OFF_ID).map((l) => l.doneDate));
+  const rawSince = last ? daysAgo(last.doneDate) : null;
+  let since = rawSince;
+  if (last && rawSince != null) {
+    let off = 0;
+    const d = new Date(last.doneDate + "T12:00:00");
+    for (let i = 1; i <= rawSince; i++) { d.setDate(d.getDate() + 1); if (offDates.has(localDate(d))) off++; }
+    since = rawSince - off;
+  }
   const due = last === null || since >= task.intervalDays;
   const overdue = last !== null && since > task.intervalDays;
-  return { last, since, due, overdue, history: mine };
+  return { last, since, rawSince, due, overdue, history: mine };
 }
 
 // ------- tuinproducten per groep -------
@@ -1106,6 +1212,206 @@ const seedDishes = [
     description:"Winterwortel met wortelkvass en een warme gemberbiersaus.",
     plating:"Puree en chip van wortel, lepel wortelkvass, ingekookte saus van klassiek gemberbier en kruidenpasta van koriander.",
     recipeIds:["gpuree-wortel","gchip-wortel","kvass-wortel","gingerbeer-klassiek-gemberbier","fherbpaste-koriander"], updatedBy:"Simon", updatedAt:"zojuist" },
+  { id:"seed-amus-1", name:'Amuse van rode biet & mosterd', course:'Amuse', season:['Herfst', 'Winter'], diet:'Vegetarisch',
+    description:'Klein hapje van gefermenteerde biet met bietenmosterd.',
+    plating:'Lepel gefermenteerde rode biet, dotje bietenmosterd, gel van biet en een krokant bietenchipje.',
+    recipeIds:['fhot-rode-biet', 'fmustard-bietenmosterd', 'gcarp-rode-biet', 'gchip-boerenkool'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-2", name:'Tomaat, tartaar & basilicum', course:'Amuse', season:['Zomer'], diet:'Vegetarisch',
+    description:'Frisse zomerhap van rauwe tomaat en basilicumgel.',
+    plating:'Tomatentartaar in een lepel, basilicumgel, olijvencrumble en een druppel balsamico.',
+    recipeIds:['gtartaar-tomaat', 'herbgel2-basilicum', 'c-olive-crumble', 'c-balsamic-pearls'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-3", name:'Erwt, munt & radijs', course:'Amuse', season:['Lente'], diet:'Vegetarisch',
+    description:'Lentegroen hapje met erwtenspuma en knapperige radijs.',
+    plating:'Spuma van erwt, gepekelde radijs, muntolie en erwtenscheuten.',
+    recipeIds:['gespuma-erwten', 'gpickle-radijs', 'gherboil-munt', 'beanpuree-erwten'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-4", name:'Courgettebloem & geitenkaas', course:'Amuse', season:['Zomer'], diet:'Vegetarisch',
+    description:'Gevulde courgettebloem als luchtig zomerhapje.',
+    plating:'Gepekelde courgettebloem, courgettepuree, bloemenazijn en een dun courgettelint.',
+    recipeIds:['pflower-courgettebloem', 'gpuree-courgette', 'fvinegar-goudsbloem', 'gcarp-courgette'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-5", name:'Knolselderij & appel', course:'Amuse', season:['Winter'], diet:'Vegetarisch',
+    description:'Aards-frisse combinatie van knolselderij en appel.',
+    plating:'Gerookte knolselderijpuree, appelcompote, knolselderijchip en dragonolie.',
+    recipeIds:['gsmoke-knolselderij', 'gcompote-appel', 'roast-knolselderij', 'gherboil-dragon'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-6", name:'Gelakte varkensbuik in één hap', course:'Amuse', season:['Herfst', 'Winter'], diet:'Varkensvlees',
+    description:'Rijk hapje van eigen varken met zoetzuur.',
+    plating:'Blokje gelakte buik, ui-compote, mosterdmayo en een krokant uitje.',
+    recipeIds:['pork-gelakte-buik', 'gconfit-knoflook', 'mayo-mosterdmayonaise', 'fhot-ui'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-7", name:'Rode biet & crème fraîche', course:'Amuse', season:['Herfst'], diet:'Vegetarisch',
+    description:'Klassiek samenspel van biet en zuivel.',
+    plating:'Bietencarpaccio, crème fraîche, kvass-gel en bieslook.',
+    recipeIds:['gcarp-rode-biet', 'cultzuivel-cre-me-frai-che', 'kvass-rode-biet', 'gherbgel-bieslook'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-8", name:'Wortel, komijn & kefir', course:'Amuse', season:['Lente', 'Zomer'], diet:'Vegetarisch',
+    description:'Zoete wortel met frisse kefir.',
+    plating:'Wortelpuree met komijn, wortelchip, kefir en wortelloofolie.',
+    recipeIds:['gpuree-wortel', 'gchip-wortel', 'waterkefir-munt-waterkefir', 'gespuma-wortel'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-9", name:'Venkel, peer & dille', course:'Amuse', season:['Herfst'], diet:'Vegetarisch',
+    description:'Anijzig en fris najaarshapje.',
+    plating:'Gepocheerde peer, venkelgel, dille-olie en venkelgroen.',
+    recipeIds:['gpoach-peer', 'ggel-venkel', 'herboil2-dille', 'grill-venkel'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-amus-10", name:'Pruim, reine claude & amandel', course:'Amuse', season:['Zomer', 'Herfst'], diet:'Vegetarisch',
+    description:'Zoetzuur steenfruit met amandel.',
+    plating:'Zoutpruim, reine-claudecompote, amandelpasta en een pruimengel.',
+    recipeIds:['zoutpruim-pruim', 'gcompote-reine-claude', 'nutpaste-amandel', 'gpoach-pruim'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-1", name:'Wrap met gelakte varkensbuik', course:'Lunch', season:['Hele jaar'], diet:'Varkensvlees',
+    description:'Hartige wrap met eigen varken en kimchi.',
+    plating:'Warme wrap, gelakte buik, kimchi van paksoi, mosterdmayo en frisse kruiden.',
+    recipeIds:['pork-gelakte-buik', 'kimchi-paksoi', 'mayo-mosterdmayonaise', 'gherboil-koriander'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-2", name:'Sandwich pulled pork & appel', course:'Lunch', season:['Hele jaar'], diet:'Varkensvlees',
+    description:'Zachte broodje met pulled pork en appelcompote.',
+    plating:'Pulled schouder, appelcompote, honingmosterd en gepekelde ui op een zacht broodje.',
+    recipeIds:['pork-pulled-schouder', 'gcompote-appel', 'fmustard-honingmosterd', 'gpickle-ui'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-3", name:'Soep van geroosterde pastinaak', course:'Lunch', season:['Herfst', 'Winter'], diet:'Vegetarisch',
+    description:'Romige winterse soep met pastinaakchips.',
+    plating:'Geroosterde pastinaaksoep, crème fraîche, pastinaakchip en tijmolie.',
+    recipeIds:['roast-pastinaak', 'gpuree-pastinaak', 'cultzuivel-cre-me-frai-che', 'gchip-pastinaak'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-4", name:'Tomatensoep uit eigen tuin', course:'Lunch', season:['Zomer'], diet:'Vegetarisch',
+    description:'Volle zomersoep van rijpe tomaten.',
+    plating:'Tomatensoep, basilicumgel, olijvencrumble en een scheut olijfolie.',
+    recipeIds:['gtartaar-tomaat', 'herbgel2-basilicum', 'c-olive-crumble', 'fhot-tomaat'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-5", name:'Zoete breaksnack: appel & kaneel', course:'Lunch', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Zoete onderbreking met appel en banketbakkersroom.',
+    plating:'Appelcompote, kaneelbanketbakkersroom, appelchip en karamel.',
+    recipeIds:['gcompote-appel', 'patissiere-kaneelbanketbakkersroom', 'fchip-appel', 'caramel-klassieke-karamel'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-6", name:'Mini quiche met boerenkool', course:'Lunch', season:['Herfst', 'Winter'], diet:'Vegetarisch',
+    description:'Hartige mini quiche met boerenkool en kaas.',
+    plating:'Bladerdeegbodem, boerenkoolpuree, geitenkaas en boerenkoolchip.',
+    recipeIds:['gpuree-boerenkool', 'gchip-boerenkool', 'lacto-boerenkool', 'gconfit-knoflook'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-7", name:'Wrap met geroosterde groenten', course:'Lunch', season:['Zomer', 'Herfst'], diet:'Vegetarisch',
+    description:'Vegetarische wrap met seizoensgroenten.',
+    plating:'Gegrilde courgette en venkel, wortelpuree, aioli en verse kruiden in een wrap.',
+    recipeIds:['grill-courgette', 'grill-venkel', 'gpuree-wortel', 'mayo-aioli'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-8", name:'Sandwich met gerookte biet', course:'Lunch', season:['Herfst', 'Winter'], diet:'Vegetarisch',
+    description:'Volle sandwich met gerookte biet en mierikswortel.',
+    plating:'Gerookte biet, crème fraîche, bietenmosterd en gepekelde ui op donker brood.',
+    recipeIds:['gsmoke-rode-biet', 'cultzuivel-cre-me-frai-che', 'fmustard-bietenmosterd', 'gpickle-ui'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-9", name:'Soep van erwt & munt', course:'Lunch', season:['Lente'], diet:'Vegetarisch',
+    description:'Lentegroene soep met frisse munt.',
+    plating:'Erwtensoep, muntolie, erwtenspuma en radijs.',
+    recipeIds:['beanpuree-erwten', 'gespuma-erwten', 'gherboil-munt', 'gpickle-radijs'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-lunc-10", name:'Zoete breaksnack: rabarber & vanille', course:'Lunch', season:['Lente'], diet:'Vegetarisch',
+    description:'Frisse zoete snack met rabarber.',
+    plating:'Gepocheerde rabarber, vanilleroomijs, rabarbercoulis en amandelcrumble.',
+    recipeIds:['gpoach-rabarber', 'icecream-vanille-roomijs', 'gcoulis-rabarber', 'crumble-hazelnoot'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-1", name:'Bieten-hummus met chips', course:'Borrel', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Kleurrijke dip met knapperige groentechips.',
+    plating:'Rode-bietenpuree met knoflook, bietenchip en pastinaakchip om te dippen.',
+    recipeIds:['gpuree-boerenkool', 'gconfit-knoflook', 'gchip-boerenkool', 'gchip-pastinaak'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-2", name:'Gefrituurde courgettebloemen', course:'Borrel', season:['Zomer'], diet:'Vegetarisch',
+    description:'Krokante bloemen met frisse dip.',
+    plating:'Gefrituurde courgettebloem, aioli en bloemenazijn.',
+    recipeIds:['pflower-courgettebloem', 'mayo-aioli', 'fvinegar-goudsbloem', 'gcarp-courgette'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-3", name:'Krokante varkenskrossen', course:'Borrel', season:['Hele jaar'], diet:'Varkensvlees',
+    description:'Knapperige borrelhap van eigen varken.',
+    plating:'Krokante krosse, mosterdmayo en gepekelde ui.',
+    recipeIds:['pork-krokante-krosse', 'mayo-mosterdmayonaise', 'gpickle-ui', 'fmustard-klassieke-gefermenteerde-mosterd'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-4", name:'Gepekelde groenten uit het vat', course:'Borrel', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Frisse zuurtjes van het seizoen.',
+    plating:'Gefermenteerde radijs, komkommer en meiknol met dille.',
+    recipeIds:['fvat-radijs', 'fvat-komkommer', 'fvat-meiknol', 'herboil2-dille'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-5", name:'Kaasplankje met huisgemaakte mosterd', course:'Borrel', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Klassiek plankje met eigen fermenten.',
+    plating:'Geitenkaas, honingmosterd, appel-leer en walnootcrumble.',
+    recipeIds:['fmustard-honingmosterd', 'fleather-appel', 'crumble-walnoot', 'gcompote-appel'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-6", name:'Wortelchips met kefirdip', course:'Borrel', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Zoete chips met frisse dip.',
+    plating:'Wortelchip, kefirdip met kruiden en wortelpuree.',
+    recipeIds:['gchip-wortel', 'waterkefir-munt-waterkefir', 'gpuree-wortel', 'gherbgel-bieslook'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-7", name:'Gerookte biet op toast', course:'Borrel', season:['Herfst', 'Winter'], diet:'Vegetarisch',
+    description:'Hartige toast met gerookte biet.',
+    plating:'Toast, gerookte biet, crème fraîche en bieslook.',
+    recipeIds:['gsmoke-rode-biet', 'cultzuivel-cre-me-frai-che', 'gherbgel-bieslook', 'gcarp-rode-biet'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-8", name:'Pittige kimchi-pannenkoekjes', course:'Borrel', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Koreaans geïnspireerde hartige hapjes.',
+    plating:'Mini pannenkoek met kimchi, sojasaus-mayo en lente-ui.',
+    recipeIds:['kimchi-paksoi', 'mayo-sojasaus-mayonaise', 'kimchi-chinese-kool', 'gherboil-koriander'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-9", name:'Zoutpruim & amandel bites', course:'Borrel', season:['Zomer', 'Herfst'], diet:'Vegetarisch',
+    description:'Zoetzuur-zilte hapjes.',
+    plating:'Zoutpruim, amandelpasta en een krokant tuiltje.',
+    recipeIds:['zoutpruim-pruim', 'nutpaste-amandel', 'tuile-sesamtuile', 'gpoach-pruim'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-borr-10", name:'Gefermenteerde hotsauce & brood', course:'Borrel', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Pittige dip met knapperig brood.',
+    plating:'Gefermenteerde hotsauce van tomaat, knoflookolie en geroosterd brood.',
+    recipeIds:['fhot-tomaat', 'fhot-knoflook', 'gconfit-knoflook', 'honingknoflook-klassieke-honing-knoflook'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-1", name:'Aardbei-pâte de fruit', course:'Friandise', season:['Lente', 'Zomer'], diet:'Vegetarisch',
+    description:'Zoete fruitgelei bij de koffie.',
+    plating:'Aardbeiencoulis verwerkt tot pâte de fruit met suikerkorst.',
+    recipeIds:['gcoulis-aardbei', 'gsorbet-aardbei', 'gjam-aalbes', 'kruidensuiker-munt'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-2", name:'Muntganache-bonbon', course:'Friandise', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Frisse chocoladebonbon met munt.',
+    plating:'Pure ganache met munt, afgewerkt met muntsuiker.',
+    recipeIds:['ganache-muntganache', 'ganache-pure-ganache', 'kruidensuiker-munt', 'gherbgel-munt'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-3", name:'Karamel-fudge met zeezout', course:'Friandise', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Zachte fudge met gezouten karamel.',
+    plating:'Gezouten karamel tot fudge, afgewerkt met een vlokje zout.',
+    recipeIds:['caramel-gezouten-karamel', 'caramel-klassieke-karamel', 'icecream-karamel-roomijs', 'crumble-pistache'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-4", name:'Lavendel-chocolade', course:'Friandise', season:['Zomer'], diet:'Vegetarisch',
+    description:'Bloemige chocoladehap.',
+    plating:'Lavendelganache in chocolade met gekonfijte lavendel.',
+    recipeIds:['ganache-lavendelganache', 'candyflower-lavendel', 'ganache-pure-ganache', 'wildesoda-lavendel'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-5", name:'Aalbessen-gelei', course:'Friandise', season:['Zomer'], diet:'Vegetarisch',
+    description:'Frisse rode gelei.',
+    plating:'Aalbessenjam tot gelei met suikerkorst.',
+    recipeIds:['gjam-aalbes', 'gsorbet-aalbes', 'gcoulis-framboos', 'kruidensuiker-kamille'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-6", name:'Kamille-karamel', course:'Friandise', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Bloemige zachte karamel.',
+    plating:'Klassieke karamel geïnfuseerd met kamille, gekonfijte kamillebloem.',
+    recipeIds:['caramel-klassieke-karamel', 'candyflower-kamille', 'kruidensuiker-kamille', 'anglaise-kamille-anglaise'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-7", name:'Appel-leer rolletjes', course:'Friandise', season:['Herfst'], diet:'Vegetarisch',
+    description:'Taai-zoet fruitsnoepje.',
+    plating:'Appel-leer opgerold met kaneelsuiker.',
+    recipeIds:['fleather-appel', 'fchip-appel', 'gcompote-appel', 'kruidensuiker-tijm'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-8", name:'Framboos-sorbetbonbon', course:'Friandise', season:['Zomer'], diet:'Vegetarisch',
+    description:'Fruitige bevroren hap.',
+    plating:'Frambozensorbet omhuld met chocolade en frambozencoulis.',
+    recipeIds:['gsorbet-framboos', 'gcoulis-framboos', 'ganache-pure-ganache', 'granita-framboos-granite'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-9", name:'Pistache-tuile', course:'Friandise', season:['Hele jaar'], diet:'Vegetarisch',
+    description:'Krokant koekje bij de koffie.',
+    plating:'Dunne sesamtuile met pistachecrumble.',
+    recipeIds:['tuile-sesamtuile', 'crumble-pistache', 'tuile-boekweittuile', 'nutpaste-amandel'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
+  { id:"seed-fria-10", name:'Reine claude & amandel friandise', course:'Friandise', season:['Zomer', 'Herfst'], diet:'Vegetarisch',
+    description:'Zoet steenfruit-hapje.',
+    plating:'Reine-claudecompote op amandelpasta met een suikerkorst.',
+    recipeIds:['gcompote-reine-claude', 'nutpaste-amandel', 'zoutpruim-reine-claude', 'crumble-hazelnoot'],
+    updatedBy:"Michael", updatedAt:"nieuw" },
 ];
 
 const PRODUCT_INFO = {
@@ -1377,6 +1683,7 @@ export default function App() {
   const [cleaningLogs, setCleaningLogs] = useState([]);
   const [techNotes, setTechNotes] = useState(TECH_NOTES_SEED);
   const [checkOpen, setCheckOpen] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
   const [checkDone, setCheckDone] = useState(null);
   const [newPairing, setNewPairing] = useState(0);
   const [haccpLogs, setHaccpLogs] = useState([]);
@@ -1501,11 +1808,24 @@ export default function App() {
   const resetTo = (s) => setStack([s]);
   const goBack = () => { if (stack.length > 1) { try { window.history.back(); } catch (e) { back(); } } };
   const goHome = () => { resetTo({ screen: "list" }); setSection("gerechten"); };
+  const calcOpenRef = React.useRef(false);
+  useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
   useEffect(() => {
-    const onPop = () => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
+    const onPop = () => {
+      if (calcOpenRef.current) { setCalcOpen(false); try { window.history.pushState({ app: "ritme" }, ""); } catch (e) {} return; }
+      setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+  // Escape sluit eerst de rekenmachine.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && calcOpenRef.current) { e.preventDefault(); setCalcOpen(false); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const openCalc = () => { setCalcOpen(true); try { window.history.pushState({ app: "ritme", calc: true }, ""); } catch (e) {} };
+  const closeCalc = () => { setCalcOpen(false); };
   const recipeById = (id) => recipes.find((r) => r.id === id);
   const dishById = (id) => dishes.find((d) => d.id === id);
   const usageCount = (id) => dishes.filter((d) => d.recipeIds.includes(id)).length;
@@ -1520,7 +1840,7 @@ export default function App() {
   const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
 
   // Gemiste (vrije) dagen automatisch registreren zodra de data er is.
-  useEffect(() => { if (loaded && user && user.canEdit) backfillDaysOff(); }, [loaded, user]);
+  useEffect(() => { if (loaded && user && user.canEdit) { backfillDaysOff(); pruneOldRecords(); } }, [loaded, user]);
 
   // Melding bij inloggen (alleen koks): batches die klaar zijn of een handeling vragen.
   const [noticeShown, setNoticeShown] = useState(false);
@@ -1602,7 +1922,8 @@ export default function App() {
   const addBatchMeasurement = async (id, m) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const entry = { date: m.date, ph: m.ph === "" ? null : Number(m.ph), brix: m.brix === "" ? null : Number(m.brix), tempC: m.tempC === "" ? null : Number(m.tempC), note: m.note || "", by: user.name };
+    const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
+    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: user.name };
     const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
@@ -1705,6 +2026,31 @@ export default function App() {
   };
   // Bij het openen automatisch de gemiste dagen als "vrije dag" vastleggen:
   // elke dag tussen de laatste registratie en gisteren waarop niets is gelogd.
+  // Verwijder afgeronde/verlopen registraties ouder dan één jaar (houdt de lijsten kort).
+  const pruneOldRecords = async () => {
+    if (!user || !user.canEdit) return;
+    const cutoff = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return localDate(d); })();
+    // 1) afgeronde fermentatiebatches met een afrondingsdatum ouder dan 1 jaar
+    const oldBatches = batches.filter((b) => b.done && b.finishedDate && b.finishedDate < cutoff);
+    // 2) schoonmaaklogregels (incl. dag-afgerond en vrije dagen) ouder dan 1 jaar
+    const oldClean = cleaningLogs.filter((l) => l.doneDate < cutoff);
+    // 3) HACCP temperatuur- en registratielogs ouder dan 1 jaar
+    const oldTemp = haccpLogs.filter((l) => l.checkDate < cutoff);
+    const oldRec = haccpRecords.filter((r) => r.date < cutoff);
+    if (oldBatches.length + oldClean.length + oldTemp.length + oldRec.length === 0) return;
+    if (live) {
+      try {
+        if (oldBatches.length) await supabase.from("batches").delete().in("id", oldBatches.map((b) => b.id));
+        if (oldClean.length) await supabase.from("cleaning_logs").delete().in("id", oldClean.map((l) => l.id));
+        if (oldTemp.length) await supabase.from("haccp_logs").delete().in("id", oldTemp.map((l) => l.id));
+        if (oldRec.length) await supabase.from("haccp_records").delete().in("id", oldRec.map((r) => r.id));
+      } catch (e) { return; } // stil falen; volgende keer opnieuw
+    }
+    if (oldBatches.length) setBatches((bs) => bs.filter((b) => !oldBatches.some((o) => o.id === b.id)));
+    if (oldClean.length) setCleaningLogs((ls) => ls.filter((l) => !oldClean.some((o) => o.id === l.id)));
+    if (oldTemp.length) setHaccpLogs((ls) => ls.filter((l) => !oldTemp.some((o) => o.id === l.id)));
+    if (oldRec.length) setHaccpRecords((rs) => rs.filter((r) => !oldRec.some((o) => o.id === r.id)));
+  };
   const backfillDaysOff = async () => {
     if (!user || !user.canEdit) return;
     const marked = new Set(cleaningLogs.filter((l) => l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID).map((l) => l.doneDate));
@@ -1913,8 +2259,9 @@ export default function App() {
   const swipe = useSwipeSections(section, (s) => { setSection(s); setSearch(""); });
 
   // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks, één keer per dag).
+  // Wacht op de geladen teamdata: anders lijkt een al afgeronde dag nog open.
   useEffect(() => {
-    if (!user || !user.canEdit) return;
+    if (!user || !user.canEdit || !loaded) return;
     const tick = () => {
       const now = new Date();
       const key = localDate(now);
@@ -1926,7 +2273,13 @@ export default function App() {
     tick();
     const t = setInterval(tick, 60000);
     return () => clearInterval(t);
-  }, [user, checkDone, cleaningLogs]);
+  }, [user, loaded, checkDone, cleaningLogs]);
+  // Rondt een collega de dag intussen af (realtime), sluit de popup dan vanzelf.
+  useEffect(() => {
+    if (!checkOpen) return;
+    const key = localDate();
+    if (cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && l.doneDate === key)) setCheckOpen(false);
+  }, [cleaningLogs, checkOpen]);
 
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
@@ -1997,10 +2350,11 @@ export default function App() {
       </main>
 
       {showFab && (
-        <button onClick={fabAction} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
+        <button onClick={fabAction} className="btnp ff fixed bottom-6 right-20 sm:right-24 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : section === "smaak" ? "Nieuwe smaakcombinatie" : "Nieuwe batch"}
         </button>
       )}
+      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit}
           onSign={signCleaning} onDayDone={markDayDone} onDayOff={() => markDayOff()} onClose={() => setCheckOpen(false)}
@@ -2013,6 +2367,62 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+// Zwevende rekenmachine, beschikbaar op elke pagina.
+function CalcWidget({ open, onOpen, onClose }) {
+  const [expr, setExpr] = useState("");
+  const [result, setResult] = useState("");
+  // Veilige evaluatie: alleen cijfers en rekenkundige tekens.
+  const evalExpr = (e) => {
+    const clean = e.replace(/,/g, ".").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
+    if (!/^[\d+\-*/(). %]*$/.test(clean) || clean.trim() === "") return "";
+    try {
+      const withPct = clean.replace(/(\d+(?:\.\d+)?)%/g, "($1/100)");
+      // eslint-disable-next-line no-new-func
+      const v = Function('"use strict";return (' + withPct + ")")();
+      if (v == null || isNaN(v) || !isFinite(v)) return "";
+      return String(Math.round(v * 10000) / 10000).replace(".", ",");
+    } catch (err) { return ""; }
+  };
+  const tap = (t) => {
+    if (t === "C") { setExpr(""); setResult(""); return; }
+    if (t === "⌫") { setExpr((e) => e.slice(0, -1)); return; }
+    if (t === "=") { const r = evalExpr(expr); if (r !== "") { setExpr(r); setResult(""); } return; }
+    setExpr((e) => e + t);
+  };
+  useEffect(() => { setResult(open ? evalExpr(expr) : ""); }, [expr, open]);
+  const keys = [["C", "(", ")", "÷"], ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="]];
+  return (
+    <>
+      {open && (
+        <div className="fixed bottom-24 right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
+            <button onClick={onClose} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
+          </div>
+          <div className="rounded-xl px-3 py-2 mb-2 text-right" style={{ background: "#eef1e6", minHeight: "3.2rem" }}>
+            <div className="ink text-lg leading-tight break-all">{expr || "0"}</div>
+            <div className="text-sm mute h-5">{result !== "" && expr !== result ? "= " + result : ""}</div>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {keys.flat().map((k) => (
+              <button key={k} onClick={() => tap(k)}
+                className={"ff rounded-lg py-2.5 text-sm font-medium " + (k === "=" ? "btnp" : ["÷", "×", "−", "+"].includes(k) ? "pillon" : "pill")}>
+                {k}
+              </button>
+            ))}
+            <button onClick={() => tap("⌫")} className="ff pill rounded-lg py-2 text-sm font-medium col-span-4 mt-0.5 inline-flex items-center justify-center gap-1"><ArrowLeft size={14} /> Wis laatste</button>
+          </div>
+        </div>
+      )}
+      <button onClick={open ? onClose : onOpen} title="Rekenmachine"
+        className="ff fixed bottom-6 right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + (open ? T.green : "#cfe0c4") }}>
+        {open ? <X size={20} /> : <Percent size={19} />}
+      </button>
+    </>
   );
 }
 
@@ -2225,10 +2635,10 @@ function SectionNav({ section, setSection }) {
     wrap.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
   }, [section]);
   return (
-    <div ref={scroller} className="flex gap-1.5 overflow-x-auto pt-2 pb-1 -mx-4 px-4 no-scrollbar">
+    <div ref={scroller} className="flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1 -mx-4 px-4 no-scrollbar sm:justify-center">
       {items.map((it) => (
-        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
-          {it.icon}{it.label}
+        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-[13px] sm:text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
+          {it.icon}<span>{it.label}</span>
         </button>
       ))}
     </div>
@@ -2568,6 +2978,16 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
             <span>door {b.by}</span>
           </div>
           {b.notes && <p className="mt-1 italic">{b.notes}</p>}
+          {(b.log || []).length > 0 && (() => {
+            const last = [...b.log].sort((a, z) => (a.date < z.date ? 1 : -1))[0];
+            const parts = [last.ph != null && last.ph !== "" && ("pH " + String(last.ph).replace(".", ",")), last.brix != null && last.brix !== "" && (String(last.brix).replace(".", ",") + " °Bx"), last.tempC != null && last.tempC !== "" && (String(last.tempC).replace(".", ",") + " °C")].filter(Boolean);
+            return (
+              <div className="mt-1.5 rounded-lg px-2.5 py-1.5" style={{ background: "#eef1e6" }}>
+                <span className="font-medium" style={{ color: T.green }}>Laatste meting</span> <span className="ink">{last.date}</span>{parts.length > 0 && <span className="ink"> · {parts.join(" · ")}</span>}
+                {last.note && <span className="italic"> · {last.note}</span>}
+              </div>
+            );
+          })()}
           {canEdit && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
               <button onClick={() => onOpenLog(b.id)} className="inline-flex items-center gap-1 font-medium acc hover:opacity-70"><LineChart size={12} /> Logboek</button>
@@ -3070,8 +3490,13 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
         </>
       )}
 
-      <div className="mt-7">
-        <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} />
+      <div className="mt-10 pt-6" style={{ borderTop: "2px solid " + T.line }}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
+          <button onClick={() => printHaccp(haccpLogs, haccpRecords)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>
+        </div>
+        <p className="text-[13px] mute mb-3">Temperaturen, bereiding, terugkoelen en leveringen — het voedselveiligheidsdossier voor de Keuringsdienst van Waren.</p>
+        <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} />
         <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
         <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
         <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
@@ -3080,6 +3505,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
       <div className="mt-7 flex items-center justify-between">
         <Eyebrow>Logboek per week</Eyebrow>
         <div className="flex items-center gap-1.5 mb-2">
+          <button onClick={() => printCleaning(wk.replace("-W", " · week "), isoDate(monday) + " t/m " + isoDate(sunday), weekDays, taskName)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Logboek van deze week printen"><Printer size={13} /></button>
           <button onClick={() => setWeekOffset((w) => w - 1)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Vorige week"><ArrowLeft size={13} /></button>
           <span className="pillon rounded-md px-2 h-7 flex items-center text-[12.5px] font-semibold">{wk.replace("-W", " · week ")}</span>
           <button onClick={() => setWeekOffset((w) => Math.min(0, w + 1))} disabled={weekOffset >= 0} className="ff pill rounded-md w-7 h-7 flex items-center justify-center disabled:opacity-40" title="Volgende week"><ChevronRight size={13} /></button>
@@ -3134,7 +3560,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
 }
 
 // ---------- HACCP: wekelijkse temperatuurregistratie ----------
-function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete }) {
+function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
   const [openAll, setOpenAll] = useState(false);
   const thisWeek = weekKey(localDate());
   const sorted = [...logs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1));
@@ -3145,7 +3571,10 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete }) {
     <div>
       <div className="flex items-center justify-between mb-2">
         <Eyebrow>HACCP · temperaturen</Eyebrow>
-        {canEdit && <button onClick={() => onOpen(null)} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70 mb-2"><Plus size={15} /> Meting invullen</button>}
+        <div className="flex items-center gap-3 mb-2">
+          {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>}
+          {canEdit && <button onClick={() => onOpen(null)} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70"><Plus size={15} /> Meting invullen</button>}
+        </div>
       </div>
       {doneThisWeek
         ? <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#e8ebe0", color: T.green }}>
@@ -3215,19 +3644,39 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete }) {
 const HACCP_KINDS = {
   bereiding: {
     label: "Bereiding", icon: "pan",
-    intro: "Kerntemperatuur bij het bereiden van gerechten.",
-    cols: [
-      { id: "gerecht", label: "Gerecht", type: "text", ph: "bv. gelakte buik" },
-      { id: "richt", label: "Richtwaarde", type: "num", unit: "°C", ph: "bv. 75" },
-      { id: "gemeten", label: "Gemeten", type: "num", unit: "°C", ph: "kern" },
-      { id: "tijd", label: "Tijd", type: "time" },
+    intro: "Garing van een product: bereikte kerntemperatuur en verstreken tijd, plus de temperatuur en tijd na afkoelen.",
+    // Richtlijn Keuringsdienst van Waren (NVWA / warenwet).
+    guide: [
+      "Kerntemperatuur bij garen: minimaal 75 °C (of 70 °C gedurende 2 minuten).",
+      "Gevogelte altijd volledig door en door verhitten.",
+      "Warm serveren: houd boven de 60 °C.",
+      "Na garen snel afkoelen: binnen 2 uur van 60 naar 10 °C, daarna binnen 4 uur naar ≤ 7 °C.",
     ],
-    ok: (r) => r.gemeten == null || r.richt == null ? null : Number(r.gemeten) >= Number(r.richt),
-    summary: (r) => (r.gerecht || "—") + " · " + fmtTemp(r.gemeten),
+    cols: [
+      { id: "gerecht", label: "Product / gerecht", type: "text", ph: "bv. gelakte buik" },
+      { id: "richt", label: "Richtwaarde garing", type: "num", unit: "°C", ph: "bv. 75" },
+      { id: "gemeten", label: "Behaalde kerntemp.", type: "num", unit: "°C", ph: "kern" },
+      { id: "tijd", label: "Tijd garing (duur)", type: "dur", ph: "bv. 10 minuten, 3 uur, 24 uur" },
+      { id: "koeltemp", label: "Temp. na afkoelen", type: "num", unit: "°C", ph: "bv. 6" },
+      { id: "koeltijd", label: "Tijd tot 7 graden", type: "dur", ph: "bv. 90 minuten" },
+    ],
+    ok: (r) => {
+      const garingOk = r.gemeten == null || r.richt == null ? null : Number(r.gemeten) >= Number(r.richt);
+      const koelOk = r.koeltemp == null || r.koeltemp === "" ? null : Number(r.koeltemp) <= 7;
+      if (garingOk === false || koelOk === false) return false;
+      if (garingOk === null && koelOk === null) return null;
+      return true;
+    },
+    summary: (r) => (r.gerecht || "—") + " · gaar " + fmtTemp(r.gemeten) + (r.koeltemp != null && r.koeltemp !== "" ? " → koel " + fmtTemp(r.koeltemp) : ""),
   },
   terugkoelen: {
     label: "Terugkoelen", icon: "snow",
-    intro: "Van warm naar koud: binnen 2 uur naar 10 °C, daarna koelen tot ≤ 4 °C.",
+    intro: "Van warm naar koud terugkoelen van een product.",
+    guide: [
+      "Binnen 2 uur van 60 °C naar 10 °C.",
+      "Daarna binnen 4 uur verder naar ≤ 7 °C (bij voorkeur ≤ 4 °C).",
+      "Sneller koelt beter: verdeel over platte bakken of gebruik de blastchiller.",
+    ],
     cols: [
       { id: "product", label: "Product", type: "text", ph: "bv. bouillon" },
       { id: "start", label: "Starttijd", type: "time" },
@@ -3240,15 +3689,22 @@ const HACCP_KINDS = {
   },
   levering: {
     label: "Levering", icon: "truck",
-    intro: "Temperatuur bij aflevering controleren tegen de gewenste waarde.",
+    intro: "Temperatuur bij aflevering controleren; keur goed of af bij een te hoge temperatuur.",
+    guide: [
+      "Gekoelde producten: ≤ 7 °C (zuivel/vlees bij voorkeur ≤ 4 °C).",
+      "Vis op smeltend ijs: ≤ 2 °C.",
+      "Diepvries: ≤ −18 °C.",
+      "Te warm ontvangen? Afkeuren en noteren.",
+    ],
     cols: [
-      { id: "leverancier", label: "Leverancier / product", type: "text", ph: "bv. visleverancier" },
-      { id: "gewenst", label: "Gewenst", type: "num", unit: "°C", ph: "bv. 4" },
+      { id: "leverancier", label: "Naam product / leverancier", type: "text", ph: "bv. verse zalm" },
+      { id: "gewenst", label: "Gewenst", type: "num", unit: "°C", ph: "bv. 2" },
       { id: "gemeten", label: "Gemeten", type: "num", unit: "°C", ph: "bij ontvangst" },
       { id: "tijd", label: "Tijd", type: "time" },
+      { id: "oordeel", label: "Beoordeling", type: "verdict" },
     ],
-    ok: (r) => r.gemeten == null || r.gewenst == null ? null : Number(r.gemeten) <= Number(r.gewenst) + 2,
-    summary: (r) => (r.leverancier || "—") + " · " + fmtTemp(r.gemeten),
+    ok: (r) => r.oordeel === "afgekeurd" ? false : r.oordeel === "goedgekeurd" ? true : (r.gemeten == null || r.gewenst == null ? null : Number(r.gemeten) <= Number(r.gewenst) + 2),
+    summary: (r) => (r.leverancier || "—") + " · " + fmtTemp(r.gemeten) + (r.oordeel === "afgekeurd" ? " · afgekeurd" : r.oordeel === "goedgekeurd" ? " · goedgekeurd" : ""),
   },
 };
 
@@ -3324,14 +3780,22 @@ function HaccpRecordForm({ kind, editing, onCancel, onSave }) {
   const num = (x) => (x === "" || x === "-" ? null : Number(String(x).replace(",", ".")));
   const set = (id, v) => setVals((o) => ({ ...o, [id]: v }));
   const submit = () => {
+    const missing = cfg.cols.filter((c) => (c.type === "num" && num(vals[c.id]) === null) || ((c.type === "time" || c.type === "dur") && !(vals[c.id] || "").trim())).map((c) => c.label);
+    if (missing.length) { alert("Vul eerst alle temperaturen en tijden in:\n– " + missing.join("\n– ")); return; }
     const out = { kind, date, note: note.trim() };
-    cfg.cols.forEach((c) => { out[c.id] = c.type === "num" ? num(vals[c.id]) : vals[c.id].trim(); });
+    cfg.cols.forEach((c) => { out[c.id] = c.type === "num" ? num(vals[c.id]) : (vals[c.id] || "").trim(); });
     onSave(out);
   };
   return (
     <div>
       <FormBar title={(editing ? "Corrigeren · " : "HACCP · ") + cfg.label.toLowerCase()} onCancel={onCancel} onSave={submit} saveLabel={editing ? "Opslaan" : "Registreren"} />
       <p className="text-[13px] mute -mt-2 mb-3">{cfg.intro}</p>
+      {cfg.guide && (
+        <div className="rounded-xl p-3.5 mb-3 text-[13px]" style={{ background: "#eef1e6", color: "#3f5238" }}>
+          <div className="font-semibold mb-1 flex items-center gap-1.5"><Info size={14} /> Richtlijn Keuringsdienst van Waren</div>
+          <ul className="list-disc list-inside space-y-0.5">{cfg.guide.map((g, i) => <li key={i}>{g}</li>)}</ul>
+        </div>
+      )}
       <Field label="Datum"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       <div className="card overflow-hidden mb-4">
         {cfg.cols.map((c, i) => (
@@ -3339,10 +3803,17 @@ function HaccpRecordForm({ kind, editing, onCancel, onSave }) {
             <div className="text-sm font-medium ink mb-1.5">{c.label}</div>
             {c.type === "text" && <input className={inputCls} value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} placeholder={c.ph || ""} />}
             {c.type === "time" && <input type="time" className={inputCls} value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} />}
+            {c.type === "dur" && <input type="text" className={inputCls} value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} placeholder={c.ph || "bv. 3 uur"} />}
             {c.type === "num" && (
               <div className="flex items-center gap-2">
-                <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} placeholder={c.ph || ""} />
+                <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={vals[c.id]} onChange={(e) => set(c.id, e.target.value.replace(/[^0-9.,-]/g, ""))} placeholder={c.ph || ""} />
                 <span className="text-sm mute shrink-0">{c.unit}</span>
+              </div>
+            )}
+            {c.type === "verdict" && (
+              <div className="flex gap-2">
+                <button type="button" onClick={() => set(c.id, vals[c.id] === "goedgekeurd" ? "" : "goedgekeurd")} className={"ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium py-2.5 " + (vals[c.id] === "goedgekeurd" ? "btnp" : "btno")}><Check size={15} /> Goedgekeurd</button>
+                <button type="button" onClick={() => set(c.id, vals[c.id] === "afgekeurd" ? "" : "afgekeurd")} className="ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium py-2.5" style={vals[c.id] === "afgekeurd" ? { background: "#8a4a3a", color: "#fff" } : { border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><X size={15} /> Afgekeurd</button>
               </div>
             )}
           </div>
@@ -3367,6 +3838,9 @@ function HaccpForm({ editing, onCancel, onSave }) {
   const calibNum = num(calib);
   const calibOk = calibNum === null ? null : Math.abs(calibNum) <= CALIB_TOLERANCE;
   const submit = () => {
+    const missing = HACCP_UNITS.filter((u) => num(values[u.id]) === null).map((u) => u.name);
+    if (calibNum === null) missing.push("IJking (ijswater)");
+    if (missing.length) { alert("Vul eerst alle temperaturen in:\n– " + missing.join("\n– ")); return; }
     const out = {};
     HACCP_UNITS.forEach((u) => { out[u.id] = num(values[u.id]); });
     onSave({ checkDate, values: out, calibration: { measured: calibNum, ok: calibOk === null ? null : calibOk }, note: note.trim() });
@@ -3384,8 +3858,8 @@ function HaccpForm({ editing, onCancel, onSave }) {
               <div className="text-sm font-medium ink">{u.name}</div>
               <div className="text-[12.5px] mute mb-1.5">streef: {u.target}</div>
               <div className="flex items-center gap-2">
-                <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={values[u.id]}
-                  onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value }))} placeholder="gemeten temperatuur"
+                <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={values[u.id]}
+                  onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value.replace(/[^0-9.,-]/g, "") }))} placeholder="gemeten temperatuur"
                   style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
                 <span className="text-sm mute shrink-0">°C</span>
               </div>
@@ -3402,7 +3876,7 @@ function HaccpForm({ editing, onCancel, onSave }) {
       <div className="card p-3.5 mb-4">
         <div className="text-[12.5px] mute mb-2">Steek de thermometer in een glas met smeltend ijswater. Hij hoort 0 °C aan te geven; meer dan {CALIB_TOLERANCE} °C afwijking betekent afstellen of vervangen.</div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1 min-w-[8rem]" value={calib} onChange={(e) => setCalib(e.target.value)} placeholder="gemeten in ijswater (°C)"
+          <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1 min-w-[8rem]" value={calib} onChange={(e) => setCalib(e.target.value.replace(/[^0-9.,-]/g, ""))} placeholder="gemeten in ijswater (°C)"
             style={calibOk === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
           {calibOk === true && <span className="text-sm font-medium" style={{ color: T.green }}>✓ binnen tolerantie</span>}
           {calibOk === false && <span className="text-sm font-medium" style={{ color: "#8a4a3a" }}>⚠ afwijking van {String(Math.abs(calibNum)).replace(".", ",")} °C</span>}
@@ -3479,11 +3953,14 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onD
   );
 }
 
-function BackBar({ onBack, onEdit }) {
+function BackBar({ onBack, onEdit, onPrint }) {
   return (
     <div className="flex items-center justify-between pt-3 pb-2">
       <button onClick={onBack} className="ff inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
-      {onEdit && <button onClick={onEdit} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Pencil size={15} /> Bewerken</button>}
+      <div className="flex items-center gap-2">
+        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Printen"><Printer size={15} /> Print</button>}
+        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Pencil size={15} /> Bewerken</button>}
+      </div>
     </div>
   );
 }
@@ -3494,7 +3971,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
   if (!dish) return null;
   return (
     <div>
-      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} />
+      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printDish(dish, recipeById)} />
       <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">{dish.course}</div>
       <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
       <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}</div>
@@ -3526,7 +4003,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   const critical = criticalValues(recipe);
   return (
     <div>
-      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} />
+      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)} />
       <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
       <div className="flex flex-wrap gap-2 mt-3">
         <Chip>{recipe.category}</Chip>
@@ -3867,7 +4344,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
   if (!batch) return null;
   const tgt = FERMENT_TARGETS[batch.method] || FERMENT_TARGETS[batch.type];
   const rows = [...(batch.log || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const submit = () => { if (!date) return; onAdd(batch.id, { date, ph, brix, tempC, note }); setPh(""); setBrix(""); setTempC(""); setNote(""); };
+  const submit = () => { if (!date) return; onAdd({ date, ph, brix, tempC, note }); setPh(""); setBrix(""); setTempC(""); setNote(""); };
   return (
     <div>
       <BackBar onBack={onBack} />
@@ -3886,9 +4363,9 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
           <div className="text-sm font-medium ink mb-3">Nieuwe meting</div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Datum"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-            <Field label="pH"><input type="number" step="0.01" className={inputCls} value={ph} onChange={(e) => setPh(e.target.value)} placeholder="bv. 3,8" /></Field>
-            <Field label="Suiker (°Brix)"><input type="number" step="0.1" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value)} placeholder="optioneel" /></Field>
-            <Field label="Temp (°C)"><input type="number" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value)} placeholder="optioneel" /></Field>
+            <Field label="pH"><input type="text" inputMode="decimal" className={inputCls} value={ph} onChange={(e) => setPh(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,8" /></Field>
+            <Field label="Suiker (°Brix)"><input type="text" inputMode="decimal" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+            <Field label="Temp (°C)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
           </div>
           <Field label="Notitie"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. geproefd, mooi zuur" /></Field>
           <button onClick={submit} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-4 py-2.5"><Plus size={15} /> Meting toevoegen</button>
@@ -3907,7 +4384,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
               <span className="ink font-medium">{r.ph != null ? String(r.ph).replace(".", ",") : "—"}</span>
               <span className="mute">{r.brix != null ? String(r.brix).replace(".", ",") : "—"}</span>
               <span className="mute">{r.tempC != null ? r.tempC : "—"}</span>
-              {canEdit ? <button onClick={() => onDeleteRow(batch.id, batch.log.indexOf(r))} className="justify-self-end hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /></button> : <span />}
+              {canEdit ? <button onClick={() => onDeleteRow(batch.log.indexOf(r))} className="justify-self-end hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /></button> : <span />}
               {r.note && <span className="col-span-5 text-xs mute italic mt-0.5">{r.note}{r.by ? " · " + r.by : ""}</span>}
             </div>
           ))}
