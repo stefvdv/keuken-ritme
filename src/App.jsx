@@ -349,7 +349,7 @@ const CLEANING_SEED = [
   { id:"o-opruimen", name:"Opruimen", area:"Opslag", intervalDays:30, minutes:45 },
   { id:"o-vloer", name:"Vloer vegen", area:"Opslag", intervalDays:30, minutes:20 },
 ];
-const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
+const CHECK_HOUR = 17, CHECK_MIN = 0; // dagelijkse schoonmaakcontrole
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 // Extra HACCP-registraties (elk een eigen wekelijkse schoonmaaktaak).
 const HACCP_KIND_TASK = {
@@ -1734,7 +1734,7 @@ export default function App() {
       supabase.from("flavor_pairings").select("*"),
       supabase.from("dish_hidden").select("dish_id"),
       supabase.from("cleaning_tasks").select("*"),
-      supabase.from("cleaning_logs").select("*").order("done_date", { ascending: false }),
+      supabase.from("cleaning_logs").select("*").order("done_date", { ascending: false }).range(0, 4999),
       supabase.from("technique_notes").select("*"),
       supabase.from("haccp_logs").select("*").order("check_date", { ascending: false }),
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
@@ -1766,9 +1766,9 @@ export default function App() {
       ...ctRows.filter((r) => !CLEANING_SEED.some((t) => t.id === r.id)).map((r) => ({ id: r.id, name: r.name, area: r.area, intervalDays: r.interval_days, minutes: r.minutes, active: r.active !== false })),
     ];
     setCleaningTasks(merged.filter((t) => t.active !== false));
-    setCleaningLogs((cl.data || []).map((r) => ({ id: r.id, taskId: r.task_id, doneDate: r.done_date, doneBy: r.done_by, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
-    setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: r.check_date, doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
-    setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: r.record_date, by: r.done_by, note: r.note || "", ...(r.data || {}) })));
+    setCleaningLogs((cl.data || []).map((r) => ({ id: r.id, taskId: r.task_id, doneDate: String(r.done_date || "").slice(0, 10), doneBy: r.done_by, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
+    setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: String(r.check_date || "").slice(0, 10), doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
+    setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: String(r.record_date || "").slice(0, 10), by: r.done_by, note: r.note || "", ...(r.data || {}) })));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -2259,20 +2259,40 @@ export default function App() {
   const swipe = useSwipeSections(section, (s) => { setSection(s); setSearch(""); });
 
   // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks, één keer per dag).
+  // Wacht op de geladen teamdata: anders lijkt een al afgeronde dag nog open.
   useEffect(() => {
-    if (!user || !user.canEdit) return;
-    const tick = () => {
+    if (!user || !user.canEdit || !loaded) return;
+    let cancelled = false;
+    const dayMarked = (l, key) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key;
+    const tick = async () => {
       const now = new Date();
       const key = localDate(now);
       const past = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
-      const afgerond = cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && l.doneDate === key);
-      // Niet openen als de dag al is afgerond of als de popup vandaag al is gezien/gesloten.
-      if (past && !afgerond && checkDone !== key) { setCheckOpen(true); setCheckDone(key); }
+      if (!past || checkDone === key) return;
+      if (cleaningLogs.some((l) => dayMarked(l, key))) return; // al afgerond volgens lokale stand
+      // Dubbelcheck vers bij de database: een collega kan net hebben afgerond
+      // op een ander apparaat, of de lokale stand kan achterlopen.
+      if (live) {
+        try {
+          const { data } = await supabase.from("cleaning_logs").select("id, task_id, done_date")
+            .in("task_id", [DAY_DONE_ID, DAY_OFF_ID]).gte("done_date", key);
+          if (cancelled) return;
+          if ((data || []).some((r) => String(r.done_date).slice(0, 10) === key)) { loadShared(); return; }
+        } catch (e) { /* bij twijfel gewoon tonen */ }
+      }
+      if (cancelled) return;
+      setCheckOpen(true); setCheckDone(key);
     };
     tick();
     const t = setInterval(tick, 60000);
-    return () => clearInterval(t);
-  }, [user, checkDone, cleaningLogs]);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [user, loaded, checkDone, cleaningLogs]);
+  // Rondt een collega de dag intussen af (realtime), sluit de popup dan vanzelf.
+  useEffect(() => {
+    if (!checkOpen) return;
+    const key = localDate();
+    if (cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key)) setCheckOpen(false);
+  }, [cleaningLogs, checkOpen]);
 
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
