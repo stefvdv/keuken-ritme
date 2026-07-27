@@ -1922,7 +1922,8 @@ export default function App() {
   const addBatchMeasurement = async (id, m) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const entry = { date: m.date, ph: m.ph === "" ? null : Number(m.ph), brix: m.brix === "" ? null : Number(m.brix), tempC: m.tempC === "" ? null : Number(m.tempC), note: m.note || "", by: user.name };
+    const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
+    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: user.name };
     const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
@@ -3482,8 +3483,13 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
         </>
       )}
 
-      <div className="mt-7">
-        <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={() => printHaccp(haccpLogs, haccpRecords)} />
+      <div className="mt-10 pt-6" style={{ borderTop: "2px solid " + T.line }}>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
+          <button onClick={() => printHaccp(haccpLogs, haccpRecords)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>
+        </div>
+        <p className="text-[13px] mute mb-3">Temperaturen, bereiding, terugkoelen en leveringen — het voedselveiligheidsdossier voor de Keuringsdienst van Waren.</p>
+        <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} />
         <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
         <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
         <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
@@ -3643,9 +3649,9 @@ const HACCP_KINDS = {
       { id: "gerecht", label: "Product / gerecht", type: "text", ph: "bv. gelakte buik" },
       { id: "richt", label: "Richtwaarde garing", type: "num", unit: "°C", ph: "bv. 75" },
       { id: "gemeten", label: "Behaalde kerntemp.", type: "num", unit: "°C", ph: "kern" },
-      { id: "tijd", label: "Tijd garing", type: "time" },
+      { id: "tijd", label: "Tijd garing (duur)", type: "dur", ph: "bv. 10 minuten, 3 uur, 24 uur" },
       { id: "koeltemp", label: "Temp. na afkoelen", type: "num", unit: "°C", ph: "bv. 6" },
-      { id: "koeltijd", label: "Tijd na afkoelen", type: "time" },
+      { id: "koeltijd", label: "Tijd tot 7 graden", type: "dur", ph: "bv. 90 minuten" },
     ],
     ok: (r) => {
       const garingOk = r.gemeten == null || r.richt == null ? null : Number(r.gemeten) >= Number(r.richt);
@@ -3767,6 +3773,8 @@ function HaccpRecordForm({ kind, editing, onCancel, onSave }) {
   const num = (x) => (x === "" || x === "-" ? null : Number(String(x).replace(",", ".")));
   const set = (id, v) => setVals((o) => ({ ...o, [id]: v }));
   const submit = () => {
+    const missing = cfg.cols.filter((c) => (c.type === "num" && num(vals[c.id]) === null) || ((c.type === "time" || c.type === "dur") && !(vals[c.id] || "").trim())).map((c) => c.label);
+    if (missing.length) { alert("Vul eerst alle temperaturen en tijden in:\n– " + missing.join("\n– ")); return; }
     const out = { kind, date, note: note.trim() };
     cfg.cols.forEach((c) => { out[c.id] = c.type === "num" ? num(vals[c.id]) : (vals[c.id] || "").trim(); });
     onSave(out);
@@ -3788,9 +3796,10 @@ function HaccpRecordForm({ kind, editing, onCancel, onSave }) {
             <div className="text-sm font-medium ink mb-1.5">{c.label}</div>
             {c.type === "text" && <input className={inputCls} value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} placeholder={c.ph || ""} />}
             {c.type === "time" && <input type="time" className={inputCls} value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} />}
+            {c.type === "dur" && <input type="text" className={inputCls} value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} placeholder={c.ph || "bv. 3 uur"} />}
             {c.type === "num" && (
               <div className="flex items-center gap-2">
-                <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={vals[c.id]} onChange={(e) => set(c.id, e.target.value)} placeholder={c.ph || ""} />
+                <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={vals[c.id]} onChange={(e) => set(c.id, e.target.value.replace(/[^0-9.,-]/g, ""))} placeholder={c.ph || ""} />
                 <span className="text-sm mute shrink-0">{c.unit}</span>
               </div>
             )}
@@ -3822,6 +3831,9 @@ function HaccpForm({ editing, onCancel, onSave }) {
   const calibNum = num(calib);
   const calibOk = calibNum === null ? null : Math.abs(calibNum) <= CALIB_TOLERANCE;
   const submit = () => {
+    const missing = HACCP_UNITS.filter((u) => num(values[u.id]) === null).map((u) => u.name);
+    if (calibNum === null) missing.push("IJking (ijswater)");
+    if (missing.length) { alert("Vul eerst alle temperaturen in:\n– " + missing.join("\n– ")); return; }
     const out = {};
     HACCP_UNITS.forEach((u) => { out[u.id] = num(values[u.id]); });
     onSave({ checkDate, values: out, calibration: { measured: calibNum, ok: calibOk === null ? null : calibOk }, note: note.trim() });
@@ -3839,8 +3851,8 @@ function HaccpForm({ editing, onCancel, onSave }) {
               <div className="text-sm font-medium ink">{u.name}</div>
               <div className="text-[12.5px] mute mb-1.5">streef: {u.target}</div>
               <div className="flex items-center gap-2">
-                <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={values[u.id]}
-                  onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value }))} placeholder="gemeten temperatuur"
+                <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={values[u.id]}
+                  onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value.replace(/[^0-9.,-]/g, "") }))} placeholder="gemeten temperatuur"
                   style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
                 <span className="text-sm mute shrink-0">°C</span>
               </div>
@@ -3857,7 +3869,7 @@ function HaccpForm({ editing, onCancel, onSave }) {
       <div className="card p-3.5 mb-4">
         <div className="text-[12.5px] mute mb-2">Steek de thermometer in een glas met smeltend ijswater. Hij hoort 0 °C aan te geven; meer dan {CALIB_TOLERANCE} °C afwijking betekent afstellen of vervangen.</div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input type="number" step="0.1" inputMode="decimal" className="input px-2.5 py-2 flex-1 min-w-[8rem]" value={calib} onChange={(e) => setCalib(e.target.value)} placeholder="gemeten in ijswater (°C)"
+          <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1 min-w-[8rem]" value={calib} onChange={(e) => setCalib(e.target.value.replace(/[^0-9.,-]/g, ""))} placeholder="gemeten in ijswater (°C)"
             style={calibOk === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
           {calibOk === true && <span className="text-sm font-medium" style={{ color: T.green }}>✓ binnen tolerantie</span>}
           {calibOk === false && <span className="text-sm font-medium" style={{ color: "#8a4a3a" }}>⚠ afwijking van {String(Math.abs(calibNum)).replace(".", ",")} °C</span>}
@@ -4325,7 +4337,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
   if (!batch) return null;
   const tgt = FERMENT_TARGETS[batch.method] || FERMENT_TARGETS[batch.type];
   const rows = [...(batch.log || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const submit = () => { if (!date) return; onAdd(batch.id, { date, ph, brix, tempC, note }); setPh(""); setBrix(""); setTempC(""); setNote(""); };
+  const submit = () => { if (!date) return; onAdd({ date, ph, brix, tempC, note }); setPh(""); setBrix(""); setTempC(""); setNote(""); };
   return (
     <div>
       <BackBar onBack={onBack} />
@@ -4344,9 +4356,9 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
           <div className="text-sm font-medium ink mb-3">Nieuwe meting</div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Datum"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-            <Field label="pH"><input type="number" step="0.01" className={inputCls} value={ph} onChange={(e) => setPh(e.target.value)} placeholder="bv. 3,8" /></Field>
-            <Field label="Suiker (°Brix)"><input type="number" step="0.1" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value)} placeholder="optioneel" /></Field>
-            <Field label="Temp (°C)"><input type="number" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value)} placeholder="optioneel" /></Field>
+            <Field label="pH"><input type="text" inputMode="decimal" className={inputCls} value={ph} onChange={(e) => setPh(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,8" /></Field>
+            <Field label="Suiker (°Brix)"><input type="text" inputMode="decimal" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+            <Field label="Temp (°C)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
           </div>
           <Field label="Notitie"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. geproefd, mooi zuur" /></Field>
           <button onClick={submit} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-4 py-2.5"><Plus size={15} /> Meting toevoegen</button>
@@ -4365,7 +4377,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
               <span className="ink font-medium">{r.ph != null ? String(r.ph).replace(".", ",") : "—"}</span>
               <span className="mute">{r.brix != null ? String(r.brix).replace(".", ",") : "—"}</span>
               <span className="mute">{r.tempC != null ? r.tempC : "—"}</span>
-              {canEdit ? <button onClick={() => onDeleteRow(batch.id, batch.log.indexOf(r))} className="justify-self-end hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /></button> : <span />}
+              {canEdit ? <button onClick={() => onDeleteRow(batch.log.indexOf(r))} className="justify-self-end hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={13} /></button> : <span />}
               {r.note && <span className="col-span-5 text-xs mute italic mt-0.5">{r.note}{r.by ? " · " + r.by : ""}</span>}
             </div>
           ))}
