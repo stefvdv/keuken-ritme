@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -3354,6 +3354,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
   const [q, setQ] = useState("");
   const [areaF, setAreaF] = useState("Alle");
   const [openAll, setOpenAll] = useState(false);
+  const [haccpOpen, setHaccpOpen] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [noteFor, setNoteFor] = useState(null);
   const [noteText, setNoteText] = useState("");
@@ -3408,7 +3409,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
       {dayDone
         ? <div className="rounded-xl p-3.5 mb-3 flex items-start gap-2 text-sm" style={{ background: "#e8ebe0", color: T.green }}>
             <Check size={16} className="shrink-0 mt-0.5" />
-            <span className="flex-1">Dag afgerond door <span className="font-medium">{dayDone.doneBy}</span>. De controle komt morgen vanzelf terug.</span>
+            <span className="flex-1">Dag afgerond door <span className="font-medium">{dayDone.doneBy}</span>.</span>
             <button onClick={onUndoDayDone} className="ff shrink-0 text-xs font-semibold underline">Heropen</button>
           </div>
         : dayOff
@@ -3421,14 +3422,14 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
               <button onClick={() => onDayOff()} className="btno ff shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl text-sm font-medium px-3 py-3" title="Bedrijf dicht vandaag"><Calendar size={15} /> Vrije dag</button>
             </div>}
 
-      <div className="flex items-center justify-between mb-2">
-        <button onClick={() => setOpenDue((o) => !o)} className="ff inline-flex items-center gap-1" disabled={!!dayDone}>
-          {!dayDone && (openDue ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
+      {!dayDone && !dayOff && <div className="flex items-center justify-between mb-2">
+        <button onClick={() => setOpenDue((o) => !o)} className="ff inline-flex items-center gap-1">
+          {openDue ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
           <Eyebrow>Vandaag te doen ({dueToday.length})</Eyebrow>
         </button>
         <span className="text-xs mute text-right">{dueToday.length} {dueToday.length === 1 ? "taak" : "taken"}</span>
-      </div>
-      {!showDue
+      </div>}
+      {(!showDue || dayOff)
         ? null
         : dueToday.length === 0
         ? <div className="rounded-xl p-4 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is bij — niets te doen vandaag.</div>
@@ -3505,14 +3506,19 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
 
       <div className="mt-10 pt-6" style={{ borderTop: "2px solid " + T.line }}>
         <div className="flex items-center justify-between mb-1">
-          <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
+          <button onClick={() => setHaccpOpen((o) => !o)} className="ff inline-flex items-center gap-2">
+            {haccpOpen ? <ChevronUp size={18} className="acc" /> : <ChevronDown size={18} className="acc" />}
+            <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
+          </button>
           <button onClick={() => printHaccp(haccpLogs, haccpRecords)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>
         </div>
         <p className="text-[13px] mute mb-3">Temperaturen, bereiding, terugkoelen en leveringen — het voedselveiligheidsdossier voor de Keuringsdienst van Waren.</p>
-        <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} />
-        <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
-        <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
-        <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+        {haccpOpen && <>
+          <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} />
+          <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+          <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+          <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+        </>}
       </div>
 
       <div className="mt-7 flex items-center justify-between">
@@ -3749,7 +3755,7 @@ function HaccpRecordBlock({ kind, records, canEdit, onOpen, onEdit, onDelete }) 
                 <div key={r.id} className="card p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-[13px] font-medium ink truncate">{cfg.summary(r)}{ok === false && <span style={{ color: "#8a4a3a" }}> ⚠</span>}</div>
+                      <div className="text-[13px] font-medium ink truncate flex items-center gap-1.5">{cfg.summary(r)}{ok === false && <AlertTriangle size={22} className="shrink-0" strokeWidth={2.5} style={{ color: "#8a4a3a" }} />}</div>
                       <div className="text-[11.5px] mute mt-0.5">{r.date} · {r.by}</div>
                     </div>
                     {canEdit && (
