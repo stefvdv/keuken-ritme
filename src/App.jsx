@@ -2262,6 +2262,7 @@ export default function App() {
   const [newPairing, setNewPairing] = useState(0);
   const [haccpLogs, setHaccpLogs] = useState([]);
   const [haccpRecords, setHaccpRecords] = useState([]);
+  const [werkDocs, setWerkDocs] = useState([]); // aanpassingen/nieuwe werkwijze-documenten
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -2297,7 +2298,7 @@ export default function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
-    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -2312,6 +2313,7 @@ export default function App() {
       supabase.from("technique_notes").select("*"),
       supabase.from("haccp_logs").select("*").order("check_date", { ascending: false }),
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
+      supabase.from("werkwijze_docs").select("*"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -2343,6 +2345,7 @@ export default function App() {
     setCleaningLogs((cl.data || []).map((r) => ({ id: r.id, taskId: r.task_id, doneDate: String(r.done_date || "").slice(0, 10), doneBy: r.done_by, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
     setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: String(r.check_date || "").slice(0, 10), doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
     setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: String(r.record_date || "").slice(0, 10), by: r.done_by, note: r.note || "", ...(r.data || {}) })));
+    setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -2718,6 +2721,49 @@ export default function App() {
     if (!window.confirm("Deze registratie verwijderen?")) return;
     removeHaccpRecord(id);
   };
+  // ---- Werkwijze-documenten: standaarden bewerken en nieuwe aanmaken ----
+  const FERMENT_DOC_ID = "__ferment_guide";
+  const mergedWerkDocs = [
+    ...CATERING_STANDARDS.map((seed) => {
+      const o = werkDocs.find((d) => d.id === seed.key);
+      return o ? { key: seed.key, title: o.title, intro: o.intro, secties: o.sections, custom: false } : { ...seed, custom: false };
+    }),
+    ...werkDocs
+      .filter((d) => d.id !== FERMENT_DOC_ID && !CATERING_STANDARDS.some((c) => c.key === d.id))
+      .map((d) => ({ key: d.id, title: d.title, intro: d.intro, secties: d.sections, custom: true })),
+  ];
+  const fermentRows = (() => {
+    const o = werkDocs.find((d) => d.id === FERMENT_DOC_ID);
+    return o && Array.isArray(o.sections) && o.sections.length ? o.sections : FERMENT_GUIDE;
+  })();
+  const saveWerkDoc = async (data, editingId) => {
+    const id = editingId || "wd" + Date.now();
+    const row = { id, title: data.title, intro: data.intro, sections: data.secties, updatedBy: user.name };
+    if (live) {
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id, title: row.title, intro: row.intro, sections: row.sections, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setWerkDocs((ds) => [...ds.filter((d) => d.id !== id), row]);
+    flash(editingId ? "Werkwijze bijgewerkt" : "Werkwijze-document toegevoegd");
+  };
+  const deleteWerkDoc = async (id) => {
+    if (!window.confirm("Dit werkwijze-document verwijderen?")) return;
+    if (live) {
+      const { error } = await supabase.from("werkwijze_docs").delete().eq("id", id);
+      if (dbFail(error)) return;
+    }
+    setWerkDocs((ds) => ds.filter((d) => d.id !== id));
+    flash("Document verwijderd");
+  };
+  const saveFermentGuide = async (rows) => {
+    const row = { id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updatedBy: user.name };
+    if (live) {
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setWerkDocs((ds) => [...ds.filter((d) => d.id !== FERMENT_DOC_ID), row]);
+    flash("Fermenteerlijst bijgewerkt");
+  };
   const editCleaningLog = async (logId, note) => {
     const l = cleaningLogs.find((x) => x.id === logId);
     if (!l || (l.note || "") === note) { return; }
@@ -2894,7 +2940,12 @@ export default function App() {
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
-            {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes} />}
+            {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
+              werkDocs={mergedWerkDocs} fermentRows={fermentRows}
+              onNewDoc={() => push({ screen: "werkDocForm", editing: null })}
+              onEditDoc={(id) => push({ screen: "werkDocForm", editing: id })}
+              onDeleteDoc={deleteWerkDoc}
+              onEditFerment={() => push({ screen: "fermentGuideForm" })} />}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
               dayDone={cleaningLogs.find((l) => l.taskId === DAY_DONE_ID && l.doneDate === todayKey) || null}
               dayOff={cleaningLogs.find((l) => l.taskId === DAY_OFF_ID && l.doneDate === todayKey) || null}
@@ -2932,6 +2983,8 @@ export default function App() {
         {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => addBatchMeasurement(current.id, m)} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
         {current.screen === "haccpForm" && <HaccpForm editing={current.editing ? haccpLogs.find((l) => l.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccp(d, current.editing); goBack(); }} />}
         {current.screen === "haccpRecordForm" && <HaccpRecordForm kind={current.recordKind} editing={current.editing ? haccpRecords.find((r) => r.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccpRecord(d, current.editing); goBack(); }} />}
+        {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
+        {current.screen === "fermentGuideForm" && <FermentGuideForm rows={fermentRows} onCancel={goBack} onSave={(rows) => { saveFermentGuide(rows); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
@@ -3900,7 +3953,94 @@ const CATERING_STANDARDS = [
   ]},
 ];
 
-function TechniquesList({ notes, canEdit, onSaveNotes }) {
+// Formulier voor een werkwijze-document (titel, ondertitel, kopjes met regels).
+function WerkwijzeDocForm({ editing, onCancel, onSave }) {
+  const [title, setTitle] = useState(editing ? editing.title : "");
+  const [intro, setIntro] = useState(editing ? editing.intro || "" : "");
+  const [secties, setSecties] = useState(editing && editing.secties && editing.secties.length
+    ? editing.secties.map((se) => ({ kop: se.kop, tekst: (se.regels || []).join("\n") }))
+    : [{ kop: "", tekst: "" }]);
+  const setSec = (i, veld, waarde) => setSecties((ss) => ss.map((x, j) => (j === i ? { ...x, [veld]: waarde } : x)));
+  const addSec = () => setSecties((ss) => [...ss, { kop: "", tekst: "" }]);
+  const delSec = (i) => setSecties((ss) => ss.filter((_, j) => j !== i));
+  const submit = () => {
+    if (!title.trim()) { alert("Geef het document een titel."); return; }
+    const clean = secties
+      .map((se) => ({ kop: se.kop.trim(), regels: se.tekst.split("\n").map((r) => r.trim()).filter(Boolean) }))
+      .filter((se) => se.kop || se.regels.length);
+    if (!clean.length) { alert("Voeg minstens één kopje met regels toe."); return; }
+    onSave({ title: title.trim(), intro: intro.trim(), secties: clean });
+  };
+  return (
+    <div>
+      <FormBar title={editing ? "Werkwijze bewerken" : "Nieuw werkwijze-document"} onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
+      <Field label="Titel"><input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="bv. Borrel" /></Field>
+      <Field label="Ondertitel (optioneel)"><input className={inputCls} value={intro} onChange={(e) => setIntro(e.target.value)} placeholder="bv. Porties en planken" /></Field>
+      <div className="space-y-3 mb-4">
+        {secties.map((se, i) => (
+          <div key={i} className="card p-3.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Kopje {i + 1}</span>
+              {secties.length > 1 && <button onClick={() => delSec(i)} className="ff hover:opacity-70" style={{ color: "#8a4a3a" }} title="Kopje verwijderen"><Trash2 size={14} /></button>}
+            </div>
+            <input className={inputCls + " mb-2"} value={se.kop} onChange={(e) => setSec(i, "kop", e.target.value)} placeholder="Kopje, bv. Kaasplank (5 p per plank, 300 g totaal)" />
+            <textarea rows={5} className={inputCls + " resize-none text-sm"} value={se.tekst} onChange={(e) => setSec(i, "tekst", e.target.value)} placeholder={"Eén regel per punt, bv.:\nCoppa 40 gram\nLomo 40 gram"} />
+          </div>
+        ))}
+      </div>
+      <button onClick={addSec} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2.5"><Plus size={15} /> Kopje toevoegen</button>
+    </div>
+  );
+}
+
+// Formulier om de fermenteertabel aan te passen.
+function FermentGuideForm({ rows, onCancel, onSave }) {
+  const [list, setList] = useState(rows.map((r) => ({ ...r })));
+  const set = (i, veld, waarde) => setList((ls) => ls.map((x, j) => (j === i ? { ...x, [veld]: waarde } : x)));
+  const add = () => setList((ls) => [...ls, { methode: "", zout: "", pH: "", tijd: "", temp: "", let: "" }]);
+  const del = (i) => setList((ls) => ls.filter((_, j) => j !== i));
+  const submit = () => {
+    const clean = list.filter((r) => (r.methode || "").trim());
+    if (!clean.length) { alert("Houd minstens één methode over."); return; }
+    onSave(clean);
+  };
+  const veld = (i, key, label, ph) => (
+    <label className="block">
+      <span className="text-[11.5px] mute">{label}</span>
+      <input className="input w-full px-2.5 py-1.5 text-sm" value={list[i][key] || ""} onChange={(e) => set(i, key, e.target.value)} placeholder={ph || ""} />
+    </label>
+  );
+  return (
+    <div>
+      <FormBar title="Fermenteerlijst bewerken" onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
+      <p className="text-[13px] mute -mt-2 mb-3">Pas de methodes, streefwaarden en aandachtspunten aan. Deze lijst staat op de Werkwijze-pagina.</p>
+      <div className="space-y-3 mb-4">
+        {list.map((r, i) => (
+          <div key={i} className="card p-3.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">{r.methode || "Methode " + (i + 1)}</span>
+              {list.length > 1 && <button onClick={() => del(i)} className="ff hover:opacity-70" style={{ color: "#8a4a3a" }} title="Methode verwijderen"><Trash2 size={14} /></button>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {veld(i, "methode", "Methode", "bv. Melkzuur (groente)")}
+              {veld(i, "zout", "Zout", "bv. 2,5% pekel")}
+              {veld(i, "pH", "Streef-pH", "bv. onder 4,2")}
+              {veld(i, "tijd", "Duur", "bv. 1–4 weken")}
+              {veld(i, "temp", "Temperatuur", "bv. 18–22 °C")}
+            </div>
+            <label className="block mt-2">
+              <span className="text-[11.5px] mute">Let op</span>
+              <textarea rows={2} className={inputCls + " resize-none text-sm"} value={r.let || ""} onChange={(e) => set(i, "let", e.target.value)} />
+            </label>
+          </div>
+        ))}
+      </div>
+      <button onClick={add} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2.5"><Plus size={15} /> Methode toevoegen</button>
+    </div>
+  );
+}
+
+function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, onNewDoc, onEditDoc, onDeleteDoc, onEditFerment }) {
   const [q, setQ] = useState("");
   const [openCards, setOpenCards] = useState({});
   const searching = q.trim().length > 0;
@@ -3936,9 +4076,10 @@ function TechniquesList({ notes, canEdit, onSaveNotes }) {
           <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
         </TechCard>
 
-        <TechCard title="Fermenteren" intro="Methodes, streefwaarden en aandachtspunten" open={isOpen("fermenteren", (softMatch("fermenteren", q) || softMatch("fermentatie", q)) ? 1 : FERMENT_GUIDE.filter((r) => hit(r.methode) || hit(r.let)).length)} onToggle={() => toggle("fermenteren")}>
+        <TechCard title="Fermenteren" intro="Methodes, streefwaarden en aandachtspunten" open={isOpen("fermenteren", (softMatch("fermenteren", q) || softMatch("fermentatie", q)) ? 1 : fermentRows.filter((r) => hit(r.methode) || hit(r.let)).length)} onToggle={() => toggle("fermenteren")}>
+          {canEdit && <div className="flex justify-end mb-1"><button onClick={onEditFerment} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerken</button></div>}
           <TechTable head={["Methode", "Zout", "Streef-pH", "Duur", "Temp.", "Let op"]}
-            rows={(searching ? FERMENT_GUIDE.filter((r) => hit(r.methode) || hit(r.let)) : FERMENT_GUIDE).map((r) => [r.methode, r.zout, r.pH, r.tijd, r.temp, r.let])} />
+            rows={(searching ? fermentRows.filter((r) => hit(r.methode) || hit(r.let)) : fermentRows).map((r) => [r.methode, r.zout, r.pH, r.tijd, r.temp, r.let])} />
           <div className="tintbox rounded-xl p-3.5 mt-3 text-sm" style={{ color: "#3f5238" }}>
             <div className="font-semibold mb-1">Kort per soort</div>
             <ul className="list-disc list-inside space-y-1">
@@ -3960,21 +4101,30 @@ function TechniquesList({ notes, canEdit, onSaveNotes }) {
           </div>
         </TechCard>
 
-        {CATERING_STANDARDS.map((c) => {
-          const secs = searching ? c.secties.map((se) => ({ ...se, regels: se.regels.filter((r) => hit(r) || hit(se.kop)) })).filter((se) => se.regels.length > 0) : c.secties;
+        {werkDocs.map((c) => {
+          const secs = searching ? c.secties.map((se) => ({ ...se, regels: (se.regels || []).filter((r) => hit(r) || hit(se.kop)) })).filter((se) => se.regels.length > 0) : c.secties;
           return (
             <TechCard key={c.key} title={c.title} intro={c.intro} open={isOpen(c.key, secs.length)} onToggle={() => toggle(c.key)}>
+              {canEdit && (
+                <div className="flex justify-end gap-3 mb-1">
+                  <button onClick={() => onEditDoc(c.key)} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Bewerken</button>
+                  {c.custom && <button onClick={() => onDeleteDoc(c.key)} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>}
+                </div>
+              )}
               {secs.map((se, i) => (
                 <div key={i} className={i > 0 ? "mt-4" : ""}>
                   <div className="text-sm font-semibold ink mb-1">{se.kop}</div>
                   <ul className="list-disc list-inside space-y-0.5 text-sm" style={{ color: "#3f5238" }}>
-                    {se.regels.map((r, j) => <li key={j}>{r}</li>)}
+                    {(se.regels || []).map((r, j) => <li key={j}>{r}</li>)}
                   </ul>
                 </div>
               ))}
             </TechCard>
           );
         })}
+        {canEdit && (
+          <button onClick={onNewDoc} className="btno ff w-full inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-3"><Plus size={16} /> Nieuw werkwijze-document</button>
+        )}
       </div>
     </div>
   );
