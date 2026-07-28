@@ -2729,13 +2729,32 @@ export default function App() {
       return o ? { key: seed.key, title: o.title, intro: o.intro, secties: o.sections, custom: false } : { ...seed, custom: false };
     }),
     ...werkDocs
-      .filter((d) => d.id !== FERMENT_DOC_ID && !CATERING_STANDARDS.some((c) => c.key === d.id))
+      .filter((d) => !d.id.startsWith("__") && !CATERING_STANDARDS.some((c) => c.key === d.id))
       .map((d) => ({ key: d.id, title: d.title, intro: d.intro, secties: d.sections, custom: true })),
   ];
   const fermentRows = (() => {
     const o = werkDocs.find((d) => d.id === FERMENT_DOC_ID);
     return o && Array.isArray(o.sections) && o.sections.length ? o.sections : FERMENT_GUIDE;
   })();
+  const tableRowsFor = (docId, seed) => {
+    const o = werkDocs.find((d) => d.id === docId);
+    return o && Array.isArray(o.sections) && o.sections.length ? o.sections : seed;
+  };
+  const techTableRows = {
+    jam: tableRowsFor("__jam_rows", JAM_ROWS),
+    ijs: tableRowsFor("__ice_rows", ICE_ROWS),
+    roosteren: tableRowsFor("__roast_rows", ROAST_ROWS),
+  };
+  const saveTechTable = async (tableKey, rows) => {
+    const cfg = TECH_TABLE_CONFIGS[tableKey];
+    const row = { id: cfg.docId, title: cfg.title, intro: "", sections: rows, updatedBy: user.name };
+    if (live) {
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id: cfg.docId, title: cfg.title, intro: "", sections: rows, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setWerkDocs((ds) => [...ds.filter((d) => d.id !== cfg.docId), row]);
+    flash("Tabel bijgewerkt");
+  };
   const saveWerkDoc = async (data, editingId) => {
     const id = editingId || "wd" + Date.now();
     const row = { id, title: data.title, intro: data.intro, sections: data.secties, updatedBy: user.name };
@@ -2941,7 +2960,8 @@ export default function App() {
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
-              werkDocs={mergedWerkDocs} fermentRows={fermentRows}
+              werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
+              onEditTable={(t) => push({ screen: "techTableForm", table: t })}
               onNewDoc={() => push({ screen: "werkDocForm", editing: null })}
               onEditDoc={(id) => push({ screen: "werkDocForm", editing: id })}
               onDeleteDoc={deleteWerkDoc}
@@ -2985,6 +3005,7 @@ export default function App() {
         {current.screen === "haccpRecordForm" && <HaccpRecordForm kind={current.recordKind} editing={current.editing ? haccpRecords.find((r) => r.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccpRecord(d, current.editing); goBack(); }} />}
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
         {current.screen === "fermentGuideForm" && <FermentGuideForm rows={fermentRows} onCancel={goBack} onSave={(rows) => { saveFermentGuide(rows); goBack(); }} />}
+        {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
@@ -3953,6 +3974,60 @@ const CATERING_STANDARDS = [
   ]},
 ];
 
+// Bewerkbare Werkwijze-tabellen: veldindeling per tabel.
+const TECH_TABLE_CONFIGS = {
+  jam: { docId: "__jam_rows", title: "Jam & confituur bewerken", naamVeld: "fruit",
+    fields: [{ key: "fruit", label: "Fruit" }, { key: "pectine", label: "Pectine" }, { key: "suiker", label: "Geleisuiker 2:1" }, { key: "pectineX", label: "Extra pectine" }, { key: "zuur", label: "Citroenzuur" }] },
+  ijs: { docId: "__ice_rows", title: "Roomijs & sorbet bewerken", naamVeld: "soort",
+    fields: [{ key: "soort", label: "Soort" }, { key: "suiker", label: "Totaal suiker" }, { key: "glucose", label: "Aandeel glucose" }, { key: "extra", label: "Aandachtspunt", lang: true }] },
+  roosteren: { docId: "__roast_rows", title: "Roostertabel bewerken", naamVeld: "groente",
+    fields: [{ key: "groente", label: "Groente" }, { key: "type", label: "Type" }, { key: "snij", label: "Snijverlies" }, { key: "verlies", label: "Vochtverlies" }, { key: "schoon", label: "Schoon voor 1 kg" }, { key: "onbewerkt", label: "Onbewerkt voor 1 kg" }] },
+};
+
+// Generiek formulier om de rijen van een Werkwijze-tabel aan te passen.
+function TechTableForm({ config, rows, onCancel, onSave }) {
+  const [list, setList] = useState(rows.map((r) => ({ ...r })));
+  const set = (i, key, waarde) => setList((ls) => ls.map((x, j) => (j === i ? { ...x, [key]: waarde } : x)));
+  const add = () => setList((ls) => [...ls, Object.fromEntries(config.fields.map((f) => [f.key, ""]))]);
+  const del = (i) => setList((ls) => ls.filter((_, j) => j !== i));
+  const submit = () => {
+    const clean = list.filter((r) => (r[config.naamVeld] || "").trim());
+    if (!clean.length) { alert("Houd minstens één rij over."); return; }
+    onSave(clean);
+  };
+  return (
+    <div>
+      <FormBar title={config.title} onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
+      <p className="text-[13px] mute -mt-2 mb-3">Pas de waarden aan, voeg rijen toe of verwijder ze. De tabel staat op de Werkwijze-pagina.</p>
+      <div className="space-y-3 mb-4">
+        {list.map((r, i) => (
+          <div key={i} className="card p-3.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">{r[config.naamVeld] || "Rij " + (i + 1)}</span>
+              {list.length > 1 && <button onClick={() => del(i)} className="ff hover:opacity-70" style={{ color: "#8a4a3a" }} title="Rij verwijderen"><Trash2 size={14} /></button>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {config.fields.filter((f) => !f.lang).map((f) => (
+                <label key={f.key} className="block">
+                  <span className="text-[11.5px] mute">{f.label}</span>
+                  <input className="input w-full px-2.5 py-1.5 text-sm" value={r[f.key] || ""} onChange={(e) => set(i, f.key, e.target.value)} />
+                </label>
+              ))}
+            </div>
+            {config.fields.filter((f) => f.lang).map((f) => (
+              <label key={f.key} className="block mt-2">
+                <span className="text-[11.5px] mute">{f.label}</span>
+                <textarea rows={2} className={inputCls + " resize-none text-sm"} value={r[f.key] || ""} onChange={(e) => set(i, f.key, e.target.value)} />
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
+      <button onClick={add} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2.5"><Plus size={15} /> Rij toevoegen</button>
+    </div>
+  );
+}
+
 // Formulier voor een werkwijze-document (titel, ondertitel, kopjes met regels).
 function WerkwijzeDocForm({ editing, onCancel, onSave }) {
   const [title, setTitle] = useState(editing ? editing.title : "");
@@ -4040,14 +4115,14 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
   );
 }
 
-function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, onNewDoc, onEditDoc, onDeleteDoc, onEditFerment }) {
+function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, tableRows, onEditTable, onNewDoc, onEditDoc, onDeleteDoc, onEditFerment }) {
   const [q, setQ] = useState("");
   const [openCards, setOpenCards] = useState({});
   const searching = q.trim().length > 0;
   const hit = (t) => softMatch(t, q);
-  const jam = searching ? JAM_ROWS.filter((r) => hit(r.fruit)) : JAM_ROWS;
-  const ice = searching ? ICE_ROWS.filter((r) => hit(r.soort)) : ICE_ROWS;
-  const roast = searching ? ROAST_ROWS.filter((r) => hit(r.groente) || hit(r.type)) : ROAST_ROWS;
+  const jam = searching ? tableRows.jam.filter((r) => hit(r.fruit)) : tableRows.jam;
+  const ice = searching ? tableRows.ijs.filter((r) => hit(r.soort)) : tableRows.ijs;
+  const roast = searching ? tableRows.roosteren.filter((r) => hit(r.groente) || hit(r.type)) : tableRows.roosteren;
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
   const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
   const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: !o[key] }));
@@ -4059,18 +4134,21 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, on
       {nothing && <Empty label="Niets gevonden in de technieken." />}
       <div className="space-y-2.5">
         <TechCard title="Jam & confituur" intro="Met 2:1 geleisuiker — per kg schoongemaakt fruit" open={isOpen("jam", jam.length)} onToggle={() => toggle("jam")}>
+          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("jam")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
           <TechTable head={["Fruit", "Pectine", "Geleisuiker 2:1", "Extra pectine", "Citroenzuur"]}
             rows={jam.map((r) => [r.fruit, r.pectine, r.suiker, r.pectineX, r.zuur])} />
           <TechNotes label="Werkwijze" notes={n("jam")} canEdit={canEdit} onSave={(lines) => onSaveNotes("jam", lines)} />
         </TechCard>
 
         <TechCard title="Roomijs & sorbet" intro="Suikergehaltes en glucoseverhouding" open={isOpen("ijs", ice.length)} onToggle={() => toggle("ijs")}>
+          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("ijs")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
           <TechTable head={["Soort", "Totaal suiker", "Aandeel glucose", "Aandachtspunt"]}
             rows={ice.map((r) => [r.soort, r.suiker, r.glucose, r.extra])} />
           <TechNotes label="Lezen als volgt" notes={n("ijs")} canEdit={canEdit} onSave={(lines) => onSaveNotes("ijs", lines)} />
         </TechCard>
 
         <TechCard title="Snij- en vochtverlies bij roosteren" intro="Van onbewerkt naar schoongemaakt naar geroosterd" open={isOpen("roosteren", roast.length)} onToggle={() => toggle("roosteren")}>
+          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("roosteren")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
           <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
             rows={roast.map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
           <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
