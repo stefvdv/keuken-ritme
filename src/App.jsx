@@ -107,7 +107,7 @@ function printRecipe(r) {
   openPrint(r.name, "<h1>" + pEsc(r.name) + "</h1><div class='chips'>" + pEsc(chips) + "</div>" +
     (ing ? "<h2>Ingrediënten</h2><ul>" + ing + "</ul>" : "") +
     (steps ? "<h2>Bereiding</h2><ol>" + steps + "</ol>" : "") +
-    (r.fermentDefaults ? "<p class='meta'>Richtwaarden: " + (r.fermentDefaults.saltPct ? r.fermentDefaults.saltPct + "% zout · " : "") + r.fermentDefaults.tempC + " °C · " + r.fermentDefaults.days + " dagen</p>" : ""));
+    (r.fermentDefaults ? (() => { const d = r.fermentDefaults; const parts = [d.saltPct ? d.saltPct + "% zout" : null, d.sugarPct ? d.sugarPct + "% suiker" : null, d.tempC ? d.tempC + " °C" : null, d.days ? d.days + " dagen" : null, d.phTarget != null ? "streef-pH " + d.phTarget : null].filter(Boolean); return parts.length ? "<p class='meta'>Richtwaarden: " + parts.join(" · ") + "</p>" : ""; })() : ""));
 }
 
 function printDish(d, recipeById) {
@@ -349,7 +349,7 @@ const CLEANING_SEED = [
   { id:"o-opruimen", name:"Opruimen", area:"Opslag", intervalDays:30, minutes:45 },
   { id:"o-vloer", name:"Vloer vegen", area:"Opslag", intervalDays:30, minutes:20 },
 ];
-const CHECK_HOUR = 17, CHECK_MIN = 0; // dagelijkse schoonmaakcontrole
+const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 // Extra HACCP-registraties (elk een eigen wekelijkse schoonmaaktaak).
 const HACCP_KIND_TASK = {
@@ -1667,7 +1667,7 @@ html{font-size:17px}
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [section, setSection] = useState("gerechten");
+  const [section, setSection] = useState("recepten");
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
   const [batches, setBatches] = useState(seedBatches);
@@ -1787,9 +1787,9 @@ export default function App() {
     ].filter((d) => !hiddenDishes.has(d.id)));
     setBatches((ba.data || []).map((b) => ({
       id: b.id, product: b.product, type: b.type, startDate: b.start_date, days: b.days,
-      saltPct: Number(b.salt_pct), tempC: Number(b.temp_c), amount: b.amount,
-      pH: b.ph === null ? null : Number(b.ph), notes: b.notes || "", done: !!b.done, by: b.by || "—",
-      finishedDate: b.finished_date || null, log: Array.isArray(b.log) ? b.log : [], actionsDone: Array.isArray(b.actions_done) ? b.actions_done : [],
+      saltPct: b.salt_pct === null ? null : Number(b.salt_pct), tempC: b.temp_c === null ? null : Number(b.temp_c), amount: b.amount,
+      pH: b.ph === null ? null : Number(b.ph), sugarPct: b.sugar_pct === null || b.sugar_pct === undefined ? null : Number(b.sugar_pct), notes: b.notes || "", done: !!b.done, by: b.by || "—",
+      finishedDate: String(b.finished_date || "").slice(0, 10) || null, log: Array.isArray(b.log) ? b.log : [], actionsDone: Array.isArray(b.actions_done) ? b.actions_done : [],
       recipeId: b.recipe_id || null, method: b.method || b.type || null,
     })));
   };
@@ -1899,7 +1899,7 @@ export default function App() {
     if (!live) return true;
     const { error } = await supabase.from("ferment_batches").upsert({
       id: b.id, product: b.product, type: b.type, start_date: b.startDate, days: b.days,
-      salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, notes: b.notes,
+      salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, sugar_pct: b.sugarPct ?? null, notes: b.notes,
       done: b.done, by: b.by, finished_date: b.finishedDate, log: b.log || [], actions_done: b.actionsDone || [],
       recipe_id: b.recipeId || null, method: b.method || b.type || null,
     });
@@ -2400,13 +2400,13 @@ function CalcWidget({ open, onOpen, onClose }) {
     } catch (err) { return ""; }
   };
   const tap = (t) => {
-    if (t === "C") { setExpr(""); setResult(""); return; }
+    if (t === "Wis") { setExpr(""); setResult(""); return; }
     if (t === "⌫") { setExpr((e) => e.slice(0, -1)); return; }
     if (t === "=") { const r = evalExpr(expr); if (r !== "") { setExpr(r); setResult(""); } return; }
     setExpr((e) => e + t);
   };
   useEffect(() => { setResult(open ? evalExpr(expr) : ""); }, [expr, open]);
-  const keys = [["C", "(", ")", "÷"], ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="]];
+  const keys = [["Wis", "(", ")", "÷"], ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="]];
   return (
     <>
       {open && (
@@ -2604,7 +2604,7 @@ const SECTIONS = [
   { id: "recepten", label: "Recepten", icon: <Layers size={16} /> },
   { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={16} /> },
   { id: "smaak", label: "Smaak", icon: <Blend size={16} /> },
-  { id: "technieken", label: "Technieken", icon: <BookOpen size={16} /> },
+  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={16} /> },
   { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={16} /> },
 ];
 
@@ -2650,7 +2650,7 @@ function SectionNav({ section, setSection }) {
   return (
     <div ref={scroller} className="flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1 -mx-4 px-4 no-scrollbar sm:justify-center">
       {items.map((it) => (
-        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-[13px] sm:text-sm font-medium " + (section === it.id ? "pillon" : "pill")}>
+        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 rounded-full px-2 sm:px-2.5 py-1.5 text-[12.5px] sm:text-[13px] font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}<span>{it.label}</span>
         </button>
       ))}
@@ -2983,9 +2983,10 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Start {b.startDate}</span>
             {b.finishedDate && <span>Klaar {b.finishedDate}</span>}
-            <span>Zout {b.saltPct}%</span>
-            <span>{b.tempC}°C</span>
-            <span>pH {b.pH ?? "—"}</span>
+            {b.saltPct ? <span>Zout {String(b.saltPct).replace(".", ",")}%</span> : null}
+            {b.sugarPct ? <span>Suiker {String(b.sugarPct).replace(".", ",")}%</span> : null}
+            {b.tempC ? <span>{b.tempC}°C</span> : null}
+            {b.pH != null ? <span>pH {String(b.pH).replace(".", ",")}</span> : null}
             <span>{(b.log || []).length} metingen</span>
             {b.amount && b.amount !== "—" && <span>{b.amount}</span>}
             <span>door {b.by}</span>
@@ -4072,7 +4073,11 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       {recipe.fermentDefaults && (
         <div className="mt-4 tintbox rounded-xl p-4 text-sm" style={{ color: "#3f5238" }}>
           <div className="font-semibold flex items-center gap-1.5 mb-1"><FlaskConical size={14} /> Fermentatie-richtlijn</div>
-          Zout {recipe.fermentDefaults.saltPct}% · ±{recipe.fermentDefaults.tempC}°C · ±{recipe.fermentDefaults.days} dagen.
+          {[recipe.fermentDefaults.saltPct ? "Zout " + String(recipe.fermentDefaults.saltPct).replace(".", ",") + "%" : null,
+             recipe.fermentDefaults.sugarPct ? "Suiker " + String(recipe.fermentDefaults.sugarPct).replace(".", ",") + "%" : null,
+             recipe.fermentDefaults.tempC ? "±" + recipe.fermentDefaults.tempC + "°C" : null,
+             recipe.fermentDefaults.days ? "±" + recipe.fermentDefaults.days + " dagen" : null,
+             recipe.fermentDefaults.phTarget != null ? "streef-pH " + String(recipe.fermentDefaults.phTarget).replace(".", ",") : null].filter(Boolean).join(" · ")}.
           {recipe.fermentMethod && FERMENT_TARGETS[recipe.fermentMethod] && <> {FERMENT_TARGETS[recipe.fermentMethod].note}</>}
         </div>
       )}
@@ -4131,9 +4136,11 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
   const [ferment, setFerment] = useState(!!recipe?.ferment || !!fermentDefault);
   const [fermentMethod, setFermentMethod] = useState(recipe?.fermentMethod || "Melkzuur");
   const fd = recipe?.fermentDefaults;
-  const [fSalt, setFSalt] = useState(fd ? String(fd.saltPct) : "2.5");
-  const [fTemp, setFTemp] = useState(fd ? String(fd.tempC) : "20");
-  const [fDays, setFDays] = useState(fd ? String(fd.days) : "10");
+  const [fSalt, setFSalt] = useState(fd && fd.saltPct != null && fd.saltPct !== 0 ? String(fd.saltPct) : "");
+  const [fTemp, setFTemp] = useState(fd && fd.tempC != null && fd.tempC !== 0 ? String(fd.tempC) : "");
+  const [fDays, setFDays] = useState(fd && fd.days != null && fd.days !== 0 ? String(fd.days) : "");
+  const [fPh, setFPh] = useState(fd && fd.phTarget != null ? String(fd.phTarget) : "");
+  const [fSugar, setFSugar] = useState(fd && fd.sugarPct != null && fd.sugarPct !== 0 ? String(fd.sugarPct) : "");
   const [translating, setTranslating] = useState(false);
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
@@ -4166,13 +4173,11 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
     diet,
     ferment,
     fermentMethod: ferment ? fermentMethod : null,
-    fermentDefaults: ferment ? { saltPct: Number(String(fSalt).replace(",", ".")) || 0, tempC: Number(fTemp) || 20, days: Number(fDays) || 0 } : null,
+    fermentDefaults: ferment ? (() => { const nz = (x) => { const v = Number(String(x).replace(",", ".")); return x !== "" && !isNaN(v) && v !== 0 ? v : null; }; return { saltPct: nz(fSalt), tempC: nz(fTemp), days: nz(fDays), phTarget: nz(fPh), sugarPct: nz(fSugar) }; })() : null,
   }); };
   return (
     <div>
       <FormBar title={recipe ? "Recept bewerken" : "Nieuw recept"} onCancel={onCancel} onSave={submit} />
-      <button onClick={handleTranslate} disabled={translating} className="ff w-full mb-1.5 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium py-2.5 disabled:opacity-60" style={{ background: "#eef1e7", border: "1px solid #d6ddc9", color: T.green }}>{translating ? (<><Loader2 size={15} className="animate-spin" /> Bezig met vertalen…</>) : (<><Languages size={15} /> Vertaal naar Nederlands</>)}</button>
-      <p className="text-xs mute mb-4">Recept in een andere taal? Vertaal in één tik.</p>
       {err && <p className="text-xs mb-3" style={{ color: "#a23b2c" }}>{err}</p>}
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Gefermenteerde rode biet" /></Field>
       <div className="grid grid-cols-2 gap-3">
@@ -4201,9 +4206,11 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
             <Field label="Fermentatiemethode"><select className={inputCls} value={fermentMethod} onChange={(e) => setFermentMethod(e.target.value)}>{FERMENT_METHODS.map((m) => <option key={m}>{m}</option>)}</select></Field>
             <div className="text-sm font-medium ink mb-1.5">Batchrichtlijn <span className="mute font-normal">(voorgevuld bij een nieuwe batch)</span></div>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Zout (%)"><input type="number" step="0.1" className={inputCls} value={fSalt} onChange={(e) => setFSalt(e.target.value)} /></Field>
-              <Field label="Temp (°C)"><input type="number" className={inputCls} value={fTemp} onChange={(e) => setFTemp(e.target.value)} /></Field>
-              <Field label="Dagen"><input type="number" className={inputCls} value={fDays} onChange={(e) => setFDays(e.target.value)} /></Field>
+              <Field label="Zout (%)"><input type="text" inputMode="decimal" className={inputCls} value={fSalt} onChange={(e) => setFSalt(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+              <Field label="Temp (°C)"><input type="text" inputMode="decimal" className={inputCls} value={fTemp} onChange={(e) => setFTemp(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
+              <Field label="Dagen"><input type="text" inputMode="numeric" className={inputCls} value={fDays} onChange={(e) => setFDays(e.target.value.replace(/[^0-9]/g, ""))} /></Field>
+              <Field label="Gewenste pH"><input type="text" inputMode="decimal" className={inputCls} value={fPh} onChange={(e) => setFPh(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,5" /></Field>
+              <Field label="Suikergehalte (%)"><input type="text" inputMode="decimal" className={inputCls} value={fSugar} onChange={(e) => setFSugar(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="optioneel" /></Field>
             </div>
             <p className="text-xs mute -mt-2">Verschijnt met de methode als filter op de fermentatiepagina, en is daar direct als batch te starten.</p>
           </div>
@@ -4303,23 +4310,32 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
   const [type, setType] = useState(editing ? (editing.method || editing.type) : (prefill?.fermentMethod || "Melkzuur"));
   const [recipeId, setRecipeId] = useState(editing ? (editing.recipeId || null) : (prefill?.id || null));
   const [startDate, setStartDate] = useState(editing ? editing.startDate : new Date().toISOString().slice(0, 10));
-  const [days, setDays] = useState(editing ? String(editing.days) : (fd ? String(fd.days) : "10"));
-  const [saltPct, setSaltPct] = useState(editing ? String(editing.saltPct) : (fd ? String(fd.saltPct) : "2.5"));
-  const [tempC, setTempC] = useState(editing ? String(editing.tempC) : (fd ? String(fd.tempC) : "20"));
+  const [days, setDays] = useState(editing ? String(editing.days) : (fd && fd.days ? String(fd.days) : ""));
+  const [saltPct, setSaltPct] = useState(editing && editing.saltPct ? String(editing.saltPct) : (fd && fd.saltPct ? String(fd.saltPct) : ""));
+  const [tempC, setTempC] = useState(editing && editing.tempC ? String(editing.tempC) : (fd && fd.tempC ? String(fd.tempC) : ""));
   const [amount, setAmount] = useState(editing ? (editing.amount === "—" ? "" : editing.amount) : "");
-  const [pH, setPH] = useState(editing && editing.pH != null ? String(editing.pH) : "");
+  const [pH, setPH] = useState(editing && editing.pH != null ? String(editing.pH) : (fd && fd.phTarget != null ? String(fd.phTarget) : ""));
+  const [sugarPct, setSugarPct] = useState(editing && editing.sugarPct != null ? String(editing.sugarPct) : (fd && fd.sugarPct ? String(fd.sugarPct) : ""));
   const [notes, setNotes] = useState(editing ? editing.notes : "");
   const [pick, setPick] = useState("");
   const applyRecipe = (r) => {
     setProduct(r.name); setRecipeId(r.id);
     if (r.fermentMethod) setType(r.fermentMethod);
-    if (r.fermentDefaults) { setSaltPct(String(r.fermentDefaults.saltPct)); setTempC(String(r.fermentDefaults.tempC)); setDays(String(r.fermentDefaults.days)); }
+    const d = r.fermentDefaults;
+    if (d) {
+      setSaltPct(d.saltPct ? String(d.saltPct) : "");
+      setTempC(d.tempC ? String(d.tempC) : "");
+      setDays(d.days ? String(d.days) : "");
+      setPH(d.phTarget != null ? String(d.phTarget) : "");
+      setSugarPct(d.sugarPct ? String(d.sugarPct) : "");
+    }
     setPick("");
   };
   const pickMatches = pick.trim() ? (fermentRecipes || []).filter((r) => softMatchAny([r.name, r.fermentMethod, r.category], pick)).slice(0, 8) : [];
   const isMethod = FERMENT_METHODS.includes(type);
   const tgt = FERMENT_TARGETS[type];
-  const submit = () => { if (!product.trim()) return; onSave({ product: product.trim(), type, method: isMethod ? type : type, recipeId, startDate, days: Number(days) || 0, saltPct: Number(saltPct) || 0, tempC: Number(tempC) || 0, amount: amount.trim() || "—", pH: pH ? Number(pH) : null, notes: notes.trim(), done: editing ? editing.done : false }); };
+  const nz = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
+  const submit = () => { if (!product.trim()) return; onSave({ product: product.trim(), type, method: isMethod ? type : type, recipeId, startDate, days: nz(days) || 0, saltPct: nz(saltPct), tempC: nz(tempC), amount: amount.trim() || "—", pH: nz(pH), sugarPct: nz(sugarPct), notes: notes.trim(), done: editing ? editing.done : false }); };
   return (
     <div>
       <FormBar title={editing ? "Batch bewerken" : "Nieuwe batch"} onCancel={onCancel} onSave={submit} saveLabel={editing ? "Opslaan" : "Registreer"} />
@@ -4331,7 +4347,7 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
             {pickMatches.map((r, i) => (
               <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
                 <FlaskConical size={15} className="acc shrink-0" />
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.fermentMethod || r.category}{r.fermentDefaults ? " · " + r.fermentDefaults.saltPct + "% · " + r.fermentDefaults.days + " dgn" : ""}</div></div>
+                <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.fermentMethod || r.category}{r.fermentDefaults ? [r.fermentDefaults.saltPct ? r.fermentDefaults.saltPct + "%" : null, r.fermentDefaults.days ? r.fermentDefaults.days + " dgn" : null].filter(Boolean).map((x) => " · " + x).join("") : ""}</div></div>
               </button>
             ))}
           </div>
@@ -4342,13 +4358,14 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
       {tgt && <p className="text-xs mute -mt-2 mb-4">{tgt.note}</p>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Startdatum"><input type="date" className={inputCls} value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
-        <Field label="Duur (dagen)"><input type="number" className={inputCls} value={days} onChange={(e) => setDays(e.target.value)} /></Field>
-        <Field label="Zoutgehalte (%)"><input type="number" step="0.1" className={inputCls} value={saltPct} onChange={(e) => setSaltPct(e.target.value)} /></Field>
-        <Field label="Temperatuur (°C)"><input type="number" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value)} /></Field>
+        <Field label="Duur (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="volgt het recept" /></Field>
+        <Field label="Zoutgehalte (%) (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={saltPct} onChange={(e) => setSaltPct(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+        <Field label="Temperatuur (°C)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
         <Field label="Hoeveelheid"><input className={inputCls} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="bv. 3 kg" /></Field>
-        <Field label="Start-pH (optioneel)"><input type="number" step="0.1" className={inputCls} value={pH} onChange={(e) => setPH(e.target.value)} placeholder="bv. 6,0" /></Field>
+        <Field label="Gewenste pH (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={pH} onChange={(e) => setPH(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,5" /></Field>
+        <Field label="Suikergehalte (%) (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={sugarPct} onChange={(e) => setSugarPct(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
       </div>
-      <Field label="Notities"><textarea rows={2} className={inputCls + " resize-none"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Waarnemingen, proefnotities…" /></Field>
+      <Field label="Handelingen / opmerkingen"><textarea rows={2} className={inputCls + " resize-none"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Waarnemingen, handelingen, proefnotities…" /></Field>
       <p className="text-xs mute -mt-2">Metingen (pH, suiker) over de dagen leg je vast in het logboek, na het opslaan van de batch.</p>
     </div>
   );
