@@ -2436,6 +2436,8 @@ export default function App() {
     if (parts.length) flash(parts.join(" · "));
   }, [user, loaded, batches, stock, noticeShown]);
   const [stockNoticeClosed, setStockNoticeClosed] = useState(null); // per dag te sluiten
+  const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
+  const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
   const saveRecipe = async (data, editingId) => {
     const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
@@ -3048,6 +3050,7 @@ export default function App() {
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
+              focusKey={techFocus} onFocusDone={() => setTechFocus(null)}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
               onEditTable={(t) => push({ screen: "techTableForm", table: t })}
               onNewDoc={() => push({ screen: "werkDocForm", editing: null })}
@@ -3078,7 +3081,8 @@ export default function App() {
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })}
-            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null } })} />
+            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null } })}
+            onOpenTech={openTech} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} draft={dishDraft} allRecipes={recipes} recipeById={recipeById}
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
@@ -4083,9 +4087,9 @@ function printLabel(recipe) {
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
-    "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding:2.5mm 5mm;overflow:hidden}" +
-    ".naam{font-weight:bold;font-size:16pt;line-height:1.1;margin-bottom:2mm;word-wrap:break-word}" +
-    ".rij{font-size:12pt;line-height:1.3}" +
+    "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;box-sizing:border-box;padding:2mm 4mm;overflow:hidden}" +
+    ".naam{font-weight:bold;font-size:15pt;line-height:1.1;margin-bottom:1.5mm;word-wrap:break-word;max-width:100%}" +
+    ".rij{font-size:11.5pt;line-height:1.3}" +
     "</style></head><body>" +
     '<div class="naam">' + esc(recipe.name) + "</div>" +
     '<div class="rij">Gemaakt: ' + fmt(prod) + "</div>" +
@@ -4472,7 +4476,7 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
   );
 }
 
-function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, tableRows, onEditTable, onNewDoc, onEditDoc, onDeleteDoc, onEditFerment }) {
+function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, tableRows, onEditTable, onNewDoc, onEditDoc, onDeleteDoc, onEditFerment, focusKey, onFocusDone }) {
   const [q, setQ] = useState("");
   const [openCards, setOpenCards] = useState({});
   const searching = q.trim().length > 0;
@@ -4483,6 +4487,12 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
   const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
   const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: !o[key] }));
+  // Vanuit een recept (kritische waarden) gelinkt: open die kaart direct.
+  useEffect(() => {
+    if (!focusKey) return;
+    setOpenCards((o) => ({ ...o, [focusKey]: true }));
+    if (onFocusDone) onFocusDone();
+  }, [focusKey]);
   const n = (k) => (notes && notes[k]) || TECH_NOTES_SEED[k];
   const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0;
   return (
@@ -5187,13 +5197,15 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onD
   );
 }
 
-function BackBar({ onBack, onEdit, onPrint }) {
+function BackBar({ onBack, onEdit, onPrint, printText = "Print", extra = null, onDelete = null }) {
   return (
-    <div className="flex items-center justify-between pt-3 pb-2">
-      <button onClick={onBack} className="ff inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
-      <div className="flex items-center gap-2">
-        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Printen"><Printer size={15} /> Print</button>}
+    <div className="flex items-start justify-between gap-2 pt-3 pb-2">
+      <button onClick={onBack} className="ff shrink-0 inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        {extra}
+        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Printen"><Printer size={15} /> {printText}</button>}
         {onEdit && <button onClick={onEdit} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Pencil size={15} /> Bewerken</button>}
+        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>}
       </div>
     </div>
   );
@@ -5229,7 +5241,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
   );
 }
 
-function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onAddStock, onDelete }) {
+function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete }) {
   const [factor, setFactor] = useState(1);
   if (!recipe) return null;
   const endorsed = recipe.endorsements.includes(user.name);
@@ -5237,7 +5249,12 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   const critical = criticalValues(recipe);
   return (
     <div>
-      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)} />
+      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)} printText="Print recept"
+        onDelete={canEdit ? () => onDelete(recipe.id) : null}
+        extra={canEdit ? <>
+          <button onClick={() => printLabel(recipe)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Etiket printen (naam, productiedatum, THT)"><Tag size={15} /> Etiket</button>
+          <button onClick={onAddStock} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc rounded-lg px-3 py-2.5 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Package size={15} /> In voorraad</button>
+        </> : null} />
       <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
       {(recipe.shelfDays || recipe.shelfStorage) && (
         <div className="text-[13px] mute mt-1">Houdbaarheid: {[recipe.shelfDays ? recipe.shelfDays + " dagen" : null, recipe.shelfStorage || null].filter(Boolean).join(" · ")}</div>
@@ -5257,7 +5274,9 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       {critical.length > 0 && (
         <div className="mt-4 rounded-xl p-3.5 text-sm" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
           <div className="font-semibold flex items-center gap-1.5 mb-1"><Info size={14} /> Let op de kritische waarden</div>
-          <ul className="list-disc list-inside space-y-0.5">{critical.map((c, i) => <li key={i}>{c}</li>)}</ul>
+          <ul className="list-disc list-inside space-y-0.5">{critical.map((c, i) => (
+            <li key={i}>{c.text}{c.tech && <> <button onClick={() => onOpenTech(c.tech)} className="ff underline font-medium hover:opacity-70" style={{ color: "#6a5326" }}>{c.techLabel}</button></>}</li>
+          ))}</ul>
         </div>
       )}
 
@@ -5265,9 +5284,6 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         <div className="flex flex-wrap items-center gap-2 mt-4">
           <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
           {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
-          {canEdit && <button onClick={onAddStock} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Package size={15} /> In voorraad</button>}
-          {canEdit && <button onClick={() => { printLabel(recipe); }} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" title="Etiket printen (naam, productiedatum, THT) via de Zebra-printer"><Tag size={15} /> Etiket</button>}
-          <button onClick={() => onDelete(recipe.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
         </div>
       )}
       <div className="text-xs mute mt-2.5">Gebruikt in {usageCount} {usageCount === 1 ? "gerecht" : "gerechten"}{typeof openCount === "number" && openCount > 0 && <> · {openCount}× geopend</>}{recipe.endorsements.length > 0 && <> · geliket door {recipe.endorsements.join(", ")}</>}</div>
@@ -5319,13 +5335,13 @@ function criticalValues(r) {
   const out = [];
   const cat = (r.category || "").toLowerCase();
   const name = (r.name || "").toLowerCase();
-  if (r.ferment && r.fermentMethod === "Melkzuur") out.push("Zuurgraad: pH moet onder 3,5 zakken (voedselveilig). Meet met een pH-meter, niet op het oog.");
-  if (r.ferment && r.fermentMethod === "Azijnfermentatie") out.push("Zuurgraad: verzuurt tot pH ~2,5–3,0. Heeft zuurstof nodig — afdekken met doek, geen luchtdicht deksel.");
-  if (r.ferment && r.fermentMethod === "Suikerfermentatie") out.push("Suiker & druk: houd het suikergehalte en de bruis in de gaten; ontlucht flessen dagelijks.");
-  if (r.fermentDefaults && typeof r.fermentDefaults.saltPct === "number" && r.fermentDefaults.saltPct > 0) out.push("Zoutgehalte: weeg exact " + String(r.fermentDefaults.saltPct).replace(".", ",") + "% van het productgewicht af — bepaalt de veiligheid.");
-  if (!r.ferment && (cat.includes("pickle") || cat.includes("zuur")) ) out.push("Zuurgraad: gebruik voldoende azijn in de pekel voor houdbaarheid.");
-  if (!r.ferment && (cat.includes("jam") || cat.includes("compote") || name.includes("jam") || name.includes("confituur"))) out.push("Suiker & zuur: suiker- en citroenzuurverhouding bepalen de gelering en houdbaarheid — zie Technieken › Jam.");
-  if (cat.includes("sorbet") || cat.includes("ijs")) out.push("Suikergehalte: bepaalt de zachtheid/schepbaarheid — zie Technieken › Roomijs & sorbet.");
+  if (r.ferment && r.fermentMethod === "Melkzuur") out.push({ text: "Zuurgraad: pH moet onder 3,5 zakken (voedselveilig). Meet met een pH-meter, niet op het oog.", tech: "fermenteren", techLabel: "Werkwijze › Fermenteren" });
+  if (r.ferment && r.fermentMethod === "Azijnfermentatie") out.push({ text: "Zuurgraad: verzuurt tot pH ~2,5–3,0. Heeft zuurstof nodig — afdekken met doek, geen luchtdicht deksel.", tech: "fermenteren", techLabel: "Werkwijze › Fermenteren" });
+  if (r.ferment && r.fermentMethod === "Suikerfermentatie") out.push({ text: "Suiker & druk: houd het suikergehalte en de bruis in de gaten; ontlucht flessen dagelijks.", tech: "fermenteren", techLabel: "Werkwijze › Fermenteren" });
+  if (r.fermentDefaults && typeof r.fermentDefaults.saltPct === "number" && r.fermentDefaults.saltPct > 0) out.push({ text: "Zoutgehalte: weeg exact " + String(r.fermentDefaults.saltPct).replace(".", ",") + "% van het productgewicht af — bepaalt de veiligheid.", tech: "fermenteren", techLabel: "Werkwijze › Fermenteren" });
+  if (!r.ferment && (cat.includes("pickle") || cat.includes("zuur")) ) out.push({ text: "Zuurgraad: gebruik voldoende azijn in de pekel voor houdbaarheid.", tech: null, techLabel: null });
+  if (!r.ferment && (cat.includes("jam") || cat.includes("compote") || name.includes("jam") || name.includes("confituur"))) out.push({ text: "Suiker & zuur: suiker- en citroenzuurverhouding bepalen de gelering en houdbaarheid.", tech: "jam", techLabel: "Werkwijze › Jam" });
+  if (cat.includes("sorbet") || cat.includes("ijs")) out.push({ text: "Suikergehalte: bepaalt de zachtheid/schepbaarheid.", tech: "ijs", techLabel: "Werkwijze › Roomijs & sorbet" });
   return out;
 }
 
