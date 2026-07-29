@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Package, Minus, Download
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -2263,6 +2263,7 @@ export default function App() {
   const [haccpLogs, setHaccpLogs] = useState([]);
   const [haccpRecords, setHaccpRecords] = useState([]);
   const [werkDocs, setWerkDocs] = useState([]); // aanpassingen/nieuwe werkwijze-documenten
+  const [stock, setStock] = useState([]); // voorraad
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -2298,7 +2299,7 @@ export default function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
-    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -2314,6 +2315,7 @@ export default function App() {
       supabase.from("haccp_logs").select("*").order("check_date", { ascending: false }),
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
+      supabase.from("voorraad").select("*"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -2346,6 +2348,7 @@ export default function App() {
     setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: String(r.check_date || "").slice(0, 10), doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
     setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: String(r.record_date || "").slice(0, 10), by: r.done_by, note: r.note || "", ...(r.data || {}) })));
     setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
+    setStock((vs.data || []).map((r) => ({ id: r.id, product: r.product, qty: r.qty === null ? 0 : Number(r.qty), initialQty: r.initial_qty === null ? 0 : Number(r.initial_qty), unit: r.unit || "", ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], productionDate: String(r.production_date || "").slice(0, 10), expiryDate: String(r.expiry_date || "").slice(0, 10), by: r.made_by || "", recipeId: r.recipe_id || null })));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -2516,9 +2519,19 @@ export default function App() {
   const toggleBatchDone = async (id) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const nb = { ...b, done: !b.done, finishedDate: !b.done ? new Date().toISOString().slice(0, 10) : null };
+    const nb = { ...b, done: !b.done, finishedDate: !b.done ? localDate() : null };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
+    if (nb.done) {
+      const rec = nb.recipeId ? recipeById(nb.recipeId) : null;
+      push({ screen: "voorraadForm", editing: null, prefill: {
+        product: nb.product,
+        ingredients: rec && Array.isArray(rec.ingredients) ? rec.ingredients : [],
+        recipeId: nb.recipeId || null,
+        unit: nb.amount && nb.amount !== "—" ? nb.amount : "",
+        productionDate: localDate(),
+      } });
+    }
   };
   const deleteBatch = async (id) => {
     const b = batches.find((x) => x.id === id);
@@ -2755,6 +2768,67 @@ export default function App() {
     setWerkDocs((ds) => [...ds.filter((d) => d.id !== cfg.docId), row]);
     flash("Tabel bijgewerkt");
   };
+  // ---- Voorraad ----
+  const persistStock = async (v, isNew) => {
+    if (!live) return true;
+    const row = { id: v.id, product: v.product, qty: v.qty, initial_qty: v.initialQty, unit: v.unit, ingredients: v.ingredients, production_date: v.productionDate || null, expiry_date: v.expiryDate || null, made_by: v.by, recipe_id: v.recipeId || null };
+    const { error } = isNew ? await supabase.from("voorraad").insert(row) : await supabase.from("voorraad").update(row).eq("id", v.id);
+    return !dbFail(error);
+  };
+  const saveStock = async (data, editingId) => {
+    if (editingId) {
+      const old = stock.find((x) => x.id === editingId);
+      const nv = { ...old, ...data };
+      if (!(await persistStock(nv, false))) return;
+      setStock((ss) => ss.map((x) => (x.id === editingId ? nv : x)));
+      flash("Voorraad bijgewerkt");
+      return;
+    }
+    const nv = { id: "st" + Date.now(), ...data, by: user.name };
+    if (!(await persistStock(nv, true))) return;
+    setStock((ss) => [nv, ...ss]);
+    flash("Toegevoegd aan de voorraad");
+  };
+  const decStock = async (id) => {
+    const v = stock.find((x) => x.id === id);
+    if (!v || v.qty <= 0) return;
+    const prev = v.qty;
+    const nv = { ...v, qty: Math.max(0, Math.round((v.qty - 1) * 1000) / 1000) };
+    if (!(await persistStock(nv, false))) return;
+    setStock((ss) => ss.map((x) => (x.id === id ? nv : x)));
+    flash("1 van de voorraad gehaald", async () => {
+      const back = { ...nv, qty: prev };
+      if (await persistStock(back, false)) setStock((ss) => ss.map((x) => (x.id === id ? back : x)));
+    });
+  };
+  const deleteStock = async (id) => {
+    const v = stock.find((x) => x.id === id);
+    if (!v) return;
+    if (!window.confirm('"' + v.product + '" uit de voorraad verwijderen?')) return;
+    if (live) {
+      const { error } = await supabase.from("voorraad").delete().eq("id", id);
+      if (dbFail(error)) return;
+    }
+    setStock((ss) => ss.filter((x) => x.id !== id));
+    flash("Uit de voorraad verwijderd");
+  };
+  // Excel-export: toont de ooit gemaakte hoeveelheid (niet de huidige stand).
+  const exportStockExcel = () => {
+    const esc = (x) => { const v = String(x ?? ""); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = [["Product", "Ooit gemaakt", "Verpakkingseenheid", "Productiedatum", "Houdbaar tot", "Gemaakt door", "Ingrediënten"]];
+    [...stock].sort((a, b) => a.product.localeCompare(b.product, "nl")).forEach((v) => {
+      rows.push([v.product, String(v.initialQty).replace(".", ","), v.unit, v.productionDate || "", v.expiryDate || "", v.by || "",
+        (v.ingredients || []).map((i) => (i.amount ? i.amount + " " : "") + i.item).join(" | ")]);
+    });
+    const csv = "\uFEFF" + "sep=;\n" + rows.map((r) => r.map(esc).join(";")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "voorraad-" + localDate() + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    flash("Voorraadlijst gedownload (opent in Excel)");
+  };
   const saveWerkDoc = async (data, editingId) => {
     const id = editingId || "wd" + Date.now();
     const row = { id, title: data.title, intro: data.intro, sections: data.secties, updatedBy: user.name };
@@ -2940,6 +3014,7 @@ export default function App() {
     else if (section === "recepten") push({ screen: "recipeForm", editing: null });
     else if (section === "fermentatie") push({ screen: "batchForm", prefill: null });
     else if (section === "smaak") setNewPairing((n) => n + 1);
+    else if (section === "voorraad") push({ screen: "voorraadForm", editing: null, prefill: null });
   };
   const showFab = current.screen === "list" && canEdit && section !== "technieken" && section !== "schoonmaak";
 
@@ -2959,6 +3034,7 @@ export default function App() {
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
+            {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
               onEditTable={(t) => push({ screen: "techTableForm", table: t })}
@@ -2989,7 +3065,8 @@ export default function App() {
             baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={r?.isBase ? variationsOf(current.id) : []}
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
-            onStartBatch={() => push({ screen: "batchForm", prefill: r })} />
+            onStartBatch={() => push({ screen: "batchForm", prefill: r })}
+            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate() } })} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} draft={dishDraft} allRecipes={recipes} recipeById={recipeById}
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
@@ -3006,13 +3083,14 @@ export default function App() {
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
         {current.screen === "fermentGuideForm" && <FermentGuideForm rows={fermentRows} onCancel={goBack} onSave={(rows) => { saveFermentGuide(rows); goBack(); }} />}
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
+        {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
 
       {showFab && (
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-20 sm:right-24 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
-          <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : section === "smaak" ? "Nieuwe smaakcombinatie" : "Nieuwe batch"}
+          <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : section === "smaak" ? "Nieuwe smaakcombinatie" : section === "voorraad" ? "Nieuwe voorraad" : "Nieuwe batch"}
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
@@ -3248,12 +3326,13 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall }) {
 }
 
 const SECTIONS = [
-  { id: "gerechten", label: "Gerechten", icon: <Utensils size={16} /> },
-  { id: "recepten", label: "Recepten", icon: <Layers size={16} /> },
-  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={16} /> },
-  { id: "smaak", label: "Smaak", icon: <Blend size={16} /> },
-  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={16} /> },
-  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={16} /> },
+  { id: "gerechten", label: "Gerechten", icon: <Utensils size={14} /> },
+  { id: "recepten", label: "Recepten", icon: <Layers size={14} /> },
+  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={14} /> },
+  { id: "smaak", label: "Smaak", icon: <Blend size={14} /> },
+  { id: "voorraad", label: "Voorraad", icon: <Package size={14} /> },
+  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={14} /> },
+  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={14} /> },
 ];
 
 // Horizontaal vegen om tussen de secties te wisselen. Verticaal scrollen en
@@ -3298,7 +3377,7 @@ function SectionNav({ section, setSection }) {
   return (
     <div ref={scroller} className="flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1 -mx-4 px-4 no-scrollbar sm:justify-center">
       {items.map((it) => (
-        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 rounded-full px-2 sm:px-2.5 py-1.5 text-[12.5px] sm:text-[13px] font-medium " + (section === it.id ? "pillon" : "pill")}>
+        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-1.5 text-[12px] sm:text-[12.5px] font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}<span>{it.label}</span>
         </button>
       ))}
@@ -3973,6 +4052,149 @@ const CATERING_STANDARDS = [
     { kop: "Open vuur-diner in de moestuin (met dessert)", regels: ["De chef bereidt in de moestuin een 4-gangen diner op basis van seizoensgroenten; uitgeserveerd in de boomgaard (500 g totaal)","Voorgerecht: bereiding vanaf het vuur, gerecht live opgemaakt","Soep: live bereid op het vuur en daar afgemaakt","Hoofdgerecht: bereiding vanaf het vuur, gerecht live opgemaakt","Dessert · taart en zoetigheid"] },
   ]},
 ];
+
+// ---------- Voorraad ----------
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T12:00:00");
+  const now = new Date(localDate() + "T12:00:00");
+  return Math.round((d - now) / 86400000);
+}
+
+function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(null);
+  const shown = stock
+    .filter((v) => softMatchAny([v.product, v.unit, (v.ingredients || []).map((i) => i.item).join(" ")], q.trim().toLowerCase()))
+    .sort((a, b) => {
+      const da = a.expiryDate || "9999", db2 = b.expiryDate || "9999";
+      return da < db2 ? -1 : da > db2 ? 1 : a.product.localeCompare(b.product, "nl");
+    });
+  return (
+    <div>
+      <SearchBar value={q} onChange={setQ} placeholder="Zoek in de voorraad" />
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs mute">{shown.length} {shown.length === 1 ? "product" : "producten"}</span>
+        <button onClick={onExport} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Download size={15} /> Excel</button>
+      </div>
+      {shown.length === 0 && <Empty label="Nog niets op voorraad. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
+      <div className="space-y-2.5">
+        {shown.map((v) => {
+          const dgn = daysUntil(v.expiryDate);
+          const verlopen = dgn !== null && dgn < 0;
+          const bijna = dgn !== null && dgn >= 0 && dgn <= 3;
+          const op = v.qty <= 0;
+          return (
+            <div key={v.id} className="card overflow-hidden" style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
+              <button onClick={() => setOpen(open === v.id ? null : v.id)} className="ff w-full text-left px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="serif ink text-lg leading-tight truncate" style={op ? { opacity: 0.5 } : undefined}>{v.product}</div>
+                    <div className="text-[12.5px] mute mt-0.5">
+                      {v.unit && <>{v.unit} · </>}ooit gemaakt: {String(v.initialQty).replace(".", ",")}
+                      {v.expiryDate && <> · THT {v.expiryDate}</>}
+                      {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
+                      {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="serif ink text-2xl leading-none" style={op ? { color: "#8a4a3a" } : undefined}>{String(v.qty).replace(".", ",")}</div>
+                    <div className="text-[11px] mute">{op ? "op" : "op voorraad"}</div>
+                  </div>
+                </div>
+              </button>
+              {open === v.id && (
+                <div className="px-4 pb-3 text-sm" style={{ borderTop: "1px solid " + T.line }}>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2.5 text-[12.5px]">
+                    <div className="flex justify-between gap-2"><span className="mute">Huidige voorraad</span><span className="ink font-medium">{String(v.qty).replace(".", ",")}</span></div>
+                    <div className="flex justify-between gap-2"><span className="mute">Ooit gemaakt</span><span className="ink font-medium">{String(v.initialQty).replace(".", ",")}</span></div>
+                    {v.unit && <div className="flex justify-between gap-2"><span className="mute">Verpakking</span><span className="ink font-medium">{v.unit}</span></div>}
+                    {v.productionDate && <div className="flex justify-between gap-2"><span className="mute">Gemaakt op</span><span className="ink font-medium">{v.productionDate}</span></div>}
+                    {v.expiryDate && <div className="flex justify-between gap-2"><span className="mute">Houdbaar tot</span><span className="ink font-medium">{v.expiryDate}</span></div>}
+                    {v.by && <div className="flex justify-between gap-2"><span className="mute">Door</span><span className="ink font-medium">{v.by}</span></div>}
+                  </div>
+                  {(v.ingredients || []).length > 0 && (
+                    <div className="mt-2.5">
+                      <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">Ingrediënten</div>
+                      <ul className="space-y-0.5 text-[13px]">
+                        {v.ingredients.map((i, j) => (
+                          <li key={j} className="flex justify-between gap-3"><span className="ink">{i.item}</span><span className="mute shrink-0">{i.amount}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <button onClick={() => onDec(v.id)} disabled={op} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2 disabled:opacity-40"><Minus size={15} /> 1 gebruikt</button>
+                      <button onClick={() => onEdit(v.id)} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Pencil size={14} /> Bewerken</button>
+                      <button onClick={() => onDelete(v.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a" }}><Trash2 size={14} /></button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function VoorraadForm({ editing, prefill, onCancel, onSave }) {
+  const src = editing || prefill || {};
+  const [product, setProduct] = useState(src.product || "");
+  const [qty, setQty] = useState(editing ? String(editing.qty) : "");
+  const [initialQty, setInitialQty] = useState(editing ? String(editing.initialQty) : "");
+  const [unit, setUnit] = useState(src.unit || "");
+  const [productionDate, setProductionDate] = useState(src.productionDate || localDate());
+  const [expiryDate, setExpiryDate] = useState(src.expiryDate || "");
+  const [ings, setIngs] = useState((src.ingredients && src.ingredients.length ? src.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
+  const setIng = (i, veld, w) => setIngs((xs) => xs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
+  const addIng = () => setIngs((xs) => [...xs, { item: "", amount: "" }]);
+  const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
+  const nm = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
+  const submit = () => {
+    if (!product.trim()) { alert("Vul de productnaam in."); return; }
+    const q1 = nm(qty);
+    if (q1 === null) { alert("Vul het aantal in."); return; }
+    const q0 = editing ? (nm(initialQty) ?? q1) : q1;
+    onSave({
+      product: product.trim(), qty: q1, initialQty: q0, unit: unit.trim(),
+      productionDate, expiryDate,
+      ingredients: ings.map((i) => ({ item: (i.item || "").trim(), amount: (i.amount || "").trim() })).filter((i) => i.item),
+      recipeId: src.recipeId || (editing ? editing.recipeId : null) || null,
+    });
+  };
+  return (
+    <div>
+      <FormBar title={editing ? "Voorraad bewerken" : "Toevoegen aan de voorraad"} onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
+      <Field label="Product"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Pruimenjam met rozemarijn" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
+        {editing
+          ? <Field label="Ooit gemaakt (totaal)"><input type="text" inputMode="decimal" className={inputCls} value={initialQty} onChange={(e) => setInitialQty(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+          : <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 250 g pot" /></Field>}
+      </div>
+      {editing && <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 1 l vacumeerzak" /></Field>}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Productiedatum"><input type="date" className={inputCls} value={productionDate} onChange={(e) => setProductionDate(e.target.value)} /></Field>
+        <Field label="Houdbaar tot"><input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} /></Field>
+      </div>
+      <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
+      <div className="space-y-2 mb-3">
+        {ings.map((i, idx) => (
+          <div key={idx} className="flex gap-2">
+            <input className="input px-2.5 py-2 w-28 shrink-0 text-sm" value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} placeholder="hoeveelheid" />
+            <input className="input px-2.5 py-2 flex-1 text-sm" value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} placeholder="ingrediënt" />
+            {ings.length > 1 && <button onClick={() => delIng(idx)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={15} /></button>}
+          </div>
+        ))}
+      </div>
+      <button onClick={addIng} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2"><Plus size={15} /> Ingrediënt toevoegen</button>
+      <p className="text-xs mute">Het aantal dat je nu invult, wordt vastgelegd als "ooit gemaakt". Met de knop "1 gebruikt" tel je later af; de Excel-download toont altijd de ooit gemaakte hoeveelheid.</p>
+    </div>
+  );
+}
 
 // Bewerkbare Werkwijze-tabellen: veldindeling per tabel.
 const TECH_TABLE_CONFIGS = {
@@ -4872,7 +5094,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
   );
 }
 
-function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onDelete }) {
+function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onAddStock, onDelete }) {
   const [factor, setFactor] = useState(1);
   if (!recipe) return null;
   const endorsed = recipe.endorsements.includes(user.name);
@@ -4905,6 +5127,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         <div className="flex flex-wrap items-center gap-2 mt-4">
           <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
           {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
+          {canEdit && <button onClick={onAddStock} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Package size={15} /> In voorraad</button>}
           <button onClick={() => onDelete(recipe.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
         </div>
       )}
