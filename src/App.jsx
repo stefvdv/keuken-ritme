@@ -4066,8 +4066,8 @@ const CATERING_STANDARDS = [
 
 // ---------- Voorraad ----------
 // Etiket printen via de Zebra-printerdriver (geen ZebraDesigner nodig).
-// Pas het formaat hieronder aan naar jullie etiket (breedte x hoogte in mm).
-const LABEL_MM = { w: 57, h: 32 };
+// Formaat van het etiket (breedte x hoogte in mm) — ZD421: 102 x 38 mm.
+const LABEL_MM = { w: 102, h: 38 };
 function printLabel(recipe) {
   const prod = localDate();
   let tht = "";
@@ -4083,9 +4083,9 @@ function printLabel(recipe) {
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
-    "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding:2mm 3mm;overflow:hidden}" +
-    ".naam{font-weight:bold;font-size:11pt;line-height:1.1;margin-bottom:1.5mm;word-wrap:break-word}" +
-    ".rij{font-size:9pt;line-height:1.25}" +
+    "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding:2.5mm 5mm;overflow:hidden}" +
+    ".naam{font-weight:bold;font-size:16pt;line-height:1.1;margin-bottom:2mm;word-wrap:break-word}" +
+    ".rij{font-size:12pt;line-height:1.3}" +
     "</style></head><body>" +
     '<div class="naam">' + esc(recipe.name) + "</div>" +
     '<div class="rij">Gemaakt: ' + fmt(prod) + "</div>" +
