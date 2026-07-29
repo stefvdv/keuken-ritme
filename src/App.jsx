@@ -4065,9 +4065,10 @@ const CATERING_STANDARDS = [
 ];
 
 // ---------- Voorraad ----------
-// Etiketgegevens voor ZebraDesigner 3: csv-databron met naam, productiedatum en THT.
-// (ZebraDesigner leest dit als gekoppelde database bij een eenmalig ontworpen etiket.)
-function downloadLabelData(recipe) {
+// Etiket printen via de Zebra-printerdriver (geen ZebraDesigner nodig).
+// Pas het formaat hieronder aan naar jullie etiket (breedte x hoogte in mm).
+const LABEL_MM = { w: 57, h: 32 };
+function printLabel(recipe) {
   const prod = localDate();
   let tht = "";
   if (recipe.shelfDays) {
@@ -4075,15 +4076,24 @@ function downloadLabelData(recipe) {
     dt.setDate(dt.getDate() + Number(recipe.shelfDays));
     tht = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
   }
-  const esc = (x) => { const v = String(x ?? ""); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const csv = "\uFEFF" + "Recept;Productiedatum;HoudbaarTot\n" + [recipe.name, prod, tht].map(esc).join(";") + "\n";
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  // Vaste bestandsnaam: het ZebraDesigner-sjabloon blijft zo altijd aan hetzelfde bestand gekoppeld.
-  a.href = url; a.download = "etiket-data.csv";
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
+  const fmt = (iso) => { const [y, m, d] = iso.split("-"); return d + "-" + m + "-" + y; };
+  const esc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const w = window.open("", "_blank");
+  if (!w) { alert("Sta pop-ups toe om etiketten te printen."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+    "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
+    "html,body{margin:0;padding:0}" +
+    "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;padding:2mm 3mm;overflow:hidden}" +
+    ".naam{font-weight:bold;font-size:11pt;line-height:1.1;margin-bottom:1.5mm;word-wrap:break-word}" +
+    ".rij{font-size:9pt;line-height:1.25}" +
+    "</style></head><body>" +
+    '<div class="naam">' + esc(recipe.name) + "</div>" +
+    '<div class="rij">Gemaakt: ' + fmt(prod) + "</div>" +
+    (tht ? '<div class="rij">T.H.T.: ' + fmt(tht) + "</div>" : "") +
+    "</body></html>");
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 250);
 }
 
 // In welk jaar is deze voorraad gemaakt? (productiedatum; anders het huidige jaar)
@@ -5256,7 +5266,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
           {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
           {canEdit && <button onClick={onAddStock} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Package size={15} /> In voorraad</button>}
-          {canEdit && <button onClick={() => { downloadLabelData(recipe); }} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" title="Etiketgegevens voor ZebraDesigner (naam, productiedatum, THT)"><Tag size={15} /> Etiket</button>}
+          {canEdit && <button onClick={() => { printLabel(recipe); }} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" title="Etiket printen (naam, productiedatum, THT) via de Zebra-printer"><Tag size={15} /> Etiket</button>}
           <button onClick={() => onDelete(recipe.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
         </div>
       )}
