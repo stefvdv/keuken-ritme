@@ -2387,7 +2387,7 @@ export default function App() {
   const back = () => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
   const resetTo = (s) => setStack([s]);
   const goBack = () => { if (stack.length > 1) { try { window.history.back(); } catch (e) { back(); } } };
-  const goHome = () => { resetTo({ screen: "list" }); setSection("gerechten"); };
+  const goHome = () => { resetTo({ screen: "list" }); setSection("recepten"); };
   const calcOpenRef = React.useRef(false);
   useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
   useEffect(() => {
@@ -2428,10 +2428,14 @@ export default function App() {
     if (!user || !user.canEdit || !loaded || noticeShown) return;
     const { ready, due } = collectNotices(batches);
     const n = ready.length + due.length;
+    const exp = stock.filter((v) => v.qty > 0 && v.expiryDate && daysUntil(v.expiryDate) !== null && daysUntil(v.expiryDate) <= 7).length;
     setNoticeShown(true); // hoe dan ook maar één keer per sessie proberen
-    if (n === 0) return;
-    flash(n === 1 ? "1 batch vraagt aandacht" : n + " batches vragen aandacht");
-  }, [user, loaded, batches, noticeShown]);
+    const parts = [];
+    if (n > 0) parts.push(n === 1 ? "1 batch vraagt aandacht" : n + " batches vragen aandacht");
+    if (exp > 0) parts.push(exp === 1 ? "1 voorraadproduct nadert de houdbaarheidsdatum" : exp + " voorraadproducten naderen de houdbaarheidsdatum");
+    if (parts.length) flash(parts.join(" · "));
+  }, [user, loaded, batches, stock, noticeShown]);
+  const [stockNoticeClosed, setStockNoticeClosed] = useState(null); // per dag te sluiten
 
   const saveRecipe = async (data, editingId) => {
     const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
@@ -2530,6 +2534,7 @@ export default function App() {
         recipeId: nb.recipeId || null,
         unit: nb.amount && nb.amount !== "—" ? nb.amount : "",
         productionDate: localDate(),
+        shelfDays: rec && rec.shelfDays ? rec.shelfDays : null,
       } });
     }
   };
@@ -3034,7 +3039,7 @@ export default function App() {
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
-            {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} />}
+            {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
               onEditTable={(t) => push({ screen: "techTableForm", table: t })}
@@ -3066,7 +3071,7 @@ export default function App() {
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })}
-            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate() } })} />
+            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null } })} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} draft={dishDraft} allRecipes={recipes} recipeById={recipeById}
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
@@ -3083,7 +3088,7 @@ export default function App() {
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
         {current.screen === "fermentGuideForm" && <FermentGuideForm rows={fermentRows} onCancel={goBack} onSave={(rows) => { saveFermentGuide(rows); goBack(); }} />}
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
-        {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
+        {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
       </main>
@@ -3266,7 +3271,6 @@ function Header({ user, onHome, onOpenSettings, onSignOut }) {
     <header className="sticky top-0 z-20 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <button onClick={onHome} className="ff shrink-0 inline-flex items-center justify-center rounded-xl w-10 h-10 hover:opacity-70" style={{ background: "#e8ebe0", color: T.green }} title="Naar startscherm"><Home size={20} /></button>
           <Wordmark onHome={onHome} />
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
@@ -3375,7 +3379,7 @@ function SectionNav({ section, setSection }) {
     wrap.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
   }, [section]);
   return (
-    <div ref={scroller} className="flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1 -mx-4 px-4 no-scrollbar sm:justify-center">
+    <div ref={scroller} className="sticky top-0 z-30 flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1.5 -mx-4 px-4 no-scrollbar sm:justify-center" style={{ background: T.paper }}>
       {items.map((it) => (
         <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-1.5 text-[12px] sm:text-[12.5px] font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}<span>{it.label}</span>
@@ -4061,53 +4065,70 @@ function daysUntil(dateStr) {
   return Math.round((d - now) / 86400000);
 }
 
-function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport }) {
+function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
+  const expiring = stock.filter((v) => v.qty > 0 && v.expiryDate && daysUntil(v.expiryDate) !== null && daysUntil(v.expiryDate) <= 7);
   const shown = stock
     .filter((v) => softMatchAny([v.product, v.unit, (v.ingredients || []).map((i) => i.item).join(" ")], q.trim().toLowerCase()))
     .sort((a, b) => {
       const da = a.expiryDate || "9999", db2 = b.expiryDate || "9999";
       return da < db2 ? -1 : da > db2 ? 1 : a.product.localeCompare(b.product, "nl");
     });
+  const fmtQty = (n) => String(n).replace(".", ",") + " St.";
   return (
     <div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek in de voorraad" />
+      {expiring.length > 0 && !noticeClosed && (
+        <div className="rounded-xl px-4 py-3 mb-3 flex items-start gap-2.5" style={{ background: "#f3ecd9", border: "1px solid #dccda8" }}>
+          <Bell size={16} className="shrink-0 mt-0.5" style={{ color: "#8a6a2a" }} />
+          <div className="flex-1 text-[13px]" style={{ color: "#6b5620" }}>
+            <span className="font-semibold">Houdbaarheid nadert.</span>{" "}
+            {expiring.map((v) => {
+              const d = daysUntil(v.expiryDate);
+              return v.product + " (" + (d < 0 ? "verlopen" : d === 0 ? "vandaag" : "nog " + d + (d === 1 ? " dag" : " dagen")) + ")";
+            }).join(" · ")}
+          </div>
+          <button onClick={onCloseNotice} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a6a2a" }} title="Vandaag niet meer tonen"><X size={15} /></button>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs mute">{shown.length} {shown.length === 1 ? "product" : "producten"}</span>
         <button onClick={onExport} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Download size={15} /> Excel</button>
       </div>
       {shown.length === 0 && <Empty label="Nog niets op voorraad. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
+      {open !== null && <div className="fixed inset-0 z-10" onClick={() => setOpen(null)} />}
       <div className="space-y-2.5">
         {shown.map((v) => {
           const dgn = daysUntil(v.expiryDate);
           const verlopen = dgn !== null && dgn < 0;
           const bijna = dgn !== null && dgn >= 0 && dgn <= 3;
           const op = v.qty <= 0;
+          const isOpen = open === v.id;
           return (
-            <div key={v.id} className="card overflow-hidden" style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
-              <button onClick={() => setOpen(open === v.id ? null : v.id)} className="ff w-full text-left px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="serif ink text-lg leading-tight truncate" style={op ? { opacity: 0.5 } : undefined}>{v.product}</div>
-                    <div className="text-[12.5px] mute mt-0.5">
-                      {v.unit && <>{v.unit} · </>}ooit gemaakt: {String(v.initialQty).replace(".", ",")}
-                      {v.expiryDate && <> · THT {v.expiryDate}</>}
-                      {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
-                      {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
-                    </div>
+            <div key={v.id} className={"card overflow-hidden" + (isOpen ? " relative z-20" : "")} style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
+              <div className="flex items-center gap-2 px-4 py-3">
+                <button onClick={() => setOpen(isOpen ? null : v.id)} className="ff flex-1 min-w-0 text-left">
+                  <div className="serif ink text-lg leading-tight truncate" style={op ? { opacity: 0.5 } : undefined}>{v.product}</div>
+                  <div className="text-[12.5px] mute mt-0.5">
+                    {v.unit && <>{v.unit} · </>}ooit gemaakt: {fmtQty(v.initialQty)}
+                    {v.by && <> · {v.by}</>}
+                    {v.expiryDate && <> · THT {v.expiryDate}</>}
+                    {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
+                    {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
                   </div>
-                  <div className="shrink-0 text-right">
-                    <div className="serif ink text-2xl leading-none" style={op ? { color: "#8a4a3a" } : undefined}>{String(v.qty).replace(".", ",")}</div>
-                    <div className="text-[11px] mute">{op ? "op" : "op voorraad"}</div>
-                  </div>
+                </button>
+                <div className="shrink-0 text-right">
+                  <div className="serif ink text-xl leading-none" style={op ? { color: "#8a4a3a" } : undefined}>{fmtQty(v.qty)}</div>
+                  <div className="text-[11px] mute">{op ? "op" : "op voorraad"}</div>
                 </div>
-              </button>
-              {open === v.id && (
+                {canEdit && <button onClick={() => onDec(v.id)} disabled={op} className="btnp ff shrink-0 inline-flex items-center justify-center rounded-lg w-9 h-9 disabled:opacity-40" title="1 gebruikt"><Minus size={16} /></button>}
+              </div>
+              {isOpen && (
                 <div className="px-4 pb-3 text-sm" style={{ borderTop: "1px solid " + T.line }}>
                   <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2.5 text-[12.5px]">
-                    <div className="flex justify-between gap-2"><span className="mute">Huidige voorraad</span><span className="ink font-medium">{String(v.qty).replace(".", ",")}</span></div>
-                    <div className="flex justify-between gap-2"><span className="mute">Ooit gemaakt</span><span className="ink font-medium">{String(v.initialQty).replace(".", ",")}</span></div>
+                    <div className="flex justify-between gap-2"><span className="mute">Huidige voorraad</span><span className="ink font-medium">{fmtQty(v.qty)}</span></div>
+                    <div className="flex justify-between gap-2"><span className="mute">Ooit gemaakt</span><span className="ink font-medium">{fmtQty(v.initialQty)}</span></div>
                     {v.unit && <div className="flex justify-between gap-2"><span className="mute">Verpakking</span><span className="ink font-medium">{v.unit}</span></div>}
                     {v.productionDate && <div className="flex justify-between gap-2"><span className="mute">Gemaakt op</span><span className="ink font-medium">{v.productionDate}</span></div>}
                     {v.expiryDate && <div className="flex justify-between gap-2"><span className="mute">Houdbaar tot</span><span className="ink font-medium">{v.expiryDate}</span></div>}
@@ -4140,18 +4161,37 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport }) {
   );
 }
 
-function VoorraadForm({ editing, prefill, onCancel, onSave }) {
+function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const src = editing || prefill || {};
   const [product, setProduct] = useState(src.product || "");
   const [qty, setQty] = useState(editing ? String(editing.qty) : "");
   const [initialQty, setInitialQty] = useState(editing ? String(editing.initialQty) : "");
   const [unit, setUnit] = useState(src.unit || "");
   const [productionDate, setProductionDate] = useState(src.productionDate || localDate());
-  const [expiryDate, setExpiryDate] = useState(src.expiryDate || "");
+  const [days, setDays] = useState(prefill && prefill.shelfDays ? String(prefill.shelfDays) : "");
+  const [expiryDate, setExpiryDate] = useState(editing ? (editing.expiryDate || "") : "");
+  const [recipeId, setRecipeId] = useState(src.recipeId || null);
   const [ings, setIngs] = useState((src.ingredients && src.ingredients.length ? src.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
+  const [pick, setPick] = useState("");
   const setIng = (i, veld, w) => setIngs((xs) => xs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const addIng = () => setIngs((xs) => [...xs, { item: "", amount: "" }]);
   const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
+  // Houdbaar tot = productiedatum + dagen (bij toevoegen); daarna altijd handmatig aanpasbaar.
+  const computedExpiry = (() => {
+    const d = Number(days);
+    if (!productionDate || !days || isNaN(d) || d <= 0) return "";
+    const dt = new Date(productionDate + "T12:00:00");
+    dt.setDate(dt.getDate() + d);
+    return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  })();
+  const applyRecipe = (r) => {
+    setProduct(r.name);
+    setRecipeId(r.id);
+    setIngs((r.ingredients && r.ingredients.length ? r.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
+    if (r.shelfDays) setDays(String(r.shelfDays));
+    setPick("");
+  };
+  const pickMatches = pick.trim() ? (allRecipes || []).filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], pick)).slice(0, 8) : [];
   const nm = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
   const submit = () => {
     if (!product.trim()) { alert("Vul de productnaam in."); return; }
@@ -4160,14 +4200,29 @@ function VoorraadForm({ editing, prefill, onCancel, onSave }) {
     const q0 = editing ? (nm(initialQty) ?? q1) : q1;
     onSave({
       product: product.trim(), qty: q1, initialQty: q0, unit: unit.trim(),
-      productionDate, expiryDate,
+      productionDate,
+      expiryDate: editing ? expiryDate : computedExpiry,
       ingredients: ings.map((i) => ({ item: (i.item || "").trim(), amount: (i.amount || "").trim() })).filter((i) => i.item),
-      recipeId: src.recipeId || (editing ? editing.recipeId : null) || null,
+      recipeId: recipeId || (editing ? editing.recipeId : null) || null,
     });
   };
   return (
     <div>
       <FormBar title={editing ? "Voorraad bewerken" : "Toevoegen aan de voorraad"} onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
+      {!editing && <>
+        <div className="text-sm font-medium ink mb-1.5">Kies een recept <span className="mute font-normal">(vult naam, ingrediënten en houdbaarheid in)</span></div>
+        <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een recept (ook fermentatie)" className={inputCls + " pl-9"} /></div>
+        {pickMatches.length > 0 && (
+          <div className="card overflow-hidden mb-4">
+            {pickMatches.map((r, i) => (
+              <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
+                {r.ferment ? <FlaskConical size={15} className="acc shrink-0" /> : <ChefHat size={15} className="acc shrink-0" />}
+                <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.category}{r.shelfDays ? " · " + r.shelfDays + " dagen houdbaar" : ""}</div></div>
+              </button>
+            ))}
+          </div>
+        )}
+      </>}
       <Field label="Product"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Pruimenjam met rozemarijn" /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
@@ -4178,15 +4233,18 @@ function VoorraadForm({ editing, prefill, onCancel, onSave }) {
       {editing && <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 1 l vacumeerzak" /></Field>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Productiedatum"><input type="date" className={inputCls} value={productionDate} onChange={(e) => setProductionDate(e.target.value)} /></Field>
-        <Field label="Houdbaar tot"><input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} /></Field>
+        {editing
+          ? <Field label="Houdbaar tot"><input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} /></Field>
+          : <Field label="Dagen houdbaar"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>}
       </div>
+      {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{computedExpiry}</span> — later nog aan te passen via Bewerken.</p>}
       <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
-      <div className="space-y-2 mb-3">
+      <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
           <div key={idx} className="flex gap-2">
-            <input className="input px-2.5 py-2 w-28 shrink-0 text-sm" value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} placeholder="hoeveelheid" />
-            <input className="input px-2.5 py-2 flex-1 text-sm" value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} placeholder="ingrediënt" />
-            {ings.length > 1 && <button onClick={() => delIng(idx)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={15} /></button>}
+            <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} placeholder="Ingrediënt" />
+            <input className={inputCls + " w-28 sm:w-32 shrink-0"} style={{ width: undefined }} value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} placeholder="hoeveelheid" />
+            {ings.length > 1 && <button onClick={() => delIng(idx)} className="ff shrink-0 hover:opacity-70 self-center" style={{ color: "#8a4a3a" }}><Trash2 size={15} /></button>}
           </div>
         ))}
       </div>
@@ -5104,6 +5162,9 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
     <div>
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)} />
       <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
+      {(recipe.shelfDays || recipe.shelfStorage) && (
+        <div className="text-[13px] mute mt-1">Houdbaarheid: {[recipe.shelfDays ? recipe.shelfDays + " dagen" : null, recipe.shelfStorage || null].filter(Boolean).join(" · ")}</div>
+      )}
       <div className="flex flex-wrap gap-2 mt-3">
         <Chip>{recipe.category}</Chip>
         {recipe.fermentMethod && <Chip>{recipe.fermentMethod}</Chip>}
@@ -5221,6 +5282,8 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
   const [fDays, setFDays] = useState(fd && fd.days != null && fd.days !== 0 ? String(fd.days) : "");
   const [fPh, setFPh] = useState(fd && fd.phTarget != null ? String(fd.phTarget) : "");
   const [fSugar, setFSugar] = useState(fd && fd.sugarPct != null && fd.sugarPct !== 0 ? String(fd.sugarPct) : "");
+  const [shelfDays, setShelfDays] = useState(recipe && recipe.shelfDays ? String(recipe.shelfDays) : "");
+  const [shelfStorage, setShelfStorage] = useState(recipe && recipe.shelfStorage ? recipe.shelfStorage : "");
   const [translating, setTranslating] = useState(false);
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
@@ -5254,6 +5317,8 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
     ferment,
     fermentMethod: ferment ? fermentMethod : null,
     fermentDefaults: ferment ? (() => { const nz = (x) => { const v = Number(String(x).replace(",", ".")); return x !== "" && !isNaN(v) && v !== 0 ? v : null; }; return { saltPct: nz(fSalt), tempC: nz(fTemp), days: nz(fDays), phTarget: nz(fPh), sugarPct: nz(fSugar) }; })() : null,
+    shelfDays: shelfDays !== "" && !isNaN(Number(shelfDays)) && Number(shelfDays) > 0 ? Number(shelfDays) : null,
+    shelfStorage: shelfStorage.trim(),
   }); };
   return (
     <div>
@@ -5276,6 +5341,10 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
         ))}
       </div>
       <Field label="Dieet"><select className={inputCls} value={diet} onChange={(e) => setDiet(e.target.value)}>{["Vegetarisch","Varkensvlees","Rundvlees"].map((d) => <option key={d}>{d}</option>)}</select></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Houdbaar (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={shelfDays} onChange={(e) => setShelfDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>
+        <Field label="Type opslag"><input className={inputCls} value={shelfStorage} onChange={(e) => setShelfStorage(e.target.value)} placeholder="bv. koelkast / vriezer / droog" /></Field>
+      </div>
       <div className="tintbox rounded-xl p-4 mb-4">
         <button type="button" onClick={() => setFerment((f) => !f)} className="ff w-full flex items-center gap-3 text-left">
           <span className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={ferment ? { background: T.green, color: T.paper } : { border: "1px solid #cfccbe", background: "#fff" }}>{ferment && <Check size={13} />}</span>
