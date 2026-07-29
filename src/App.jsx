@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Package, Minus
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Package, Minus, Tag
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -4065,6 +4065,27 @@ const CATERING_STANDARDS = [
 ];
 
 // ---------- Voorraad ----------
+// Etiketgegevens voor ZebraDesigner 3: csv-databron met naam, productiedatum en THT.
+// (ZebraDesigner leest dit als gekoppelde database bij een eenmalig ontworpen etiket.)
+function downloadLabelData(recipe) {
+  const prod = localDate();
+  let tht = "";
+  if (recipe.shelfDays) {
+    const dt = new Date(prod + "T12:00:00");
+    dt.setDate(dt.getDate() + Number(recipe.shelfDays));
+    tht = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  }
+  const esc = (x) => { const v = String(x ?? ""); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const csv = "\uFEFF" + "Recept;Productiedatum;HoudbaarTot\n" + [recipe.name, prod, tht].map(esc).join(";") + "\n";
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  // Vaste bestandsnaam: het ZebraDesigner-sjabloon blijft zo altijd aan hetzelfde bestand gekoppeld.
+  a.href = url; a.download = "etiket-data.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // In welk jaar is deze voorraad gemaakt? (productiedatum; anders het huidige jaar)
 function stockYear(v) {
   const y = Number(String(v.productionDate || "").slice(0, 4));
@@ -4273,7 +4294,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
         <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
         {editing
           ? <Field label="Ooit gemaakt (totaal)"><input type="text" inputMode="decimal" className={inputCls} value={initialQty} onChange={(e) => setInitialQty(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
-          : <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 250 g pot" /></Field>}
+          : <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 200 g pot" /></Field>}
       </div>
       {editing && <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 1 l vacumeerzak" /></Field>}
       <div className="grid grid-cols-2 gap-3">
@@ -5235,6 +5256,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
           {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
           {canEdit && <button onClick={onAddStock} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Package size={15} /> In voorraad</button>}
+          {canEdit && <button onClick={() => { downloadLabelData(recipe); }} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" title="Etiketgegevens voor ZebraDesigner (naam, productiedatum, THT)"><Tag size={15} /> Etiket</button>}
           <button onClick={() => onDelete(recipe.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
         </div>
       )}
