@@ -4823,11 +4823,12 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
     return Object.keys(byDate).sort((a, b) => (a < b ? 1 : -1)).map((date) => {
       const all = byDate[date];
       const off = all.find((l) => l.taskId === DAY_OFF_ID) || null;
-      const items = all.filter((l) => l.taskId !== DAY_OFF_ID);
+      const done = all.find((l) => l.taskId === DAY_DONE_ID) || null;
+      const items = all.filter((l) => l.taskId !== DAY_OFF_ID && l.taskId !== DAY_DONE_ID);
       const people = [...new Set(items.map((l) => l.doneBy))];
       const who = people.length === 0 ? "" : people.length <= 2 ? people.join(" & ") : people.length + " personen";
       const d = new Date(date + "T12:00:00");
-      return { date, off, items, who, label: dayNames[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) };
+      return { date, off, done, items, who, label: dayNames[d.getDay()] + " " + d.getDate() + "/" + (d.getMonth() + 1) };
     });
   })();
   const taskName = (id) => { if (id === DAY_OFF_ID) return "Vrije dag — bedrijf dicht"; const t = tasks.find((x) => x.id === id); return t ? t.area + " · " + t.name : "Onbekende taak"; };
@@ -4975,7 +4976,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
               <div key={day.date}>
                 <button onClick={() => setOpenDay(openDay === day.date ? null : day.date)} className="ff w-full flex items-baseline justify-between mb-1">
                   <span className="inline-flex items-center gap-1 text-[13px] font-semibold ink">{openDay === day.date ? <ChevronUp size={13} className="acc" /> : <ChevronDown size={13} className="acc" />} {day.label}</span>
-                  <span className="text-[11.5px] mute">{day.off ? "vrije dag" : day.items.length + (day.items.length === 1 ? " taak" : " taken") + " · " + day.who}</span>
+                  <span className="text-[11.5px] mute">{day.off ? "vrije dag" : (day.done ? "afgerond · " : "") + day.items.length + (day.items.length === 1 ? " taak" : " taken") + (day.who ? " · " + day.who : "")}</span>
                 </button>
                 {openDay === day.date && (day.off
                   ? <div className="card px-3 py-2 flex items-center gap-2 text-[13px]" style={{ color: "#6a6550" }}>
@@ -4983,6 +4984,12 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
                       {canEdit && <button onClick={() => onReopenOff(day.off.id, day.date)} className="ff shrink-0 text-[12.5px] font-medium underline acc" title="Vrije dag heropenen en direct invullen">Heropenen</button>}
                     </div>
                   : <div className="card overflow-hidden divide-y" style={{ borderColor: T.line }}>
+                      {day.done && (
+                        <div className="flex items-center gap-2 px-3 py-2 text-[13px]" style={{ background: "#f2f4ec", color: "#46603f" }}>
+                          <Check size={14} className="shrink-0" /> <span className="flex-1">Dag afgerond door {day.done.doneBy}</span>
+                          {canEdit && <button onClick={() => onReopenOff(day.done.id, day.date)} className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-medium underline acc" title="Afgeronde dag heropenen en opnieuw invullen"><Pencil size={12} /> Heropenen</button>}
+                        </div>
+                      )}
                       {day.items.map((l) => (
                         <div key={l.id}>
                           <div className="flex items-center gap-2 px-3 py-2">
