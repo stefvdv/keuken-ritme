@@ -5447,7 +5447,10 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                 <div className="text-[12px] font-semibold uppercase tracking-widest acc mb-1">{area}</div>
                 <div className="card overflow-hidden">
                   {withStatus.filter((x) => x.t.area === area).map((x, i) => {
-                    const vandaag = x.st.last && x.st.since === 0;
+                    // Al afgetekend op deze dag? (bij een heropende dag: op die datum)
+                    const dagKey = forDate || localDate();
+                    const dagLog = logs.find((l) => l.taskId === x.t.id && String(l.doneDate).slice(0, 10) === dagKey);
+                    const vandaag = !!dagLog;
                     return (
                       <div key={x.t.id} className={"flex items-center gap-2 px-3 py-2 " + (i > 0 ? "divi" : "")}>
                         <div className="flex-1 min-w-0">
@@ -5458,7 +5461,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                           </div>
                         </div>
                         {canEdit && (vandaag
-                          ? <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium" style={{ color: T.green }}><Check size={13} /> {x.st.last.doneBy}</span>
+                          ? <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium" style={{ color: T.green }}><Check size={13} /> {dagLog.doneBy}</span>
                           : (x.t.id === TEMP_TASK_ID || HACCP_TASK_KIND[x.t.id])
                             ? <button onClick={onOpenSection} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Registreren via de schoonmaaklijst"><Thermometer size={14} /></button>
                             : <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title={"Aftekenen als " + user.name}><Check size={15} /></button>)}
