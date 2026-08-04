@@ -532,7 +532,7 @@ const BASES = [
     mains:[...ROOT.slice(0,10),"venkel","bleekselderij","kardoen","courgette",...BRASSICA.slice(0,4)],
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Zout",amount:"een snuf"}],
     steps:["Stoom de {x} beetgaar in de combi-oven.","Schrik indien nodig.","Breng op smaak."] },
-  { id:"gpuree", baseName:"Tuinpuree", noun:"Puree", generic:"tuingroente", category:"Purees", yield:"≈ 500 g", chefsPick:true, endorsements:["Stef","Kim"], gear:"Thermoblender",
+  { id:"gpuree", baseName:"Groentepuree", noun:"Puree", generic:"tuingroente", category:"Purees", yield:"≈ 500 g", chefsPick:true, endorsements:["Stef","Kim"], gear:"Thermoblender",
     mains:[...ROOT,...BRASSICA,"spinazie",...STALK],
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Boter",amount:"50 g"},{item:"Room of bouillon",amount:"150 g"},{item:"Zout",amount:"naar smaak"}],
     steps:["Gaar de {x} zacht.","Mix in de thermoblender tot zijdezacht.","Breng op smaak en passeer."] },
@@ -755,6 +755,9 @@ const BASES = [
   { id:"coulis", baseName:"Fruitcoulis", noun:"Coulis", generic:"fruit", category:"Gels", yield:"≈ 350 g", mains:FRUIT_ONLY,
     ingredients:[{item:"Puree van {x}",amount:"300 g"},{item:"Poedersuiker",amount:"40 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Mix puree van {x} met suiker en citroen.","Verdun voor een lopende saus.","Passeer en koel."] },
+  { id:"coulis", baseName:"Fruitcoulis", noun:"Coulis", varTemplate:"Coulis van {x}", generic:"fruit", category:"Sauzen & emulsies", yield:"≈ 500 g", mains:FRUIT,
+    ingredients:[{item:"{X}",amount:"500 g"},{item:"Suiker",amount:"60 g"},{item:"Citroensap",amount:"15 g"}],
+    steps:["Kook de {x} kort met de suiker tot het vocht loskomt.","Blender glad met het citroensap.","Zeef fijn en koel terug; breng op smaak met extra suiker of citroen."] },
   { id:"compote", baseName:"Fruitcompote", noun:"Compote", generic:"fruit", category:"Chutney & jam", yield:"≈ 400 g", mains:FRUIT_ONLY,
     ingredients:[{item:"{X} in stukken",amount:"400 g"},{item:"Suiker",amount:"80 g"},{item:"Citroensap",amount:"10 g"}],
     steps:["Wel de {x} met suiker.","Kook zachtjes in tot compote.","Op smaak en koel."] },
@@ -776,7 +779,7 @@ const BASES = [
   { id:"fvinegar2", baseName:"Fruitazijn", varTemplate:"Azijn van {x}", generic:"fruit", category:"Oliën & vinaigrettes", yield:"≈ 300 g", mains:FRUIT,
     ingredients:[{item:"{X}",amount:"150 g"},{item:"Witte-wijnazijn",amount:"300 g"}],
     steps:["Doe de {x} in de azijn.","Laat 2 weken trekken.","Zeef en bottel."] },
-  { id:"chutney", baseName:"Fruitchutney", varTemplate:"Chutney van {x}", generic:"fruit", category:"Chutney & jam", yield:"≈ 3 potten", mains:FRUIT,
+  { id:"chutney", baseName:"Fruitchutney", varTemplate:"Chutney van {x}", generic:"fruit", category:"Chutney & jam", yield:"≈ 3 potten", mains:[...FRUIT,"pruim","reine claude","kweepeer"],
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Ui",amount:"100 g"},{item:"Azijn",amount:"100 g"},{item:"Suiker",amount:"120 g"},{item:"Specerijen",amount:"naar smaak"}],
     steps:["Fruit de ui aan.","Voeg {x}, azijn, suiker en specerijen toe.","Kook in tot chutney; vul heet af."] },
   { id:"vpuree", baseName:"Groentepuree (voorraad)", noun:"Puree", generic:"groente", category:"Purees", yield:"≈ 500 g", gear:"Thermoblender", mains:VEG_ONLY,
@@ -1324,7 +1327,7 @@ const KEUKENMAP = [
   { id:"map-pruimenchutney-ferment", name:"Pruimenchutney met gefermenteerde pruimen", category:"Chutney & jam", yield:"± 2 kg",
     ingredients:[{item:"Appelciderazijn",amount:"475 ml"},{item:"Lichte basterdsuiker",amount:"275 g"},{item:"Rozijnen",amount:"225 g"},{item:"Garam masala",amount:"1 el"},{item:"Gefermenteerde pruimen",amount:"750 g"},{item:"Uien (brunoise)",amount:"3 st"},{item:"Rode pepers (fijne brunoise, zonder zaadlijst)",amount:"4 st"},{item:"Gember, geschild en fijngehakt",amount:"30 g"},{item:"Knoflook, fijngehakt",amount:"4 tenen"}],
     steps:["Doe de azijn, suiker, rozijnen en garam masala in een grote pan.","Verwarm al roerend op laag vuur tot de suiker is opgelost en breng aan de kook.","Voeg de pruimen, ui, pepers, gember, knoflook en zout toe.","Laat 40–50 min zachtjes sudderen tot de chutney dik is; roer regelmatig door."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"chutney-pruim", isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-pulled-oesterzwam", name:"Pulled oesterzwam of eryngii", category:"Tuin · geroosterd", yield:"≈ 500 g",
     ingredients:[{item:"Oesterzwam of eryngii (kingboleet)",amount:"500 g"},{item:"Maïsmeel",amount:"4 tl"},{item:"5-spice",amount:"2 tl"},{item:"Knoflookpoeder",amount:"1 tl"},{item:"Hoisinsaus",amount:"150 g"},{item:"Sesamzaad",amount:"optioneel"}],
     steps:["Pluk de zwammen in mooie reepjes.","Voeg de droge kruiden en het maïsmeel toe en meng goed.","Bak in een pan met een goede laag olie tot bruin en krokant.","Laat uitlekken op een doek.","Meng na het bakken 2 theelepels hoisinsaus erdoor en werk eventueel af met sesamzaad."],
@@ -2243,7 +2246,7 @@ html{font-size:17px}
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [section, setSection] = useState("recepten");
+  const [section, setSection] = useState("home");
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
   const [batches, setBatches] = useState(seedBatches);
@@ -2389,7 +2392,7 @@ export default function App() {
   const back = () => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
   const resetTo = (s) => setStack([s]);
   const goBack = () => { if (stack.length > 1) { try { window.history.back(); } catch (e) { back(); } } };
-  const goHome = () => { resetTo({ screen: "list" }); setSection("recepten"); };
+  const goHome = () => { resetTo({ screen: "list" }); setSection("home"); };
   // Op formulieren geen navigatiebalk: één tik zou anders je invoer weggooien.
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
@@ -2440,6 +2443,7 @@ export default function App() {
     if (parts.length) flash(parts.join(" · "));
   }, [user, loaded, batches, stock, noticeShown]);
   const [stockNoticeClosed, setStockNoticeClosed] = useState(null); // per dag te sluiten
+  const [checkForDate, setCheckForDate] = useState(null); // heropende dag die opnieuw ingevuld wordt
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
@@ -2455,7 +2459,7 @@ export default function App() {
       }
       setRecipes((rs) => rs.map((r) => (r.id === editingId ? merged : r)));
     } else {
-      const rec = { ...stamped, id: "r" + Date.now(), endorsements: [], chefsPick: false, baseId: null, isBase: false,
+      const rec = { ...stamped, id: "r" + Date.now(), endorsements: [], chefsPick: false, baseId: stamped.baseId || null, isBase: false,
         season: stamped.season && stamped.season.length ? stamped.season : ["Hele jaar"], garden: false,
         diet: stamped.diet || "Vegetarisch", ferment: !!stamped.ferment,
         fermentMethod: stamped.ferment ? (stamped.fermentMethod || "Melkzuur") : null,
@@ -2591,8 +2595,8 @@ export default function App() {
     if (!window.confirm("Aftekening van " + (t ? t.name : "deze taak") + " op " + l.doneDate + " verwijderen?")) return;
     removeCleaningLog(id);
   };
-  const signCleaning = async (taskId, quiet) => {
-    const today = localDate();
+  const signCleaning = async (taskId, quiet, forDate) => {
+    const today = forDate || localDate();
     const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: user.name, note: "", edits: [] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: taskId, done_date: today, done_by: user.name, note: "", edits: [] });
@@ -2602,8 +2606,8 @@ export default function App() {
     if (!quiet) flash("Afgetekend door " + user.name, () => removeCleaningLog(row.id, true));
     return row.id;
   };
-  const markDayDone = async () => {
-    const today = localDate();
+  const markDayDone = async (forDate) => {
+    const today = forDate || localDate();
     if (cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === today)) return;
     const row = { id: "dd" + Date.now(), taskId: DAY_DONE_ID, doneDate: today, doneBy: user.name, note: "", edits: [] };
     if (live) {
@@ -2612,7 +2616,8 @@ export default function App() {
     }
     setCleaningLogs((ls) => [row, ...ls]);
     setCheckOpen(false);
-    setCheckDone(today); // popup vandaag niet meer openen
+    setCheckForDate(null);
+    setCheckDone({ key: localDate(), stage: 2 }); // popup vandaag niet meer openen
     flash("Dag afgerond", () => removeCleaningLog(row.id, true));
   };
   const undoDayDone = async () => {
@@ -2632,7 +2637,8 @@ export default function App() {
       if (dbFail(error)) return;
     }
     setCleaningLogs((ls) => [row, ...ls]);
-    if (d === localDate()) { setCheckOpen(false); setCheckDone(d); }
+    if (d === localDate()) { setCheckOpen(false); setCheckDone({ key: d, stage: 2 }); }
+    setCheckOpen(false); setCheckForDate(null);
     flash("Geregistreerd als vrije dag", () => removeCleaningLog(row.id, true));
   };
   // Bij het openen automatisch de gemiste dagen als "vrije dag" vastleggen:
@@ -3020,6 +3026,7 @@ export default function App() {
     let cancelled = false;
     const dayMarked = (l, key) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key;
     const tick = async () => {
+      if (checkOpen || checkForDate) return; // popup staat al open (of heropende dag wordt ingevuld)
       const now = new Date();
       const key = localDate(now);
       const past1 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
@@ -3052,7 +3059,7 @@ export default function App() {
   useEffect(() => {
     if (!checkOpen) return;
     const key = localDate();
-    if (cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key)) setCheckOpen(false);
+    if (!checkForDate && cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key)) setCheckOpen(false);
   }, [cleaningLogs, checkOpen]);
 
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
@@ -3064,7 +3071,7 @@ export default function App() {
     else if (section === "smaak") setNewPairing((n) => n + 1);
     else if (section === "voorraad") push({ screen: "voorraadForm", editing: null, prefill: null });
   };
-  const showFab = current.screen === "list" && canEdit && section !== "technieken" && section !== "schoonmaak";
+  const showFab = current.screen === "list" && canEdit && section !== "technieken" && section !== "schoonmaak" && section !== "home";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -3081,9 +3088,10 @@ export default function App() {
             {canEdit && !dismissedNotices[todayKey] && (
               <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
             )}
+            {section === "home" && <HomeScreen stock={stock} recipes={recipes} batches={batches} dishes={dishes} onOpenRecipe={openRecipe} onOpenDish={(id) => push({ screen: "dishDetail", id })} onGoSection={(sec) => setSection(sec)} />}
             {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
-            {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} search={search} setSearch={setSearch} onOpen={openRecipe} />}
-            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
+            {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} stock={stock} search={search} setSearch={setSearch} onOpen={openRecipe} />}
+            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} stock={stock} canEdit={canEdit} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -3108,7 +3116,7 @@ export default function App() {
               onDeleteRecord={deleteHaccpRecord}
               onNewTask={() => push({ screen: "cleaningForm", editing: null })}
               onEditTask={(id) => push({ screen: "cleaningForm", editing: id })}
-              onDeleteTask={deleteCleaningTask} />}
+              onDeleteTask={deleteCleaningTask}  onReopenOff={(logId, date) => { removeCleaningLog(logId, true); setCheckForDate(date); setCheckOpen(true); }} />}
           </div>
         )}
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
@@ -3149,8 +3157,8 @@ export default function App() {
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
       {checkOpen && canEdit && (
-        <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit}
-          onSign={signCleaning} onDayDone={markDayDone} onDayOff={() => markDayOff()} onClose={() => setCheckOpen(false)}
+        <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit} forDate={checkForDate}
+          onSign={(tid) => signCleaning(tid, false, checkForDate || undefined)} onDayDone={() => markDayDone(checkForDate || undefined)} onDayOff={() => markDayOff(checkForDate || undefined)} onClose={() => { setCheckOpen(false); setCheckForDate(null); }}
           onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
       )}
       {toast && (
@@ -3380,6 +3388,7 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall }) {
 }
 
 const SECTIONS = [
+  { id: "home", label: "Home", icon: <Home size={14} /> },
   { id: "gerechten", label: "Gerechten", icon: <Utensils size={14} /> },
   { id: "recepten", label: "Recepten", icon: <Layers size={14} /> },
   { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={14} /> },
@@ -3450,6 +3459,62 @@ function SearchBar({ value, onChange, placeholder }) {
 }
 
 const DISH_COURSES = ["Amuse", "Borrel", "Lunch", "Voorgerecht", "Tussengerecht", "Hoofdgerecht", "Dessert", "Friandise"];
+// Homepagina: snel overzicht van wat er recent gemaakt is — bedoeld voor
+// kantoor (bv. Instagram-inspiratie), zonder social-knoppen.
+function HomeScreen({ stock, recipes, batches, dishes, onOpenRecipe, onOpenDish, onGoSection }) {
+  const recentStock = [...stock].sort((a, b) => (b.productionDate || "") < (a.productionDate || "") ? -1 : (b.productionDate || "") > (a.productionDate || "") ? 1 : 0).slice(0, 5);
+  const newRecipes = recipes
+    .filter((r) => /^r\d+$/.test(String(r.id)))
+    .sort((a, b) => Number(String(b.id).slice(1)) - Number(String(a.id).slice(1)))
+    .slice(0, 5);
+  const doneBatches = batches.filter((b) => b.done && b.finishedDate).sort((a, b) => (b.finishedDate < a.finishedDate ? -1 : 1)).slice(0, 4);
+  const fmtD = (iso) => { if (!iso) return ""; const [y, m, d] = String(iso).slice(0, 10).split("-"); return d + "-" + m + "-" + y; };
+  const blok = (titel, sectie, leeg, children) => (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="serif ink text-xl leading-tight">{titel}</h2>
+        {sectie && <button onClick={() => onGoSection(sectie)} className="ff text-[13px] font-medium acc hover:opacity-70">alles →</button>}
+      </div>
+      {children && children.length ? <div className="space-y-2">{children}</div> : <div className="text-sm mute">{leeg}</div>}
+    </div>
+  );
+  return (
+    <div className="pt-1">
+      <p className="text-sm mute mb-5">Het laatste uit de keuken van Wilde Wortels — vers gemaakt, nieuw bedacht en net afgerond.</p>
+      {blok("Vers in de voorraad", "voorraad", "Nog niets toegevoegd.", recentStock.map((v) => (
+        <button key={v.id} onClick={() => onGoSection("voorraad")} className="card cardh ff w-full text-left px-4 py-3 flex items-center gap-3">
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Package size={15} /></span>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium ink truncate">{v.product}</div>
+            <div className="text-xs mute truncate">{[v.unit, v.storage, v.by, v.productionDate ? "gemaakt " + fmtD(v.productionDate) : null].filter(Boolean).join(" · ")}</div>
+          </div>
+          <ChevronRight size={16} className="shrink-0" style={{ color: "#c4c2b2" }} />
+        </button>
+      )))}
+      {blok("Nieuwste recepten", "recepten", "Nog geen eigen recepten toegevoegd.", newRecipes.map((r) => (
+        <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left px-4 py-3 flex items-center gap-3">
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}>{r.ferment ? <FlaskConical size={15} /> : <ChefHat size={15} />}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium ink truncate">{r.name}</div>
+            <div className="text-xs mute truncate">{[r.category, r.updatedBy ? "door " + r.updatedBy : null].filter(Boolean).join(" · ")}</div>
+          </div>
+          <ChevronRight size={16} className="shrink-0" style={{ color: "#c4c2b2" }} />
+        </button>
+      )))}
+      {blok("Laatst afgeronde fermentaties", "fermentatie", "Nog geen afgeronde batches.", doneBatches.map((b) => (
+        <button key={b.id} onClick={() => (b.recipeId ? onOpenRecipe(b.recipeId) : onGoSection("fermentatie"))} className="card cardh ff w-full text-left px-4 py-3 flex items-center gap-3">
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><FlaskConical size={15} /></span>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium ink truncate">{b.product}</div>
+            <div className="text-xs mute truncate">{[b.method, "afgerond " + fmtD(b.finishedDate)].filter(Boolean).join(" · ")}</div>
+          </div>
+          <ChevronRight size={16} className="shrink-0" style={{ color: "#c4c2b2" }} />
+        </button>
+      )))}
+    </div>
+  );
+}
+
 const COURSE_FILTERS = ["Alle", ...DISH_COURSES];
 
 function DishList({ dishes, search, setSearch, onOpen }) {
@@ -3464,11 +3529,11 @@ function DishList({ dishes, search, setSearch, onOpen }) {
     : bySeasonThenName(a.season, a.name, b.season, b.name));
   return (
     <div>
-      <SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" />
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
-        {COURSE_FILTERS.map((c) => (
-          <button key={c} onClick={() => setCourseF(c)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (courseF === c ? "pillon" : "pill")}>{c}</button>
-        ))}
+      <div className="flex gap-2 items-start">
+        <div className="flex-1 min-w-0"><SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" /></div>
+        <select value={courseF} onChange={(e) => setCourseF(e.target.value)} className="input px-2.5 py-2.5 text-sm w-36 sm:w-44 shrink-0" title="Filter op gang">
+          {COURSE_FILTERS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
       </div>
       <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
         <span className="mute shrink-0">Sorteer:</span>
@@ -3499,13 +3564,30 @@ function DishList({ dishes, search, setSearch, onOpen }) {
   );
 }
 
-function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
+// Zoeken in recepten: uitsluitend op naam en op ingrediënten.
+function matchRecipe(r, q) {
+  if (!q) return true;
+  return softMatchAny([r.name, (r.ingredients || []).map((i) => i.item).join(" ")], q);
+}
+
+function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
   const [sortMode, setSortMode] = useState("seizoen");
   const [seasonF, setSeasonF] = useState("Alle");
+  const [catF, setCatF] = useState("Alle");
   const [limit, setLimit] = useState(60);
   const q = search.trim().toLowerCase();
   const oc = openCounts || {};
-  let shown = recipes.filter((r) => softMatchAny([r.name, r.category, r.baseName], q));
+  // hoeveel keer in de voorraad gemaakt (voor de volgorde van variaties in de banner)
+  const madeCount = {};
+  (stock || []).forEach((v) => { if (v.recipeId) madeCount[v.recipeId] = (madeCount[v.recipeId] || 0) + 1; });
+  const varsOf = (id) => recipes.filter((r) => r.baseId === id).sort((a, b) => (madeCount[b.id] || 0) - (madeCount[a.id] || 0) || a.name.localeCompare(b.name, "nl"));
+  // Variaties staan niet los in de lijst, maar zijn wél via de zoekbalk te vinden.
+  let shown = q
+    ? recipes.filter((r) => matchRecipe(r, q))
+    : recipes.filter((r) => !r.baseId);
+  const cats = ["Alle", "Basisrecepten", ...[...new Set(recipes.map((r) => r.category))].sort((a, b) => a.localeCompare(b, "nl"))];
+  if (catF === "Basisrecepten") shown = shown.filter((r) => r.isBase || varsOf(r.id).length > 0);
+  else if (catF !== "Alle") shown = shown.filter((r) => r.category === catF);
   if (seasonF !== "Alle") shown = shown.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   const pop = (r) => (oc[r.id] || 0) + (r.endorsements.length * 3);
   const sorted = [...shown].sort((a, b) => {
@@ -3521,7 +3603,12 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
   const visible = sorted.slice(0, limit);
   return (
     <div>
-      <SearchBar value={search} onChange={(v) => { setSearch(v); setLimit(60); }} placeholder="Zoek recept of basis (bv. puree, biet)" />
+      <div className="flex gap-2 items-start">
+        <div className="flex-1 min-w-0"><SearchBar value={search} onChange={(v) => { setSearch(v); setLimit(60); }} placeholder="Zoek op naam of ingrediënt (bv. citroen)" /></div>
+        <select value={catF} onChange={(e) => { setCatF(e.target.value); setLimit(60); }} className="input px-2.5 py-2.5 text-sm w-36 sm:w-44 shrink-0" title="Filter op categorie">
+          {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {["Alle", ...SEASONS].map((s) => (
           <button key={s} onClick={() => { setSeasonF(s); setLimit(60); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
@@ -3545,6 +3632,12 @@ function RecipeList({ recipes, openCounts, search, setSearch, onOpen }) {
                 {r.ferment && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
+              {(() => { const vs = varsOf(r.id); if (!vs.length) return null; const top = vs.slice(0, 4); return (
+                <div className="text-[12.5px] mt-1 leading-snug" style={{ color: "#5d6a52" }}>
+                  <GitBranch size={11} className="inline mr-1 align-[-1px]" />
+                  {top.map((v) => v.name).join(" · ")}{vs.length > top.length && <span className="mute"> +{vs.length - top.length}</span>}
+                </div>
+              ); })()}
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[12.5px]">
                 {r.garden && <span className="inline-flex items-center gap-1 acc"><Sprout size={12} /> tuin</span>}
                 {r.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
@@ -3570,7 +3663,7 @@ function MeatPill({ diet }) { return <span className="inline-flex items-center r
 
 const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
 
-function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch, onAck }) {
+function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch, onAck }) {
   const [limit, setLimit] = useState(30);
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
@@ -3586,9 +3679,12 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   const showActive = openActive && !searching;
   const active = batches.filter((b) => !b.done);
   const done = batches.filter((b) => b.done);
-  let fermentRecipes = recipes.filter((r) => r.ferment);
+  const madeCount = {};
+  (stock || []).forEach((v) => { if (v.recipeId) madeCount[v.recipeId] = (madeCount[v.recipeId] || 0) + 1; });
+  const varsOf = (id) => recipes.filter((r) => r.baseId === id && r.ferment).sort((a, b) => (madeCount[b.id] || 0) - (madeCount[a.id] || 0) || a.name.localeCompare(b.name, "nl"));
   const query = q.trim().toLowerCase();
-  if (query) fermentRecipes = fermentRecipes.filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], query));
+  // Zonder zoekterm: variaties niet los tonen; met zoekterm: zoek op naam en ingrediënten.
+  let fermentRecipes = recipes.filter((r) => r.ferment && (query ? matchRecipe(r, query) : !r.baseId));
   if (seasonF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
   fermentRecipes = fermentRecipes.sort((a, b) => {
@@ -3599,7 +3695,12 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
   });
   return (
     <div>
-      <SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek een fermentatierecept" />
+      <div className="flex gap-2 items-start">
+        <div className="flex-1 min-w-0"><SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek op naam of ingrediënt" /></div>
+        <select value={methodF} onChange={(e) => { setMethodF(e.target.value); setLimit(30); }} className="input px-2.5 py-2.5 text-sm w-36 sm:w-44 shrink-0" title="Filter op fermentatiesoort">
+          {["Alle", ...FERMENT_METHODS].map((m) => <option key={m} value={m}>{m === "Alle" ? "Alle methodes" : m}</option>)}
+        </select>
+      </div>
       <div className="flex items-center justify-between mb-2">
         <button onClick={() => { setTouchedActive(true); setOpenActive((o) => !o); }} className="ff inline-flex items-center gap-1" disabled={searching}>
           {!searching && (openActive ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
@@ -3625,11 +3726,7 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
           <button key={s} onClick={() => { setSeasonF(s); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (seasonF === s ? "pillon" : "pill")}>{s}</button>
         ))}
       </div>
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
-        {["Alle", ...FERMENT_METHODS].map((m) => (
-          <button key={m} onClick={() => { setMethodF(m); setLimit(30); }} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (methodF === m ? "pillon" : "pill")}>{m === "Alle" ? "Alle methodes" : m}</button>
-        ))}
-      </div>
+
       <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
         <span className="mute shrink-0">Sorteer:</span>
         <button onClick={() => setFSort("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
@@ -3647,6 +3744,12 @@ function FermentList({ batches, recipes, canEdit, onToggleDone, onDeleteBatch, o
                 {r.fermentMethod && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> {r.fermentMethod}</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
+              {(() => { const vs = varsOf(r.id); if (!vs.length) return null; const top = vs.slice(0, 4); return (
+                <div className="text-[12.5px] mt-1 leading-snug" style={{ color: "#5d6a52" }}>
+                  <GitBranch size={11} className="inline mr-1 align-[-1px]" />
+                  {top.map((v) => v.name).join(" · ")}{vs.length > top.length && <span className="mute"> +{vs.length - top.length}</span>}
+                </div>
+              ); })()}
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[12.5px]">
                 {r.season.filter((sx) => sx !== "Hele jaar").map((sx) => <SeasonPill key={sx} s={sx} />)}
                 {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
@@ -4641,12 +4744,13 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   );
 }
 
-function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, dayDone, dayOff, onDayDone, onUndoDayDone, onDayOff, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp, onOpenRecord, onEditRecord, onDeleteRecord }) {
+function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, dayDone, dayOff, onDayDone, onUndoDayDone, onDayOff, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp, onOpenRecord, onEditRecord, onDeleteRecord , onReopenOff }) {
   const [q, setQ] = useState("");
   const [areaF, setAreaF] = useState("Alle");
   const [openAll, setOpenAll] = useState(false);
   const [haccpOpen, setHaccpOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false); // weeklogboek standaard ingeklapt
+  const [openDay, setOpenDay] = useState(null); // dagen in het weeklogboek: standaard dicht
   const [weekOffset, setWeekOffset] = useState(0);
   const [noteFor, setNoteFor] = useState(null);
   const [noteText, setNoteText] = useState("");
@@ -4832,14 +4936,14 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
         : <div className="space-y-3">
             {weekDays.map((day) => (
               <div key={day.date}>
-                <div className="flex items-baseline justify-between mb-1">
-                  <span className="text-[13px] font-semibold ink">{day.label}</span>
+                <button onClick={() => setOpenDay(openDay === day.date ? null : day.date)} className="ff w-full flex items-baseline justify-between mb-1">
+                  <span className="inline-flex items-center gap-1 text-[13px] font-semibold ink">{openDay === day.date ? <ChevronUp size={13} className="acc" /> : <ChevronDown size={13} className="acc" />} {day.label}</span>
                   <span className="text-[11.5px] mute">{day.off ? "vrije dag" : day.items.length + (day.items.length === 1 ? " taak" : " taken") + " · " + day.who}</span>
-                </div>
-                {day.off
+                </button>
+                {openDay === day.date && (day.off
                   ? <div className="card px-3 py-2 flex items-center gap-2 text-[13px]" style={{ color: "#6a6550" }}>
                       <Calendar size={14} className="shrink-0" /> <span className="flex-1">Bedrijf dicht</span>
-                      {canEdit && <button onClick={() => onDeleteLog(day.off.id)} className="ff shrink-0 text-[12.5px] font-medium underline acc" title="Vrije dag heropenen — de dag telt daarna weer gewoon mee">Heropenen</button>}
+                      {canEdit && <button onClick={() => onReopenOff(day.off.id, day.date)} className="ff shrink-0 text-[12.5px] font-medium underline acc" title="Vrije dag heropenen en direct invullen">Heropenen</button>}
                     </div>
                   : <div className="card overflow-hidden divide-y" style={{ borderColor: T.line }}>
                       {day.items.map((l) => (
@@ -4866,7 +4970,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
                           )}
                         </div>
                       ))}
-                    </div>}
+                    </div>)}
               </div>
             ))}
           </div>}
@@ -5226,19 +5330,20 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
 }
 
 // Dagelijkse controle om 16:45
-function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onDayOff, onClose, onOpenSection }) {
+function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDayDone, onDayOff, onClose, onOpenSection }) {
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
-  const open = withStatus.filter((x) => x.st.due);
-  const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === localDate());
+  const open = forDate ? [] : withStatus.filter((x) => x.st.due);
+  const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === (forDate || localDate()));
   // Uitklapbaar: alle taken per ruimte, om ook buiten het interval af te tekenen.
-  const [showAll, setShowAll] = useState(false);
+  // Bij het invullen van een heropende dag staat de volledige lijst direct open.
+  const [showAll, setShowAll] = useState(!!forDate);
   const areas = [...new Set(withStatus.map((x) => x.t.area))].sort((a, b) => a.localeCompare(b, "nl"));
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="serif ink text-xl leading-tight">Schoonmaakcontrole</div>
+            <div className="serif ink text-xl leading-tight">{forDate ? "Invullen voor " + forDate : "Schoonmaakcontrole"}</div>
             <div className="text-xs mute mt-0.5">Het is {String(CHECK_HOUR).padStart(2, "0")}:{String(CHECK_MIN).padStart(2, "0")} — tijd om af te tekenen.</div>
           </div>
           <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
@@ -5248,7 +5353,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, onSign, onDayDone, onD
           <button onClick={onDayOff} className="btno ff shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl text-sm font-medium px-3 py-3"><Calendar size={15} /> Vrije dag</button>
         </div>
         <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
-          Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span>
+          {forDate ? <>Deze dag was gemarkeerd als vrije dag. Teken hieronder de gedane taken af, of rond de dag af.</> : <>Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span></>}
         </div>
         {open.length === 0
           ? <div className="mt-3 rounded-xl p-3.5 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is afgetekend. Mooi werk.</div>
@@ -5379,6 +5484,68 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       </div>
 
       {baseRecipe && <button onClick={() => onOpenRecipe(baseRecipe.id)} className="ff mt-3 inline-flex items-center gap-1.5 text-sm acc hover:opacity-70"><GitBranch size={14} /> Variatie op {recipe.baseName || baseRecipe.name} — bekijk de basis</button>}
+
+      {variations.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[12px] font-semibold uppercase tracking-widest acc mb-1.5 inline-flex items-center gap-1"><GitBranch size={12} /> Variaties ({variations.length})</div>
+          <div className="flex flex-wrap gap-1.5">
+            {variations.map((v) => (
+              <button key={v.id} onClick={() => onOpenRecipe(v.id)} className="ff pill rounded-full px-3 py-1.5 text-[13px] font-medium hover:opacity-80">{v.name}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {critical.length > 0 && (
+        <div className="mt-4 rounded-xl p-3.5 text-sm" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+          <div className="font-semibold flex items-center gap-1.5 mb-1"><Info size={14} /> Let op de kritische waarden</div>
+          <ul className="list-disc list-inside space-y-0.5">{critical.map((c, i) => (
+            <li key={i}>{c.text}{c.tech && <> <button onClick={() => onOpenTech(c.tech)} className="ff underline font-medium hover:opacity-70" style={{ color: "#6a5326" }}>{c.techLabel}</button></>}</li>
+          ))}</ul>
+        </div>
+      )}
+
+      {canEdit && (
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
+          {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
+        </div>
+      )}
+      <div className="text-xs mute mt-2.5">Gebruikt in {usageCount} {usageCount === 1 ? "gerecht" : "gerechten"}{typeof openCount === "number" && openCount > 0 && <> · {openCount}× geopend</>}{recipe.endorsements.length > 0 && <> · geliket door {recipe.endorsements.join(", ")}</>}</div>
+      <EditMeta by={recipe.updatedBy} at={recipe.updatedAt} />
+
+      <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
+        <span className="text-[11px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setFactor((f) => Math.max(0.0625, Math.round(f * 50) / 100))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Halveren">×½</button>
+          <button onClick={() => setFactor((f) => Math.min(64, f * 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Verdubbelen">×2</button>
+          <span className="pillon rounded-md px-2.5 h-8 flex items-center text-xs font-semibold">×{fmt(factor)}</span>
+          {factor !== 1 && <button onClick={() => setFactor(1)} className="ff mute text-xs underline">reset</button>}
+        </div>
+        {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
+      </div>
+      <div className="card overflow-hidden">
+        {recipe.ingredients.map((ing, i) => (
+          <div key={i} className={"flex items-center justify-between px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}><span style={{ color: "#3b3d33" }}>{ing.item}</span><span className={"font-medium " + (factor !== 1 ? "acc" : "mute")}>{scaleAmount(ing.amount, factor)}</span></div>
+        ))}
+      </div>
+
+      {recipe.fermentDefaults && (
+        <div className="mt-4 tintbox rounded-xl p-4 text-sm" style={{ color: "#3f5238" }}>
+          <div className="font-semibold flex items-center gap-1.5 mb-1"><FlaskConical size={14} /> Fermentatie-richtlijn</div>
+          {[recipe.fermentDefaults.saltPct ? "Zout " + String(recipe.fermentDefaults.saltPct).replace(".", ",") + "%" : null,
+             recipe.fermentDefaults.sugarPct ? "Suiker " + String(recipe.fermentDefaults.sugarPct).replace(".", ",") + "%" : null,
+             recipe.fermentDefaults.tempC ? "±" + recipe.fermentDefaults.tempC + "°C" : null,
+             recipe.fermentDefaults.days ? "±" + recipe.fermentDefaults.days + " dagen" : null,
+             recipe.fermentDefaults.phTarget != null ? "streef-pH " + String(recipe.fermentDefaults.phTarget).replace(".", ",") : null].filter(Boolean).join(" · ")}.
+          {recipe.fermentMethod && FERMENT_TARGETS[recipe.fermentMethod] && <> {FERMENT_TARGETS[recipe.fermentMethod].note}</>}
+        </div>
+      )}
+
+      <SectionTitle>Bereiding</SectionTitle>
+      <ol className="space-y-2.5">
+        {recipe.steps.map((s, i) => (<li key={i} className="flex gap-3"><span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-0.5" style={{ background: T.green, color: T.paper }}>{i + 1}</span><span className="leading-relaxed" style={{ color: "#3b3d33" }}>{s}</span></li>))}
+      </ol>
     </div>
   );
 }
