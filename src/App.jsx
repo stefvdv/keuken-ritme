@@ -3541,7 +3541,7 @@ function DishList({ dishes, search, setSearch, onOpen }) {
     <div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" /></div>
-        <select value={courseF} onChange={(e) => setCourseF(e.target.value)} className="input px-2.5 py-2.5 text-sm" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op gang">
+        <select value={courseF} onChange={(e) => setCourseF(e.target.value)} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op gang">
           {COURSE_FILTERS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
@@ -3615,7 +3615,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
     <div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={search} onChange={(v) => { setSearch(v); setLimit(60); }} placeholder="Zoek op naam of ingrediënt (bv. citroen)" /></div>
-        <select value={catF} onChange={(e) => { setCatF(e.target.value); setLimit(60); }} className="input px-2.5 py-2.5 text-sm" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op categorie">
+        <select value={catF} onChange={(e) => { setCatF(e.target.value); setLimit(60); }} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op categorie">
           {cats.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
@@ -3687,8 +3687,16 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
   const [openDone, setOpenDone] = useState(false);
   const searching = q.trim().length > 0;
   const showActive = openActive && !searching;
-  const active = batches.filter((b) => !b.done);
-  const done = batches.filter((b) => b.done);
+  // Actief: wat het eerst klaar is bovenaan; afgerond: meest recent eerst.
+  const endTs = (b) => {
+    const t = new Date(String(b.startDate || "").slice(0, 10) + "T12:00:00").getTime();
+    return isNaN(t) ? Infinity : t + (Number(b.days) || 0) * 86400000;
+  };
+  const active = batches.filter((b) => !b.done).sort((a, b) => endTs(a) - endTs(b));
+  const done = batches.filter((b) => b.done).sort((a, b) => {
+    const fa = String(a.finishedDate || ""), fb = String(b.finishedDate || "");
+    return fa < fb ? 1 : fa > fb ? -1 : 0;
+  });
   const madeCount = {};
   (stock || []).forEach((v) => { if (v.recipeId) madeCount[v.recipeId] = (madeCount[v.recipeId] || 0) + 1; });
   const varsOf = (id) => recipes.filter((r) => r.baseId === id && r.ferment).sort((a, b) => (madeCount[b.id] || 0) - (madeCount[a.id] || 0) || a.name.localeCompare(b.name, "nl"));
@@ -3707,7 +3715,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
     <div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek op naam of ingrediënt" /></div>
-        <select value={methodF} onChange={(e) => { setMethodF(e.target.value); setLimit(30); }} className="input px-2.5 py-2.5 text-sm" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op fermentatiesoort">
+        <select value={methodF} onChange={(e) => { setMethodF(e.target.value); setLimit(30); }} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op fermentatiesoort">
           {["Alle", ...FERMENT_METHODS].map((m) => <option key={m} value={m}>{m === "Alle" ? "Alle methodes" : m}</option>)}
         </select>
       </div>
@@ -4428,6 +4436,8 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   // Referentie voor het meeschalen: opbrengst + originele hoeveelheden van het recept.
   const [refYield, setRefYield] = useState(prefill && prefill.yieldAmount ? Number(prefill.yieldAmount) : null);
   const [refIngs, setRefIngs] = useState(prefill && prefill.ingredients && prefill.ingredients.length ? prefill.ingredients.map((i) => ({ ...i })) : null);
+  const parseNum = (t) => { const m = String(t ?? "").match(/\d+(?:[.,]\d+)?/); return m ? Number(m[0].replace(",", ".")) : null; };
+  const [refUnitNum, setRefUnitNum] = useState(parseNum((prefill && (prefill.unit || prefill.yieldUnit)) || null));
   const setIng = (i, veld, w) => setIngs((xs) => xs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const addIng = () => setIngs((xs) => [...xs, { item: "", amount: "" }]);
   const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
@@ -4448,19 +4458,24 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     // Opbrengst van het recept → aantal + eenheid (handmatig aan te passen).
     if (r.yieldAmount) { setQty(String(r.yieldAmount)); setRefYield(Number(r.yieldAmount)); } else { setRefYield(null); }
     if (r.yieldUnit) setUnit(r.yieldUnit);
+    setRefUnitNum(parseNum(r.yieldUnit));
     setRefIngs(r.ingredients && r.ingredients.length ? r.ingredients.map((i) => ({ ...i })) : null);
     setPick("");
   };
   // Wijkt het ingevulde aantal af van de receptopbrengst, dan schalen de
   // ingrediëntenhoeveelheden automatisch mee.
+  // De totale hoeveelheid bepaalt de factor: aantal x (getal in de eenheid).
+  // 1x "8 L" -> 1x "16 L" verdubbelt dus, net als 20 potten -> 30 potten.
   useEffect(() => {
-    if (!refYield || !refIngs) return;
+    if (!refIngs) return;
     const q1 = Number(String(qty ?? "").replace(",", "."));
-    if (!q1 || isNaN(q1) || q1 <= 0) return;
-    const f = q1 / refYield;
+    const qtyRatio = refYield && q1 > 0 && !isNaN(q1) ? q1 / refYield : 1;
+    const un = parseNum(unit);
+    const unitRatio = un && refUnitNum ? un / refUnitNum : 1;
+    const f = qtyRatio * unitRatio;
     if (!isFinite(f) || f <= 0) return;
     setIngs(refIngs.map((i) => ({ item: i.item, amount: Math.abs(f - 1) < 1e-9 ? i.amount : scaleAmount(i.amount, f) })));
-  }, [qty, refYield, refIngs]);
+  }, [qty, unit, refYield, refUnitNum, refIngs]);
   const pickMatches = pick.trim() ? (allRecipes || []).filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], pick)).slice(0, 8) : [];
   const nm = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
   const submit = () => {
