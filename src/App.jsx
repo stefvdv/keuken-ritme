@@ -350,6 +350,8 @@ const CLEANING_SEED = [
   { id:"o-vloer", name:"Vloer vegen", area:"Opslag", intervalDays:30, minutes:20 },
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
+const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
+const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 // Extra HACCP-registraties (elk een eigen wekelijkse schoonmaaktaak).
 const HACCP_KIND_TASK = {
@@ -939,11 +941,11 @@ const PATISSERIE = [
   { id:"pat-vruchtenbavarois", name:"Vruchtenbavarois", category:"Mousses", yield:"1 bak",
     ingredients:[{item:"Vruchtencoulis",amount:"338 g"},{item:"Monin",amount:"100 g"},{item:"Eiwit",amount:"225 g"},{item:"Slagroom",amount:"675 g"},{item:"Suiker",amount:"150 g"},{item:"Gelatine",amount:"22 g"}],
     steps:["Verwarm de coulis met de monin en los de gelatine erin op.","Sla de slagroom met 75 g suiker lobbig.","Sla het eiwit met 75 g suiker op.","Meng het eiwit met de coulis.","Meng de rest erdoor."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-wittechoco-yoghurtganache", name:"Witte choco-yoghurtganache", category:"Zoet & patisserie", yield:"≈ 485 g",
     ingredients:[{item:"Yoghurt",amount:"185 g"},{item:"Witte chocolade",amount:"300 g"}],
     steps:["Verwarm samen au bain-marie tot 35 °C.","Koel terug."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-ganache-choco-koffie", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-amarene-kersengelei", name:"Amarene-kersengelei", category:"Gels", yield:"1 blik",
     ingredients:[{item:"Amarene kersen",amount:"1 blik"},{item:"Water",amount:"100 g"},{item:"Agar",amount:"3 g"},{item:"Gellan",amount:"2 g"}],
     steps:["Pureer het blik en zeef met het water.","Kook de agar en gellan mee."],
@@ -967,7 +969,7 @@ const PATISSERIE = [
   { id:"pat-ganache-choco-koffie", name:"Ganache van pure chocolade en koffie", category:"Zoet & patisserie", yield:"≈ 390 g",
     ingredients:[{item:"Slagroom, ongezoet",amount:"170 g"},{item:"Water",amount:"20 g"},{item:"Espresso",amount:"20 g"},{item:"Pure chocolade",amount:"180 g"}],
     steps:["Verwarm slagroom, water en koffie (niet koken).","Roer de chocolade erdoor en laat afkoelen."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-romanoffsaus", name:"Romanoffsaus", category:"Sauzen & emulsies", yield:"≈ 2,5 l",
     ingredients:[{item:"Aardbeiencoulis",amount:"750 g"},{item:"Slagroom, ongezoet",amount:"1,5 l"},{item:"Poedersuiker",amount:"100 g"},{item:"Crème de cassis",amount:"2 dl"},{item:"Likeur",amount:"1 dl"}],
     steps:["Sla de slagroom lobbig met de poedersuiker.","Spatel de rest erdoor."],
@@ -979,7 +981,7 @@ const PATISSERIE = [
   { id:"pat-mango-bavarois", name:"Mango-bavarois", category:"Mousses", yield:"1 bak",
     ingredients:[{item:"Mangocoulis",amount:"500 g"},{item:"Gelatine",amount:"14 g"},{item:"Kookschuim (70 eiwit / 130 suiker / 30 water)",amount:"200 g"},{item:"Slagroom, ongezoet",amount:"4 dl"}],
     steps:["Verwarm 100 g coulis en los de gelatine erin op; voeg de rest van de coulis toe.","Klop de slagroom lobbig.","Meng de coulis met het kookschuim.","Spatel de slagroom erdoor en stort."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-vruchtenbavarois", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-trekdropparels", name:"Trekdropparels", category:"Gels", yield:"1 pot",
     ingredients:[{item:"Water",amount:"500 g"},{item:"Trekdrop",amount:"300 g"},{item:"Agar",amount:"8 g"},{item:"Zonnebloemolie",amount:"5 dl"}],
     steps:["Zet de olie in de vriezer.","Gaar water en trekdrop sous-vide.","Voeg de agar toe en laat koken.","Koel terug tot 45 °C.","Doe in een spuitflesje en druppel in de olie.","Zeef de olie en spoel de parels af met water."],
@@ -1007,7 +1009,7 @@ const PATISSERIE = [
   { id:"pat-kletskop", name:"Kletskoppen", category:"Zoet & patisserie", yield:"1 plaat",
     ingredients:[{item:"Boter",amount:"175 g"},{item:"Witte wijn",amount:"150 g"},{item:"Witte basterdsuiker",amount:"400 g"},{item:"Bloem",amount:"190 g"}],
     steps:["Meng de zachte boter met de wijn en de suiker in de Magimix; bloem erbij.","Bak 8 min op 180 °C."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-vruchtenmousse", name:"Vruchtenmousse", category:"Mousses", yield:"grote batch",
     ingredients:[{item:"Vruchtencoulis",amount:"2 l"},{item:"Room, ongezoet",amount:"2 l"},{item:"Suiker",amount:"480 g"},{item:"Eidooier",amount:"640 g"},{item:"Gelatine",amount:"24 g"}],
     steps:["Kook de coulis in tot 1,2 l.","Los de gelatine op in de coulis.","Verwarm de eidooiers au bain-marie met de suiker tot deze is opgelost en klop stijf.","Sla de room lobbig.","Meng de eidooiers (mits koud) met de coulis en voeg de room toe."],
@@ -1023,11 +1025,11 @@ const PATISSERIE = [
   { id:"pat-vruchten-pannacotta", name:"Vruchtenpannacotta", category:"Zoet & patisserie", yield:"1 bak",
     ingredients:[{item:"Room, ongezoet",amount:"500 g"},{item:"Suiker",amount:"100 g"},{item:"Vruchtencoulis",amount:"400 g"},{item:"Gelatine",amount:"8 blaadjes"}],
     steps:["Kook alles, los de gelatine erdoor, zeef en stort."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-granite-port-roodfruit", name:"Granité van rode port en roodfruit", category:"Sorbet & ijs", yield:"1 bak",
     ingredients:[{item:"Rode wijn",amount:"250 ml"},{item:"Suiker",amount:"150 g"},{item:"Frambozen",amount:"250 g"},{item:"Aardbeien",amount:"250 g"},{item:"Rode port",amount:"250 ml"}],
     steps:["Los de suiker op in de wijn en pureer alles in de blender.","Vries weg en roer elke 30 min met de garde erdoor."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-frambozentoffee", name:"Frambozentoffee", category:"Zoet & patisserie", yield:"≈ 900 g",
     ingredients:[{item:"Frambozencoulis",amount:"300 g"},{item:"Koksroom",amount:"300 g"},{item:"Suiker",amount:"250 g"},{item:"Honing",amount:"75 g"},{item:"Limoensap",amount:"25 g"}],
     steps:["Kook alles en laat opstijven."],
@@ -1039,7 +1041,7 @@ const PATISSERIE = [
   { id:"pat-drambuiecreme", name:"Drambuie-crème", category:"Zoet & patisserie", yield:"≈ 600 g",
     ingredients:[{item:"Drambuie",amount:"115 g"},{item:"Slagroom, ongezoet",amount:"2 dl"},{item:"Witte chocolade",amount:"300 g"}],
     steps:["Kook de Drambuie met de slagroom.","Roer de chocolade erdoor en roer glad; laat opstijven."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-ganache-choco-koffie", isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-chocolademousse", name:"Chocolademousse (wit)", category:"Mousses", yield:"grote batch",
     ingredients:[{item:"Witte chocolade (of 500 g puur)",amount:"550 g"},{item:"Water",amount:"1 dl"},{item:"Glucose",amount:"230 g"},{item:"Room, ongezoet",amount:"0,9 l"},{item:"Eiwit",amount:"100 g"},{item:"Suiker",amount:"90 g"}],
     steps:["Breng glucose en water aan de kook en roer glad met de chocolade.","Sla de room lobbig en het eiwit met de suiker stijf.","Meng de chocolade met het eiwit (eerst familie maken!) en spatel ten slotte de room erdoor."],
@@ -1047,15 +1049,15 @@ const PATISSERIE = [
   { id:"pat-chocolade-pannacotta", name:"Chocoladepannacotta", category:"Zoet & patisserie", yield:"1 bak",
     ingredients:[{item:"Gelatine",amount:"8 g"},{item:"Room",amount:"450 g"},{item:"Suiker",amount:"85 g"},{item:"Pure couverture",amount:"80 g"}],
     steps:["Kook de room met de suiker.","Los de gelatine op, daarna de chocolade."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-vruchten-pannacotta", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-granite-port-tijm", name:"Granité van rode port met tijm", category:"Sorbet & ijs", yield:"1 bak",
     ingredients:[{item:"Rode wijn",amount:"250 ml"},{item:"Rode port",amount:"250 ml"},{item:"Tijm",amount:"2 takjes"},{item:"Framboos (diepvries)",amount:"250 g"},{item:"Aardbei (diepvries)",amount:"250 g"}],
     steps:["Kook wijn, port en tijm 10 min en zeef.","Voeg het fruit toe en pureer.","Vries weg als granité."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-granite-port-roodfruit", isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-koffie-choco-ganache", name:"Koffie-chocoganache", category:"Zoet & patisserie", yield:"≈ 370 g",
     ingredients:[{item:"Slagroom",amount:"170 ml"},{item:"Espresso",amount:"20 ml"},{item:"Pure couverture",amount:"180 g"}],
     steps:["Verwarm de room met de espresso.","Los de chocolade erin op."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-ganache-choco-koffie", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-ananassnoepjes", name:"Ananassnoepjes (pâte de fruit)", category:"Zoet & patisserie", yield:"1 slede",
     ingredients:[{item:"Ananassap",amount:"1000 g"},{item:"Suiker",amount:"1000 g"},{item:"Glucose",amount:"150 g"},{item:"Suiker (voor de pectine)",amount:"100 g"},{item:"Pectine",amount:"30 g"},{item:"Citroenzuur",amount:"20 g"}],
     steps:["Kook sap, suiker en glucose.","Voeg de pectine met 100 g suiker roerend toe en kook tot 107 °C.","Voeg het zuur toe en stort in een slede (afdekken met plastic)."],
@@ -1095,7 +1097,7 @@ const PATISSERIE = [
   { id:"pat-meloenganache", name:"Meloenganache", category:"Zoet & patisserie", yield:"≈ 500 g",
     ingredients:[{item:"Witte chocolade",amount:"300 g"},{item:"Room, ongezoet",amount:"1 dl"},{item:"Suiker",amount:"50 g"},{item:"Meloensap",amount:"50 g"}],
     steps:["Verwarm room, suiker en sap.","Voeg de chocolade toe en roer glad; laat opstijven."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-ganache-choco-koffie", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-watermeloen-wodkaparels", name:"Parels van watermeloen en wodka", category:"Fruit & garnituur", yield:"1 bak",
     ingredients:[{item:"Rijpe meloen",amount:"1 st"},{item:"Suikerwater 1:1",amount:"500 g"},{item:"Wodka",amount:"2 dl"}],
     steps:["Boor balletjes uit de meloen.","Trek vacuüm met de wodka en het suikerwater.","Vries in."],
@@ -1103,11 +1105,11 @@ const PATISSERIE = [
   { id:"pat-lychee-cremeux", name:"Lychee-cremeux", category:"Zoet & patisserie", yield:"≈ 1,2 kg",
     ingredients:[{item:"Lycheecoulis",amount:"600 g"},{item:"Citroensap",amount:"30 g"},{item:"Water",amount:"30 g"},{item:"Suiker",amount:"220 g"},{item:"Dooier",amount:"220 g"},{item:"Gelatine",amount:"10 blaadjes"},{item:"Boter",amount:"170 g"}],
     steps:["Verwarm coulis, sap, water, suiker en dooier.","Week de gelatine en los erin op.","Monteer met de boter."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-vanille-cremeux", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-vanille-cremeux", name:"Vanille-cremeux (crème brûlée)", category:"Zoet & patisserie", yield:"≈ 1,3 kg",
     ingredients:[{item:"Slagroom",amount:"875 g"},{item:"Honing",amount:"35 g"},{item:"Suiker",amount:"160 g"},{item:"Vanillesuiker",amount:"50 g"},{item:"Dooier",amount:"210 g"},{item:"Gelatine",amount:"5 blaadjes"}],
     steps:["Verwarm alles en los de gelatine erin op."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-citroentaartjes", name:"Citroentaartjes", category:"Zoet & patisserie", yield:"± 12 st",
     ingredients:[{item:"Bodem hardewenerdeeg",amount:"15 min 160 °C"},{item:"Citroensap/coulis",amount:"300 g"},{item:"Suiker",amount:"350 g"},{item:"Eieren",amount:"6 st"},{item:"Dooier",amount:"9 st"},{item:"Boter",amount:"300 g"}],
     steps:["Bak de bodems van hardewenerdeeg 15 min op 160 °C.","Verwarm sap, suiker, ei en dooiers au bain-marie tot lichte binding.","Voeg 150 g boter toe en verwarm verder tot hangend; voeg de rest van de boter toe.","Vul en bak af: 15 min op 120 °C."],
@@ -1138,7 +1140,7 @@ const KEUKENMAP = [
   { id:"map-limoenmayo", name:"Limoenmayo", category:"Sauzen & emulsies", yield:"≈ 1 l",
     ingredients:[{item:"Limoen",amount:"1 st"},{item:"Eidooier",amount:"100 g"},{item:"Azijn",amount:"25 g"},{item:"Limoensap",amount:"5 g"},{item:"Mosterd",amount:"10 g"},{item:"Olie",amount:"8 dl"}],
     steps:["Rasp de limoen fijn.","Draai alles behalve de olie glad in de Magimix.","Voeg de olie langzaam toe tot de gewenste dikte."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-rouleau-makreel", name:"Rouleau van gerookte makreel", category:"Vis", yield:"1 rol",
     ingredients:[{item:"Gerookte makreelfilets",amount:"2 st"},{item:"Jus de veau",amount:"0,5 dl"}],
     steps:["Maak de filets schoon.","Draai los met de vlinder in de KitchenAid.","Voeg de jus de veau langzaam toe (vloeibaar maar niet heet).","Rol op en laat opstijven."],
@@ -1170,7 +1172,7 @@ const KEUKENMAP = [
   { id:"map-knolselderijmayo", name:"Knolselderijmayo", category:"Sauzen & emulsies", yield:"≈ 500 g",
     ingredients:[{item:"Knolselderij",amount:"200 g"},{item:"Koksroom",amount:"2 dl"},{item:"Mayonaise",amount:"100 g"}],
     steps:["Snijd de knolselderij in kleine stukjes en gaar in de room.","Draai alles in de Magimix en zeef.","Meng met de mayonaise."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-rillette-heek", name:"Rillette van heek", category:"Vis", yield:"≈ 700 g",
     ingredients:[{item:"Heek",amount:"500 g"},{item:"Knoflook",amount:"1 teen"},{item:"Sjalotten",amount:"2 st"},{item:"Witte wijn",amount:"1 dl"},{item:"Olijfolie",amount:"2 dl"}],
     steps:["Zout de heekfilet en laat 1 uur intrekken.","Bak sjalot, knoflook en heek licht aan.","Voeg de wijn toe en kook het geheel gaar.","Draai fijn in de Magimix en monteer met de olijfolie."],
@@ -1210,7 +1212,7 @@ const KEUKENMAP = [
   { id:"map-kerriemayonaise", name:"Kerriemayonaise", category:"Sauzen & emulsies", yield:"≈ 700 g",
     ingredients:[{item:"Eidooier",amount:"60 g"},{item:"Fijne mosterd",amount:"1 el"},{item:"Wittewijnazijn",amount:"30 g"},{item:"Kerrieolie",amount:"6 dl"}],
     steps:["Draai de eidooier, mosterd en wittewijnazijn in de Magimix.","Voeg de kerrieolie langzaam toe tot de gewenste dikte."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aceto-vinaigrette", name:"Aceto-vinaigrette", category:"Oliën & vinaigrettes", yield:"≈ 1,4 l",
     ingredients:[{item:"Jus de veau",amount:"6 dl"},{item:"Olijfolie",amount:"4 dl"},{item:"Zonnebloemolie",amount:"2 dl"},{item:"Aceto balsamico",amount:"2 dl"}],
     steps:["Meng alles.","Schudden voor gebruik."],
@@ -1242,7 +1244,7 @@ const KEUKENMAP = [
   { id:"map-truffelmayonaise", name:"Truffelmayonaise", category:"Sauzen & emulsies", yield:"≈ 700 g",
     ingredients:[{item:"Eidooiers",amount:"4 st"},{item:"Dijonmosterd",amount:"1 el"},{item:"Wittewijnazijn",amount:"30 g"},{item:"Zonnebloemolie",amount:"6 dl"},{item:"Truffelpasta",amount:"2 el"}],
     steps:["Draai alles behalve de olie glad in de Magimix.","Voeg de olie langzaam toe tot de gewenste dikte."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-notendressing", name:"Notendressing", category:"Oliën & vinaigrettes", yield:"≈ 1,7 l",
     ingredients:[{item:"Fijne mosterd",amount:"8 g"},{item:"Water",amount:"1 dl"},{item:"Eidooier",amount:"75 g"},{item:"Zonnebloemolie",amount:"1,3 l"},{item:"Walnootolie",amount:"1,5 dl"},{item:"Wittewijnazijn",amount:"1,5 dl"},{item:"Poedersuiker",amount:"45 g"},{item:"Zout en peper",amount:"naar smaak"}],
     steps:["Draai alles op de olie na fijn in de Magimix.","Voeg de olie langzaam toe tot de gewenste dikte."],
@@ -1258,7 +1260,7 @@ const KEUKENMAP = [
   { id:"map-kikkomanmayonaise", name:"Kikkoman-mayonaise", category:"Sauzen & emulsies", yield:"≈ 800 g",
     ingredients:[{item:"Kikkoman",amount:"2,5 dl"},{item:"Eidooier",amount:"250 g"},{item:"Sojaolie",amount:"375 g"},{item:"Mosterdpoeder",amount:"10 g"},{item:"Sushi-azijn",amount:"40 g"},{item:"Olijfolie",amount:"75 g"},{item:"Sesamolie",amount:"25 g"}],
     steps:["Kook de kikkoman in tot 1,2 dl en koel terug.","Maak van de overige ingrediënten mayonaise.","Voeg op het laatst de ingekookte kikkoman toe."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-tofuwrap", name:"Tofuwrap", category:"Tuin · rauw", yield:"± 12 st",
     ingredients:[{item:"Tofu",amount:"675 g"},{item:"Tahin",amount:"3 el"},{item:"Sojamelk",amount:"80 g"},{item:"Bloem",amount:"65 g"},{item:"Rijstmeel",amount:"60 g"},{item:"Verse kruiden",amount:"15 g"},{item:"Sojaolie",amount:"3 el"}],
     steps:["Pureer de tofu, tahin en sojamelk.","Meng alles en bak in olie."],
@@ -1286,7 +1288,7 @@ const KEUKENMAP = [
   { id:"map-venkelcremeux", name:"Venkelcremeux", category:"Zoet & patisserie", yield:"≈ 3 kg",
     ingredients:[{item:"Venkelsap",amount:"1500 ml"},{item:"Eidooier",amount:"531 g"},{item:"Suiker",amount:"531 g"},{item:"Gelatine",amount:"24 blaadjes"},{item:"Boter",amount:"405 g"}],
     steps:["Verwarm au bain-marie tot 85 °C en los de gelatine erin op.","Koel terug tot 45 °C.","Snijd de boter in blokjes en zet koel.","Monteer de boter met de staafmixer zodra het mengsel is teruggekoeld."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-vanille-cremeux", isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-zoeteaardappelsoep", name:"Zoete-aardappelsoep 'flan'", category:"Fonds & bouillon", yield:"grote pan",
     ingredients:[{item:"Gele ui, gesnipperd",amount:"800 g"},{item:"Chilivlokken",amount:"1 el"},{item:"Kurkuma",amount:"2 el"},{item:"Kerrie madras",amount:"3 el"},{item:"Gember, geraspt",amount:"6 cm"},{item:"Witte wijn",amount:"1 l"},{item:"Zoete aardappel, blokjes 2×2 cm",amount:"3 kg"},{item:"Water",amount:"2 l"},{item:"Zeezout",amount:"2 el"}],
     steps:["Fruit de ui met de specerijen en gember aan.","Blus af met de witte wijn.","Voeg de zoete aardappel en het water toe en kook gaar; pureer glad.","Voeg als laatste nog 3 liter water toe en breng op smaak met het zout."],
@@ -1370,11 +1372,11 @@ const KEUKENMAP = [
   { id:"map-chocoladetruffels", name:"Chocoladetruffels", category:"Zoet & patisserie", yield:"± 40 st",
     ingredients:[{item:"Vanillestokje",amount:"1 st"},{item:"Slagroom",amount:"250 ml"},{item:"Boter",amount:"75 g"},{item:"Melkchocolade",amount:"500 g"},{item:"Cacaopoeder",amount:"200 g"}],
     steps:["Kook de room met het vanillestokje en de boter.","Los de melkchocolade op in de hete room en laat opstijven.","Klop de massa luchtig in de mixer en draai balletjes.","Laat aanvriezen en dompel in het cacaopoeder."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardbeientruffels", name:"Aardbeientruffels", category:"Zoet & patisserie", yield:"± 40 st",
     ingredients:[{item:"Aardbeiencoulis",amount:"250 g"},{item:"Citroensap",amount:"25 g"},{item:"Suiker",amount:"250 g"},{item:"Boter",amount:"250 g"},{item:"Getempereerde witte chocolade",amount:"om te doppen"},{item:"Roodgekleurde suiker",amount:"om af te werken"}],
     steps:["Kook de coulis met het citroensap en de suiker; koel terug.","Draai op met de boter.","Spuit lange banen op een bakmatje en vries weg.","Snijd stukjes, haal door de chocolade en als laatste door de suiker."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-chocoladetruffels", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-mintgel", name:"Mintgel", category:"Gels", yield:"1 bak",
     ingredients:[{item:"Water",amount:"2 dl"},{item:"Monin mojito mint",amount:"6 dl"},{item:"Bols mint",amount:"2 dl"},{item:"Agar",amount:"6 g"},{item:"Gellan",amount:"4 g"}],
     steps:["Kook alle natte producten.","Voeg agar en gellan toe en kook kort mee.","Stort en laat opstijven.","Haal de massa door de blender en zeef."],
@@ -1386,11 +1388,11 @@ const KEUKENMAP = [
   { id:"map-frambozengranite", name:"Frambozengranité", category:"Sorbet & ijs", yield:"1 bak",
     ingredients:[{item:"Witte basterdsuiker",amount:"115 g"},{item:"Water",amount:"3 dl"},{item:"Frambozencoulis",amount:"500 g"},{item:"Citroensap",amount:"van 1 st"}],
     steps:["Kook water en suiker.","Meng alles en vries weg; roer elke 30 min met de garde erdoor."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-granite-port-roodfruit", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardbeiencremeux", name:"Aardbeiencremeux", category:"Zoet & patisserie", yield:"≈ 2 kg",
     ingredients:[{item:"Aardbeiencoulis",amount:"1 kg"},{item:"Suiker",amount:"300 g"},{item:"Eidooier",amount:"300 g"},{item:"Ei",amount:"300 g"},{item:"Gelatine",amount:"18 g"},{item:"Boter",amount:"300 g"}],
     steps:["Gaar coulis, suiker, dooier en ei au bain-marie tot 80 °C.","Voeg de gelatine toe en koel terug tot 45 °C.","Voeg de boter toe, roer glad en stort."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-vanille-cremeux", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardbeiencappuccino", name:"Aardbeiencappuccino", category:"Schuim & espuma", yield:"≈ 900 g",
     ingredients:[{item:"Aardbeiencoulis",amount:"200 g"},{item:"Karnemelk",amount:"400 g"},{item:"Kwark",amount:"250 g"},{item:"Poedersuiker",amount:"80 g"}],
     steps:["Blender alles en zeef.","Maak vlak voor het serveren luchtig met de staafmixer."],
@@ -1406,7 +1408,7 @@ const KEUKENMAP = [
   { id:"map-pompoenhummus", name:"Pompoenhummus", category:"Purees", yield:"≈ 1,2 kg",
     ingredients:[{item:"Flespompoen",amount:"500 g"},{item:"Kikkererwten (uit blik)",amount:"500 g"},{item:"Knoflook",amount:"3 tenen"},{item:"Citroensap",amount:"van 1,5 st"},{item:"Chili",amount:"mespuntje"},{item:"Tahini",amount:"8 el"},{item:"Komijn",amount:"1,5 tl"},{item:"Peterselie",amount:"takje"},{item:"Olijfolie",amount:"scheut"},{item:"Peper en zout",amount:"naar smaak"}],
     steps:["Verwarm de oven voor op 200 °C (hetelucht).","Snijd de pompoen brunoise en besprenkel met olijfolie, peper en zout.","Rooster de pompoen 20–30 min in de oven en laat afkoelen.","Pureer de pompoen met de kikkererwten, knoflook, citroensap, chili, tahini en komijn glad.","Garneer met verse peterselie en chili."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-lemon-curd", name:"Lemon curd", category:"Zoet & patisserie", yield:"≈ 500 g",
     ingredients:[{item:"Citroenen (rasp en sap)",amount:"2 flinke, ± 130 ml sap"},{item:"Fijne kristalsuiker",amount:"200 g"},{item:"Ongezouten roomboter",amount:"125 g"},{item:"Eieren, geklutst",amount:"2 st"}],
     steps:["Rasp de citroenen en pers ze uit; zeef het sap.","Verhit rasp, suiker en boter au bain-marie op middelhoog vuur en roer tot een gladde massa.","Voeg het citroensap toe en roer door; voeg daarna de eieren toe terwijl je blijft roeren.","Blijf rustig roeren tot de curd de dikte van yoghurt heeft (± 20 min).","Giet in een schaal om af te koelen; hij dikt dan nog verder in."],
@@ -1418,11 +1420,11 @@ const KEUKENMAP = [
   { id:"map-icetea-japans-gember", name:"Japanse ijsthee met gember", category:"Dranken", yield:"± 10 l",
     ingredients:[{item:"Water",amount:"12,5 l"},{item:"Earl grey",amount:"30 g"},{item:"Verveine",amount:"15 g"},{item:"Japanse sencha uji",amount:"20 g"},{item:"Bietsuiker",amount:"500 g"},{item:"Gember",amount:"200 g"},{item:"Limoenblad",amount:"10 g"}],
     steps:["Steriliseer de flesjes vooraf: 130 °C stomen in de oven.","Breng het water met de earl grey, suiker, limoenblad en gember aan de kook en laat afkoelen tot 80 °C.","Voeg de verveine en de sencha uji toe en laat 30 min trekken op 80 °C.","Zeef alles eruit en giet in de flesjes."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-icetea-honing-steranijs", name:"IJsthee met honing, steranijs en kruidnagel", category:"Dranken", yield:"± 10 l",
     ingredients:[{item:"Water",amount:"12,5 l"},{item:"Earl grey",amount:"30 g"},{item:"Citroenmelisse",amount:"30 g"},{item:"Honing",amount:"430 g"},{item:"Steranijs",amount:"7 g"},{item:"Kruidnagel",amount:"2 g"}],
     steps:["Steriliseer de flesjes vooraf: 130 °C stomen in de oven.","Breng het water aan de kook met de earl grey, steranijs en kruidnagel en laat afkoelen tot 80 °C.","Voeg de honing en citroenmelisse toe en laat 30 min trekken op 80 °C.","Zeef alles eruit en giet in de flesjes."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-icetea-japans-gember", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-preimozaiek", name:"Preimozaïek", category:"Tuin · geroosterd", yield:"1 rol",
     ingredients:[{item:"Prei",amount:"8 st"},{item:"Tijm",amount:"10 takjes"},{item:"Citroen",amount:"2 st"},{item:"Zonnebloemolie",amount:"scheut"},{item:"Norivellen",amount:"enkele"}],
     steps:["Snijd het groen van de prei af en was het witte gedeelte.","Snijd de prei in gelijke stukken, leg in een gastronoombak met de tijm, peper en zout.","Dek af met aluminiumfolie en gaar 70 min in de oven op 160 °C.","Verwijder de folie, laat 5 min afkoelen en haal het buitenste (taaie) blad eraf.","Rol de stukken prei in de norivellen en snijd het uitstekende nori af.","Leg afdekfolie op de werkbank, leg de ingerolde prei erop en bestrooi met de zeste van de citroen.","Rol strak op en koel terug in de blastchiller.","Portioneer de goed afgekoelde rol met de folie eromheen."],
@@ -1434,11 +1436,11 @@ const KEUKENMAP = [
   { id:"map-kletskoppen-glutenvrij", name:"Kletskoppen (glutenvrij)", category:"Zoet & patisserie", yield:"1 plaat",
     ingredients:[{item:"Amandelpoeder",amount:"125 g"},{item:"Roomboter",amount:"250 g"},{item:"Bietsuiker",amount:"250 g"},{item:"Boekweitmeel",amount:"187,5 g"},{item:"Zout",amount:"snuf"},{item:"Mirin",amount:"50 g"}],
     steps:["Draai alles fijn in de Magimix-blender.","Vorm naar wens.","Bak af op 170 °C, 6–8 min, ventilator laag."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-kletskop", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-kokospannacotta", name:"Kokospannacotta", category:"Zoet & patisserie", yield:"± 12 glaasjes",
     ingredients:[{item:"Gelatine",amount:"6 grote bladen"},{item:"Kokosmelk",amount:"600 ml"},{item:"Room",amount:"600 ml"},{item:"Suiker",amount:"100 g"},{item:"Limoenen (rasp en sap)",amount:"3 st"},{item:"Zout",amount:"snuf"}],
     steps:["Week de gelatinebladen in koud water.","Verwarm kokosmelk, room en suiker samen tot het kookpunt.","Haal van het vuur en roer de gelatine erdoor.","Laat iets afkoelen en verdeel over glaasjes.","Laat opstijven."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"pat-vruchten-pannacotta", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-knolselderijsaus", name:"Knolselderijsaus met truffeljus", category:"Sauzen & emulsies", yield:"≈ 350 ml",
     ingredients:[{item:"Knolselderij, brunoise",amount:"600 g"},{item:"Koolzaadolie",amount:"2 el"},{item:"Sjalot, in ringen",amount:"65 g"},{item:"Wortel, brunoise 5 mm",amount:"65 g"},{item:"Bleekselderij, brunoise 5 mm",amount:"75 g"},{item:"Tomatenpuree",amount:"1 el"},{item:"Rode wijn",amount:"160 ml"},{item:"Truffeljus",amount:"240 ml"},{item:"Zout",amount:"1,5 tl"},{item:"Sherryazijn",amount:"1 tl"},{item:"Xanthaangom",amount:"0,3 g"},{item:"Extra vierge olijfolie",amount:"1 el"}],
     steps:["Verwarm de oven voor op 200 °C; meng 450 g knolselderij met 1 el koolzaadolie en rooster ± 30 min donkerbruin.","Doe de geroosterde knolselderij in een sauspan met 1,5 l water, breng aan de kook en haal direct van het vuur; laat 45 min afgedekt staan.","Laat uitlekken op een fijne zeef en bewaar de vloeistof.","Verhit de overige olie, voeg sjalot, wortel, bleekselderij en de resterende 150 g knolselderij toe en sauteer ± 10 min tot gekaramelliseerd.","Bak de tomatenpuree 5 min mee; blus af met de rode wijn en kook in tot bijna droog.","Voeg de knolselderijvloeistof en truffeljus toe en laat in ± 1 uur langzaam inkoken tot ± 350 ml.","Zeef de saus, breng op smaak met zout en sherryazijn en bind met de xanthaangom.","Monteer de saus met de olijfolie."],
@@ -1446,7 +1448,7 @@ const KEUKENMAP = [
   { id:"map-hummus-geroosterde-biet", name:"Hummus van geroosterde biet", category:"Purees", yield:"≈ 1 kg",
     ingredients:[{item:"Rode bieten",amount:"3 st"},{item:"Ui",amount:"1 st"},{item:"Knoflook",amount:"2 tenen"},{item:"Kikkererwten uit blik, uitgelekt",amount:"415 g"},{item:"Peterselie",amount:"15 g"},{item:"Sesampasta",amount:"30 ml"},{item:"Olijfolie",amount:"60 ml"},{item:"Water",amount:"60 ml"},{item:"Citroensap",amount:"van 1 st"},{item:"Zout en peper",amount:"naar behoefte"}],
     steps:["Verhit de barbecue tot 200 °C of pof in de oven.","Leg de bieten met de ui, knoflook, zout en peper in aluminium op de barbecue.","Rooster de bieten in 1 uur gaar; draai halverwege om.","Maal ondertussen de kikkererwten, peterselie, tahin, olijfolie, water en citroensap fijn.","Pel de geroosterde bieten, ui en knoflook, voeg toe en maal glad."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Black Bastard / oven", updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:"map-pompoenhummus", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Black Bastard / oven", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-dukkah", name:"Dukkah", category:"Kruiden & zout", yield:"≈ 1,2 kg",
     ingredients:[{item:"Notenmix",amount:"1 kg"},{item:"Gebakken uitjes",amount:"100 g"},{item:"Komijn",amount:"10 g"},{item:"Gemberpoeder",amount:"5 g"},{item:"Anijszaad",amount:"5 g"},{item:"Nootmuskaatpoeder",amount:"5 g"},{item:"Gerookt paprikapoeder",amount:"5 g"},{item:"Chilipoeder",amount:"2 g"},{item:"Za'atar",amount:"5 g"},{item:"Sesamzaad",amount:"20 g"},{item:"Limoenrasp",amount:"naar behoefte"},{item:"Citroenrasp",amount:"naar behoefte"},{item:"Maldonzout en peper",amount:"naar behoefte"}],
     steps:["Draai de notenmix met de gebakken uitjes tot een grof kruim.","Rooster het kruim met alle specerijen en het sesamzaad 15 min in de oven op 180 °C.","Laat afkoelen en breng op smaak met de rasp, het zout en de peper."],
@@ -1486,7 +1488,7 @@ const KEUKENMAP = [
   { id:"map-basismayonaise", name:"Basismayonaise (63-gradeneieren)", category:"Sauzen & emulsies", yield:"≈ 4 l",
     ingredients:[{item:"Eieren, 1,5 uur gestoomd op 63 °C",amount:"10 st"},{item:"Wittewijnazijn",amount:"100 g"},{item:"Zout",amount:"30 g"},{item:"Gemalen zwarte peper",amount:"10 g"},{item:"Fijne mosterd",amount:"150 g"},{item:"Zonnebloemolie",amount:"3 l"}],
     steps:["Stoom de eieren 1,5 uur op 63 °C en koel terug.","Doe alles behalve de olie samen in de Magimix.","Draai fijn en voeg de olie druppelsgewijs toe."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Stoomoven", updatedBy:"Stef", updatedAt:"nieuw" },
+    endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Stoomoven", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-broodpudding", name:"Broodpudding", category:"Zoet & patisserie", yield:"1 bakblik",
     ingredients:[{item:"Melk",amount:"2250 g"},{item:"Ei",amount:"720 g"},{item:"Suiker",amount:"900 g"},{item:"Rozijnen, geweld",amount:"225 g"},{item:"Brood",amount:"1350 g"},{item:"Kaneel / garam masala / five spice",amount:"naar keuze"},{item:"Citroenrasp",amount:"van 1 st"}],
     steps:["Vermeng de melk met de eieren.","Voeg suiker, kaneelpoeder en de citrusrasp toe en roer goed door.","Snijd het brood in kleine stukken en laat weken in het melkmengsel.","Roer het brood door met een garde tot een soort beslag ontstaat.","Voeg tot slot de rozijnen toe.","Giet in een bakblik en gaar 60 min in een op 160 °C voorverwarmde oven."],
@@ -2389,7 +2391,7 @@ export default function App() {
   const goBack = () => { if (stack.length > 1) { try { window.history.back(); } catch (e) { back(); } } };
   const goHome = () => { resetTo({ screen: "list" }); setSection("recepten"); };
   // Op formulieren geen navigatiebalk: één tik zou anders je invoer weggooien.
-  const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm"]);
+  const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
   useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
   useEffect(() => {
@@ -2530,17 +2532,27 @@ export default function App() {
     const nb = { ...b, done: !b.done, finishedDate: !b.done ? localDate() : null };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
-    if (nb.done) {
-      const rec = nb.recipeId ? recipeById(nb.recipeId) : null;
-      push({ screen: "voorraadForm", editing: null, prefill: {
-        product: nb.product,
-        ingredients: rec && Array.isArray(rec.ingredients) ? rec.ingredients : [],
-        recipeId: nb.recipeId || null,
-        unit: nb.amount && nb.amount !== "—" ? nb.amount : "",
-        productionDate: localDate(),
-        shelfDays: rec && rec.shelfDays ? rec.shelfDays : null,
-      } });
-    }
+    if (nb.done) push({ screen: "batchEindmeting", id: nb.id });
+  };
+  // Na de eindmeting (of het overslaan ervan): door naar toevoegen aan de voorraad.
+  const stockPrefillForBatch = (b) => {
+    const rec = b.recipeId ? recipeById(b.recipeId) : null;
+    return {
+      product: b.product,
+      ingredients: rec && Array.isArray(rec.ingredients) ? rec.ingredients : [],
+      recipeId: b.recipeId || null,
+      unit: (rec && rec.yieldUnit) || (b.amount && b.amount !== "—" ? b.amount : ""),
+      productionDate: localDate(),
+      shelfDays: rec && rec.shelfDays ? rec.shelfDays : null,
+      yieldAmount: rec && rec.yieldAmount ? rec.yieldAmount : null,
+      yieldUnit: (rec && rec.yieldUnit) || "",
+    };
+  };
+  const finishEindmeting = (batchId, m) => {
+    if (m) addBatchMeasurement(batchId, { ...m, note: m.note ? "Eindmeting — " + m.note : "Eindmeting" });
+    const b = batches.find((x) => x.id === batchId);
+    goBack();
+    push({ screen: "voorraadForm", editing: null, prefill: b ? stockPrefillForBatch(b) : null });
   };
   const deleteBatch = async (id) => {
     const b = batches.find((x) => x.id === id);
@@ -2659,6 +2671,9 @@ export default function App() {
     if (dates.length === 0) return;
     const start = new Date(dates[0] + "T12:00:00");
     const today = new Date(localDate() + "T12:00:00");
+    // Vóór 02:00 's nachts telt "gisteren" nog niet mee: de dag krijgt tot dan
+    // de kans om alsnog afgerond te worden.
+    if (new Date().getHours() < AUTO_OFF_HOUR) today.setDate(today.getDate() - 1);
     const toAdd = [];
     for (let d = new Date(start); d < today; d.setDate(d.getDate() + 1)) {
       const key = localDate(d);
@@ -2833,7 +2848,7 @@ export default function App() {
       return isNaN(d) ? "" : String(d);
     };
     const MAANDEN = ["Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"];
-    const rows = [["Product", "Gemaakt in " + jaar, "Verpakkingseenheid", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Gemaakt door"]];
+    const rows = [["Product", "Gemaakt in " + jaar, "Verpakkingseenheid", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door"]];
     // Gegroepeerd per productiemaand, chronologisch; zonder datum achteraan.
     const maandVan = (v) => { const m = Number(String(v.productionDate || "").slice(5, 7)); return m >= 1 && m <= 12 ? m : 13; };
     const maanden = [...new Set(items.map(maandVan))].sort((a, b) => a - b);
@@ -3007,8 +3022,13 @@ export default function App() {
     const tick = async () => {
       const now = new Date();
       const key = localDate(now);
-      const past = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
-      if (!past || checkDone === key) return;
+      const past1 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
+      const past2 = now.getHours() >= REMIND_HOUR; // tweede herinnering
+      if (!past1) return;
+      const cd = checkDone && checkDone.key === key ? checkDone : null;
+      // trap 1 nog niet gezien → tonen; trap 1 weggeklikt en het is na REMIND_HOUR → nogmaals tonen
+      const mustShow = !cd || (cd.stage === 1 && past2);
+      if (!mustShow) return;
       if (cleaningLogs.some((l) => dayMarked(l, key))) return; // al afgerond volgens lokale stand
       // Dubbelcheck vers bij de database: een collega kan net hebben afgerond
       // op een ander apparaat, of de lokale stand kan achterlopen.
@@ -3021,7 +3041,8 @@ export default function App() {
         } catch (e) { /* bij twijfel gewoon tonen */ }
       }
       if (cancelled) return;
-      setCheckOpen(true); setCheckDone(key);
+      setCheckOpen(true);
+      setCheckDone({ key, stage: now.getHours() >= REMIND_HOUR ? 2 : 1 });
     };
     tick();
     const t = setInterval(tick, 60000);
@@ -3093,23 +3114,24 @@ export default function App() {
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
         {current.screen === "recipeDetail" && (() => { const r = recipeById(current.id); return (
           <RecipeDetail recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
-            baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={r?.isBase ? variationsOf(current.id) : []}
+            baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={variationsOf(current.id)}
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })}
-            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null } })}
+            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null, yieldAmount: r.yieldAmount || null, yieldUnit: r.yieldUnit || "" } })}
             onOpenTech={openTech} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} draft={dishDraft} allRecipes={recipes} recipeById={recipeById}
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
           onCancel={() => { setDishDraft(null); goBack(); }}
           onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} onCancel={goBack}
+        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onCancel={goBack}
           onSave={async (d) => { const newId = await saveRecipe(d, current.editing);
             if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
             goBack(); }} />}
         {current.screen === "batchForm" && <BatchForm prefill={current.prefill} editing={current.editing ? batches.find((b) => b.id === current.editing) : null} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d, current.editing); setSection("fermentatie"); goBack(); }} />}
-        {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => addBatchMeasurement(current.id, m)} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
+        {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => { addBatchMeasurement(current.id, m); goBack(); }} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
+        {current.screen === "batchEindmeting" && <EindmetingForm batch={batches.find((b) => b.id === current.id)} onSkip={() => finishEindmeting(current.id, null)} onSave={(m) => finishEindmeting(current.id, m)} />}
         {current.screen === "haccpForm" && <HaccpForm editing={current.editing ? haccpLogs.find((l) => l.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccp(d, current.editing); goBack(); }} />}
         {current.screen === "haccpRecordForm" && <HaccpRecordForm kind={current.recordKind} editing={current.editing ? haccpRecords.find((r) => r.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccpRecord(d, current.editing); goBack(); }} />}
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
@@ -4267,9 +4289,9 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
 function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const src = editing || prefill || {};
   const [product, setProduct] = useState(src.product || "");
-  const [qty, setQty] = useState(editing ? String(editing.qty) : "");
+  const [qty, setQty] = useState(editing ? String(editing.qty) : (prefill && prefill.yieldAmount ? String(prefill.yieldAmount) : ""));
   const [initialQty, setInitialQty] = useState(editing ? String(editing.initialQty) : "");
-  const [unit, setUnit] = useState(src.unit || "");
+  const [unit, setUnit] = useState(src.unit || (prefill && prefill.yieldUnit) || "");
   const [productionDate, setProductionDate] = useState(src.productionDate || localDate());
   const [days, setDays] = useState(prefill && prefill.shelfDays ? String(prefill.shelfDays) : "");
   const [expiryDate, setExpiryDate] = useState(editing ? (editing.expiryDate || "") : "");
@@ -4278,6 +4300,9 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const [recipeId, setRecipeId] = useState(src.recipeId || null);
   const [ings, setIngs] = useState((src.ingredients && src.ingredients.length ? src.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
   const [pick, setPick] = useState("");
+  // Referentie voor het meeschalen: opbrengst + originele hoeveelheden van het recept.
+  const [refYield, setRefYield] = useState(prefill && prefill.yieldAmount ? Number(prefill.yieldAmount) : null);
+  const [refIngs, setRefIngs] = useState(prefill && prefill.ingredients && prefill.ingredients.length ? prefill.ingredients.map((i) => ({ ...i })) : null);
   const setIng = (i, veld, w) => setIngs((xs) => xs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const addIng = () => setIngs((xs) => [...xs, { item: "", amount: "" }]);
   const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
@@ -4295,8 +4320,22 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     setIngs((r.ingredients && r.ingredients.length ? r.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
     if (r.shelfDays) setDays(String(r.shelfDays));
     if (r.shelfStorage) setStorage(mapStorage(r.shelfStorage));
+    // Opbrengst van het recept → aantal + eenheid (handmatig aan te passen).
+    if (r.yieldAmount) { setQty(String(r.yieldAmount)); setRefYield(Number(r.yieldAmount)); } else { setRefYield(null); }
+    if (r.yieldUnit) setUnit(r.yieldUnit);
+    setRefIngs(r.ingredients && r.ingredients.length ? r.ingredients.map((i) => ({ ...i })) : null);
     setPick("");
   };
+  // Wijkt het ingevulde aantal af van de receptopbrengst, dan schalen de
+  // ingrediëntenhoeveelheden automatisch mee.
+  useEffect(() => {
+    if (!refYield || !refIngs) return;
+    const q1 = Number(String(qty ?? "").replace(",", "."));
+    if (!q1 || isNaN(q1) || q1 <= 0) return;
+    const f = q1 / refYield;
+    if (!isFinite(f) || f <= 0) return;
+    setIngs(refIngs.map((i) => ({ item: i.item, amount: Math.abs(f - 1) < 1e-9 ? i.amount : scaleAmount(i.amount, f) })));
+  }, [qty, refYield, refIngs]);
   const pickMatches = pick.trim() ? (allRecipes || []).filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], pick)).slice(0, 8) : [];
   const nm = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
   const submit = () => {
@@ -4800,7 +4839,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
                 {day.off
                   ? <div className="card px-3 py-2 flex items-center gap-2 text-[13px]" style={{ color: "#6a6550" }}>
                       <Calendar size={14} className="shrink-0" /> <span className="flex-1">Bedrijf dicht</span>
-                      {canEdit && <button onClick={() => onDeleteLog(day.off.id)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }} title="Vrije dag verwijderen"><Trash2 size={13} /></button>}
+                      {canEdit && <button onClick={() => onDeleteLog(day.off.id)} className="ff shrink-0 text-[12.5px] font-medium underline acc" title="Vrije dag heropenen — de dag telt daarna weer gewoon mee">Heropenen</button>}
                     </div>
                   : <div className="card overflow-hidden divide-y" style={{ borderColor: T.line }}>
                       {day.items.map((l) => (
@@ -5339,63 +5378,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         {recipe.isBase && <span className="inline-flex items-center gap-1 rounded-full text-xs font-semibold px-2.5 py-1" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={12} /> basisrecept</span>}
       </div>
 
-      {baseRecipe && <button onClick={() => onOpenRecipe(baseRecipe.id)} className="ff mt-3 inline-flex items-center gap-1.5 text-sm acc hover:opacity-70"><GitBranch size={14} /> Variatie op {recipe.baseName} — bekijk de basis</button>}
-
-      {critical.length > 0 && (
-        <div className="mt-4 rounded-xl p-3.5 text-sm" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
-          <div className="font-semibold flex items-center gap-1.5 mb-1"><Info size={14} /> Let op de kritische waarden</div>
-          <ul className="list-disc list-inside space-y-0.5">{critical.map((c, i) => (
-            <li key={i}>{c.text}{c.tech && <> <button onClick={() => onOpenTech(c.tech)} className="ff underline font-medium hover:opacity-70" style={{ color: "#6a5326" }}>{c.techLabel}</button></>}</li>
-          ))}</ul>
-        </div>
-      )}
-
-      {canEdit && (
-        <div className="flex flex-wrap items-center gap-2 mt-4">
-          <button onClick={() => onEndorse(recipe.id)} className={"ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2 " + (endorsed ? "btnp" : "btno")}><Heart size={15} fill={endorsed ? "currentColor" : "none"} /> {endorsed ? "Geliked" : "Like"} · {recipe.endorsements.length}</button>
-          {recipe.ferment && <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>}
-        </div>
-      )}
-      <div className="text-xs mute mt-2.5">Gebruikt in {usageCount} {usageCount === 1 ? "gerecht" : "gerechten"}{typeof openCount === "number" && openCount > 0 && <> · {openCount}× geopend</>}{recipe.endorsements.length > 0 && <> · geliket door {recipe.endorsements.join(", ")}</>}</div>
-      <EditMeta by={recipe.updatedBy} at={recipe.updatedAt} />
-
-      <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
-        <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setFactor((f) => Math.max(0.015625, f / 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Halveren">×½</button>
-          <button onClick={() => setFactor((f) => Math.min(64, f * 2))} className="ff pill rounded-md w-8 h-8 flex items-center justify-center text-xs font-bold" title="Verdubbelen">×2</button>
-          <span className="pillon rounded-md px-2.5 h-8 flex items-center text-xs font-semibold">×{fmt(factor)}</span>
-          {factor !== 1 && <button onClick={() => setFactor(1)} className="ff mute text-xs underline">reset</button>}
-        </div>
-        {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
-      </div>
-      <div className="card overflow-hidden">
-        {recipe.ingredients.map((ing, i) => (
-          <div key={i} className={"flex items-center justify-between px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}><span style={{ color: "#3b3d33" }}>{ing.item}</span><span className={"font-medium " + (factor !== 1 ? "acc" : "mute")}>{scaleAmount(ing.amount, factor)}</span></div>
-        ))}
-      </div>
-
-      {recipe.fermentDefaults && (
-        <div className="mt-4 tintbox rounded-xl p-4 text-sm" style={{ color: "#3f5238" }}>
-          <div className="font-semibold flex items-center gap-1.5 mb-1"><FlaskConical size={14} /> Fermentatie-richtlijn</div>
-          {[recipe.fermentDefaults.saltPct ? "Zout " + String(recipe.fermentDefaults.saltPct).replace(".", ",") + "%" : null,
-             recipe.fermentDefaults.sugarPct ? "Suiker " + String(recipe.fermentDefaults.sugarPct).replace(".", ",") + "%" : null,
-             recipe.fermentDefaults.tempC ? "±" + recipe.fermentDefaults.tempC + "°C" : null,
-             recipe.fermentDefaults.days ? "±" + recipe.fermentDefaults.days + " dagen" : null,
-             recipe.fermentDefaults.phTarget != null ? "streef-pH " + String(recipe.fermentDefaults.phTarget).replace(".", ",") : null].filter(Boolean).join(" · ")}.
-          {recipe.fermentMethod && FERMENT_TARGETS[recipe.fermentMethod] && <> {FERMENT_TARGETS[recipe.fermentMethod].note}</>}
-        </div>
-      )}
-
-      <SectionTitle>Bereiding</SectionTitle>
-      <ol className="space-y-2.5">
-        {recipe.steps.map((s, i) => (<li key={i} className="flex gap-3"><span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-0.5" style={{ background: T.green, color: T.paper }}>{i + 1}</span><span className="leading-relaxed" style={{ color: "#3b3d33" }}>{s}</span></li>))}
-      </ol>
-
-      {recipe.isBase && variations.length > 0 && (
-        <><SectionTitle>Variaties ({variations.length})</SectionTitle>
-        <div className="flex flex-wrap gap-2">{variations.map((v) => <button key={v.id} onClick={() => onOpenRecipe(v.id)} className="btno ff rounded-full text-sm px-3 py-1.5">{v.name}</button>)}</div></>
-      )}
+      {baseRecipe && <button onClick={() => onOpenRecipe(baseRecipe.id)} className="ff mt-3 inline-flex items-center gap-1.5 text-sm acc hover:opacity-70"><GitBranch size={14} /> Variatie op {recipe.baseName || baseRecipe.name} — bekijk de basis</button>}
     </div>
   );
 }
@@ -5430,10 +5413,16 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
+function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
   const [yieldVal, setYieldVal] = useState(recipe?.yield || "");
+  const [yieldAmount, setYieldAmount] = useState(recipe && recipe.yieldAmount ? String(recipe.yieldAmount) : "");
+  const [yieldUnit, setYieldUnit] = useState(recipe?.yieldUnit || "");
+  const [recipeType, setRecipeType] = useState(recipe && recipe.baseId ? "variatie" : "basis");
+  const [basePick, setBasePick] = useState(recipe && recipe.baseId ? { id: recipe.baseId, name: recipe.baseName || "" } : null);
+  const [baseQ, setBaseQ] = useState("");
+  const baseMatches = baseQ.trim() ? (allRecipes || []).filter((r) => (!recipe || r.id !== recipe.id) && softMatchAny([r.name, r.category], baseQ)).slice(0, 8) : [];
   const [ingredients, setIngredients] = useState(recipe?.ingredients?.length ? recipe.ingredients : [{ item: "", amount: "" }]);
   const [steps, setSteps] = useState(recipe?.steps?.length ? recipe.steps : [""]);
   const [seasons, setSeasons] = useState((recipe?.season || []).filter((s) => s !== "Hele jaar"));
@@ -5473,7 +5462,7 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
       if (Array.isArray(p.steps) && p.steps.length) setSteps(p.steps);
     } catch (e) { setErr("Vertalen lukte niet. Probeer opnieuw."); } finally { setTranslating(false); }
   }
-  const submit = () => { if (!name.trim()) return; onSave({
+  const submit = () => { if (!name.trim()) return; if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } onSave({
     name: name.trim(), category: category.trim() || "Zonder categorie", yield: yieldVal.trim() || "—",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
     season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
@@ -5483,6 +5472,10 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
     fermentDefaults: ferment ? (() => { const nz = (x) => { const v = Number(String(x).replace(",", ".")); return x !== "" && !isNaN(v) && v !== 0 ? v : null; }; return { saltPct: nz(fSalt), tempC: nz(fTemp), days: nz(fDays), phTarget: nz(fPh), sugarPct: nz(fSugar) }; })() : null,
     shelfDays: shelfDays !== "" && !isNaN(Number(shelfDays)) && Number(shelfDays) > 0 ? Number(shelfDays) : null,
     shelfStorage: shelfStorage.trim(),
+    yieldAmount: (() => { const v = Number(String(yieldAmount).replace(",", ".")); return yieldAmount !== "" && !isNaN(v) && v > 0 ? v : null; })(),
+    yieldUnit: yieldUnit.trim(),
+    baseId: recipeType === "variatie" && basePick ? basePick.id : null,
+    baseName: recipeType === "variatie" && basePick ? basePick.name : null,
   }); };
   return (
     <div>
@@ -5495,7 +5488,33 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
           {RECIPE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           <option value="__custom">Anders…</option>
         </select></Field>
-        <Field label="Opbrengst"><input className={inputCls} value={yieldVal} onChange={(e) => setYieldVal(e.target.value)} placeholder="1 pot" /></Field>
+        <Field label="Soort recept"><select className={inputCls} value={recipeType} onChange={(e) => { setRecipeType(e.target.value); if (e.target.value === "basis") setBasePick(null); }}>
+          <option value="basis">Basisrecept</option>
+          <option value="variatie">Variatie op een ander recept</option>
+        </select></Field>
+        {recipeType === "variatie" && (
+          <div className="mb-3 -mt-1">
+            {basePick
+              ? <div className="card px-3.5 py-2.5 flex items-center gap-2 text-sm"><GitBranch size={14} className="acc shrink-0" /><span className="flex-1 min-w-0 truncate ink">Variatie op <span className="font-medium">{basePick.name}</span></span><button onClick={() => setBasePick(null)} className="ff shrink-0 text-xs underline mute">wijzigen</button></div>
+              : <>
+                  <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={baseQ} onChange={(e) => setBaseQ(e.target.value)} placeholder="Waar is dit een variatie op? Zoek het basisrecept" className={inputCls + " pl-9"} /></div>
+                  {baseMatches.length > 0 && (
+                    <div className="card overflow-hidden -mt-1">
+                      {baseMatches.map((r, i) => (
+                        <button key={r.id} onClick={() => { setBasePick({ id: r.id, name: r.name }); setBaseQ(""); }} className={"ff w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left " + (i > 0 ? "divi" : "")}>
+                          <ChefHat size={14} className="acc shrink-0" /><span className="flex-1 min-w-0 text-sm ink truncate">{r.name}</span><span className="text-xs mute shrink-0">{r.category}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>}
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Opbrengst"><input className={inputCls} value={yieldVal} onChange={(e) => setYieldVal(e.target.value)} placeholder="bv. 5 potten" /></Field>
+          <Field label="Hoeveelheid"><input type="text" inputMode="decimal" className={inputCls} value={yieldAmount} onChange={(e) => setYieldAmount(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
+          <Field label="Eenheid"><input className={inputCls} value={yieldUnit} onChange={(e) => setYieldUnit(e.target.value)} placeholder="bv. 200 g pot" /></Field>
+        </div>
       </div>
       {category && !RECIPE_CATEGORIES.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
       <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = hele jaar)</span></div>
@@ -5544,15 +5563,18 @@ function RecipeForm({ recipe, fermentDefault, onCancel, onSave }) {
           <button type="button" onClick={splitAll} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><GitBranch size={13} /> Verdeel in stappen</button>
         )}
       </div>
-      <p className="text-xs mute mb-2 -mt-1">Typ of plak gerust de hele bereiding in één vak — bij het verlaten van het vak deelt de app hem zelf op in stappen, die je daarna gewoon kunt bijschaven.</p>
+      <p className="text-xs mute mb-2 -mt-1">Typ of plak gerust de hele bereiding in één vak, en gebruik daarna de knop "Opdelen in stappen".</p>
       <div className="space-y-2 mb-2">{steps.map((s, i) => (
         <div key={i} className="flex gap-2 items-start">
           <span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-2" style={{ background: "#e8ebe0", color: T.green }}>{i + 1}</span>
-          <textarea rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onBlur={() => splitOne(i)} placeholder="Beschrijf de stap — of plak de hele bereiding" />
+          <textarea rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} placeholder="Beschrijf de stap — of plak de hele bereiding" />
           <button onClick={() => setSteps((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1 mt-2"><Trash2 size={16} /></button>
         </div>))}
       </div>
-      <AddRow onClick={() => setSteps((a) => [...a, ""])} label="Stap toevoegen" />
+      <div className="flex gap-2">
+        <div className="flex-1"><AddRow onClick={() => setSteps((a) => [...a, ""])} label="Stap toevoegen" /></div>
+        <button onClick={splitAll} className="btno ff flex-1 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2.5 mb-4" title="Deelt geplakte tekst op in losse stappen"><Layers size={15} /> Opdelen in stappen</button>
+      </div>
     </div>
   );
 }
@@ -5680,6 +5702,30 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
       </div>
       <Field label="Handelingen / opmerkingen"><textarea rows={2} className={inputCls + " resize-none"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Waarnemingen, handelingen, proefnotities…" /></Field>
       <p className="text-xs mute -mt-2">Metingen (pH, suiker) over de dagen leg je vast in het logboek, na het opslaan van de batch.</p>
+    </div>
+  );
+}
+
+// Eindmeting bij het afronden van een fermentatiebatch, daarna door naar de voorraad.
+function EindmetingForm({ batch, onSkip, onSave }) {
+  const [ph, setPh] = useState("");
+  const [brix, setBrix] = useState("");
+  const [tempC, setTempC] = useState("");
+  const [note, setNote] = useState("");
+  if (!batch) return null;
+  const tgt = FERMENT_TARGETS[batch.method] || FERMENT_TARGETS[batch.type];
+  return (
+    <div>
+      <FormBar title="Eindmeting" onCancel={onSkip} onSave={() => onSave({ date: localDate(), ph, brix, tempC, note })} saveLabel="Opslaan" />
+      <p className="text-[13px] mute -mt-2 mb-1"><span className="font-medium ink">{batch.product}</span> is afgerond — leg de eindwaarden vast. Daarna kun je hem direct aan de voorraad toevoegen.</p>
+      {tgt && tgt.pH && <p className="text-xs mb-3" style={{ color: "#6a5326" }}>Streefwaarde: pH {tgt.pH}</p>}
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Eind-pH"><input type="text" inputMode="decimal" className={inputCls} value={ph} onChange={(e) => setPh(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,4" /></Field>
+        <Field label="Brix (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+        <Field label="Temp (°C)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
+      </div>
+      <Field label="Opmerking (optioneel)"><textarea rows={2} className={inputCls + " resize-none"} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Smaak, geur, structuur…" /></Field>
+      <button onClick={onSkip} className="ff w-full text-sm mute underline py-2">Overslaan en direct naar de voorraad</button>
     </div>
   );
 }
