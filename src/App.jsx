@@ -5061,10 +5061,14 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-[12.5px]">
               {HACCP_UNITS.map((u) => {
                 const ok = inRange(u, l.values[u.id]);
+                const sv = l.screen ? l.screen[u.id] : undefined;
+                const okS = sv === undefined ? null : inRange(u, sv);
                 return (
                   <div key={u.id} className="flex items-center justify-between gap-2">
                     <span className="mute truncate">{u.name}</span>
-                    <span className="font-medium shrink-0" style={{ color: ok === false ? "#8a4a3a" : "#2b3823" }}>{fmtTemp(l.values[u.id])}{ok === false && " ⚠"}</span>
+                    <span className="font-medium shrink-0" style={{ color: ok === false || okS === false ? "#8a4a3a" : "#2b3823" }}>
+                      {sv !== undefined && sv !== null ? String(sv).replace(".", ",") + " / " : ""}{fmtTemp(l.values[u.id])}{(ok === false || okS === false) && " ⚠"}
+                    </span>
                   </div>
                 );
               })}
@@ -5286,7 +5290,14 @@ function HaccpForm({ editing, onCancel, onSave }) {
   const [checkDate, setCheckDate] = useState(editing ? editing.checkDate : new Date().toISOString().slice(0, 10));
   const [values, setValues] = useState(() => {
     const v = {};
-    HACCP_UNITS.forEach((u) => { v[u.id] = editing && editing.values[u.id] !== undefined && editing.values[u.id] !== null ? String(editing.values[u.id]) : ""; });
+    // Vriezers krijgen alvast een minteken klaargezet.
+    HACCP_UNITS.forEach((u) => { v[u.id] = editing && editing.values[u.id] !== undefined && editing.values[u.id] !== null ? String(editing.values[u.id]) : (u.max < 0 ? "-" : ""); });
+    return v;
+  });
+  // Tweede meting: de waarde die het scherm van het apparaat zelf aangeeft.
+  const [screen, setScreen] = useState(() => {
+    const v = {};
+    HACCP_UNITS.forEach((u) => { v[u.id] = editing && editing.screen && editing.screen[u.id] !== undefined && editing.screen[u.id] !== null ? String(editing.screen[u.id]) : (editing ? "" : (u.max < 0 ? "-" : "")); });
     return v;
   });
   const [calib, setCalib] = useState(editing && editing.calibration && editing.calibration.measured !== null && editing.calibration.measured !== undefined ? String(editing.calibration.measured) : "");
@@ -5295,12 +5306,16 @@ function HaccpForm({ editing, onCancel, onSave }) {
   const calibNum = num(calib);
   const calibOk = calibNum === null ? null : Math.abs(calibNum) <= CALIB_TOLERANCE;
   const submit = () => {
-    const missing = HACCP_UNITS.filter((u) => num(values[u.id]) === null).map((u) => u.name);
+    const missing = [];
+    HACCP_UNITS.forEach((u) => {
+      if (num(screen[u.id]) === null) missing.push(u.name + " (scherm)");
+      if (num(values[u.id]) === null) missing.push(u.name + " (thermometer)");
+    });
     if (calibNum === null) missing.push("IJking (ijswater)");
     if (missing.length) { alert("Vul eerst alle temperaturen in:\n– " + missing.join("\n– ")); return; }
-    const out = {};
-    HACCP_UNITS.forEach((u) => { out[u.id] = num(values[u.id]); });
-    onSave({ checkDate, values: out, calibration: { measured: calibNum, ok: calibOk === null ? null : calibOk }, note: note.trim() });
+    const out = {}, outS = {};
+    HACCP_UNITS.forEach((u) => { out[u.id] = num(values[u.id]); outS[u.id] = num(screen[u.id]); });
+    onSave({ checkDate, values: out, screen: outS, calibration: { measured: calibNum, ok: calibOk === null ? null : calibOk }, note: note.trim() });
   };
   return (
     <div>
@@ -5310,21 +5325,30 @@ function HaccpForm({ editing, onCancel, onSave }) {
       <div className="card overflow-hidden mb-4">
         {HACCP_UNITS.map((u, i) => {
           const ok = inRange(u, num(values[u.id]));
+          const okS = inRange(u, num(screen[u.id]));
           return (
             <div key={u.id} className={"px-3.5 py-3 " + (i > 0 ? "divi" : "")}>
               <div className="text-sm font-medium ink">{u.name}</div>
               <div className="text-[12.5px] mute mb-1.5">streef: {u.target}</div>
-              <div className="flex items-center gap-2">
-                <input type="text" inputMode="decimal" className="input px-2.5 py-2 flex-1" value={values[u.id]}
-                  onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value.replace(/[^0-9.,-]/g, "") }))} placeholder="gemeten temperatuur"
-                  style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
-                <span className="text-sm mute shrink-0">°C</span>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[11.5px] mute">Scherm apparaat (°C)</span>
+                  <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full" value={screen[u.id]}
+                    onChange={(e) => setScreen((v) => ({ ...v, [u.id]: e.target.value.replace(/[^0-9.,-]/g, "") }))} placeholder="aflezing"
+                    style={okS === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
+                </label>
+                <label className="block">
+                  <span className="text-[11.5px] mute">Thermometer (°C)</span>
+                  <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full" value={values[u.id]}
+                    onChange={(e) => setValues((v) => ({ ...v, [u.id]: e.target.value.replace(/[^0-9.,-]/g, "") }))} placeholder="gemeten"
+                    style={ok === false ? { borderColor: "#c08a7a", background: "#fdf6f4" } : undefined} />
+                </label>
               </div>
             </div>
           );
         })}
       </div>
-      {HACCP_UNITS.some((u) => inRange(u, num(values[u.id])) === false) && (
+      {HACCP_UNITS.some((u) => inRange(u, num(values[u.id])) === false || inRange(u, num(screen[u.id])) === false) && (
         <div className="rounded-xl p-3.5 mb-4 text-sm" style={{ background: "#f6ecea", border: "1px solid #e0c8c0", color: "#8a4a3a" }}>
           Eén of meer waarden vallen buiten de grenzen. Noteer hieronder welke maatregel je hebt genomen (product verplaatst, monteur gebeld, opnieuw gemeten).
         </div>
