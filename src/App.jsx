@@ -3126,7 +3126,7 @@ export default function App() {
               onDeleteRecord={deleteHaccpRecord}
               onNewTask={() => push({ screen: "cleaningForm", editing: null })}
               onEditTask={(id) => push({ screen: "cleaningForm", editing: id })}
-              onDeleteTask={deleteCleaningTask}  onReopenOff={(logId, date) => { removeCleaningLog(logId, true); setCheckForDate(date); setCheckOpen(true); }} />}
+              onDeleteTask={deleteCleaningTask}  onReopenOff={(logId, date) => { if (logId) removeCleaningLog(logId, true); setCheckForDate(date); setCheckOpen(true); }} />}
           </div>
         )}
         {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
@@ -4984,12 +4984,19 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
                       {canEdit && <button onClick={() => onReopenOff(day.off.id, day.date)} className="ff shrink-0 text-[12.5px] font-medium underline acc" title="Vrije dag heropenen en direct invullen">Heropenen</button>}
                     </div>
                   : <div className="card overflow-hidden divide-y" style={{ borderColor: T.line }}>
-                      {day.done && (
-                        <div className="flex items-center gap-2 px-3 py-2 text-[13px]" style={{ background: "#f2f4ec", color: "#46603f" }}>
-                          <Check size={14} className="shrink-0" /> <span className="flex-1">Dag afgerond door {day.done.doneBy}</span>
-                          {canEdit && <button onClick={() => onReopenOff(day.done.id, day.date)} className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-medium underline acc" title="Afgeronde dag heropenen en opnieuw invullen"><Pencil size={12} /> Heropenen</button>}
-                        </div>
-                      )}
+                      {day.done
+                        ? (
+                          <div className="flex items-center gap-2 px-3 py-2 text-[13px]" style={{ background: "#f2f4ec", color: "#46603f" }}>
+                            <Check size={14} className="shrink-0" /> <span className="flex-1">Dag afgerond door {day.done.doneBy}</span>
+                            {canEdit && <button onClick={() => onReopenOff(day.done.id, day.date)} className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-medium underline acc" title="Afgeronde dag heropenen en opnieuw invullen — eerdere aftekeningen blijven staan"><Pencil size={12} /> Heropenen</button>}
+                          </div>
+                        )
+                        : (
+                          <div className="flex items-center gap-2 px-3 py-2 text-[13px]" style={{ background: "#f6f5ee", color: "#6a6550" }}>
+                            <Calendar size={14} className="shrink-0" /> <span className="flex-1">Dag niet afgerond</span>
+                            {canEdit && <button onClick={() => onReopenOff(null, day.date)} className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-medium underline acc" title="Open deze dag als invulpopup — eerdere aftekeningen blijven staan"><Pencil size={12} /> Invullen</button>}
+                          </div>
+                        )}
                       {day.items.map((l) => (
                         <div key={l.id}>
                           <div className="flex items-center gap-2 px-3 py-2">
