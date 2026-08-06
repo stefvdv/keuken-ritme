@@ -351,6 +351,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
+const MEASURE_HOUR = 9; // ochtendrondje: metingen voor actieve fermentatiebatches
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 // Extra HACCP-registraties (elk een eigen wekelijkse schoonmaaktaak).
@@ -1499,7 +1500,23 @@ const KEUKENMAP = [
 ];
 
 const LIBRARY = buildLibrary();
-const initialRecipes = [...CURATED, ...PATISSERIE, ...KEUKENMAP, ...LIBRARY];
+// Standaard-houdbaarheid per recepttype (alleen waar nog niets is ingevuld):
+// vriezer 178d, droog 178d ongekoeld, jam 365d ongekoeld, chutney 178d gekoeld,
+// fermentatie 365d gekoeld, al het andere (koeling) 4d gekoeld bewaren.
+function withShelfDefaults(r) {
+  if (r.shelfDays) return r;
+  const t = ((r.name || "") + " " + (r.category || "")).toLowerCase();
+  const n = (r.name || "").toLowerCase(); // chutney/jam op de náám toetsen (de categorie heet "Chutney & jam")
+  let shelfDays, shelfStorage;
+  if (/ijs\b|sorbet|granit|parfait|semifreddo/.test(t)) { shelfDays = 178; shelfStorage = "vriezer bewaren"; }
+  else if (/chips|krokant|kletskop|meringue|merengue|cracker|granola|tuile|tuille|kroepoek/.test(t)) { shelfDays = 178; shelfStorage = "ongekoeld bewaren"; }
+  else if (/chutney/.test(n)) { shelfDays = 178; shelfStorage = "gekoeld bewaren"; }
+  else if (/jam\b|confituur|marmelade/.test(n)) { shelfDays = 365; shelfStorage = "ongekoeld bewaren"; }
+  else if (r.ferment) { shelfDays = 365; shelfStorage = "gekoeld bewaren"; }
+  else { shelfDays = 4; shelfStorage = "gekoeld bewaren"; }
+  return { ...r, shelfDays, shelfStorage: r.shelfStorage || shelfStorage };
+}
+const initialRecipes = [...CURATED, ...PATISSERIE, ...KEUKENMAP, ...LIBRARY].map(withShelfDefaults);
 
 const seedDishes = [
   { id:"d1", name:"Salade Caprese", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
@@ -2447,6 +2464,24 @@ export default function App() {
   }, [user, loaded, batches, stock, noticeShown]);
   const [stockNoticeClosed, setStockNoticeClosed] = useState(null); // per dag te sluiten
   const [checkForDate, setCheckForDate] = useState(null); // heropende dag die opnieuw ingevuld wordt
+  const [measureOpen, setMeasureOpen] = useState(false);
+  const [measureDone, setMeasureDone] = useState(null); // per dag één keer tonen
+  // Om 09:00: vraag metingen voor alle actieve fermentatiebatches (zoals de schoonmaakpopup).
+  useEffect(() => {
+    if (!user || !user.canEdit || !loaded) return;
+    const tick = () => {
+      const now = new Date();
+      const key = localDate(now);
+      if (now.getHours() < MEASURE_HOUR || measureDone === key || measureOpen) return;
+      const actief = batches.filter((b) => !b.done);
+      if (!actief.length) { setMeasureDone(key); return; }
+      setMeasureOpen(true);
+      setMeasureDone(key);
+    };
+    tick();
+    const t = setInterval(tick, 30000);
+    return () => clearInterval(t);
+  }, [user, loaded, batches, measureDone, measureOpen]);
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
@@ -2640,16 +2675,24 @@ export default function App() {
   // Een dag handmatig als vrije dag (bedrijf dicht) registreren of terugdraaien.
   const markDayOff = async (dateStr) => {
     const d = dateStr || localDate();
-    if (cleaningLogs.some((l) => (l.taskId === DAY_OFF_ID || l.taskId === DAY_DONE_ID) && l.doneDate === d)) return;
+    if (cleaningLogs.some((l) => l.taskId === DAY_OFF_ID && l.doneDate === d)) return;
+    // Een vrije dag heeft geen aftekeningen: bestaande registraties van deze dag
+    // worden verwijderd (verkeerde invulling), inclusief een eerdere dag-afronding.
+    const existing = cleaningLogs.filter((l) => l.doneDate === d);
+    if (existing.length && !window.confirm("Vrije dag: " + existing.length + " registratie" + (existing.length === 1 ? "" : "s") + " van deze dag " + (existing.length === 1 ? "wordt" : "worden") + " verwijderd. Doorgaan?")) return;
+    if (live && existing.length) {
+      const { error } = await supabase.from("cleaning_logs").delete().eq("done_date", d);
+      if (dbFail(error)) return;
+    }
     const row = { id: "off" + Date.now(), taskId: DAY_OFF_ID, doneDate: d, doneBy: user.name, note: "Bedrijf dicht", edits: [] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_OFF_ID, done_date: d, done_by: user.name, note: "Bedrijf dicht", edits: [] });
       if (dbFail(error)) return;
     }
-    setCleaningLogs((ls) => [row, ...ls]);
-    if (d === localDate()) { setCheckOpen(false); setCheckDone({ key: d, stage: 2 }); }
+    setCleaningLogs((ls) => [row, ...ls.filter((l) => l.doneDate !== d)]);
+    if (d === localDate()) { setCheckDone({ key: d, stage: 2 }); }
     setCheckOpen(false); setCheckForDate(null);
-    flash("Geregistreerd als vrije dag", () => removeCleaningLog(row.id, true));
+    flash("Geregistreerd als vrije dag");
   };
   // Bij het openen automatisch de gemiste dagen als "vrije dag" vastleggen:
   // elke dag tussen de laatste registratie en gisteren waarop niets is gelogd.
@@ -3166,6 +3209,9 @@ export default function App() {
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
+      {measureOpen && canEdit && (
+        <BatchMeasureModal batches={batches.filter((b) => !b.done)} onAdd={addBatchMeasurement} onClose={() => setMeasureOpen(false)} />
+      )}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit} forDate={checkForDate}
           onSign={(tid) => signCleaning(tid, false, checkForDate || undefined)} onDayDone={() => markDayDone(checkForDate || undefined)} onDayOff={() => markDayOff(checkForDate || undefined)} onClose={() => { setCheckOpen(false); setCheckForDate(null); }}
@@ -4428,7 +4474,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const [productionDate, setProductionDate] = useState(src.productionDate || localDate());
   const [days, setDays] = useState(prefill && prefill.shelfDays ? String(prefill.shelfDays) : "");
   const [expiryDate, setExpiryDate] = useState(editing ? (editing.expiryDate || "") : "");
-  const mapStorage = (t) => { const x = (t || "").toLowerCase(); if (/vrie|vrij s|frozen/.test(x)) return "ingevroren"; if (/koel|kast/.test(x)) return "gekoeld"; return x.trim() ? "ongekoeld" : "gekoeld"; };
+  const mapStorage = (t) => { const x = (t || "").toLowerCase(); if (/ongekoeld|droog/.test(x)) return "ongekoeld"; if (/vrie|bevroren|frozen/.test(x)) return "ingevroren"; if (/koel|kast/.test(x)) return "gekoeld"; return x.trim() ? "ongekoeld" : "gekoeld"; };
   const [storage, setStorage] = useState(editing ? (editing.storage || "gekoeld") : mapStorage(prefill && prefill.shelfStorage));
   const [recipeId, setRecipeId] = useState(src.recipeId || null);
   const [ings, setIngs] = useState((src.ingredients && src.ingredients.length ? src.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
@@ -4813,7 +4859,8 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7) + weekOffset * 7);
   const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
   const wk = weekKey(isoDate(monday));
-  const weekLogs = logs.filter((l) => l.taskId !== DAY_DONE_ID && weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
+  const weekLogs = logs.filter((l) => weekKey(l.doneDate) === wk).sort((a, b) => (a.doneDate < b.doneDate ? 1 : -1));
+  const weekSignCount = weekLogs.filter((l) => l.taskId !== DAY_DONE_ID && l.taskId !== DAY_OFF_ID).length;
   const dayOffDates = new Set(logs.filter((l) => l.taskId === DAY_OFF_ID).map((l) => l.doneDate));
   // Groepeer het weeklogboek per dag: nieuwste dag eerst, met wie er tekende.
   const dayNames = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
@@ -4968,7 +5015,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
         </div>}
       </div>
       {logOpen && <>
-      <div className="text-xs mute mb-2">{isoDate(monday)} t/m {isoDate(sunday)} · {weekLogs.length} aftekeningen</div>
+      <div className="text-xs mute mb-2">{isoDate(monday)} t/m {isoDate(sunday)} · {weekSignCount} aftekeningen</div>
       {weekLogs.length === 0
         ? <Empty label="Deze week is er nog niets afgetekend." />
         : <div className="space-y-3">
@@ -4994,7 +5041,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
                         : (
                           <div className="flex items-center gap-2 px-3 py-2 text-[13px]" style={{ background: "#f6f5ee", color: "#6a6550" }}>
                             <Calendar size={14} className="shrink-0" /> <span className="flex-1">Dag niet afgerond</span>
-                            {canEdit && <button onClick={() => onReopenOff(null, day.date)} className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-medium underline acc" title="Open deze dag als invulpopup — eerdere aftekeningen blijven staan"><Pencil size={12} /> Invullen</button>}
+                            {canEdit && <button onClick={() => onReopenOff(null, day.date)} className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-medium underline acc" title="Heropen deze dag als invulpopup — eerdere aftekeningen blijven staan"><Pencil size={12} /> Heropenen</button>}
                           </div>
                         )}
                       {day.items.map((l) => (
@@ -5404,6 +5451,69 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
   );
 }
 
+// Ochtendpopup (09:00): metingen voor alle actieve fermentatiebatches,
+// direct in te vullen per batch.
+function BatchMeasureModal({ batches, onAdd, onClose }) {
+  const [vals, setVals] = useState({}); // per batch: {ph, brix, tempC, note}
+  const [saved, setSaved] = useState({});
+  const set = (id, veld, w) => setVals((v) => ({ ...v, [id]: { ...(v[id] || {}), [veld]: w } }));
+  const today = localDate();
+  const measuredToday = (b) => (b.log || []).some((e) => String(e.date).slice(0, 10) === today) || saved[b.id];
+  const save = (b) => {
+    const v = vals[b.id] || {};
+    if (!v.ph && !v.brix && !v.tempC && !(v.note || "").trim()) { alert("Vul minstens één waarde in."); return; }
+    onAdd(b.id, { date: today, ph: v.ph || "", brix: v.brix || "", tempC: v.tempC || "", note: (v.note || "").trim() });
+    setSaved((sv) => ({ ...sv, [b.id]: true }));
+  };
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
+      <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="serif ink text-xl leading-tight">Ochtendmetingen</div>
+            <div className="text-xs mute mt-0.5">Meet de actieve batches en leg de waarden vast.</div>
+          </div>
+          <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
+        </div>
+        <div className="space-y-3 mt-3">
+          {batches.map((b) => {
+            const klaar = measuredToday(b);
+            const tgt = FERMENT_TARGETS[b.method] || FERMENT_TARGETS[b.type];
+            return (
+              <div key={b.id} className="card p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium ink truncate">{b.product}</div>
+                    <div className="text-[12px] mute">{[b.method, tgt && tgt.pH ? "streef-pH " + tgt.pH : null].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  {klaar && <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium" style={{ color: T.green }}><Check size={13} /> vandaag gemeten</span>}
+                </div>
+                {!klaar && (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <label className="block"><span className="text-[11.5px] mute">pH</span>
+                        <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={(vals[b.id] || {}).ph || ""} onChange={(e) => set(b.id, "ph", e.target.value.replace(/[^0-9.,]/g, ""))} /></label>
+                      <label className="block"><span className="text-[11.5px] mute">Brix</span>
+                        <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={(vals[b.id] || {}).brix || ""} onChange={(e) => set(b.id, "brix", e.target.value.replace(/[^0-9.,]/g, ""))} /></label>
+                      <label className="block"><span className="text-[11.5px] mute">Temp (°C)</span>
+                        <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={(vals[b.id] || {}).tempC || ""} onChange={(e) => set(b.id, "tempC", e.target.value.replace(/[^0-9.,-]/g, ""))} /></label>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <input className="input px-2.5 py-2 flex-1 text-sm" style={{ width: "auto" }} value={(vals[b.id] || {}).note || ""} onChange={(e) => set(b.id, "note", e.target.value)} placeholder="Opmerking (optioneel)" />
+                      <button onClick={() => save(b)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2"><Check size={14} /> Opslaan</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={onClose} className="ff w-full text-sm mute underline py-2 mt-3">Sluiten</button>
+      </div>
+    </div>
+  );
+}
+
 // Dagelijkse controle om 16:45
 function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDayDone, onDayOff, onClose, onOpenSection }) {
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
@@ -5419,16 +5529,16 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="serif ink text-xl leading-tight">{forDate ? "Invullen voor " + forDate : "Schoonmaakcontrole"}</div>
-            <div className="text-xs mute mt-0.5">Het is {String(CHECK_HOUR).padStart(2, "0")}:{String(CHECK_MIN).padStart(2, "0")} — tijd om af te tekenen.</div>
+            <div className="text-xs mute mt-0.5">{forDate ? "Heropende dag — eerdere aftekeningen blijven staan." : "Het is " + String(CHECK_HOUR).padStart(2, "0") + ":" + String(CHECK_MIN).padStart(2, "0") + " — tijd om af te tekenen."}</div>
           </div>
           <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
         </div>
         <div className="flex gap-2 mt-3">
-          <button onClick={onDayDone} className="btnp ff flex-1 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> Dag afgerond</button>
+          <button onClick={onDayDone} className="btnp ff flex-1 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold px-3 py-3"><Check size={16} /> {forDate ? "Dag opnieuw afronden" : "Dag afgerond"}</button>
           <button onClick={onDayOff} className="btno ff shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl text-sm font-medium px-3 py-3"><Calendar size={15} /> Vrije dag</button>
         </div>
         <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
-          {forDate ? <>Deze dag was gemarkeerd als vrije dag. Teken hieronder de gedane taken af, of rond de dag af.</> : <>Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span></>}
+          {forDate ? <>Teken hieronder de gedane taken af en rond de dag daarna opnieuw af. Kies je "Vrije dag", dan worden alle aftekeningen van deze dag verwijderd.</> : <>Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span></>}
         </div>
         {open.length === 0
           ? <div className="mt-3 rounded-xl p-3.5 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is afgetekend. Mooi werk.</div>
@@ -5664,13 +5774,18 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
 function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
-  const [yieldVal, setYieldVal] = useState(recipe?.yield || "");
-  const [yieldAmount, setYieldAmount] = useState(recipe && recipe.yieldAmount ? String(recipe.yieldAmount) : "");
-  const [yieldUnit, setYieldUnit] = useState(recipe?.yieldUnit || "");
+  // Opbrengst in rijen: aantal / eenheid / verpakking (bv. 20 St. / 200 gr / kleine pot)
+  const [yields, setYields] = useState(() => {
+    if (recipe && Array.isArray(recipe.yields) && recipe.yields.length) return recipe.yields.map((y) => ({ ...y }));
+    if (recipe && (recipe.yieldAmount || recipe.yieldUnit)) return [{ count: recipe.yieldAmount ? String(recipe.yieldAmount) : "", size: recipe.yieldUnit || "", pack: "" }];
+    return [{ count: "", size: "", pack: "" }];
+  });
+  const setYieldRow = (i, veld, w) => setYields((ys) => ys.map((y, j) => (j === i ? { ...y, [veld]: w } : y)));
   const [recipeType, setRecipeType] = useState(recipe && recipe.baseId ? "variatie" : "basis");
   const [basePick, setBasePick] = useState(recipe && recipe.baseId ? { id: recipe.baseId, name: recipe.baseName || "" } : null);
   const [baseQ, setBaseQ] = useState("");
-  const baseMatches = baseQ.trim() ? (allRecipes || []).filter((r) => (!recipe || r.id !== recipe.id) && softMatchAny([r.name, r.category], baseQ)).slice(0, 8) : [];
+  // Alleen basisrecepten (geen variaties) kunnen nieuwe variaties krijgen.
+  const baseMatches = baseQ.trim() ? (allRecipes || []).filter((r) => (!recipe || r.id !== recipe.id) && !r.baseId && softMatchAny([r.name, r.category], baseQ)).slice(0, 8) : [];
   const [ingredients, setIngredients] = useState(recipe?.ingredients?.length ? recipe.ingredients : [{ item: "", amount: "" }]);
   const [steps, setSteps] = useState(recipe?.steps?.length ? recipe.steps : [""]);
   const [seasons, setSeasons] = useState((recipe?.season || []).filter((s) => s !== "Hele jaar"));
@@ -5684,7 +5799,9 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
   const [fPh, setFPh] = useState(fd && fd.phTarget != null ? String(fd.phTarget) : "");
   const [fSugar, setFSugar] = useState(fd && fd.sugarPct != null && fd.sugarPct !== 0 ? String(fd.sugarPct) : "");
   const [shelfDays, setShelfDays] = useState(recipe && recipe.shelfDays ? String(recipe.shelfDays) : "");
-  const [shelfStorage, setShelfStorage] = useState(recipe && recipe.shelfStorage ? recipe.shelfStorage : "");
+  const [shelfStorage, setShelfStorage] = useState(recipe && recipe.shelfStorage ? recipe.shelfStorage : "gekoeld");
+  const detectOpt = (t) => { const x = (t || "").toLowerCase(); if (!x) return "gekoeld"; if (/ongekoeld/.test(x)) return "ongekoeld"; if (/droog/.test(x)) return "droog"; if (/vrie|bevroren/.test(x)) return "bevroren"; if (/koel/.test(x)) return "gekoeld"; return "anders"; };
+  const [storageOpt, setStorageOpt] = useState(detectOpt(recipe && recipe.shelfStorage));
   const [translating, setTranslating] = useState(false);
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
@@ -5700,18 +5817,19 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
   async function handleTranslate() {
     setTranslating(true); setErr(null);
     try {
-      const prompt = "Je bent een professionele Nederlandse keukenvertaler. Vertaal de tekstvelden naar het Nederlands, laat al-Nederlandse velden ongewijzigd, en houd hoeveelheden/eenheden exact gelijk. Geef UITSLUITEND geldige JSON terug, zonder markdown, in deze vorm:\n{\"name\":\"...\",\"category\":\"...\",\"yield\":\"...\",\"ingredients\":[{\"item\":\"...\",\"amount\":\"...\"}],\"steps\":[\"...\"]}\n\nRecept:\n" + JSON.stringify({ name, category, yield: yieldVal, ingredients, steps });
+      const prompt = "Je bent een professionele Nederlandse keukenvertaler. Vertaal de tekstvelden naar het Nederlands, laat al-Nederlandse velden ongewijzigd, en houd hoeveelheden/eenheden exact gelijk. Geef UITSLUITEND geldige JSON terug, zonder markdown, in deze vorm:\n{\"name\":\"...\",\"category\":\"...\",\"yield\":\"...\",\"ingredients\":[{\"item\":\"...\",\"amount\":\"...\"}],\"steps\":[\"...\"]}\n\nRecept:\n" + JSON.stringify({ name, category, yield: yields.map((y) => [y.count, y.size, y.pack].filter(Boolean).join(" ")).join(" + "), ingredients, steps });
       const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
       const data = await res.json();
       const text = (data.content || []).map((b) => (b.type === "text" ? b.text : "")).join("").trim();
       const p = JSON.parse(text.replace(/```json/gi, "").replace(/```/g, "").trim());
-      if (p.name) setName(p.name); if (p.category) setCategory(p.category); if (p.yield) setYieldVal(p.yield);
+      if (p.name) setName(p.name); if (p.category) setCategory(p.category);
+      if (p.yield) setYields((ys) => [{ ...(ys[0] || { count: "", size: "", pack: "" }), size: p.yield }, ...ys.slice(1)]);
       if (Array.isArray(p.ingredients) && p.ingredients.length) setIngredients(p.ingredients);
       if (Array.isArray(p.steps) && p.steps.length) setSteps(p.steps);
     } catch (e) { setErr("Vertalen lukte niet. Probeer opnieuw."); } finally { setTranslating(false); }
   }
   const submit = () => { if (!name.trim()) return; if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } onSave({
-    name: name.trim(), category: category.trim() || "Zonder categorie", yield: yieldVal.trim() || "—",
+    name: name.trim(), category: category.trim() || "Zonder categorie",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
     season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
     diet,
@@ -5719,9 +5837,19 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
     fermentMethod: ferment ? fermentMethod : null,
     fermentDefaults: ferment ? (() => { const nz = (x) => { const v = Number(String(x).replace(",", ".")); return x !== "" && !isNaN(v) && v !== 0 ? v : null; }; return { saltPct: nz(fSalt), tempC: nz(fTemp), days: nz(fDays), phTarget: nz(fPh), sugarPct: nz(fSugar) }; })() : null,
     shelfDays: shelfDays !== "" && !isNaN(Number(shelfDays)) && Number(shelfDays) > 0 ? Number(shelfDays) : null,
-    shelfStorage: shelfStorage.trim(),
-    yieldAmount: (() => { const v = Number(String(yieldAmount).replace(",", ".")); return yieldAmount !== "" && !isNaN(v) && v > 0 ? v : null; })(),
-    yieldUnit: yieldUnit.trim(),
+    shelfStorage: (storageOpt !== "anders" ? storageOpt : shelfStorage.trim()),
+    ...(() => {
+      const rows = yields.map((y) => ({ count: (y.count || "").trim(), size: (y.size || "").trim(), pack: (y.pack || "").trim() })).filter((y) => y.count || y.size || y.pack);
+      const first = rows[0];
+      const num = first ? Number(String(first.count).replace(",", ".")) : NaN;
+      const composed = rows.map((y) => (y.count ? y.count + "× " : "") + [y.size, y.pack].filter(Boolean).join(" ")).join(" + ");
+      return {
+        yields: rows,
+        yieldAmount: first && !isNaN(num) && num > 0 ? num : null,
+        yieldUnit: first ? [first.size, first.pack].filter(Boolean).join(" ") : "",
+        yield: composed || (recipe ? recipe.yield : "") || "—",
+      };
+    })(),
     baseId: recipeType === "variatie" && basePick ? basePick.id : null,
     baseName: recipeType === "variatie" && basePick ? basePick.name : null,
   }); };
@@ -5758,11 +5886,19 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
                 </>}
           </div>
         )}
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Opbrengst"><input className={inputCls} value={yieldVal} onChange={(e) => setYieldVal(e.target.value)} placeholder="bv. 5 potten" /></Field>
-          <Field label="Hoeveelheid"><input type="text" inputMode="decimal" className={inputCls} value={yieldAmount} onChange={(e) => setYieldAmount(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
-          <Field label="Eenheid"><input className={inputCls} value={yieldUnit} onChange={(e) => setYieldUnit(e.target.value)} placeholder="bv. 200 g pot" /></Field>
+        <div className="mb-1 text-sm font-medium ink">Opbrengst</div>
+        <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11.5px] mute mb-0.5"><span>Aantal</span><span>Eenheid</span><span>Verpakking</span><span /></div>
+        <div className="space-y-2 mb-2">
+          {yields.map((y, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={y.count} onChange={(e) => setYieldRow(i, "count", e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20 St." />
+              <input className="input px-2.5 py-2 w-full text-sm" value={y.size} onChange={(e) => setYieldRow(i, "size", e.target.value)} placeholder="bv. 200 gr" />
+              <input className="input px-2.5 py-2 w-full text-sm" value={y.pack} onChange={(e) => setYieldRow(i, "pack", e.target.value)} placeholder="bv. kleine pot" />
+              {yields.length > 1 ? <button onClick={() => setYields((ys) => ys.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={15} /></button> : <span className="w-6" />}
+            </div>
+          ))}
         </div>
+        <button onClick={() => setYields((ys) => [...ys, { count: "", size: "", pack: "" }])} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2"><Plus size={15} /> Opbrengst-rij toevoegen</button>
       </div>
       {category && !RECIPE_CATEGORIES.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
       <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = hele jaar)</span></div>
@@ -5774,7 +5910,12 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
       <Field label="Dieet"><select className={inputCls} value={diet} onChange={(e) => setDiet(e.target.value)}>{["Vegetarisch","Varkensvlees","Rundvlees"].map((d) => <option key={d}>{d}</option>)}</select></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Houdbaar (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={shelfDays} onChange={(e) => setShelfDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>
-        <Field label="Type opslag"><input className={inputCls} value={shelfStorage} onChange={(e) => setShelfStorage(e.target.value)} placeholder="bv. koelkast / vriezer / droog" /></Field>
+        <Field label="Type opslag">
+          <select className={inputCls} value={storageOpt} onChange={(e) => { setStorageOpt(e.target.value); if (e.target.value !== "anders") setShelfStorage(e.target.value); else setShelfStorage(""); }}>
+            {["ongekoeld", "gekoeld", "bevroren", "droog", "anders"].map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          {storageOpt === "anders" && <input className={inputCls + " mt-2"} value={shelfStorage} onChange={(e) => setShelfStorage(e.target.value)} placeholder="Omschrijf de opslag" />}
+        </Field>
       </div>
       <div className="tintbox rounded-xl p-4 mb-4">
         <button type="button" onClick={() => setFerment((f) => !f)} className="ff w-full flex items-center gap-3 text-left">
