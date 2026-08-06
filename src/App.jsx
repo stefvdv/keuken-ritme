@@ -48,10 +48,59 @@ const RECIPE_CATEGORIES = [
   "Pickles & zuur","Chutney & jam","Kruiden & zout","Oliën & vinaigrettes",
   "Sauzen & emulsies","Gels","Purees","Schuim & espuma","Mousses",
   "Sorbet & ijs","Zoet & patisserie","Fruit & garnituur",
-  "Tuin · rauw","Tuin · geroosterd","Tuin · gegrild","Tuin · gestoomd","Tuin · gerookt","Tuin · confit",
+  "Groente · rauw","Groente · geroosterd","Groente · gegrild","Groente · gestoomd","Groente · gerookt","Groente · confit",
   "Krokant & garnituur","Crumbles & garnituur","Garnituur",
   "Vlees","Vis","Zuivel","Fonds & bouillon","Deeg & brood","Dranken","Zonder categorie",
 ];
+
+// Oude categorienamen gelijktrekken: "Tuin · x" heet nu "Groente · x",
+// en de losse categorie "Chutney" valt onder "Chutney & jam".
+function normCategory(c) {
+  const t = String(c || "").trim();
+  if (/^tuin\s*·/i.test(t)) return t.replace(/^tuin/i, "Groente");
+  if (/^tuin$/i.test(t)) return "Groente";
+  if (/^chutney$/i.test(t)) return "Chutney & jam";
+  return t;
+}
+
+// ---------- allergenen ----------
+// Herkent de 14 wettelijke allergenen (EU) in ingrediëntteksten.
+// inc: losse woorden of woorddelen (Nederlandse samenstellingen zoals "tarwebloem"),
+// tok: alleen als los woord (voorkomt valse treffers zoals "prei" voor "ei"),
+// exc: woorden die eerst weggehaald worden (bv. "melkzuur" bevat geen melk).
+const ALLERGENS = [
+  { label:"Gluten", inc:["tarwe","rogge","gerst","spelt","kamut","haver","couscous","bulgur","griesmeel","paneermeel","panko","bloem","brood","pasta","spaghetti","macaroni","noedel","seitan","bladerdeeg","filodeeg","tortilla","kroepoek"], tok:["bier","mie"], exc:["bloemkool","boekweit","glutenvrij","maizena","kastanjebloem","rijstbloem","rijstebloem","amandelbloem","kikkererwtenbloem"] },
+  { label:"Ei", inc:["mayonaise","aioli","meringue","merengue","kippenei","eendenei","ganzenei"], tok:["ei","eieren","eitje","eitjes","eigeel","eidooier","dooier","dooiers","eiwit","eiwitten"], exc:[] },
+  { label:"Melk", inc:["melk","boter","room","kaas","yoghurt","kwark","mascarpone","ricotta","mozzarella","parmezaan","pecorino","feta","lactose","wei-"], tok:["wei"], exc:["melkzuur","kokosmelk","havermelk","sojamelk","amandelmelk","rijstmelk","cacaoboter","sheaboter","notenboter","pindakaas","boterhamworst"] },
+  { label:"Noten", inc:["amandel","hazelnoot","hazelnoten","walnoot","walnoten","cashew","pecan","pistache","macadamia","paranoot","paranoten","noten","noot"], tok:[], exc:["nootmuskaat","notenmuskaat","muskaatnoot","kokosnoot","kokosnoten"] },
+  { label:"Pinda", inc:["pinda"], tok:[], exc:[] },
+  { label:"Soja", inc:["soja","tofu","tofoe","tempeh","tamari","edamame","ketjap","shoyu"], tok:["miso"], exc:[] },
+  { label:"Vis", inc:["ansjovis","zalm","tonijn","makreel","haring","kabeljauw","forel","sardine","sardien","schelvis","vissaus","worcester","garum"], tok:["vis"], exc:[] },
+  { label:"Schaaldieren", inc:["garnaal","garnalen","kreeft","krab","langoustine","scampi","gamba"], tok:[], exc:[] },
+  { label:"Weekdieren", inc:["mossel","oester","inktvis","octopus","calamaris","coquille","jakobsschelp","vongole","escargot"], tok:["slak","slakken"], exc:["oesterzwam","oesterzwammen"] },
+  { label:"Selderij", inc:["selder","selderij"], tok:[], exc:[] },
+  { label:"Mosterd", inc:["mosterd"], tok:[], exc:[] },
+  { label:"Sesam", inc:["sesam","tahin"], tok:[], exc:[] },
+  { label:"Sulfiet", inc:["sulfiet","zwaveldioxide","e220","e221","e222","e223","e224","e226","e227","e228"], tok:[], exc:[] },
+  { label:"Lupine", inc:["lupine"], tok:[], exc:[] },
+];
+function detectAllergens(text) {
+  let t = " " + String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]+/g, " ") + " ";
+  const out = [];
+  for (const a of ALLERGENS) {
+    let s = t;
+    for (const e of a.exc) s = s.split(e).join(" ");
+    if (a.inc.some((w) => s.includes(w)) || a.tok.some((w) => s.includes(" " + w + " "))) out.push(a.label);
+  }
+  return out;
+}
+const ingredientAllergens = (item) => detectAllergens(item);
+const recipeAllergens = (r) => detectAllergens((r && r.ingredients ? r.ingredients : []).map((i) => i.item).join(" · "));
+function dishAllergens(d, recipeById) {
+  const set = new Set();
+  ((d && d.recipeIds) || []).forEach((id) => { const r = recipeById(id); if (r) recipeAllergens(r).forEach((x) => set.add(x)); });
+  return [...set];
+}
 
 // Standaard streefwaarden voor de fermentatie-eindcontrole
 const FERMENT_TARGETS = {
@@ -351,7 +400,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const MEASURE_HOUR = 9; // ochtendrondje: metingen voor actieve fermentatiebatches
+const MEASURE_HOUR = 13; // middagherinnering: metingen voor actieve fermentatiebatches
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 // Extra HACCP-registraties (elk een eigen wekelijkse schoonmaaktaak).
@@ -521,15 +570,15 @@ const BASES = [
     variations:[{name:"Parmezaantuile"},{name:"Broodtuile",add:"Broodkruim i.p.v. bloem."},{name:"Sesamtuile",add:"Sesam erover."},{name:"Boekweittuile",add:"Deel boekweit."}] },
 
   // ---- TUIN: bereiden ----
-  { id:"roast", baseName:"Geroosterde tuingroente", varTemplate:"Geroosterde {x}", generic:"tuingroente", category:"Tuin · geroosterd", yield:"4 porties", chefsPick:true, endorsements:["Michael","Simon"], gear:"Combi-oven / iVario",
+  { id:"roast", baseName:"Geroosterde tuingroente", varTemplate:"Geroosterde {x}", generic:"tuingroente", category:"Groente · geroosterd", yield:"4 porties", chefsPick:true, endorsements:["Michael","Simon"], gear:"Combi-oven / iVario",
     mains:[...ROOT,"venkel","bleekselderij","kardoen","courgette","tomaat",...BRASSICA,"princessenbonen","sperziebonen","snijbonen","pronkbonen"],
     ingredients:[{item:"{X}",amount:"800 g"},{item:"Olijfolie",amount:"3 el"},{item:"Zout",amount:"naar smaak"},{item:"Tijm",amount:"enkele takjes"}],
     steps:["Maak de {x} schoon en snijd in gelijke stukken.","Meng met olie, zout en tijm.","Rooster op 200°C tot gaar en gekaramelliseerd."] },
-  { id:"grill", baseName:"Gegrilde tuingroente", varTemplate:"Gegrilde {x}", generic:"tuingroente", category:"Tuin · gegrild", yield:"4 porties", gear:"Black Bastard",
+  { id:"grill", baseName:"Gegrilde tuingroente", varTemplate:"Gegrilde {x}", generic:"tuingroente", category:"Groente · gegrild", yield:"4 porties", gear:"Black Bastard",
     mains:[...ROOT,...STALK,"spitskool","palmkool","savooikool"],
     ingredients:[{item:"{X}",amount:"600 g"},{item:"Olie",amount:"2 el"},{item:"Zout",amount:"naar smaak"}],
     steps:["Grill de {x} op de Black Bastard tot mooie strepen.","Gaar door aan de koele kant of in de combi-oven.","Maak af met zout en olie."] },
-  { id:"steam", baseName:"Gestoomde tuingroente", varTemplate:"Gestoomde {x}", generic:"tuingroente", category:"Tuin · gestoomd", yield:"4 porties", gear:"Combi-oven",
+  { id:"steam", baseName:"Gestoomde tuingroente", varTemplate:"Gestoomde {x}", generic:"tuingroente", category:"Groente · gestoomd", yield:"4 porties", gear:"Combi-oven",
     mains:[...ROOT.slice(0,10),"venkel","bleekselderij","kardoen","courgette",...BRASSICA.slice(0,4)],
     ingredients:[{item:"{X}",amount:"500 g"},{item:"Zout",amount:"een snuf"}],
     steps:["Stoom de {x} beetgaar in de combi-oven.","Schrik indien nodig.","Breng op smaak."] },
@@ -553,19 +602,19 @@ const BASES = [
     mains:["rode biet","chioggia biet","gele biet","knolselderij","wortel","pastinaak","aardpeer","meiknol","koolrabi","ui","venkel","bleekselderij","courgette","komkommer","tomaat"],
     ingredients:[{item:"Sap van {x}",amount:"400 g"},{item:"Agar-agar",amount:"3 g"},{item:"Zout",amount:"snuf"}],
     steps:["Kook sap van {x} met agar 2 min.","Laat opstijven en mix glad.","Passeer in een knijpfles."] },
-  { id:"gconfit", baseName:"Geconfijte tuingroente", varTemplate:"Geconfijte {x}", generic:"tuingroente", category:"Tuin · confit", yield:"naar behoefte",
+  { id:"gconfit", baseName:"Geconfijte tuingroente", varTemplate:"Geconfijte {x}", generic:"tuingroente", category:"Groente · confit", yield:"naar behoefte",
     mains:["knoflook","ui","utrechtse ui","tomaat","rode biet","aardpeer","meiknol"],
     ingredients:[{item:"{X}",amount:"naar behoefte"},{item:"Olijfolie",amount:"om onder te dompelen"},{item:"Tijm & laurier",amount:"naar smaak"}],
     steps:["Dompel de {x} onder in olie met aromaten.","Gaar langzaam op 80–90°C tot zacht.","Bewaar in de olie."] },
-  { id:"gsmoke", baseName:"Gerookte tuingroente", varTemplate:"Gerookte {x}", generic:"tuingroente", category:"Tuin · gerookt", yield:"naar behoefte", gear:"Black Bastard",
+  { id:"gsmoke", baseName:"Gerookte tuingroente", varTemplate:"Gerookte {x}", generic:"tuingroente", category:"Groente · gerookt", yield:"naar behoefte", gear:"Black Bastard",
     mains:[...ROOT,"rode kool","boerenkool"],
     ingredients:[{item:"{X}",amount:"naar behoefte"},{item:"Rookmot",amount:"1 handvol"}],
     steps:["Rook de {x} koud of warm op de Black Bastard.","Laat rusten zodat de rook zich zet.","Bewaar afgedekt."] },
-  { id:"gtartaar", baseName:"Groentetartaar", varTemplate:"Tartaar van {x}", generic:"tuingroente", category:"Tuin · rauw", yield:"4 porties",
+  { id:"gtartaar", baseName:"Groentetartaar", varTemplate:"Tartaar van {x}", generic:"tuingroente", category:"Groente · rauw", yield:"4 porties",
     mains:["rode biet","tomaat","courgette","koolrabi","radijs","chioggia biet"],
     ingredients:[{item:"{X}, brunoise",amount:"300 g"},{item:"Sjalot",amount:"1 stuk"},{item:"Mosterd & olie",amount:"naar smaak"},{item:"Bieslook",amount:"1 el"}],
     steps:["Snijd de {x} in fijne brunoise.","Meng met sjalot, mosterd, olie en bieslook.","Breng op smaak en dresseer met een ring."] },
-  { id:"gcarp", baseName:"Groentecarpaccio", varTemplate:"Carpaccio van {x}", generic:"tuingroente", category:"Tuin · rauw", yield:"4 porties",
+  { id:"gcarp", baseName:"Groentecarpaccio", varTemplate:"Carpaccio van {x}", generic:"tuingroente", category:"Groente · rauw", yield:"4 porties",
     mains:["rode biet","chioggia biet","gele biet","koolrabi","meiknol","pastinaak","courgette"],
     ingredients:[{item:"{X}",amount:"300 g"},{item:"Olijfolie",amount:"2 el"},{item:"Zout & peper",amount:"naar smaak"}],
     steps:["Snijd de {x} flinterdun op de snijmachine.","Leg dakpansgewijs op het bord.","Maak af met olie, zout en kruiden."] },
@@ -639,7 +688,7 @@ const BASES = [
     mains:BEAN,
     ingredients:[{item:"{X}",amount:"400 g"},{item:"Olijfolie",amount:"40 g"},{item:"Knoflook",amount:"1 teen"},{item:"Zout",amount:"naar smaak"}],
     steps:["Gaar de {x} zacht.","Mix met olie en knoflook glad.","Breng op smaak."] },
-  { id:"beanroast", baseName:"Geroosterde bonen", varTemplate:"Geblisterde {x}", generic:"bonen", category:"Tuin · geroosterd", yield:"4 porties", gear:"iVario",
+  { id:"beanroast", baseName:"Geroosterde bonen", varTemplate:"Geblisterde {x}", generic:"bonen", category:"Groente · geroosterd", yield:"4 porties", gear:"iVario",
     mains:BEAN,
     ingredients:[{item:"{X}",amount:"400 g"},{item:"Olie",amount:"2 el"},{item:"Zout",amount:"naar smaak"}],
     steps:["Blancheer de {x} kort.","Blister heet in de iVario met olie.","Maak af met zout en kruiden."] },
@@ -1157,7 +1206,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Varkensnek",amount:"1 st"},{item:"African rub",amount:"royaal"}],
     steps:["Smeer de varkensnek een dag van tevoren in met de rub.","Verwarm de Green Egg op 120 °C en gaar tot een kerntemperatuur van 75 °C.","Stook de Green Egg naar 150 °C tot een kerntemperatuur van 85 °C.","Pak in in aluminiumfolie."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Varkensvlees", ferment:false, gear:"Green Egg", updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-knolselderijsalade", name:"Knolselderijsalade", category:"Tuin · rauw", yield:"1 bak",
+  { id:"map-knolselderijsalade", name:"Knolselderijsalade", category:"Groente · rauw", yield:"1 bak",
     ingredients:[{item:"Knolselderij",amount:"1 st"},{item:"Aardappelen",amount:"4 st"},{item:"Ui",amount:"1 st"},{item:"Boter",amount:"klontje"},{item:"Witte wijn",amount:"scheut"},{item:"Mayonaise",amount:"naar smaak"},{item:"Groene kruiden",amount:"naar smaak"}],
     steps:["Snijd knolselderij en aardappel brunoise.","Stoof gaar met de gesnipperde ui in de boter en witte wijn.","Koel terug en maak aan met de mayonaise, peper, zout en groene kruiden."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1169,7 +1218,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Knoflook",amount:"15 g"},{item:"Sjalot",amount:"40 g"},{item:"Rozemarijn",amount:"5 g"},{item:"Sinaasappelschil",amount:"20 g"},{item:"Olie",amount:"5 dl"}],
     steps:["Fruit knoflook, sjalot en rozemarijn aan.","Voeg de olie en sinaasappelschil toe.","20 min op 58 °C in de roner."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Roner", updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-venkel-sinaasappelsalade", name:"Venkel-sinaasappelsalade", category:"Tuin · rauw", yield:"1 bak",
+  { id:"map-venkel-sinaasappelsalade", name:"Venkel-sinaasappelsalade", category:"Groente · rauw", yield:"1 bak",
     ingredients:[{item:"Venkels",amount:"3 st"},{item:"Sinaasappelsap",amount:"van 2 st"},{item:"Sinaasappelrasp",amount:"van 1 st"},{item:"Olijfolie",amount:"scheut"},{item:"Zout",amount:"naar smaak"}],
     steps:["Haal de venkel door de Magimix (fijne blad).","Bak de gesneden venkel licht aan in de olijfolie met de rasp en het sap."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1265,7 +1314,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Kikkoman",amount:"2,5 dl"},{item:"Eidooier",amount:"250 g"},{item:"Sojaolie",amount:"375 g"},{item:"Mosterdpoeder",amount:"10 g"},{item:"Sushi-azijn",amount:"40 g"},{item:"Olijfolie",amount:"75 g"},{item:"Sesamolie",amount:"25 g"}],
     steps:["Kook de kikkoman in tot 1,2 dl en koel terug.","Maak van de overige ingrediënten mayonaise.","Voeg op het laatst de ingekookte kikkoman toe."],
     endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-tofuwrap", name:"Tofuwrap", category:"Tuin · rauw", yield:"± 12 st",
+  { id:"map-tofuwrap", name:"Tofuwrap", category:"Groente · rauw", yield:"± 12 st",
     ingredients:[{item:"Tofu",amount:"675 g"},{item:"Tahin",amount:"3 el"},{item:"Sojamelk",amount:"80 g"},{item:"Bloem",amount:"65 g"},{item:"Rijstmeel",amount:"60 g"},{item:"Verse kruiden",amount:"15 g"},{item:"Sojaolie",amount:"3 el"}],
     steps:["Pureer de tofu, tahin en sojamelk.","Meng alles en bak in olie."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1329,7 +1378,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Appelciderazijn",amount:"475 ml"},{item:"Lichte basterdsuiker",amount:"275 g"},{item:"Rozijnen",amount:"225 g"},{item:"Garam masala",amount:"1 el"},{item:"Gefermenteerde pruimen",amount:"750 g"},{item:"Uien (brunoise)",amount:"3 st"},{item:"Rode pepers (fijne brunoise, zonder zaadlijst)",amount:"4 st"},{item:"Gember, geschild en fijngehakt",amount:"30 g"},{item:"Knoflook, fijngehakt",amount:"4 tenen"}],
     steps:["Doe de azijn, suiker, rozijnen en garam masala in een grote pan.","Verwarm al roerend op laag vuur tot de suiker is opgelost en breng aan de kook.","Voeg de pruimen, ui, pepers, gember, knoflook en zout toe.","Laat 40–50 min zachtjes sudderen tot de chutney dik is; roer regelmatig door."],
     endorsements:[], chefsPick:false, baseId:"chutney-pruim", isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-pulled-oesterzwam", name:"Pulled oesterzwam of eryngii", category:"Tuin · geroosterd", yield:"≈ 500 g",
+  { id:"map-pulled-oesterzwam", name:"Pulled oesterzwam of eryngii", category:"Groente · geroosterd", yield:"≈ 500 g",
     ingredients:[{item:"Oesterzwam of eryngii (kingboleet)",amount:"500 g"},{item:"Maïsmeel",amount:"4 tl"},{item:"5-spice",amount:"2 tl"},{item:"Knoflookpoeder",amount:"1 tl"},{item:"Hoisinsaus",amount:"150 g"},{item:"Sesamzaad",amount:"optioneel"}],
     steps:["Pluk de zwammen in mooie reepjes.","Voeg de droge kruiden en het maïsmeel toe en meng goed.","Bak in een pan met een goede laag olie tot bruin en krokant.","Laat uitlekken op een doek.","Meng na het bakken 2 theelepels hoisinsaus erdoor en werk eventueel af met sesamzaad."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1337,7 +1386,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Kruimeldeeg",amount:"500 g"},{item:"Boter (voor de bodem)",amount:"150 g"},{item:"Pindakaas zonder stukjes",amount:"900 g"},{item:"Poedersuiker",amount:"500 g"},{item:"Boter (voor de vulling)",amount:"250 g"},{item:"Volle melk",amount:"30 ml"},{item:"Pure chocoladecouverture",amount:"700 g"},{item:"Slagroom",amount:"250 ml"}],
     steps:["Draai het kruimeldeeg fijn in de Magimix en voeg de gesmolten boter toe.","Bekleed een vierkante bakvorm met bakpapier, verdeel de kruimels over de bodem en laat opstijven in de koeling.","Verwarm de pindakaas met de boter au bain-marie tot de boter is opgenomen.","Roer de poedersuiker en melk door het pindakaasmengsel; stort op de bodem en laat opstijven.","Kook de slagroom, giet op de chocolade, laat 1 min staan en roer tot een homogene massa.","Stort de chocolade op de pindakaaslaag en laat uitharden in de koeling."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-spruitenstamppot", name:"Spruitenstamppot", category:"Tuin · geroosterd", yield:"grote batch",
+  { id:"map-spruitenstamppot", name:"Spruitenstamppot", category:"Groente · geroosterd", yield:"grote batch",
     ingredients:[{item:"— Mousseline: aardappels",amount:"4 kg"},{item:"Margarine",amount:"250 g"},{item:"Kokosmelk",amount:"800 ml"},{item:"Olijfolie",amount:"50 ml"},{item:"Peper en zout",amount:"naar smaak"},{item:"— Spruiten: spruiten",amount:"5 kg"},{item:"Zonnebloemolie",amount:"100 ml"},{item:"Sesamzaad",amount:"100 g"}],
     steps:["Schil de aardappels, kook gaar in gezouten water, giet af en laat uitdampen.","Verwarm de margarine met de kokosmelk; wrijf de aardappels door een bolzeef en meng; breng op smaak.","Maak de spruiten schoon, halveer de grote, besprenkel met olie, sesamzaad, peper en zout.","Rooster in de oven op 200 °C, 2× 6 min.","Draai 2 kg geroosterde spruiten kort door de Magimix (structuur behouden, geen puree) en meng door de mousseline; breng verder op smaak."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1349,7 +1398,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Bloem",amount:"2000 g"},{item:"Boter",amount:"800 g"},{item:"Water",amount:"600 g"},{item:"Zout",amount:"40 g"},{item:"Bakpoeder",amount:"20 g"},{item:"Karwijzaad",amount:"50 g"}],
     steps:["Meng alles door elkaar met de deeghaak.","Maak bollen van 250 à 300 gram."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-spitskoolrendang", name:"Spitskoolrendang", category:"Tuin · geroosterd", yield:"1 pan",
+  { id:"map-spitskoolrendang", name:"Spitskoolrendang", category:"Groente · geroosterd", yield:"1 pan",
     ingredients:[{item:"Grote (savooie) spitskool",amount:"1 st"},{item:"Zout",amount:"om te kneden"},{item:"— Boemboe: sjalotten",amount:"2 st"},{item:"Rode peper",amount:"1 st"},{item:"Citroengras",amount:"1 stengel"},{item:"Gember",amount:"± 1,5 cm"},{item:"Knoflook",amount:"3 teentjes"},{item:"Surinaamse masala",amount:"1 tl"},{item:"— Rendang: zonnebloemolie",amount:"scheutje"},{item:"Limoenblaadjes",amount:"3 st"},{item:"Kokosmelk",amount:"1 blik à 400 ml"},{item:"Ketjap manis",amount:"4 el"},{item:"Ketjap asin",amount:"2 el"},{item:"Sambal oelek",amount:"1 tl"}],
     steps:["Snijd de koolbladeren in reepjes, kneed met zout tot de kool vochtig wordt en laat uitlekken onder een verzwaard bord.","Boemboe: snijd sjalot, knoflook, peper en gember grof en het witte deel van de sereh in ringetjes; pureer met de masala en wat kokosmelk.","Verhit olie in een wok en bak de koolreepjes lichtbruin.","Bak de boemboe enkele minuten mee tot hij gaar is en geurt.","Voeg limoenblaadjes, de rest van de kokosmelk, ketjap manis, ketjap asin en sambal toe; roer door.","Laat inkoken tot een mooie dikke saus."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1405,7 +1454,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Bloem",amount:"600 g"},{item:"Zout",amount:"2 tl"},{item:"Chaispecerijen",amount:"4 el"},{item:"Baking soda",amount:"4 tl"},{item:"Bakpoeder",amount:"1 tl"},{item:"Pastinaak, geraspt",amount:"280 g"},{item:"Peer, in julienne",amount:"280 g"},{item:"Eieren",amount:"8 st"},{item:"Suiker",amount:"200 g"},{item:"Bruine basterdsuiker",amount:"200 g"},{item:"Yoghurt",amount:"160 g"},{item:"Vanille-extract",amount:"4 tl"},{item:"Zonnebloemolie",amount:"480 g"}],
     steps:["Verwarm de oven voor op 165 °C en bekleed een gastronormbak met bakpapier.","Meng bloem, zout, chaikruiden, baking soda en bakpoeder goed door.","Voeg de pastinaak en peer toe en meng door het bloemmengsel.","Klop de eieren met beide suikers luchtig en bleek met een garde.","Voeg de yoghurt en het vanille-extract toe.","Schenk de zonnebloemolie in een dunne straal al kloppend bij de eierbasis.","Meng het bloemmengsel met de eierbasis tot een egale massa en stort het beslag.","Bak 25–30 min in de voorverwarmde oven en laat afkoelen in het blik."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-pompoenflan", name:"Pompoenflan", category:"Tuin · gestoomd", yield:"± 12 vormpjes",
+  { id:"map-pompoenflan", name:"Pompoenflan", category:"Groente · gestoomd", yield:"± 12 vormpjes",
     ingredients:[{item:"Pompoen",amount:"1 st"},{item:"Eieren",amount:"3 st"},{item:"Bloem",amount:"3 el, eventueel meer"},{item:"Olijfolie",amount:"100 ml"},{item:"Vadouvan",amount:"1 el"},{item:"Knoflook",amount:"1/2 teen"},{item:"Peper en zout",amount:"naar smaak"}],
     steps:["Schil de pompoen, verwijder de zaadlijsten en snijd in stukken.","Kook de pompoen gaar in gezouten water; laat uitlekken en dep droog.","Pureer met knoflook, vadouvan, eieren, olijfolie en bloem tot een romige massa; voeg extra bloem toe als het te dun is.","Stort in vormpjes en dek af met een siliconen matje.","Stoom de flan in ongeveer 50 min op 85 °C gaar."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Stoomoven", updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1429,7 +1478,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Water",amount:"12,5 l"},{item:"Earl grey",amount:"30 g"},{item:"Citroenmelisse",amount:"30 g"},{item:"Honing",amount:"430 g"},{item:"Steranijs",amount:"7 g"},{item:"Kruidnagel",amount:"2 g"}],
     steps:["Steriliseer de flesjes vooraf: 130 °C stomen in de oven.","Breng het water aan de kook met de earl grey, steranijs en kruidnagel en laat afkoelen tot 80 °C.","Voeg de honing en citroenmelisse toe en laat 30 min trekken op 80 °C.","Zeef alles eruit en giet in de flesjes."],
     endorsements:[], chefsPick:false, baseId:"map-icetea-japans-gember", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-preimozaiek", name:"Preimozaïek", category:"Tuin · geroosterd", yield:"1 rol",
+  { id:"map-preimozaiek", name:"Preimozaïek", category:"Groente · geroosterd", yield:"1 rol",
     ingredients:[{item:"Prei",amount:"8 st"},{item:"Tijm",amount:"10 takjes"},{item:"Citroen",amount:"2 st"},{item:"Zonnebloemolie",amount:"scheut"},{item:"Norivellen",amount:"enkele"}],
     steps:["Snijd het groen van de prei af en was het witte gedeelte.","Snijd de prei in gelijke stukken, leg in een gastronoombak met de tijm, peper en zout.","Dek af met aluminiumfolie en gaar 70 min in de oven op 160 °C.","Verwijder de folie, laat 5 min afkoelen en haal het buitenste (taaie) blad eraf.","Rol de stukken prei in de norivellen en snijd het uitstekende nori af.","Leg afdekfolie op de werkbank, leg de ingerolde prei erop en bestrooi met de zeste van de citroen.","Rol strak op en koel terug in de blastchiller.","Portioneer de goed afgekoelde rol met de folie eromheen."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Blastchiller", updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1457,7 +1506,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Notenmix",amount:"1 kg"},{item:"Gebakken uitjes",amount:"100 g"},{item:"Komijn",amount:"10 g"},{item:"Gemberpoeder",amount:"5 g"},{item:"Anijszaad",amount:"5 g"},{item:"Nootmuskaatpoeder",amount:"5 g"},{item:"Gerookt paprikapoeder",amount:"5 g"},{item:"Chilipoeder",amount:"2 g"},{item:"Za'atar",amount:"5 g"},{item:"Sesamzaad",amount:"20 g"},{item:"Limoenrasp",amount:"naar behoefte"},{item:"Citroenrasp",amount:"naar behoefte"},{item:"Maldonzout en peper",amount:"naar behoefte"}],
     steps:["Draai de notenmix met de gebakken uitjes tot een grof kruim.","Rooster het kruim met alle specerijen en het sesamzaad 15 min in de oven op 180 °C.","Laat afkoelen en breng op smaak met de rasp, het zout en de peper."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-geroosterde-spruiten", name:"Geroosterde spruiten", category:"Tuin · geroosterd", yield:"5 kg",
+  { id:"map-geroosterde-spruiten", name:"Geroosterde spruiten", category:"Groente · geroosterd", yield:"5 kg",
     ingredients:[{item:"Spruiten",amount:"5 kg"},{item:"Zonnebloemolie",amount:"100 ml"},{item:"Sesamzaad",amount:"100 g"},{item:"Peper en zout",amount:"naar smaak"}],
     steps:["Maak de spruiten schoon en halveer de grote.","Besprenkel met zonnebloemolie, sesamzaad, peper en zout.","Rooster in de oven op 200 °C, 2× 6 min."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1473,7 +1522,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Flinke appels",amount:"9 st"},{item:"Suiker (vulling)",amount:"150 g"},{item:"Kaneel",amount:"6 tl"},{item:"— Crumble: ongezouten roomboter",amount:"225 g"},{item:"Bloem",amount:"300 g"},{item:"Suiker",amount:"300 g"},{item:"Zout",amount:"snuf"}],
     steps:["Meng de appels met de suiker en kaneel voor de vulling.","Doe alle crumble-ingrediënten in een kom; wrijf de boter met je vingers fijn en kneed tot een stevig maar kruimelig deeg.","Strooi het kruimeldeeg over het appelmengsel.","Bak de crumble in 30 min op 190 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-bloemkool-oven", name:"Bloemkool uit de oven met bloemkoolcrème", category:"Tuin · geroosterd", yield:"1 kool",
+  { id:"map-bloemkool-oven", name:"Bloemkool uit de oven met bloemkoolcrème", category:"Groente · geroosterd", yield:"1 kool",
     ingredients:[{item:"Grote bloemkool",amount:"1 st"},{item:"Boter",amount:"100 g"},{item:"Paprikapoeder",amount:"1 tl"},{item:"Gedroogde oregano",amount:"1 tl"},{item:"Komijn",amount:"1 tl"},{item:"Knoflookpoeder",amount:"1 tl"},{item:"Kurkuma",amount:"1 tl"},{item:"— Crème: bloemkoolbladeren",amount:"van de kool"},{item:"Cashewnoten, gebrand",amount:"2 el"},{item:"Citroensap",amount:"van 1 st"},{item:"Olijfolie",amount:"2 el"},{item:"Tahin",amount:"2 el"},{item:"Griekse yoghurt",amount:"4 el"},{item:"Verse groene kruiden",amount:"royaal"}],
     steps:["Verwijder de bladeren van de bloemkool (bewaar voor de crème) en snijd de stronk eraf.","Smelt de boter tot hij schuimt en bruin wordt; voeg de specerijen toe en laat trekken.","Bestrijk de bloemkool rondom met de boter.","Gaar in de oven op 200 °C + 50% stoom, 20–30 min, tot goudbruin en mals.","Crème: blancheer de bloemkoolbladeren tot ze zacht en groen zijn.","Draai fijn in de blender met verse kruiden; voeg cashewnoten, citroensap en olijfolie toe.","Voeg als laatste tahin en yoghurt toe en breng op smaak met peper en zout."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Combisteamer", updatedBy:"Stef", updatedAt:"nieuw" },
@@ -1516,7 +1565,7 @@ function withShelfDefaults(r) {
   else { shelfDays = 4; shelfStorage = "gekoeld bewaren"; }
   return { ...r, shelfDays, shelfStorage: r.shelfStorage || shelfStorage };
 }
-const initialRecipes = [...CURATED, ...PATISSERIE, ...KEUKENMAP, ...LIBRARY].map(withShelfDefaults);
+const initialRecipes = [...CURATED, ...PATISSERIE, ...KEUKENMAP, ...LIBRARY].map(withShelfDefaults).map((r) => ({ ...r, category: normCategory(r.category) }));
 
 const seedDishes = [
   { id:"d1", name:"Salade Caprese", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
@@ -2213,6 +2262,25 @@ function scaleAmount(str, f) {
   }
   return str;
 }
+// Referentie voor het meeschalen van ingrediënten in het voorraadformulier.
+// Gebruikt yieldAmount/yieldUnit als die er zijn; anders wordt de opbrengsttekst
+// gelezen ("≈ 3 potten" → 3 stuks, "≈ 500 g" → 1 × 500). Zo klopt de schaling
+// ook voor bibliotheekrecepten en oudere recepten zonder losse opbrengstvelden.
+function parseYieldRef(amount, unitText, yieldText) {
+  const num = (s) => { const m = String(s ?? "").match(/\d+(?:[.,]\d+)?/); return m ? Number(m[0].replace(",", ".")) : null; };
+  let a = amount != null && !isNaN(Number(amount)) && Number(amount) > 0 ? Number(amount) : null;
+  let u = num(unitText);
+  if (a === null) {
+    const m = String(yieldText || "").match(/(\d+(?:[.,]\d+)?)\s*(?:×|x)?\s*([a-zà-ÿ]*)/i);
+    if (m) {
+      const n = Number(m[1].replace(",", "."));
+      const w = (m[2] || "").toLowerCase();
+      if (/^(g|gr|gram|kg|ml|cl|dl|l|liter)$/.test(w)) { if (u === null) u = n; a = 1; }
+      else a = n;
+    }
+  }
+  return { refYield: a, refUnitNum: u };
+}
 function roleLabel(role) {
   return { chef: "Chef", souschef: "Souschef", kok: "Zelfstandig kok",
            leerling: "Leerling kok", hulpkok: "Hulpkok", guest: "Gast" }[role] || role;
@@ -2279,8 +2347,11 @@ export default function App() {
   const [cleaningLogs, setCleaningLogs] = useState([]);
   const [techNotes, setTechNotes] = useState(TECH_NOTES_SEED);
   const [checkOpen, setCheckOpen] = useState(false);
+  const [checkBanner, setCheckBanner] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
-  const [checkDone, setCheckDone] = useState(null);
+  // Weggeklikte herinneringen overleven een refresh: bewaard op het apparaat.
+  const [checkDone, setCheckDoneState] = useState(() => { try { return JSON.parse(localStorage.getItem("ritme:check-dismiss") || "null"); } catch (e) { return null; } });
+  const setCheckDone = (v) => { setCheckDoneState(v); try { localStorage.setItem("ritme:check-dismiss", JSON.stringify(v)); } catch (e) {} };
   const [newPairing, setNewPairing] = useState(0);
   const [haccpLogs, setHaccpLogs] = useState([]);
   const [haccpRecords, setHaccpRecords] = useState([]);
@@ -2351,6 +2422,7 @@ export default function App() {
     setOpenCounts(oc);
     const hidden = new Set((hi.data || []).map((h) => h.recipe_id));
     recs = recs.filter((r) => !hidden.has(r.id));
+    recs = recs.map((r) => ({ ...r, category: normCategory(r.category) }));
     setRecipes(recs);
     const fpRows = fp.data || [];
     const fpMap = new Map(fpRows.map((x) => [x.name, x]));
@@ -2465,23 +2537,34 @@ export default function App() {
   const [stockNoticeClosed, setStockNoticeClosed] = useState(null); // per dag te sluiten
   const [checkForDate, setCheckForDate] = useState(null); // heropende dag die opnieuw ingevuld wordt
   const [measureOpen, setMeasureOpen] = useState(false);
-  const [measureDone, setMeasureDone] = useState(null); // per dag één keer tonen
-  // Om 09:00: vraag metingen voor alle actieve fermentatiebatches (zoals de schoonmaakpopup).
+  const [measureBanner, setMeasureBanner] = useState(false);
+  // Vanaf 13:00: banner die om metingen voor de actieve fermentatiebatches vraagt.
+  // Weggeklikt vóór 16:45 → komt om 16:45 nog één keer terug; daarna niet meer.
+  // De keuze wordt op het apparaat bewaard, dus een refresh haalt de banner niet terug.
+  // Zodra alle actieve batches vandaag gemeten zijn, verdwijnt de banner vanzelf.
   useEffect(() => {
-    if (!user || !user.canEdit || !loaded) return;
+    if (!user || !user.canEdit || !loaded) { setMeasureBanner(false); return; }
     const tick = () => {
       const now = new Date();
       const key = localDate(now);
-      if (now.getHours() < MEASURE_HOUR || measureDone === key || measureOpen) return;
-      const actief = batches.filter((b) => !b.done);
-      if (!actief.length) { setMeasureDone(key); return; }
-      setMeasureOpen(true);
-      setMeasureDone(key);
+      if (now.getHours() < MEASURE_HOUR) { setMeasureBanner(false); return; }
+      const open = batches.filter((b) => !b.done && !(b.log || []).some((e) => String(e.date).slice(0, 10) === key));
+      if (!open.length) { setMeasureBanner(false); return; }
+      let dis = null; try { dis = JSON.parse(localStorage.getItem("ritme:measure-dismiss") || "null"); } catch (e) {}
+      const d = dis && dis.key === key ? dis : null;
+      const past2 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
+      setMeasureBanner(!d || (d.stage === 1 && past2));
     };
     tick();
     const t = setInterval(tick, 30000);
     return () => clearInterval(t);
-  }, [user, loaded, batches, measureDone, measureOpen]);
+  }, [user, loaded, batches]);
+  const dismissMeasureBanner = () => {
+    const now = new Date();
+    const past2 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
+    try { localStorage.setItem("ritme:measure-dismiss", JSON.stringify({ key: localDate(), stage: past2 ? 2 : 1 })); } catch (e) {}
+    setMeasureBanner(false);
+  };
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
@@ -2596,6 +2679,7 @@ export default function App() {
       shelfDays: rec && rec.shelfDays ? rec.shelfDays : null,
       yieldAmount: rec && rec.yieldAmount ? rec.yieldAmount : null,
       yieldUnit: (rec && rec.yieldUnit) || "",
+      yieldText: (rec && rec.yield) || "",
     };
   };
   const finishEindmeting = (batchId, m) => {
@@ -2661,8 +2745,9 @@ export default function App() {
     }
     setCleaningLogs((ls) => [row, ...ls]);
     setCheckOpen(false);
+    setCheckBanner(false);
     setCheckForDate(null);
-    setCheckDone({ key: localDate(), stage: 2 }); // popup vandaag niet meer openen
+    setCheckDone({ key: localDate(), stage: 2 }); // herinnering vandaag niet meer tonen
     flash("Dag afgerond", () => removeCleaningLog(row.id, true));
   };
   const undoDayDone = async () => {
@@ -2691,7 +2776,7 @@ export default function App() {
     }
     setCleaningLogs((ls) => [row, ...ls.filter((l) => l.doneDate !== d)]);
     if (d === localDate()) { setCheckDone({ key: d, stage: 2 }); }
-    setCheckOpen(false); setCheckForDate(null);
+    setCheckOpen(false); setCheckBanner(false); setCheckForDate(null);
     flash("Geregistreerd als vrije dag");
   };
   // Bij het openen automatisch de gemiste dagen als "vrije dag" vastleggen:
@@ -3072,21 +3157,23 @@ export default function App() {
   const todayKey = localDate();
   const swipe = useSwipeSections(section, (s) => { setSection(s); setSearch(""); });
 
-  // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks, één keer per dag).
+  // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks): toont een banner
+  // bovenaan de pagina in plaats van een popup. Weggeklikt → komt om 18:00 nog
+  // één keer terug; daarna niet meer die dag. De keuze overleeft een refresh.
   // Wacht op de geladen teamdata: anders lijkt een al afgeronde dag nog open.
   useEffect(() => {
-    if (!user || !user.canEdit || !loaded) return;
+    if (!user || !user.canEdit || !loaded) { setCheckBanner(false); return; }
     let cancelled = false;
     const dayMarked = (l, key) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key;
     const tick = async () => {
-      if (checkOpen || checkForDate) return; // popup staat al open (of heropende dag wordt ingevuld)
+      if (checkBanner || checkOpen || checkForDate) return; // banner of formulier staat al open
       const now = new Date();
       const key = localDate(now);
       const past1 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
       const past2 = now.getHours() >= REMIND_HOUR; // tweede herinnering
       if (!past1) return;
       const cd = checkDone && checkDone.key === key ? checkDone : null;
-      // trap 1 nog niet gezien → tonen; trap 1 weggeklikt en het is na REMIND_HOUR → nogmaals tonen
+      // trap 1 nog niet weggeklikt → tonen; trap 1 weggeklikt en het is na REMIND_HOUR → nogmaals tonen
       const mustShow = !cd || (cd.stage === 1 && past2);
       if (!mustShow) return;
       if (cleaningLogs.some((l) => dayMarked(l, key))) return; // al afgerond volgens lokale stand
@@ -3101,19 +3188,23 @@ export default function App() {
         } catch (e) { /* bij twijfel gewoon tonen */ }
       }
       if (cancelled) return;
-      setCheckOpen(true);
-      setCheckDone({ key, stage: now.getHours() >= REMIND_HOUR ? 2 : 1 });
+      setCheckBanner(true);
     };
     tick();
     const t = setInterval(tick, 60000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [user, loaded, checkDone, cleaningLogs]);
-  // Rondt een collega de dag intussen af (realtime), sluit de popup dan vanzelf.
+  }, [user, loaded, checkDone, cleaningLogs, checkBanner, checkOpen, checkForDate]);
+  const dismissCheckBanner = () => {
+    const now = new Date();
+    setCheckDone({ key: localDate(), stage: now.getHours() >= REMIND_HOUR ? 2 : 1 });
+    setCheckBanner(false);
+  };
+  // Rondt een collega de dag intussen af (realtime), verdwijnen banner en popup vanzelf.
   useEffect(() => {
-    if (!checkOpen) return;
+    if (!checkOpen && !checkBanner) return;
     const key = localDate();
-    if (!checkForDate && cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key)) setCheckOpen(false);
-  }, [cleaningLogs, checkOpen]);
+    if (!checkForDate && cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key)) { setCheckOpen(false); setCheckBanner(false); }
+  }, [cleaningLogs, checkOpen, checkBanner]);
 
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
@@ -3141,10 +3232,20 @@ export default function App() {
             {canEdit && !dismissedNotices[todayKey] && (
               <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
             )}
+            {canEdit && measureBanner && (
+              <ReminderBanner icon={<FlaskConical size={15} />} title="Fermentatiemetingen"
+                text="Er zijn actieve batches die vandaag nog niet gemeten zijn."
+                actionLabel="Metingen invullen" onAction={() => setMeasureOpen(true)} onDismiss={dismissMeasureBanner} />
+            )}
+            {canEdit && checkBanner && (
+              <ReminderBanner icon={<Sparkles size={15} />} title="Schoonmaakcontrole"
+                text={"Het is " + String(CHECK_HOUR).padStart(2, "0") + ":" + String(CHECK_MIN).padStart(2, "0") + " geweest — tijd om de schoonmaak van vandaag af te tekenen."}
+                actionLabel="Aftekenen" onAction={() => setCheckOpen(true)} onDismiss={dismissCheckBanner} />
+            )}
             {section === "home" && <HomeScreen stock={stock} recipes={recipes} batches={batches} dishes={dishes} onOpenRecipe={openRecipe} onOpenDish={(id) => push({ screen: "dishDetail", id })} onGoSection={(sec) => setSection(sec)} />}
-            {section === "gerechten" && <DishList dishes={dishes} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
+            {section === "gerechten" && <DishList dishes={dishes} recipeById={recipeById} search={search} setSearch={setSearch} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} stock={stock} search={search} setSearch={setSearch} onOpen={openRecipe} />}
-            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} stock={stock} canEdit={canEdit} onExtend={extendBatch} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onAck={ackAction} />}
+            {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} stock={stock} canEdit={canEdit} onExtend={extendBatch} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onOpenMeasure={() => setMeasureOpen(true)} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
             {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -3179,7 +3280,7 @@ export default function App() {
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })}
-            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null, yieldAmount: r.yieldAmount || null, yieldUnit: r.yieldUnit || "" } })}
+            onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null, yieldAmount: r.yieldAmount || null, yieldUnit: r.yieldUnit || "", yieldText: r.yield || "" } })}
             onOpenTech={openTech} />
         ); })()}
         {current.screen === "dishForm" && <DishForm dish={current.editing ? dishById(current.editing) : null} draft={dishDraft} allRecipes={recipes} recipeById={recipeById}
@@ -3573,7 +3674,7 @@ function HomeScreen({ stock, recipes, batches, dishes, onOpenRecipe, onOpenDish,
 
 const COURSE_FILTERS = ["Alle", ...DISH_COURSES];
 
-function DishList({ dishes, search, setSearch, onOpen }) {
+function DishList({ dishes, recipeById, search, setSearch, onOpen }) {
   const [courseF, setCourseF] = useState("Alle");
   const [sortMode, setSortMode] = useState("seizoen");
   const q = search.trim().toLowerCase();
@@ -3609,6 +3710,7 @@ function DishList({ dishes, search, setSearch, onOpen }) {
                 <span className="inline-flex items-center gap-1"><Layers size={13} className="acc" /> {d.recipeIds.length} recepten</span>
                 {d.season && d.season.map((s) => <SeasonPill key={s} s={s} />)}
                 {d.diet && d.diet !== "Vegetarisch" && <MeatPill diet={d.diet} />}
+                <AllergenPills list={dishAllergens(d, recipeById)} />
               </div>
             </div>
             <ChevronRight size={18} className="mt-1 shrink-0" style={{ color: "#c4c2b2" }} />
@@ -3699,6 +3801,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
                 {r.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
                 {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
                 {r.diet !== "Vegetarisch" && <MeatPill diet={r.diet} />}
+                <AllergenPills list={recipeAllergens(r)} />
               </div>
             </div>
             <ChevronRight size={18} className="shrink-0" style={{ color: "#c4c2b2" }} />
@@ -3716,10 +3819,19 @@ function SeasonPill({ s }) {
   return <span className="inline-flex items-center rounded-full text-[11.5px] font-medium px-1.5 py-0.5" style={st}>{s}</span>;
 }
 function MeatPill({ diet }) { return <span className="inline-flex items-center rounded-full text-[11.5px] font-medium px-1.5 py-0.5" style={{ background: "#ecdcd6", color: "#8a4a3a" }}>{diet}</span>; }
+// Allergenenlabel: één compacte pill met alle gevonden allergenen.
+function AllergenPills({ list }) {
+  if (!list || !list.length) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full text-[11.5px] font-medium px-1.5 py-0.5" style={{ background: "#f3e6d2", color: "#8a5f2a" }} title="Automatisch herkend in de ingrediënten">
+      <AlertTriangle size={11} /> {list.join(" · ")}
+    </span>
+  );
+}
 
 const FERMENT_METHODS = ["Melkzuur", "Suikerfermentatie", "Azijnfermentatie"];
 
-function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch, onAck, onExtend }) {
+function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteBatch, onEditBatch, onOpenLog, onOpenRecipe, onNewFermentRecipe, onStartBatch, onOpenMeasure, onAck, onExtend }) {
   const [limit, setLimit] = useState(30);
   const [seasonF, setSeasonF] = useState("Alle");
   const [methodF, setMethodF] = useState("Alle");
@@ -3770,7 +3882,10 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
           {!searching && (openActive ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />)}
           <Eyebrow>Actieve batches ({active.length})</Eyebrow>
         </button>
-        {canEdit && <button onClick={onStartBatch} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuwe batch</button>}
+        <div className="flex items-center gap-3">
+          {canEdit && active.length > 0 && <button onClick={onOpenMeasure} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2" title="Metingen invullen voor alle actieve batches"><Thermometer size={14} /> Metingen</button>}
+          {canEdit && <button onClick={onStartBatch} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuwe batch</button>}
+        </div>
       </div>
       {showActive && (active.length > 0
         ? <div className="grid grid-cols-2 gap-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>
@@ -3839,6 +3954,23 @@ function collectNotices(batches) {
     else if (st.due.length) due.push({ b, label: st.due[0] });
   }
   return { ready, due };
+}
+
+// Herinneringsbanner (fermentatiemetingen, schoonmaakcontrole): valt op zonder
+// het werk te blokkeren. Zit net onder de navigatie, weg te klikken met het kruisje.
+function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss }) {
+  return (
+    <div className="rounded-xl p-4 mt-4" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold flex items-center gap-1.5 text-sm">{icon} {title}</div>
+          <p className="mt-1 text-sm">{text}</p>
+          <button onClick={onAction} className="ff mt-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }}>{actionLabel}</button>
+        </div>
+        <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
+      </div>
+    </div>
+  );
 }
 
 function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
@@ -4306,11 +4438,14 @@ function printLabel(recipe) {
     // thermische driver (203 dpi), dikke streken blijven staan.
     ".naam{font-weight:bold;font-size:14pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
     ".rij{font-weight:bold;font-size:12pt;line-height:1.3;margin:0}" +
+    // Allergenen: iets kleiner zodat de regel op het etiket past, wel vetgedrukt.
+    ".alg{font-weight:bold;font-size:9pt;line-height:1.15;margin:1mm 0 0 0;word-wrap:break-word}" +
     "</style></head><body>" +
     '<div class="wrap">' +
     '<div class="naam">' + esc(recipe.name) + "</div>" +
     '<div class="rij">Gemaakt: ' + fmt(prod) + "</div>" +
     (tht ? '<div class="rij">T.H.T.: ' + fmt(tht) + "</div>" : "") +
+    (() => { const alg = recipeAllergens(recipe); return alg.length ? '<div class="alg">Allergenen: ' + esc(alg.join(", ")) + "</div>" : ""; })() +
     "</div></body></html>");
   w.document.close();
   w.focus();
@@ -4468,7 +4603,10 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
 function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const src = editing || prefill || {};
   const [product, setProduct] = useState(src.product || "");
-  const [qty, setQty] = useState(editing ? String(editing.qty) : (prefill && prefill.yieldAmount ? String(prefill.yieldAmount) : ""));
+  // Opbrengstreferentie: nodig om ingrediënten mee te schalen als de kok
+  // méér of minder maakt dan het recept aangeeft.
+  const initRef = prefill ? parseYieldRef(prefill.yieldAmount, prefill.unit || prefill.yieldUnit, prefill.yieldText) : { refYield: null, refUnitNum: null };
+  const [qty, setQty] = useState(editing ? String(editing.qty) : (initRef.refYield ? String(initRef.refYield) : ""));
   const [initialQty, setInitialQty] = useState(editing ? String(editing.initialQty) : "");
   const [unit, setUnit] = useState(src.unit || (prefill && prefill.yieldUnit) || "");
   const [productionDate, setProductionDate] = useState(src.productionDate || localDate());
@@ -4480,10 +4618,10 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const [ings, setIngs] = useState((src.ingredients && src.ingredients.length ? src.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
   const [pick, setPick] = useState("");
   // Referentie voor het meeschalen: opbrengst + originele hoeveelheden van het recept.
-  const [refYield, setRefYield] = useState(prefill && prefill.yieldAmount ? Number(prefill.yieldAmount) : null);
+  const [refYield, setRefYield] = useState(initRef.refYield);
   const [refIngs, setRefIngs] = useState(prefill && prefill.ingredients && prefill.ingredients.length ? prefill.ingredients.map((i) => ({ ...i })) : null);
   const parseNum = (t) => { const m = String(t ?? "").match(/\d+(?:[.,]\d+)?/); return m ? Number(m[0].replace(",", ".")) : null; };
-  const [refUnitNum, setRefUnitNum] = useState(parseNum((prefill && (prefill.unit || prefill.yieldUnit)) || null));
+  const [refUnitNum, setRefUnitNum] = useState(initRef.refUnitNum);
   const setIng = (i, veld, w) => setIngs((xs) => xs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const addIng = () => setIngs((xs) => [...xs, { item: "", amount: "" }]);
   const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
@@ -4502,9 +4640,11 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     if (r.shelfDays) setDays(String(r.shelfDays));
     if (r.shelfStorage) setStorage(mapStorage(r.shelfStorage));
     // Opbrengst van het recept → aantal + eenheid (handmatig aan te passen).
-    if (r.yieldAmount) { setQty(String(r.yieldAmount)); setRefYield(Number(r.yieldAmount)); } else { setRefYield(null); }
+    const ref = parseYieldRef(r.yieldAmount, r.yieldUnit, r.yield);
+    if (ref.refYield) setQty(String(ref.refYield));
+    setRefYield(ref.refYield);
     if (r.yieldUnit) setUnit(r.yieldUnit);
-    setRefUnitNum(parseNum(r.yieldUnit));
+    setRefUnitNum(ref.refUnitNum);
     setRefIngs(r.ingredients && r.ingredients.length ? r.ingredients.map((i) => ({ ...i })) : null);
     setPick("");
   };
@@ -5451,8 +5591,8 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
   );
 }
 
-// Ochtendpopup (09:00): metingen voor alle actieve fermentatiebatches,
-// direct in te vullen per batch.
+// Metingen voor alle actieve fermentatiebatches, direct in te vullen per batch.
+// Opent via de 13:00-banner of via de knop "Metingen" op de fermentatiepagina.
 function BatchMeasureModal({ batches, onAdd, onClose }) {
   const [vals, setVals] = useState({}); // per batch: {ph, brix, tempC, note}
   const [saved, setSaved] = useState({});
@@ -5470,7 +5610,7 @@ function BatchMeasureModal({ batches, onAdd, onClose }) {
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="serif ink text-xl leading-tight">Ochtendmetingen</div>
+            <div className="serif ink text-xl leading-tight">Batchmetingen</div>
             <div className="text-xs mute mt-0.5">Meet de actieve batches en leg de waarden vast.</div>
           </div>
           <button onClick={onClose} className="ff mute hover:opacity-70"><X size={18} /></button>
@@ -5622,7 +5762,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printDish(dish, recipeById)} />
       <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">{dish.course}</div>
       <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
-      <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}</div>
+      <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}<AllergenPills list={dishAllergens(dish, recipeById)} /></div>
       <p className="mute mt-2 leading-relaxed">{dish.description}</p>
       {canEdit && (
         <button onClick={() => onDelete(dish.id)} className="ff mt-4 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
@@ -5630,10 +5770,14 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
       <EditMeta by={dish.updatedBy} at={dish.updatedAt} />
       <SectionTitle>Onderdelen</SectionTitle>
       <div className="space-y-2">
-        {dish.recipeIds.map((id) => { const r = recipeById(id); if (!r) return null; return (
+        {dish.recipeIds.map((id) => { const r = recipeById(id); if (!r) return null; const alg = recipeAllergens(r); return (
           <button key={id} onClick={() => onOpenRecipe(id)} className="card cardh ff w-full text-left p-3.5 flex items-center gap-3">
             <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Layers size={15} /></span>
-            <div className="flex-1 min-w-0"><div className="font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.category}</div></div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium ink truncate">{r.name}</div>
+              <div className="text-xs mute">{r.category}</div>
+              {alg.length > 0 && <div className="mt-1"><AllergenPills list={alg} /></div>}
+            </div>
             <ChevronRight size={16} style={{ color: "#c4c2b2" }} />
           </button>
         ); })}
@@ -5673,6 +5817,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         {recipe.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
         {recipe.diet !== "Vegetarisch" && <MeatPill diet={recipe.diet} />}
         {recipe.isBase && <span className="inline-flex items-center gap-1 rounded-full text-xs font-semibold px-2.5 py-1" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={12} /> basisrecept</span>}
+        <AllergenPills list={recipeAllergens(recipe)} />
       </div>
 
       {baseRecipe && <button onClick={() => onOpenRecipe(baseRecipe.id)} className="ff mt-3 inline-flex items-center gap-1.5 text-sm acc hover:opacity-70"><GitBranch size={14} /> Variatie op {recipe.baseName || baseRecipe.name} — bekijk de basis</button>}
@@ -5716,9 +5861,15 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
       </div>
       <div className="card overflow-hidden">
-        {recipe.ingredients.map((ing, i) => (
-          <div key={i} className={"flex items-center justify-between px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}><span style={{ color: "#3b3d33" }}>{ing.item}</span><span className={"font-medium " + (factor !== 1 ? "acc" : "mute")}>{scaleAmount(ing.amount, factor)}</span></div>
-        ))}
+        {recipe.ingredients.map((ing, i) => { const alg = ingredientAllergens(ing.item); return (
+          <div key={i} className={"flex items-center justify-between gap-3 px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}>
+            <span className="min-w-0" style={{ color: "#3b3d33" }}>
+              {ing.item}
+              {alg.length > 0 && <span className="block text-[11px] font-medium mt-0.5" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />{alg.join(" · ")}</span>}
+            </span>
+            <span className={"shrink-0 font-medium " + (factor !== 1 ? "acc" : "mute")}>{scaleAmount(ing.amount, factor)}</span>
+          </div>
+        ); })}
       </div>
 
       {recipe.fermentDefaults && (
@@ -5829,7 +5980,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
     } catch (e) { setErr("Vertalen lukte niet. Probeer opnieuw."); } finally { setTranslating(false); }
   }
   const submit = () => { if (!name.trim()) return; if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } onSave({
-    name: name.trim(), category: category.trim() || "Zonder categorie",
+    name: name.trim(), category: normCategory(category.trim()) || "Zonder categorie",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
     season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
     diet,
@@ -5938,12 +6089,15 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
         )}
       </div>
       <div className="text-sm font-medium ink mb-1.5">Ingrediënten</div>
-      <div className="space-y-2 mb-2">{ingredients.map((ing, i) => (
-        <div key={i} className="flex gap-2">
-          <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
-          <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} placeholder="Hoeveelheid" />
-          <button onClick={() => setIngredients((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
-        </div>))}
+      <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingredientAllergens(ing.item); return (
+        <div key={i}>
+          <div className="flex gap-2">
+            <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
+            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} placeholder="Hoeveelheid" />
+            <button onClick={() => setIngredients((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
+          </div>
+          {alg.length > 0 && <div className="text-[11px] font-medium mt-0.5 ml-1" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />Allergeen: {alg.join(" · ")}</div>}
+        </div>); })}
       </div>
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
       <div className="flex items-center justify-between gap-2 mt-5 mb-1.5">
