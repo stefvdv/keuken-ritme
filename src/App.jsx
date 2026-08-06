@@ -65,41 +65,87 @@ function normCategory(c) {
 
 // ---------- allergenen ----------
 // Herkent de 14 wettelijke allergenen (EU) in ingrediëntteksten.
-// inc: losse woorden of woorddelen (Nederlandse samenstellingen zoals "tarwebloem"),
-// tok: alleen als los woord (voorkomt valse treffers zoals "prei" voor "ei"),
-// exc: woorden die eerst weggehaald worden (bv. "melkzuur" bevat geen melk).
+// inc: woorddelen, ook in samenstellingen ("tarwebloem", "roomkaas", "pannenkoek"),
+// tok: alleen als los woord — voor woorden die in samenstellingen iets anders
+//      betekenen ("pasta" wel, "misopasta" niet; "bloem" wel, "zonnebloemolie" niet),
+// exc: elk woord waar deze tekst in voorkomt wordt in z'n geheel verwijderd vóór de
+//      controle ("melkzuurgefermenteerd" → geen melk, "varkenskrabbetjes" → geen krab).
+//      Met een ^ ervoor telt de tekst alleen aan het begin van een woord:
+//      "^vermout" verwijdert "vermout(h)" maar laat "havermout" (gluten!) staan.
 const ALLERGENS = [
-  { label:"Gluten", inc:["tarwe","rogge","gerst","spelt","kamut","haver","couscous","bulgur","griesmeel","paneermeel","panko","bloem","brood","pasta","spaghetti","macaroni","noedel","seitan","bladerdeeg","filodeeg","tortilla","kroepoek"], tok:["bier","mie"], exc:["bloemkool","boekweit","glutenvrij","maizena","kastanjebloem","rijstbloem","rijstebloem","amandelbloem","kikkererwtenbloem"] },
-  { label:"Ei", inc:["mayonaise","aioli","meringue","merengue","kippenei","eendenei","ganzenei"], tok:["ei","eieren","eitje","eitjes","eigeel","eidooier","dooier","dooiers","eiwit","eiwitten"], exc:[] },
-  { label:"Melk", inc:["melk","boter","room","kaas","yoghurt","kwark","mascarpone","ricotta","mozzarella","parmezaan","pecorino","feta","lactose","wei-"], tok:["wei"], exc:["melkzuur","kokosmelk","havermelk","sojamelk","amandelmelk","rijstmelk","cacaoboter","sheaboter","notenboter","pindakaas","boterhamworst"] },
-  { label:"Noten", inc:["amandel","hazelnoot","hazelnoten","walnoot","walnoten","cashew","pecan","pistache","macadamia","paranoot","paranoten","noten","noot"], tok:[], exc:["nootmuskaat","notenmuskaat","muskaatnoot","kokosnoot","kokosnoten"] },
-  { label:"Pinda", inc:["pinda"], tok:[], exc:[] },
-  { label:"Soja", inc:["soja","tofu","tofoe","tempeh","tamari","edamame","ketjap","shoyu"], tok:["miso"], exc:[] },
-  { label:"Vis", inc:["ansjovis","zalm","tonijn","makreel","haring","kabeljauw","forel","sardine","sardien","schelvis","vissaus","worcester","garum"], tok:["vis"], exc:[] },
-  { label:"Schaaldieren", inc:["garnaal","garnalen","kreeft","krab","langoustine","scampi","gamba"], tok:[], exc:[] },
-  { label:"Weekdieren", inc:["mossel","oester","inktvis","octopus","calamaris","coquille","jakobsschelp","vongole","escargot"], tok:["slak","slakken"], exc:["oesterzwam","oesterzwammen"] },
+  { label:"Gluten", inc:["tarwe","rogge","gerst","spelt","kamut","haver","couscous","bulgur","griesmeel","paneermeel","panko","patentbloem","bakmeel","volkoren","brood","spaghetti","macaroni","noedel","seitan","bladerdeeg","filodeeg","tortilla","kroepoek","beschuit","zelfrijzend","deeg","koek","speculaas","mout","pepernoot","pepernoten","kruidnoot","kruidnoten"],
+    tok:["bier","mie","bloem","pasta","meel","gort","orzo","udon"],
+    exc:["bloemkool","boekweit","glutenvrij","maizena","kastanjebloem","rijstbloem","rijstebloem","amandelbloem","kikkererwtenbloem","maisgries","zonnebloem","blad en bloem","bloemen","bloesem","smout","^vermout","koekkruid","speculaaskruid"] },
+  { label:"Ei", inc:["mayonaise","aioli","meringue","merengue","kippenei","eendenei","ganzenei","eier","patissiere"],
+    tok:["ei","eieren","eitje","eitjes","eigeel","eidooier","dooier","dooiers","eiwit","eiwitten","omelet","advocaat"], exc:[] },
+  { label:"Lactose", inc:["melk","boter","room","kaas","yoghurt","kwark","mascarpone","ricotta","mozzarella","parmezaan","pecorino","feta","lactose","kefir","creme fraiche","patissiere","witte chocola"],
+    tok:["wei","ghee","paneer"],
+    exc:["melkzuur","kokosmelk","havermelk","sojamelk","amandelmelk","rijstmelk","cacaoboter","sheaboter","notenboter","pindakaas","pindaboter","amandelboter","waterkefir","boterhamworst"] },
+  { label:"Noten", inc:["amandel","hazelnoot","hazelnoten","walnoot","walnoten","cashew","pecan","pistache","macadamia","paranoot","paranoten","noten","noot","marsepein","praline","frangipane"],
+    tok:[],
+    exc:["nootmuskaat","notenmuskaat","muskaatnoot","kokosnoot","kokosnoten","pepernoot","pepernoten","kruidnoot","kruidnoten","wasabinoot"] },
+  { label:"Pinda", inc:["pinda","wasabinoot"], tok:[], exc:[] },
+  // Volledig geraffineerde sojaolie is in de EU uitgezonderd van allergenendeclaratie.
+  { label:"Soja", inc:["soja","tofu","tofoe","tempeh","tamari","edamame","ketjap","shoyu","hoisin","teriyaki","miso"], tok:[], exc:["sojaolie"] },
+  { label:"Vis", inc:["ansjovis","zalm","tonijn","makreel","haring","kabeljauw","forel","sardine","sardien","schelvis","vissaus","worcester","garum","paling","dorade","heilbot","sprot","zeebaars","snoekbaars","wijting","dashi","bonito","katsuobushi"],
+    tok:["vis","baars"], exc:[] },
+  { label:"Schaaldieren", inc:["garnaal","garnalen","kreeft","krab","langoustine","scampi","gamba"], tok:[], exc:["krabbetje"] },
+  { label:"Weekdieren", inc:["mossel","oester","inktvis","octopus","calamaris","coquille","jakobsschelp","vongole","escargot","kokkel"], tok:["slak","slakken"], exc:["oesterzwam","oesterzwammen"] },
   { label:"Selderij", inc:["selder","selderij"], tok:[], exc:[] },
   { label:"Mosterd", inc:["mosterd"], tok:[], exc:[] },
-  { label:"Sesam", inc:["sesam","tahin"], tok:[], exc:[] },
-  { label:"Sulfiet", inc:["sulfiet","zwaveldioxide","e220","e221","e222","e223","e224","e226","e227","e228"], tok:[], exc:[] },
+  { label:"Sesam", inc:["sesam","tahin","gomasio"], tok:[], exc:[] },
+  // Wijn (ook wijnazijn) en balsamico bevatten vrijwel altijd sulfiet boven de
+  // declaratiegrens; eigen levende azijn zonder "wijn" in de naam blijft vrij.
+  { label:"Sulfiet", inc:["sulfiet","zwaveldioxide","wijn","balsamico","e220","e221","e222","e223","e224","e226","e227","e228"], tok:[], exc:["wijnsteen","wijnblad","wijnbladeren","wijngist"] },
   { label:"Lupine", inc:["lupine"], tok:[], exc:[] },
 ];
 function detectAllergens(text) {
-  let t = " " + String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]+/g, " ") + " ";
+  const t = " " + String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]+/g, " ") + " ";
   const out = [];
   for (const a of ALLERGENS) {
     let s = t;
-    for (const e of a.exc) s = s.split(e).join(" ");
+    // Verwijder per uitzondering het hele woord: standaard elk woord waar de tekst
+    // in voorkomt; met ^ alleen woorden die er ook mee beginnen (zie hierboven).
+    for (const e of a.exc) {
+      const p = e.startsWith("^") ? "(^| )" + e.slice(1) + "[a-z0-9-]*" : "[a-z0-9-]*" + e + "[a-z0-9-]*";
+      s = s.replace(new RegExp(p, "g"), " ");
+    }
     if (a.inc.some((w) => s.includes(w)) || a.tok.some((w) => s.includes(" " + w + " "))) out.push(a.label);
   }
   return out;
 }
-const ingredientAllergens = (item) => detectAllergens(item);
-const recipeAllergens = (r) => detectAllergens((r && r.ingredients ? r.ingredients : []).map((i) => i.item).join(" · "));
+// Handmatige correcties, met voorrang van specifiek naar algemeen:
+// 1. correctie op het ingrediënt in dít recept ({ item, amount, allergens: [...] }),
+// 2. app-brede correctie op de ingrediëntnaam (gedeeld met het hele team),
+// 3. automatische detectie.
+// Een lege lijst telt expliciet als "géén allergeen". Omdat recepten en gerechten
+// hun allergenen per ingrediënt opbouwen, werkt elke correctie automatisch door
+// in de receptenlijst, gerechten, etiketten en de voorraad.
+const ALLERGEN_LABELS = ALLERGENS.map((a) => a.label);
+const normAllergenLabel = (l) => (l === "Melk" ? "Lactose" : l); // oude opgeslagen naam
+// App-brede correcties: genormaliseerde ingrediëntnaam → lijst. Gevuld vanuit App
+// (gedeelde data), zodat losse functies als printLabel er ook bij kunnen.
+let GLOBAL_ALLERGEN_FIXES = {};
+const setGlobalAllergenFixes = (m) => { GLOBAL_ALLERGEN_FIXES = m || {}; };
+const algKey = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+const globalAllergenFixFor = (name) => { const g = GLOBAL_ALLERGEN_FIXES[algKey(name)]; return Array.isArray(g) ? g.map(normAllergenLabel) : null; };
+const ingredientAllergens = (ing) => {
+  const item = ing && typeof ing === "object" ? ing.item : ing;
+  if (ing && typeof ing === "object" && Array.isArray(ing.allergens)) return ing.allergens.map(normAllergenLabel);
+  const g = globalAllergenFixFor(item);
+  if (g) return g;
+  return detectAllergens(item);
+};
+const hasAllergenOverride = (ing) => !!(ing && typeof ing === "object" && Array.isArray(ing.allergens));
+const recipeAllergens = (r) => {
+  const set = new Set();
+  ((r && r.ingredients) || []).forEach((i) => ingredientAllergens(i).forEach((x) => set.add(x)));
+  return ALLERGEN_LABELS.filter((l) => set.has(l));
+};
 function dishAllergens(d, recipeById) {
   const set = new Set();
   ((d && d.recipeIds) || []).forEach((id) => { const r = recipeById(id); if (r) recipeAllergens(r).forEach((x) => set.add(x)); });
-  return [...set];
+  return ALLERGEN_LABELS.filter((l) => set.has(l));
 }
 
 // Standaard streefwaarden voor de fermentatie-eindcontrole
@@ -2329,7 +2375,33 @@ html{font-size:17px}
   );
 }
 
-export default function App() {
+// Vangnet: loopt de app vast op een onverwachte fout, dan blijft er geen dood,
+// onklikbaar scherm achter maar een duidelijke melding met een herlaadknop.
+// De foutmelding staat er klein bij, zodat de oorzaak terug te vinden is.
+class AppErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { try { console.error("Ritme-fout:", err, info); } catch (e) {} }
+  render() {
+    if (this.state.err) return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "#f2f0e8", color: "#2b3823", textAlign: "center", fontFamily: "system-ui, sans-serif" }}>
+        <div style={{ maxWidth: 420 }}>
+          <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Er ging iets mis</div>
+          <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 16, lineHeight: 1.5 }}>De app liep vast op een onverwachte fout. Herladen lost dit vrijwel altijd op — alle opgeslagen gegevens staan veilig in de database.</div>
+          <button onClick={() => { try { window.location.reload(); } catch (e) {} }} style={{ background: "#3a4b30", color: "#f2f0e8", border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Herladen</button>
+          <div style={{ fontSize: 11, opacity: 0.55, marginTop: 14, wordBreak: "break-word" }}>{String((this.state.err && this.state.err.message) || this.state.err)}</div>
+        </div>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+export default function AppRoot() {
+  return <AppErrorBoundary><App /></AppErrorBoundary>;
+}
+
+function App() {
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("home");
   const [recipes, setRecipes] = useState(initialRecipes);
@@ -2348,6 +2420,7 @@ export default function App() {
   const [techNotes, setTechNotes] = useState(TECH_NOTES_SEED);
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkBanner, setCheckBanner] = useState(false);
+  const checkReloadRef = React.useRef(0); // rem op herladen vanuit de schoonmaakcontrole
   const [calcOpen, setCalcOpen] = useState(false);
   // Weggeklikte herinneringen overleven een refresh: bewaard op het apparaat.
   const [checkDone, setCheckDoneState] = useState(() => { try { return JSON.parse(localStorage.getItem("ritme:check-dismiss") || "null"); } catch (e) { return null; } });
@@ -2904,6 +2977,31 @@ export default function App() {
   };
   // ---- Werkwijze-documenten: standaarden bewerken en nieuwe aanmaken ----
   const FERMENT_DOC_ID = "__ferment_guide";
+  // App-brede allergenencorrecties: opgeslagen als speciaal werkwijze-document
+  // (sleutel met __ blijft buiten de Werkwijze-pagina), dus gedeeld en realtime
+  // gesynchroniseerd zonder extra databasetabel.
+  const ALLERGEN_FIX_DOC_ID = "__allergen_fixes";
+  const allergenFixDoc = werkDocs.find((d) => d.id === ALLERGEN_FIX_DOC_ID);
+  setGlobalAllergenFixes((() => {
+    const m = {};
+    if (allergenFixDoc && Array.isArray(allergenFixDoc.sections)) allergenFixDoc.sections.forEach((r) => { if (r && r.name) m[algKey(r.name)] = Array.isArray(r.allergens) ? r.allergens : []; });
+    return m;
+  })());
+  const saveAllergenFix = async (name, list) => {
+    const nm = String(name || "").trim();
+    if (!nm) return;
+    const rows = (allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name && algKey(r.name) !== algKey(nm));
+    if (Array.isArray(list)) rows.push({ name: nm, allergens: list });
+    const row = { id: ALLERGEN_FIX_DOC_ID, title: "Allergenencorrecties", intro: "", sections: rows, updatedBy: user.name };
+    if (live) {
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id: row.id, title: row.title, intro: "", sections: rows, updated_by: user.name, updated_at: new Date().toISOString() });
+      if (dbFail(error)) return;
+    }
+    setWerkDocs((ds) => [...ds.filter((d) => d.id !== ALLERGEN_FIX_DOC_ID), row]);
+    flash(Array.isArray(list)
+      ? "App-brede correctie opgeslagen — geldt overal waar \"" + nm + "\" als ingrediënt staat"
+      : "App-brede correctie voor \"" + nm + "\" verwijderd");
+  };
   const mergedWerkDocs = [
     ...CATERING_STANDARDS.map((seed) => {
       const o = werkDocs.find((d) => d.id === seed.key);
@@ -3184,7 +3282,14 @@ export default function App() {
           const { data } = await supabase.from("cleaning_logs").select("id, task_id, done_date")
             .in("task_id", [DAY_DONE_ID, DAY_OFF_ID]).gte("done_date", key);
           if (cancelled) return;
-          if ((data || []).some((r) => String(r.done_date).slice(0, 10) === key)) { loadShared(); return; }
+          if ((data || []).some((r) => String(r.done_date).slice(0, 10) === key)) {
+            // Klaar volgens de database maar niet lokaal: hooguit één keer per
+            // minuut herladen. Zonder deze rem kan dit pad in een strakke lus
+            // raken (herladen → logs veranderen → effect opnieuw → herladen…)
+            // waardoor de app onbedienbaar wordt.
+            if (Date.now() - (checkReloadRef.current || 0) > 60000) { checkReloadRef.current = Date.now(); loadShared(); }
+            return;
+          }
         } catch (e) { /* bij twijfel gewoon tonen */ }
       }
       if (cancelled) return;
@@ -3287,7 +3392,7 @@ export default function App() {
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
           onCancel={() => { setDishDraft(null); goBack(); }}
           onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onCancel={goBack}
+        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onCancel={goBack}
           onSave={async (d) => { const newId = await saveRecipe(d, current.editing);
             if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
             goBack(); }} />}
@@ -5861,7 +5966,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
       </div>
       <div className="card overflow-hidden">
-        {recipe.ingredients.map((ing, i) => { const alg = ingredientAllergens(ing.item); return (
+        {recipe.ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); return (
           <div key={i} className={"flex items-center justify-between gap-3 px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}>
             <span className="min-w-0" style={{ color: "#3b3d33" }}>
               {ing.item}
@@ -5922,7 +6027,7 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
+function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onCancel, onSave }) {
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
   // Opbrengst in rijen: aantal / eenheid / verpakking (bv. 20 St. / 200 gr / kleine pot)
@@ -5956,6 +6061,15 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
   const [translating, setTranslating] = useState(false);
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
+  // Handmatige allergenen per ingrediënt: open paneel + aan/uit per allergeen.
+  const [algOpen, setAlgOpen] = useState(null);
+  const toggleAlg = (i, label) => setIngredients((a) => a.map((x, idx) => {
+    if (idx !== i) return x;
+    const eff = ingredientAllergens(x);
+    const next = eff.includes(label) ? eff.filter((l) => l !== label) : ALLERGEN_LABELS.filter((l) => eff.includes(l) || l === label);
+    return { ...x, allergens: next };
+  }));
+  const resetAlg = (i) => setIngredients((a) => a.map((x, idx) => { if (idx !== i) return x; const { allergens, ...rest } = x; return rest; }));
   const setStep = (i, v) => setSteps((a) => a.map((x, idx) => (idx === i ? v : x)));
   // Eén veld opdelen zodra de kok het verlaat, en een knop om alles te verdelen.
   const splitOne = (i) => setSteps((a) => {
@@ -6089,14 +6203,35 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onCancel, onSave }) {
         )}
       </div>
       <div className="text-sm font-medium ink mb-1.5">Ingrediënten</div>
-      <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingredientAllergens(ing.item); return (
+      <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); const manual = hasAllergenOverride(ing); return (
         <div key={i}>
           <div className="flex gap-2">
             <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
             <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} placeholder="Hoeveelheid" />
-            <button onClick={() => setIngredients((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
+            <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
+            <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
-          {alg.length > 0 && <div className="text-[11px] font-medium mt-0.5 ml-1" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />Allergeen: {alg.join(" · ")}</div>}
+          {algOpen !== i && alg.length > 0 && <div className="text-[11px] font-medium mt-0.5 ml-1" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />Allergeen: {alg.join(" · ")}{manual ? <span className="mute font-normal"> · dit recept</span> : globalAllergenFixFor(ing.item) ? <span className="mute font-normal"> · app-breed</span> : null}</div>}
+          {algOpen === i && (() => { const gfix = globalAllergenFixFor(ing.item); return (
+            <div className="mt-1.5 rounded-xl p-3" style={{ background: "#f7f2e6", border: "1px solid #e4d6b8" }}>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-[11.5px] font-semibold uppercase tracking-widest" style={{ color: "#8a5f2a" }}>Allergenen — {ing.item || "dit ingrediënt"}</span>
+                <span className="text-[11px] mute">{manual ? "handmatig · dit recept" : gfix ? "handmatig · hele app" : "automatisch herkend"}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {ALLERGEN_LABELS.map((l) => (
+                  <button key={l} type="button" onClick={() => toggleAlg(i, l)} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (alg.includes(l) ? "pillon" : "pill")}>{l}</button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5">
+                <button type="button" disabled={!ing.item.trim()} onClick={() => { onSaveAllergenFix(ing.item, ingredientAllergens(ing)); resetAlg(i); }} className="ff text-xs font-semibold underline disabled:opacity-40" style={{ color: "#8a5f2a" }} title="Deze allergenen laten gelden voor elk recept en gerecht met dit ingrediënt">Toepassen op de hele app</button>
+                {manual && <button type="button" onClick={() => resetAlg(i)} className="ff text-xs font-medium underline" style={{ color: "#8a5f2a" }}>{gfix ? "Terug naar app-brede instelling" : "Terug naar automatisch"}</button>}
+                {gfix && !manual && <button type="button" onClick={() => onSaveAllergenFix(ing.item, null)} className="ff text-xs font-medium underline" style={{ color: "#8a5f2a" }}>App-brede correctie verwijderen</button>}
+                <button type="button" onClick={() => setAlgOpen(null)} className="ff text-xs mute underline">Sluiten</button>
+              </div>
+              <p className="text-[11px] mute mt-2">Aan- en uitzetten geldt voor dit recept (na opslaan) en de gerechten die het gebruiken. "Toepassen op de hele app" laat deze allergenen gelden voor elk recept met een ingrediënt dat precies zo heet — voor het hele team.</p>
+            </div>
+          ); })()}
         </div>); })}
       </div>
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
