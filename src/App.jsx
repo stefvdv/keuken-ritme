@@ -2406,14 +2406,20 @@ function App() {
   const [section, setSection] = useState("home");
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
-  const [batches, setBatches] = useState(seedBatches);
+  // Live (met database): start leeg tot de echte batches geladen zijn — de
+  // demobatches zijn alleen voor de demo-modus zonder databaseverbinding.
+  // Zo knippert er bij een refresh nergens demodata doorheen.
+  const [batches, setBatches] = useState(supabase ? [] : seedBatches);
   const [loaded, setLoaded] = useState(false);
   const [stack, setStack] = useState([{ screen: "list" }]);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
   const [pairings, setPairings] = useState(PAIRINGS);
   const [openCounts, setOpenCounts] = useState({});
-  const [dismissedNotices, setDismissedNotices] = useState({});
+  // Weggeklikte "vraagt aandacht"-banner: bewaard op het apparaat (alleen vandaag),
+  // zodat een refresh de keuze niet vergeet.
+  const [dismissedNotices, setDismissedNotices] = useState(() => { try { return JSON.parse(localStorage.getItem("ritme:notice-dismiss") || "{}") || {}; } catch (e) { return {}; } });
+  useEffect(() => { try { const k = localDate(); localStorage.setItem("ritme:notice-dismiss", JSON.stringify(dismissedNotices[k] ? { [k]: true } : {})); } catch (e) {} }, [dismissedNotices]);
   const [dishDraft, setDishDraft] = useState(null);
   const [cleaningTasks, setCleaningTasks] = useState(CLEANING_SEED);
   const [cleaningLogs, setCleaningLogs] = useState([]);
@@ -3334,7 +3340,9 @@ function App() {
         )}
         {current.screen === "list" && (
           <div {...swipe}>
-            {canEdit && !dismissedNotices[todayKey] && (
+            {/* Pas tonen als de teamdata geladen is: anders knippert de banner
+                bij elke refresh kort op basis van de lokale startdata. */}
+            {canEdit && loaded && !dismissedNotices[todayKey] && (
               <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
             )}
             {canEdit && measureBanner && (
@@ -5857,22 +5865,19 @@ function BackBar({ onBack, onEdit, onPrint, printText = "Print", extra = null, o
     </div>
   );
 }
-function EditMeta({ by, at }) { return <div className="flex items-center gap-1.5 text-xs mute mt-2"><Clock size={12} /> Laatst bewerkt door <span className="ink font-medium">{by}</span> · {at}</div>; }
 function Eyebrow({ children }) { return <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-2">{children}</h3>; }
 
 function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, onDelete }) {
   if (!dish) return null;
   return (
     <div>
-      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printDish(dish, recipeById)} />
-      <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">{dish.course}</div>
-      <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
+      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printDish(dish, recipeById)} onDelete={canEdit ? () => onDelete(dish.id) : null} />
+      <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
+        <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
+        <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">{dish.course}</span>
+      </div>
       <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}<AllergenPills list={dishAllergens(dish, recipeById)} /></div>
       <p className="mute mt-2 leading-relaxed">{dish.description}</p>
-      {canEdit && (
-        <button onClick={() => onDelete(dish.id)} className="ff mt-4 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><Trash2 size={15} /> Verwijderen</button>
-      )}
-      <EditMeta by={dish.updatedBy} at={dish.updatedAt} />
       <SectionTitle>Onderdelen</SectionTitle>
       <div className="space-y-2">
         {dish.recipeIds.map((id) => { const r = recipeById(id); if (!r) return null; const alg = recipeAllergens(r); return (
@@ -5910,12 +5915,14 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           <button onClick={() => printLabel(recipe)} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Etiket printen (naam, productiedatum, THT)"><Tag size={14} /> Etiket</button>
           <button onClick={onAddStock} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Package size={14} /> In voorraad</button>
         </> : null} />
-      <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
+      <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
+        <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
+        <Chip>{recipe.category}</Chip>
+      </div>
       {(recipe.shelfDays || recipe.shelfStorage) && (
         <div className="text-[13px] mute mt-1">Houdbaarheid: {[recipe.shelfDays ? recipe.shelfDays + " dagen" : null, recipe.shelfStorage || null].filter(Boolean).join(" · ")}</div>
       )}
       <div className="flex flex-wrap gap-2 mt-3">
-        <Chip>{recipe.category}</Chip>
         {recipe.fermentMethod && <Chip>{recipe.fermentMethod}</Chip>}
         {recipe.gear && <Chip>{recipe.gear}</Chip>}
         {recipe.garden && <span className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2.5 py-1" style={{ background: "#e4ecdc", color: "#3f5a34" }}><Sprout size={12} /> eigen tuin</span>}
@@ -5952,7 +5959,6 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           <button onClick={onStartBatch} className="ff btno inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><FlaskConical size={15} /> Registreer batch</button>
         </div>
       )}
-      {recipe.updatedAt !== "startbibliotheek" && <EditMeta by={recipe.updatedBy} at={recipe.updatedAt} />}
 
       <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
@@ -6018,8 +6024,10 @@ function Empty({ label }) { return <div className="text-center text-sm mute card
 function Field({ label, children }) { return <label className="block mb-4"><span className="block text-sm font-medium ink mb-1.5">{label}</span>{children}</label>; }
 
 function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
+  // Blijft bij het scrollen in beeld (net onder de header, h-14 = 56px), zodat
+  // annuleren en opslaan op lange formulieren altijd binnen handbereik zijn.
   return (
-    <div className="flex items-center justify-between pt-4 pb-4">
+    <div className="sticky z-10 -mx-4 px-4 flex items-center justify-between pt-4 pb-3" style={{ top: "56px", background: T.paper, borderBottom: "1px solid " + T.line, marginBottom: "0.75rem" }}>
       <button onClick={onCancel} className="ff inline-flex items-center gap-1 text-sm mute hover:opacity-70"><X size={16} /> Annuleren</button>
       <span className="serif ink text-lg">{title}</span>
       <button onClick={onSave} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><Check size={16} /> {saveLabel}</button>
@@ -6134,7 +6142,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
           <option value="variatie">Variatie op een ander recept</option>
         </select></Field>
         {recipeType === "variatie" && (
-          <div className="mb-3 -mt-1">
+          <div className="col-span-2 mb-3 -mt-1">
             {basePick
               ? <div className="card px-3.5 py-2.5 flex items-center gap-2 text-sm"><GitBranch size={14} className="acc shrink-0" /><span className="flex-1 min-w-0 truncate ink">Variatie op <span className="font-medium">{basePick.name}</span></span><button onClick={() => setBasePick(null)} className="ff shrink-0 text-xs underline mute">wijzigen</button></div>
               : <>
@@ -6151,20 +6159,20 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
                 </>}
           </div>
         )}
-        <div className="mb-1 text-sm font-medium ink">Opbrengst</div>
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11.5px] mute mb-0.5"><span>Aantal</span><span>Eenheid</span><span>Verpakking</span><span /></div>
-        <div className="space-y-2 mb-2">
-          {yields.map((y, i) => (
-            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
-              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={y.count} onChange={(e) => setYieldRow(i, "count", e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20 St." />
-              <input className="input px-2.5 py-2 w-full text-sm" value={y.size} onChange={(e) => setYieldRow(i, "size", e.target.value)} placeholder="bv. 200 gr" />
-              <input className="input px-2.5 py-2 w-full text-sm" value={y.pack} onChange={(e) => setYieldRow(i, "pack", e.target.value)} placeholder="bv. kleine pot" />
-              {yields.length > 1 ? <button onClick={() => setYields((ys) => ys.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={15} /></button> : <span className="w-6" />}
-            </div>
-          ))}
-        </div>
-        <button onClick={() => setYields((ys) => [...ys, { count: "", size: "", pack: "" }])} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2"><Plus size={15} /> Opbrengst-rij toevoegen</button>
       </div>
+      <div className="mb-1 text-sm font-medium ink">Opbrengst</div>
+      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11.5px] mute mb-0.5"><span>Aantal</span><span>Eenheid</span><span>Verpakking</span><span /></div>
+      <div className="space-y-2 mb-2">
+        {yields.map((y, i) => (
+          <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+            <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={y.count} onChange={(e) => setYieldRow(i, "count", e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="20 St." />
+            <input className="input px-2.5 py-2 w-full text-sm" value={y.size} onChange={(e) => setYieldRow(i, "size", e.target.value)} placeholder="200 gr" />
+            <input className="input px-2.5 py-2 w-full text-sm" value={y.pack} onChange={(e) => setYieldRow(i, "pack", e.target.value)} placeholder="kleine pot" />
+            {yields.length > 1 ? <button onClick={() => setYields((ys) => ys.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={15} /></button> : <span className="w-6" />}
+          </div>
+        ))}
+      </div>
+      <button onClick={() => setYields((ys) => [...ys, { count: "", size: "", pack: "" }])} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2 self-start"><Plus size={15} /> Opbrengst-rij toevoegen</button>
       {category && !RECIPE_CATEGORIES.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
       <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = hele jaar)</span></div>
       <div className="flex flex-wrap gap-1.5 mb-4">
