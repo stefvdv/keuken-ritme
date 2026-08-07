@@ -3922,7 +3922,6 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen }) {
         </select>
       </div>
       <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
-        <span className="mute shrink-0">Sorteer:</span>
         <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
         <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
@@ -4002,7 +4001,6 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
         ))}
       </div>
       <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-1 -mx-4 px-4 text-xs">
-        <span className="mute shrink-0">Sorteer</span>
         <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
         <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
         <button onClick={() => setSortMode("used")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
@@ -4158,7 +4156,6 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
       </div>
 
       <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
-        <span className="mute shrink-0">Sorteer:</span>
         <button onClick={() => setFSort("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
         <button onClick={() => setFSort("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
         <button onClick={() => setFSort("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "az" ? "pillon" : "pill")}>A–Z</button>
@@ -4398,7 +4395,6 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
         ))}
       </div>
       <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
-        <span className="mute shrink-0">Sorteer:</span>
         <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
         <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
@@ -5808,6 +5804,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
 }
 
 // ---------- HACCP: wekelijkse temperatuurregistratie ----------
+const doneThisWeekInit = (rows) => rows.some((l) => weekKey(String(l.checkDate || l.date)) === weekKey(localDate()));
 function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
   const [openAll, setOpenAll] = useState(false);
   const thisWeek = weekKey(localDate());
@@ -5815,15 +5812,22 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
   const doneThisWeek = sorted.find((l) => weekKey(l.checkDate) === thisWeek) || null;
   const shown = openAll ? sorted : sorted.slice(0, 3);
   const warn = (l) => HACCP_UNITS.some((u) => inRange(u, l.values[u.id]) === false) || (l.calibration && l.calibration.ok === false);
+  // Inklapbaar: al gedaan deze week → start dicht; nog niet gedaan → start open.
+  const [openSec, setOpenSec] = useState(() => !doneThisWeekInit(logs));
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <Eyebrow>HACCP · temperaturen</Eyebrow>
+        <button onClick={() => setOpenSec((o) => !o)} className="ff inline-flex items-center gap-1">
+          {openSec ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
+          <Eyebrow>HACCP · temperaturen</Eyebrow>
+          {!openSec && (doneThisWeek ? <Check size={14} className="acc ml-1" /> : <Bell size={14} className="ml-1" style={{ color: "#8a5f2a" }} />)}
+        </button>
         <div className="flex items-center gap-3 mb-2">
           {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>}
           {canEdit && <button onClick={() => onOpen(null)} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70"><Plus size={15} /> Meting invullen</button>}
         </div>
       </div>
+      {openSec && <>
       {doneThisWeek
         ? <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#e8ebe0", color: T.green }}>
             <Check size={16} className="shrink-0 mt-0.5" />
@@ -5886,6 +5890,7 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
           </button>
         )}
       </div>
+      </>}
     </div>
   );
 }
@@ -5967,12 +5972,19 @@ function HaccpRecordBlock({ kind, records, canEdit, onOpen, onEdit, onDelete }) 
   const sorted = [...records].filter((r) => r.kind === kind).sort((a, b) => (a.date < b.date ? 1 : -1));
   const doneThisWeek = sorted.find((r) => weekKey(r.date) === thisWeek) || null;
   const shown = openAll ? sorted : sorted.slice(0, 3);
+  // Inklapbaar: al gedaan deze week → start dicht; nog niet gedaan → start open.
+  const [openSec, setOpenSec] = useState(() => !records.some((r) => r.kind === kind && weekKey(r.date) === weekKey(localDate())));
   return (
     <div className="mt-6">
       <div className="flex items-center justify-between mb-2">
-        <Eyebrow>HACCP · {cfg.label.toLowerCase()}</Eyebrow>
+        <button onClick={() => setOpenSec((o) => !o)} className="ff inline-flex items-center gap-1">
+          {openSec ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
+          <Eyebrow>HACCP · {cfg.label.toLowerCase()}</Eyebrow>
+          {!openSec && (doneThisWeek ? <Check size={14} className="acc ml-1" /> : <Bell size={14} className="ml-1" style={{ color: "#8a5f2a" }} />)}
+        </button>
         {canEdit && <button onClick={() => onOpen(kind, null)} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70 mb-2"><Plus size={15} /> Invullen</button>}
       </div>
+      {openSec && <>
       <p className="text-[12.5px] mute -mt-1 mb-2">{cfg.intro}</p>
       {!doneThisWeek && (
         <div className="rounded-xl p-3 mb-2 text-[13px] flex items-start gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
@@ -6016,6 +6028,7 @@ function HaccpRecordBlock({ kind, records, canEdit, onOpen, onEdit, onDelete }) 
               </button>
             )}
           </div>}
+      </>}
     </div>
   );
 }
@@ -6348,9 +6361,9 @@ function BackBar({ onBack, onEdit, onPrint, printText = "Print", extra = null, o
       <button onClick={onBack} className="ff shrink-0 inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
       <div className="flex items-center gap-1.5 flex-wrap justify-end">
         {extra}
-        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Printen"><Printer size={14} /> {printText}</button>}
-        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Pencil size={14} /> Bewerken</button>}
-        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center gap-1 text-[13px] font-medium rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Verwijderen"><Trash2 size={14} /></button>}
+        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title={printText}><Printer size={18} /></button>}
+        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Bewerken"><Pencil size={18} /></button>}
+        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Verwijderen"><Trash2 size={18} /></button>}
       </div>
     </div>
   );
@@ -6388,7 +6401,6 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
 }
 
 function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete }) {
-  const [labelOpen, setLabelOpen] = useState(false); // etiket-popup: gewicht + verpakkingswijze
   // Hoeveelheid als breuk (teller/noemer): ÷2, ÷10 en ×2 stapelen exact.
   const [frac, setFrac] = useState({ n: 1, d: 1 });
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
@@ -6400,13 +6412,11 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   const critical = criticalValues(recipe);
   return (
     <div>
-      {labelOpen && <LabelPrintModal recipe={recipe} onClose={() => setLabelOpen(false)} />}
-      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)} printText="Print recept"
+      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
-        extra={canEdit ? <>
-          <button onClick={() => setLabelOpen(true)} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Etiket printen (naam, inhoud, productiedatum, THT)"><Tag size={14} /> Etiket</button>
-          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Package size={14} /> In voorraad</button>
-        </> : null} />
+        extra={canEdit ? (
+          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><Package size={18} /></button>
+        ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
         <Chip>{recipe.category}</Chip>
