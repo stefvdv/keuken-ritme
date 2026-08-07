@@ -20,6 +20,10 @@ import { supabase } from "./supabase";
    (Authentication -> Users). Wachtwoorden staan NIET in de code;
    die typt iedere kok zelf in op het inlogscherm.
    ===================================================================== */
+// Vast apparaat-account voor de wachtwoord-login (accounts per kok bestaan niet
+// meer in de app). Wil je later een neutraal keuken-account: maak in Supabase
+// (Authentication → Users) bv. keuken@debeug.nl aan en pas deze regel aan.
+const DEVICE_EMAIL = "michael@debeug.nl";
 const COOK_EMAILS = {
   Michael: "michael@debeug.nl",
   Stef: "stef@debeug.nl",
@@ -2483,11 +2487,11 @@ function App() {
     let alive = true;
     const applySession = async (session) => {
       if (!alive) return;
-      if (!session) { setUser(null); return; }
-      const { data } = await supabase.from("profiles").select("name, role").eq("id", session.user.id).single();
-      if (!alive) return;
-      const role = data?.role || "guest";
-      setUser({ name: data?.name || "Gast", role: roleLabel(role), canEdit: role !== "guest" });
+      // Geen accounts meer: het keukenwachtwoord logt het apparaat eenmalig in;
+      // wie wat doet wordt per actie gevraagd via de naam-popup. Oude anonieme
+      // (gast-)sessies tellen niet: die mogen niet schrijven van de database.
+      if (!session || session.user.is_anonymous) { setUser(null); return; }
+      setUser({ name: "", role: "", canEdit: true });
     };
     supabase.auth.getSession().then(({ data }) => applySession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
@@ -2519,9 +2523,6 @@ function App() {
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
     recs = recs.map((r) => (ovMap.has(r.id) ? { ...r, ...ovMap.get(r.id) } : r));
     recs = [...(cu.data || []).map((r) => r.data), ...recs];
-    const byRec = {};
-    (en.data || []).forEach((e) => { (byRec[e.recipe_id] = byRec[e.recipe_id] || []).push(e.user_name); });
-    recs = recs.map((r) => ({ ...r, endorsements: byRec[r.id] || [] }));
     const oc = {};
     (pk.data || []).forEach((p) => { oc[p.recipe_id] = p.count || 0; });
     setOpenCounts(oc);
@@ -2662,6 +2663,32 @@ function App() {
     setTimeout(() => setToast((cur) => (cur && cur.at === t.at ? null : cur)), undo ? 7000 : 2200);
   };
   const canEdit = !!user && user.canEdit;
+  // ---------- Naam-popup: wie doet dit? ----------
+  // Vervangt de accounts: elke vastlegging vraagt één tik "wie doet dit".
+  // Snelle acties (schoonmaak aftekenen, metingen, afvinken) onthouden de keuze
+  // 10 minuten — maar alléén binnen dezelfde soort actie: zodra er iets anders
+  // tussendoor wordt vastgelegd (ander soort actie = mogelijk andere persoon),
+  // vraagt de eerstvolgende snelle actie gewoon opnieuw.
+  const [namePrompt, setNamePrompt] = useState(null); // { resolve, cat, label }
+  const quickNameRef = React.useRef({ name: null, cat: null, at: 0 });
+  const NAME_QUICK_MS = 10 * 60000;
+  const askName = (cat, label) => new Promise((resolve) => {
+    const q = quickNameRef.current;
+    if (cat !== "groot" && q.name && q.cat === cat && Date.now() - q.at < NAME_QUICK_MS) {
+      q.at = Date.now(); // venster schuift mee zolang dezelfde soort actie doorloopt
+      resolve(q.name);
+      return;
+    }
+    setNamePrompt({ resolve, cat, label });
+  });
+  const answerName = (naam) => {
+    const p = namePrompt;
+    if (!p || !naam) return;
+    setNamePrompt(null);
+    quickNameRef.current = { name: naam, cat: p.cat, at: Date.now() };
+    try { localStorage.setItem("ritme:last-name", naam); } catch (e) {}
+    p.resolve(naam);
+  };
 
   const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
 
@@ -2691,13 +2718,14 @@ function App() {
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
   const saveRecipe = async (data, editingId) => {
-    const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
+    const naam = await askName("groot", "Recept opslaan");
+    const stamped = { ...data, updatedBy: naam, updatedAt: "zojuist" };
     if (editingId) {
       const existing = recipes.find((r) => r.id === editingId);
       const merged = { ...existing, ...stamped };
       if (live) {
         const table = existing && existing.custom ? "recipes_custom" : "recipe_overrides";
-        const { error } = await supabase.from(table).upsert({ id: editingId, data: merged, updated_by: user.name, updated_at: new Date().toISOString() });
+        const { error } = await supabase.from(table).upsert({ id: editingId, data: merged, updated_by: naam, updated_at: new Date().toISOString() });
         if (dbFail(error)) return;
       }
       setRecipes((rs) => rs.map((r) => (r.id === editingId ? merged : r)));
@@ -2708,7 +2736,7 @@ function App() {
         fermentMethod: stamped.ferment ? (stamped.fermentMethod || "Melkzuur") : null,
         fermentDefaults: stamped.ferment ? (stamped.fermentDefaults || null) : null, custom: true };
       if (live) {
-        const { error } = await supabase.from("recipes_custom").upsert({ id: rec.id, data: rec, updated_by: user.name, updated_at: new Date().toISOString() });
+        const { error } = await supabase.from("recipes_custom").upsert({ id: rec.id, data: rec, updated_by: naam, updated_at: new Date().toISOString() });
         if (dbFail(error)) return;
       }
       setRecipes((rs) => [rec, ...rs]);
@@ -2718,13 +2746,14 @@ function App() {
     flash(live ? "Opgeslagen — zichtbaar voor het hele team" : "Opgeslagen (demo: alleen op dit apparaat)");
   };
   const saveDish = async (data, editingId) => {
-    const stamped = { ...data, updatedBy: user.name, updatedAt: "zojuist" };
+    const naam = await askName("groot", "Gerecht opslaan");
+    const stamped = { ...data, updatedBy: naam, updatedAt: "zojuist" };
     const id = editingId || "d" + Date.now();
     if (live) {
       const { error } = await supabase.from("dishes").upsert({
         id, name: stamped.name, course: stamped.course, description: stamped.description,
         plating: stamped.plating, recipe_ids: stamped.recipeIds, season: stamped.season,
-        diet: stamped.diet, updated_by: user.name, updated_at: new Date().toISOString(),
+        diet: stamped.diet, updated_by: naam, updated_at: new Date().toISOString(),
       });
       if (dbFail(error)) return;
     }
@@ -2751,7 +2780,8 @@ function App() {
       flash("Batch bijgewerkt");
       return;
     }
-    const b = { ...data, id: "b" + Date.now(), by: user.name, finishedDate: null, log: data.log || [] };
+    const naam = await askName("groot", "Batch registreren");
+    const b = { ...data, id: "b" + Date.now(), by: naam, finishedDate: null, log: data.log || [] };
     if (!(await persistBatch(b))) return;
     setBatches((bs) => [b, ...bs]);
     flash("Batch geregistreerd");
@@ -2761,7 +2791,8 @@ function App() {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
     const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
-    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: user.name };
+    const naam = await askName("metingen", "Meting vastleggen");
+    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: naam };
     const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
@@ -2773,7 +2804,8 @@ function App() {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
     const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
-    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: user.name };
+    const naam = await askName("groot", "Batch afronden");
+    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: naam };
     const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH, done: true, finishedDate: localDate() };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
@@ -2841,7 +2873,8 @@ function App() {
     if (!b) return;
     const today = kitchenDate(); // geldt tot 02:00, daarna nieuwe keukendag
     if ((b.actionsDone || []).some((a) => a.date === today && a.label === label)) return;
-    const nb = { ...b, actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), { date: today, label, by: user.name }] };
+    const naam = await askName("afvinken", "Handeling afvinken");
+    const nb = { ...b, actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), { date: today, label, by: naam }] };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
     flash(label === READY_KEY ? "Melding afgevinkt" : "Handeling afgevinkt");
@@ -2863,21 +2896,23 @@ function App() {
   };
   const signCleaning = async (taskId, quiet, forDate) => {
     const today = forDate || localDate();
-    const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: user.name, note: "", edits: [] };
+    const naam = await askName("schoonmaak", "Schoonmaak aftekenen");
+    const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: naam, note: "", edits: [] };
     if (live) {
-      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: taskId, done_date: today, done_by: user.name, note: "", edits: [] });
+      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: taskId, done_date: today, done_by: naam, note: "", edits: [] });
       if (dbFail(error)) return;
     }
     setCleaningLogs((ls) => [row, ...ls]);
-    if (!quiet) flash("Afgetekend door " + user.name, () => removeCleaningLog(row.id, true));
+    if (!quiet) flash("Afgetekend door " + naam, () => removeCleaningLog(row.id, true));
     return row.id;
   };
   const markDayDone = async (forDate) => {
     const today = forDate || localDate();
     if (cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === today)) return;
-    const row = { id: "dd" + Date.now(), taskId: DAY_DONE_ID, doneDate: today, doneBy: user.name, note: "", edits: [] };
+    const naam = await askName("schoonmaak", "Dag afronden");
+    const row = { id: "dd" + Date.now(), taskId: DAY_DONE_ID, doneDate: today, doneBy: naam, note: "", edits: [] };
     if (live) {
-      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_DONE_ID, done_date: today, done_by: user.name, note: "", edits: [] });
+      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_DONE_ID, done_date: today, done_by: naam, note: "", edits: [] });
       if (dbFail(error)) return;
     }
     setCleaningLogs((ls) => [row, ...ls]);
@@ -2906,9 +2941,10 @@ function App() {
       const { error } = await supabase.from("cleaning_logs").delete().eq("done_date", d);
       if (dbFail(error)) return;
     }
-    const row = { id: "off" + Date.now(), taskId: DAY_OFF_ID, doneDate: d, doneBy: user.name, note: "Bedrijf dicht", edits: [] };
+    const naam = await askName("schoonmaak", "Vrije dag registreren");
+    const row = { id: "off" + Date.now(), taskId: DAY_OFF_ID, doneDate: d, doneBy: naam, note: "Bedrijf dicht", edits: [] };
     if (live) {
-      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_OFF_ID, done_date: d, done_by: user.name, note: "Bedrijf dicht", edits: [] });
+      const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_OFF_ID, done_date: d, done_by: naam, note: "Bedrijf dicht", edits: [] });
       if (dbFail(error)) return;
     }
     setCleaningLogs((ls) => [row, ...ls.filter((l) => l.doneDate !== d)]);
@@ -2970,10 +3006,11 @@ function App() {
     setCleaningLogs((ls) => [...rows, ...ls]);
   };
   const saveHaccp = async (data, editingId) => {
+    const naam = await askName("groot", "HACCP-controle vastleggen");
     const now = new Date().toISOString().slice(0, 16).replace("T", " ");
     if (editingId) {
       const old = haccpLogs.find((x) => x.id === editingId);
-      const nl = { ...old, ...data, edits: [...((old && old.edits) || []), { at: now, by: user.name }] };
+      const nl = { ...old, ...data, edits: [...((old && old.edits) || []), { at: now, by: naam }] };
       if (live) {
         const { error } = await supabase.from("haccp_logs").update({ check_date: nl.checkDate, values: nl.values, calibration: nl.calibration, note: nl.note, edits: nl.edits }).eq("id", editingId);
         if (dbFail(error)) return;
@@ -2982,9 +3019,9 @@ function App() {
       flash("Meting bijgewerkt");
       return;
     }
-    const row = { id: "hp" + Date.now(), checkDate: data.checkDate, doneBy: user.name, values: data.values, calibration: data.calibration, note: data.note, edits: [] };
+    const row = { id: "hp" + Date.now(), checkDate: data.checkDate, doneBy: naam, values: data.values, calibration: data.calibration, note: data.note, edits: [] };
     if (live) {
-      const { error } = await supabase.from("haccp_logs").insert({ id: row.id, check_date: row.checkDate, done_by: user.name, values: row.values, calibration: row.calibration, note: row.note, edits: [] });
+      const { error } = await supabase.from("haccp_logs").insert({ id: row.id, check_date: row.checkDate, done_by: naam, values: row.values, calibration: row.calibration, note: row.note, edits: [] });
       if (dbFail(error)) return;
     }
     setHaccpLogs((ls) => [row, ...ls]);
@@ -3006,6 +3043,7 @@ function App() {
     removeHaccpLog(id);
   };
   const saveHaccpRecord = async (data, editingId) => {
+    const naam = await askName("groot", "Registratie vastleggen");
     const { kind, date, note, ...fields } = data;
     if (editingId) {
       const old = haccpRecords.find((x) => x.id === editingId);
@@ -3018,9 +3056,9 @@ function App() {
       flash("Registratie bijgewerkt");
       return;
     }
-    const row = { id: "hr" + Date.now(), kind, date, by: user.name, note, ...fields };
+    const row = { id: "hr" + Date.now(), kind, date, by: naam, note, ...fields };
     if (live) {
-      const { error } = await supabase.from("haccp_records").insert({ id: row.id, kind, record_date: date, done_by: user.name, note, data: fields });
+      const { error } = await supabase.from("haccp_records").insert({ id: row.id, kind, record_date: date, done_by: naam, note, data: fields });
       if (dbFail(error)) return;
     }
     setHaccpRecords((rs) => [row, ...rs]);
@@ -3054,11 +3092,12 @@ function App() {
   const saveAllergenFix = async (name, list) => {
     const nm = String(name || "").trim();
     if (!nm) return;
+    const naam = await askName("groot", "Allergenencorrectie (hele app)");
     const rows = (allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name && algKey(r.name) !== algKey(nm));
     if (Array.isArray(list)) rows.push({ name: nm, allergens: list });
-    const row = { id: ALLERGEN_FIX_DOC_ID, title: "Allergenencorrecties", intro: "", sections: rows, updatedBy: user.name };
+    const row = { id: ALLERGEN_FIX_DOC_ID, title: "Allergenencorrecties", intro: "", sections: rows, updatedBy: naam };
     if (live) {
-      const { error } = await supabase.from("werkwijze_docs").upsert({ id: row.id, title: row.title, intro: "", sections: rows, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id: row.id, title: row.title, intro: "", sections: rows, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setWerkDocs((ds) => [...ds.filter((d) => d.id !== ALLERGEN_FIX_DOC_ID), row]);
@@ -3089,10 +3128,11 @@ function App() {
     roosteren: tableRowsFor("__roast_rows", ROAST_ROWS),
   };
   const saveTechTable = async (tableKey, rows) => {
+    const naam = await askName("groot", "Tabel opslaan");
     const cfg = TECH_TABLE_CONFIGS[tableKey];
-    const row = { id: cfg.docId, title: cfg.title, intro: "", sections: rows, updatedBy: user.name };
+    const row = { id: cfg.docId, title: cfg.title, intro: "", sections: rows, updatedBy: naam };
     if (live) {
-      const { error } = await supabase.from("werkwijze_docs").upsert({ id: cfg.docId, title: cfg.title, intro: "", sections: rows, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id: cfg.docId, title: cfg.title, intro: "", sections: rows, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setWerkDocs((ds) => [...ds.filter((d) => d.id !== cfg.docId), row]);
@@ -3114,7 +3154,8 @@ function App() {
       flash("Voorraad bijgewerkt");
       return;
     }
-    const nv = { id: "st" + Date.now(), ...data, by: user.name };
+    const naam = await askName("groot", "Voorraad opslaan");
+    const nv = { id: "st" + Date.now(), ...data, by: naam };
     if (!(await persistStock(nv, true))) return;
     setStock((ss) => [nv, ...ss]);
     flash("Toegevoegd aan de voorraad");
@@ -3195,9 +3236,10 @@ function App() {
   };
   const saveWerkDoc = async (data, editingId) => {
     const id = editingId || "wd" + Date.now();
-    const row = { id, title: data.title, intro: data.intro, sections: data.secties, updatedBy: user.name };
+    const naam = await askName("groot", "Werkwijze opslaan");
+    const row = { id, title: data.title, intro: data.intro, sections: data.secties, updatedBy: naam };
     if (live) {
-      const { error } = await supabase.from("werkwijze_docs").upsert({ id, title: row.title, intro: row.intro, sections: row.sections, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id, title: row.title, intro: row.intro, sections: row.sections, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setWerkDocs((ds) => [...ds.filter((d) => d.id !== id), row]);
@@ -3213,9 +3255,10 @@ function App() {
     flash("Document verwijderd");
   };
   const saveFermentGuide = async (rows) => {
-    const row = { id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updatedBy: user.name };
+    const naam = await askName("groot", "Fermenteerlijst opslaan");
+    const row = { id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updatedBy: naam };
     if (live) {
-      const { error } = await supabase.from("werkwijze_docs").upsert({ id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("werkwijze_docs").upsert({ id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setWerkDocs((ds) => [...ds.filter((d) => d.id !== FERMENT_DOC_ID), row]);
@@ -3224,7 +3267,8 @@ function App() {
   const editCleaningLog = async (logId, note) => {
     const l = cleaningLogs.find((x) => x.id === logId);
     if (!l || (l.note || "") === note) { return; }
-    const edit = { at: new Date().toISOString().slice(0, 16).replace("T", " "), by: user.name, from: l.note || "", to: note };
+    const naam = await askName("groot", "Notitie aanpassen");
+    const edit = { at: new Date().toISOString().slice(0, 16).replace("T", " "), by: naam, from: l.note || "", to: note };
     const nl = { ...l, note, edits: [...(l.edits || []), edit] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").update({ note: nl.note, edits: nl.edits }).eq("id", logId);
@@ -3234,10 +3278,11 @@ function App() {
     flash("Opmerking bijgewerkt");
   };
   const saveCleaningTask = async (data, editingId) => {
+    const naam = await askName("groot", "Schoonmaaktaak opslaan");
     const id = editingId || "ct" + Date.now();
     const row = { id, name: data.name, area: data.area, intervalDays: data.intervalDays, minutes: data.minutes, active: true };
     if (live) {
-      const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: row.name, area: row.area, interval_days: row.intervalDays, minutes: row.minutes, active: true, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: row.name, area: row.area, interval_days: row.intervalDays, minutes: row.minutes, active: true, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setCleaningTasks((ts) => (ts.some((t) => t.id === id) ? ts.map((t) => (t.id === id ? row : t)) : [...ts, row]));
@@ -3248,36 +3293,28 @@ function App() {
     if (!t) return;
     if (!window.confirm('Taak "' + t.name + '" verwijderen uit de schoonmaaklijst?')) return;
     if (live) {
-      const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: t.name, area: t.area, interval_days: t.intervalDays, minutes: t.minutes, active: false, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: t.name, area: t.area, interval_days: t.intervalDays, minutes: t.minutes, active: false, updated_by: "—", updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setCleaningTasks((ts) => ts.filter((x) => x.id !== id));
     flash("Taak verwijderd", () => saveCleaningTask({ name: t.name, area: t.area, intervalDays: t.intervalDays, minutes: t.minutes }, id));
   };
   const saveTechNotes = async (key, lines) => {
+    const naam = await askName("groot", "Notities opslaan");
     if (live) {
-      const { error } = await supabase.from("technique_notes").upsert({ key, lines, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("technique_notes").upsert({ key, lines, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setTechNotes((n) => ({ ...n, [key]: lines }));
     flash(live ? "Werkwijze opgeslagen voor het hele team" : "Werkwijze opgeslagen (demo)");
   };
-  const toggleEndorse = async (id) => {
-    const r = recipes.find((x) => x.id === id);
-    const has = r && r.endorsements.includes(user.name);
-    if (live) {
-      const { error } = has
-        ? await supabase.from("recipe_endorsements").delete().eq("recipe_id", id).eq("user_name", user.name)
-        : await supabase.from("recipe_endorsements").insert({ recipe_id: id, user_name: user.name });
-      if (dbFail(error)) return;
-    }
-    setRecipes((rs) => rs.map((x) => x.id === id ? { ...x, endorsements: has ? x.endorsements.filter((n) => n !== user.name) : [...x.endorsements, user.name] } : x));
-  };
+
   const savePairing = async (name, pairs, note, season) => {
+    const naam = await askName("groot", "Smaakcombinatie opslaan");
     const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim(), season: season || [], addedAt: Date.now() };
     if (!clean.name || clean.pairs.length === 0) { flash("Vul een naam en minstens één partner in"); return; }
     if (live) {
-      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, season: clean.season, added_at: clean.addedAt, updated_by: user.name, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("flavor_pairings").upsert({ name: clean.name, pairs: clean.pairs, note: clean.note, season: clean.season, added_at: clean.addedAt, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
     }
     setPairings((ps) => ps.some((p) => p.name === clean.name) ? ps.map((p) => (p.name === clean.name ? clean : p)) : [...ps, clean]);
@@ -3299,7 +3336,7 @@ function App() {
     const isSeedDish = seedDishes.some((sd) => sd.id === id);
     if (live) {
       let error = null;
-      if (isSeedDish) ({ error } = await supabase.from("dish_hidden").upsert({ dish_id: id, by: user.name }));
+      if (isSeedDish) ({ error } = await supabase.from("dish_hidden").upsert({ dish_id: id, by: "—" }));
       else ({ error } = await supabase.from("dishes").delete().eq("id", id));
       if (dbFail(error)) return;
       if (isSeedDish) await supabase.from("dishes").delete().eq("id", id); // eventuele bewerking mee opruimen
@@ -3316,7 +3353,7 @@ function App() {
     if (live) {
       let error = null;
       if (r.custom) ({ error } = await supabase.from("recipes_custom").delete().eq("id", id));
-      else ({ error } = await supabase.from("recipe_hidden").upsert({ recipe_id: id, by: user.name }));
+      else ({ error } = await supabase.from("recipe_hidden").upsert({ recipe_id: id, by: "—" }));
       if (dbFail(error)) return;
       // opruimen: likes, openingen en eventuele aanpassing
       await supabase.from("recipe_endorsements").delete().eq("recipe_id", id);
@@ -3407,7 +3444,7 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />
+      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} />
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
         {!FORM_SCREENS.has(current.screen) && (
@@ -3461,7 +3498,7 @@ function App() {
         {current.screen === "recipeDetail" && (() => { const r = recipeById(current.id); return (
           <RecipeDetail recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
             baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={variationsOf(current.id)}
-            onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })} onEndorse={toggleEndorse}
+            onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
             onStartBatch={() => push({ screen: "batchForm", prefill: r })}
             onAddStock={() => push({ screen: "voorraadForm", editing: null, prefill: { product: r.name, ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], recipeId: r.id, productionDate: localDate(), shelfDays: r.shelfDays || null, yieldAmount: r.yieldAmount || null, yieldUnit: r.yieldUnit || "", yieldText: r.yield || "" } })}
@@ -3485,7 +3522,7 @@ function App() {
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
         {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} />}
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
 
       {showFab && (
@@ -3501,6 +3538,7 @@ function App() {
           <Tag size={19} />
         </button>
       )}
+      {namePrompt && <NamePromptModal label={namePrompt.label} onPick={answerName} />}
       {fabLabelOpen && canEdit && (
         <UniversalLabelModal recipes={recipes}
           prefillRecipe={current && current.screen === "recipeDetail" ? recipeById(current.id) : null}
@@ -3606,84 +3644,73 @@ function Wordmark({ size = "small", onHome }) {
   );
 }
 
-function Login({ onPick, live }) {
-  const [chosen, setChosen] = useState(null);   // gekozen kok (live-modus)
-  const [pw, setPw] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-
-  const pickCook = async (m) => {
-    if (!live) { onPick({ ...m, canEdit: true }); return; }
-    setChosen(m); setPw(""); setErr(null);
-  };
-  const submitPw = async () => {
-    if (!chosen || !pw || busy) return;
-    setBusy(true); setErr(null);
-    const email = COOK_EMAILS[chosen.name];
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
-    setBusy(false);
-    if (error) setErr("Inloggen lukte niet. Controleer het wachtwoord.");
-    // bij succes zet de sessie-listener in App de gebruiker vanzelf
-  };
-  const pickGuest = async () => {
-    if (!live) { onPick({ name: "Gast", role: "Gast", canEdit: false }); return; }
-    setBusy(true); setErr(null);
-    const { error } = await supabase.auth.signInAnonymously();
-    setBusy(false);
-    if (error) setErr("Gasttoegang lukte niet. Probeer opnieuw.");
-  };
-
+// Wie doet dit? Eén tik op een naam bevestigt direct; eigen naam typen kan ook.
+// Bewust niet te sluiten zonder keuze: de actie is al gestart en er is altijd
+// iemand die hem doet. De laatst gekozen naam op dit apparaat staat bovenaan.
+function NamePromptModal({ label, onPick }) {
+  const [eigen, setEigen] = useState("");
+  const laatst = (() => { try { return localStorage.getItem("ritme:last-name") || ""; } catch (e) { return ""; } })();
+  const namen = [...TEAM.map((m) => m.name)].sort((a, b) => (a === laatst ? -1 : b === laatst ? 1 : 0));
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: T.paper, color: "#33352c" }}>
-      <div className="w-full max-w-sm">
-        <Wordmark size="large" />
-        <p className="mute text-center text-sm mt-5 mb-8">Het receptenboek van de moestuinkeuken.</p>
-
-        {!chosen && (
-          <>
-            <div className="flex items-center gap-1.5 text-[12.5px] font-semibold tracking-widest uppercase acc mb-3"><Lock size={13} /> Kies je naam</div>
-            <div className="space-y-2">
-              {TEAM.map((m) => (
-                <button key={m.name} onClick={() => pickCook(m)} className="card cardh ff w-full flex items-center gap-3 px-3 py-3 text-left">
-                  <span className="w-9 h-9 shrink-0 rounded-full font-semibold flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }}>{m.name[0]}</span>
-                  <span><span className="block font-medium ink">{m.name}</span><span className="block text-xs mute">{m.role}</span></span>
-                </button>
-              ))}
-            </div>
-            <button onClick={pickGuest} disabled={busy} className="ff w-full mt-3 flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm mute disabled:opacity-60" style={{ border: "1px dashed #cfccbe" }}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />} Verder als gast (alleen lezen)
-            </button>
-            {err && <p className="text-xs mt-3 text-center" style={{ color: "#a23b2c" }}>{err}</p>}
-            <p className="text-xs mute mt-5 leading-relaxed">{live ? "Log in met je eigen wachtwoord. Gasten kijken mee maar kunnen niets wijzigen." : "Demo-modus: er is nog geen database gekoppeld, wijzigingen blijven alleen op dit apparaat."}</p>
-          </>
-        )}
-
-        {chosen && (
-          <>
-            <div className="card p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="w-9 h-9 shrink-0 rounded-full font-semibold flex items-center justify-center serif" style={{ background: "#e8ebe0", color: T.green }}>{chosen.name[0]}</span>
-                <span><span className="block font-medium ink">{chosen.name}</span><span className="block text-xs mute">{chosen.role}</span></span>
-              </div>
-              <label className="block text-sm font-medium ink mb-1.5">Wachtwoord</label>
-              <input type="password" autoFocus className="input px-3 py-2.5" value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") submitPw(); }}
-                placeholder="Je wachtwoord" />
-              {err && <p className="text-xs mt-2" style={{ color: "#a23b2c" }}>{err}</p>}
-              <button onClick={submitPw} disabled={busy || !pw} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium py-2.5 disabled:opacity-60">
-                {busy ? <Loader2 size={16} className="animate-spin" /> : <Lock size={15} />} Inloggen
-              </button>
-            </div>
-            <button onClick={() => { setChosen(null); setErr(null); }} className="ff w-full mt-3 text-sm mute hover:opacity-70">Terug naar namen</button>
-          </>
-        )}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }}>
+      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
+        <div className="serif ink text-xl leading-tight">Wie doet dit?</div>
+        {label && <div className="text-xs mute mt-0.5">{label}</div>}
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          {namen.map((n) => (
+            <button key={n} onClick={() => onPick(n)} className={"ff rounded-xl px-3 py-3 text-sm font-semibold " + (n === laatst ? "btnp" : "card cardh ink")}>{n}</button>
+          ))}
+        </div>
+        <div className="flex gap-2 mt-3">
+          <input className="input px-2.5 py-2 flex-1 text-sm" value={eigen} onChange={(e) => setEigen(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && eigen.trim()) onPick(eigen.trim()); }} placeholder="Of typ een naam" />
+          <button onClick={() => eigen.trim() && onPick(eigen.trim())} disabled={!eigen.trim()} className="btnp ff shrink-0 rounded-lg px-3 text-sm font-semibold disabled:opacity-40"><Check size={15} /></button>
+        </div>
       </div>
     </div>
   );
 }
 
-function Header({ user, onHome, onOpenSettings, onSignOut }) {
+function Login({ onPick, live }) {
+  // Eenmalig per apparaat: alleen het keukenwachtwoord. Wie wat doet wordt
+  // daarna per actie gevraagd via de naam-popup — accounts bestaan niet meer.
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const submitPw = async () => {
+    if (!pw || busy) return;
+    setBusy(true); setErr(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: DEVICE_EMAIL, password: pw });
+    setBusy(false);
+    if (error) setErr("Inloggen lukte niet. Controleer het keukenwachtwoord.");
+    // bij succes zet de sessie-listener in App de toegang vanzelf
+  };
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: T.paper, color: "#33352c" }}>
+      <div className="w-full max-w-sm">
+        <Wordmark size="large" />
+        <p className="mute text-center text-sm mt-5 mb-8">Het receptenboek van de moestuinkeuken.</p>
+        {live ? (
+          <div className="card p-4">
+            <label className="block text-sm font-medium ink mb-1.5 inline-flex items-center gap-1.5"><Lock size={14} /> Keukenwachtwoord</label>
+            <input type="password" autoFocus className="input px-3 py-2.5" value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submitPw(); }}
+              placeholder="Eenmalig per apparaat" />
+            {err && <p className="text-xs mt-2" style={{ color: "#a23b2c" }}>{err}</p>}
+            <button onClick={submitPw} disabled={busy || !pw} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium py-2.5 disabled:opacity-60">
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Lock size={15} />} Open de keuken-app
+            </button>
+            <p className="text-xs mute mt-4 leading-relaxed">Dit apparaat blijft daarna ingelogd. Bij elke vastlegging vraagt de app wie het doet.</p>
+          </div>
+        ) : (
+          <button onClick={() => onPick({ name: "", role: "", canEdit: true })} className="btnp ff w-full inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium py-3">Open de app (demo)</button>
+        )}
+      </div>
+    </div>
+  );
+}
+function Header({ user, onHome, onOpenSettings }) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
@@ -3691,17 +3718,14 @@ function Header({ user, onHome, onOpenSettings, onSignOut }) {
           <Wordmark onHome={onHome} />
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
-          {!user.canEdit && <span className="inline-flex items-center gap-1 text-xs mute"><Eye size={13} /> Gast</span>}
-          <span className="w-8 h-8 rounded-full font-semibold text-xs flex items-center justify-center serif shrink-0" style={{ background: "#e8ebe0", color: T.green }} title={user.name + " · " + user.role}>{user.name[0]}</span>
           <button onClick={onOpenSettings} className="mute hover:opacity-70 focus:outline-none shrink-0" title="Instellingen"><Settings size={19} /></button>
-          <button onClick={onSignOut} className="mute hover:opacity-70 focus:outline-none shrink-0" title="Uitloggen"><LogOut size={19} /></button>
         </div>
       </div>
     </header>
   );
 }
 
-function SettingsScreen({ onBack, installed, canInstall, onInstall }) {
+function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut }) {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const iOS = /iphone|ipad|ipod/i.test(ua);
   return (
@@ -3741,6 +3765,10 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall }) {
         <div className="serif ink text-lg leading-tight">In het ritme van het land</div>
         <div>Wilde Wortels · Landgoed de Beug · Odijk</div>
         <div>Digitaal receptenboek van de moestuinkeuken · versie 1.0</div>
+      </div>
+      <div className="mt-8">
+        <button onClick={onSignOut} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><LogOut size={15} /> Dit apparaat uitloggen</button>
+        <p className="text-[11px] mute mt-1.5">Daarna is opnieuw het keukenwachtwoord nodig.</p>
       </div>
     </div>
   );
@@ -3948,7 +3976,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
   if (catF === "Basisrecepten") shown = shown.filter((r) => r.isBase || varsOf(r.id).length > 0);
   else if (catF !== "Alle") shown = shown.filter((r) => r.category === catF);
   if (seasonF !== "Alle") shown = shown.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
-  const pop = (r) => (oc[r.id] || 0) + (r.endorsements.length * 3);
+  const pop = (r) => oc[r.id] || 0;
   const sorted = [...shown].sort((a, b) => {
     if (sortMode === "az") return a.name.localeCompare(b.name, "nl");
     if (sortMode === "nieuw") return byNewest(a, b);
@@ -4000,7 +4028,6 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[12.5px]">
                 {r.garden && <span className="inline-flex items-center gap-1 acc"><Sprout size={12} /> tuin</span>}
                 {r.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
-                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
                 {r.diet !== "Vegetarisch" && <MeatPill diet={r.diet} />}
                 <AllergenPills list={recipeAllergens(r)} />
               </div>
@@ -4155,7 +4182,6 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
               ); })()}
               <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[12.5px]">
                 {r.season.filter((sx) => sx !== "Hele jaar").map((sx) => <SeasonPill key={sx} s={sx} />)}
-                {r.endorsements.length > 0 && <span className="inline-flex items-center gap-1 mute"><Heart size={12} /> {r.endorsements.length}</span>}
               </div>
             </div>
             <ChevronRight size={18} className="shrink-0" style={{ color: "#c4c2b2" }} />
@@ -5635,7 +5661,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
                       ? <button onClick={() => onOpenHaccp(null)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title="Temperaturen invullen"><Thermometer size={14} /> Invullen</button>
                       : HACCP_TASK_KIND[x.t.id]
                         ? <button onClick={() => onOpenRecord(HACCP_TASK_KIND[x.t.id], null)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title="Registreren"><Plus size={14} /> Invullen</button>
-                        : <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title={"Aftekenen als " + user.name}><Check size={14} /> {user.name}</button>)
+                        : <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-2" title="Aftekenen — de app vraagt wie"><Check size={14} /> Aftekenen</button>)
                   : <span className="text-[12.5px] mute shrink-0">te doen</span>}
               </div>
             ))}
@@ -6266,7 +6292,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                     <div className="text-sm ink truncate">{x.t.name}</div>
                     <div className="text-[12.5px] mute">{x.t.area}{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
                   </div>
-                  {canEdit && <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> {user.name}</button>}
+                  {canEdit && <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> Aftekenen</button>}
                 </div>
               ))}
             </div>}
@@ -6298,7 +6324,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                           ? <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium" style={{ color: T.green }}><Check size={13} /> {dagLog.doneBy}</span>
                           : (x.t.id === TEMP_TASK_ID || HACCP_TASK_KIND[x.t.id])
                             ? <button onClick={onOpenSection} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Registreren via de schoonmaaklijst"><Thermometer size={14} /></button>
-                            : <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title={"Aftekenen als " + user.name}><Check size={15} /></button>)}
+                            : <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Aftekenen — de app vraagt wie"><Check size={15} /></button>)}
                       </div>
                     );
                   })}
@@ -6361,7 +6387,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
   );
 }
 
-function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete }) {
+function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete }) {
   const [labelOpen, setLabelOpen] = useState(false); // etiket-popup: gewicht + verpakkingswijze
   // Hoeveelheid als breuk (teller/noemer): ÷2, ÷10 en ×2 stapelen exact.
   const [frac, setFrac] = useState({ n: 1, d: 1 });
