@@ -3803,13 +3803,13 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut })
 }
 
 const SECTIONS = [
-  { id: "gerechten", label: "Gerechten", icon: <Utensils size={14} /> },
-  { id: "recepten", label: "Recepten", icon: <Layers size={14} /> },
-  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={14} /> },
-  { id: "smaak", label: "Smaak", icon: <Blend size={14} /> },
-  { id: "voorraad", label: "Voorraad", icon: <ShelfIcon size={14} /> },
-  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={14} /> },
-  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={14} /> },
+  { id: "gerechten", label: "Gerechten", icon: <Utensils size={19} /> },
+  { id: "recepten", label: "Recepten", icon: <Layers size={19} /> },
+  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={19} /> },
+  { id: "smaak", label: "Smaak", icon: <Blend size={19} /> },
+  { id: "voorraad", label: "Voorraad", icon: <ShelfIcon size={19} /> },
+  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={19} /> },
+  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={19} /> },
 ];
 
 // Horizontaal vegen om tussen de secties te wisselen. Verticaal scrollen en
@@ -3855,7 +3855,7 @@ function SectionNav({ section, setSection }) {
   return (
     <div ref={scroller} className="sticky top-0 z-30 flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1.5 -mx-4 px-4 no-scrollbar sm:justify-center" style={{ background: T.paper }}>
       {items.map((it) => (
-        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-1.5 text-[12px] sm:text-[12.5px] font-medium " + (section === it.id ? "pillon" : "pill")}>
+        <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex flex-col items-center justify-center gap-0.5 rounded-2xl px-2.5 sm:px-3 py-1.5 min-w-[64px] text-[11.5px] sm:text-[12px] font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}<span>{it.label}</span>
         </button>
       ))}
@@ -6388,9 +6388,9 @@ function BackBar({ onBack, onEdit, onPrint, printText = "Print", extra = null, o
       <button onClick={onBack} className="ff shrink-0 inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
       <div className="flex items-center gap-1.5 flex-wrap justify-end">
         {extra}
-        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title={printText}><Printer size={22} /></button>}
-        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Bewerken"><Pencil size={22} /></button>}
-        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Verwijderen"><Trash2 size={22} /></button>}
+        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title={printText}><Printer size={24} /></button>}
+        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Bewerken"><Pencil size={24} /></button>}
+        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center justify-center w-11 h-11 rounded-lg hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Verwijderen"><Trash2 size={24} /></button>}
       </div>
     </div>
   );
@@ -6442,7 +6442,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={canEdit ? (
-          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={26} /></button>
+          <button onClick={onAddStock} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={24} /></button>
         ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
