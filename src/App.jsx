@@ -2588,6 +2588,24 @@ function App() {
   }, [live, !!user]);
 
   const current = stack[stack.length - 1];
+  // Zelfherstel voor de "invoervelden reageren niet meer"-bug: Chrome kan na het
+  // sluiten/herrenderen rond een geopende native dropdown blijven hangen in een
+  // toestand waarin geen enkel veld nog focus krijgt (knoppen werken dan nog wel).
+  // Detectie: na een klik op een veld hoort dat veld even later de focus te
+  // hebben; zo niet, dan maken we de vastzittende focus los en focussen opnieuw.
+  useEffect(() => {
+    const fix = (e) => {
+      const el = e.target && e.target.closest ? e.target.closest("input, select, textarea") : null;
+      if (!el || el.disabled) return;
+      setTimeout(() => {
+        if (document.activeElement === el) return; // focus kwam gewoon aan
+        try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
+        try { el.focus(); } catch (err) {}
+      }, 80);
+    };
+    document.addEventListener("mousedown", fix, true);
+    return () => document.removeEventListener("mousedown", fix, true);
+  }, []);
   // Diagnose voor de "niets aanklikbaar"-bug: typ in de browserconsole (F12)
   // __ritmeDebug() zodra het gebeurt. Toont alle popup-standen én welk element
   // er in het midden van het scherm bovenop ligt — dat wijst de dader aan.
@@ -2598,6 +2616,7 @@ function App() {
         scherm: current ? current.screen : "lijst", sectie: section, geladen: loaded,
         popups: { schoonmaak: checkOpen, schoonmaakBanner: checkBanner, metingen: measureOpen, metingVoor: measureFor, rekenmachine: calcOpen },
         bovensteElement: el ? el.outerHTML.slice(0, 220) : "geen",
+        focusOp: document.activeElement ? document.activeElement.tagName + " · " + String(document.activeElement.outerHTML || "").slice(0, 160) : "geen",
         stackDiepte: stack.length,
       };
       console.log("RITME DEBUG:", JSON.stringify(info, null, 2));
