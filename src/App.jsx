@@ -3381,8 +3381,9 @@ function App() {
     else if (section === "fermentatie") push({ screen: "batchForm", prefill: null });
     else if (section === "smaak") setNewPairing((n) => n + 1);
     else if (section === "voorraad") push({ screen: "voorraadForm", editing: null, prefill: null });
+    else if (section === "technieken") push({ screen: "werkDocForm", editing: null });
   };
-  const showFab = current.screen === "list" && canEdit && section !== "technieken" && section !== "schoonmaak" && section !== "home";
+  const showFab = current.screen === "list" && canEdit && section !== "schoonmaak" && section !== "home";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -3470,7 +3471,7 @@ function App() {
 
       {showFab && (
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-20 sm:right-24 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
-          <Plus size={19} /> {section === "gerechten" ? "Nieuw gerecht" : section === "recepten" ? "Nieuw recept" : section === "smaak" ? "Nieuwe smaakcombinatie" : section === "voorraad" ? "Nieuwe voorraad" : "Nieuwe batch"}
+          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : "Batch"}
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
@@ -4840,7 +4841,7 @@ function BatchLabelModal({ batch, onClose }) {
 // niet geprint; zelfde thermische opmaak (102×38 mm) als de andere etiketten.
 function printCustomLabel(f) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inhoud = [f.gram ? f.gram + " gram" : "", f.pack || ""].filter(Boolean).join(" ");
+  const inhoud = [f.gram || "", f.pack || ""].filter(Boolean).join(" ");
   const w = window.open("", "_blank");
   if (!w) { alert("Sta pop-ups toe om etiketten te printen."); return; }
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
@@ -4868,7 +4869,7 @@ function printCustomLabel(f) {
   setTimeout(() => { try { w.print(); } catch (e) {} }, 150);
 }
 
-const LABEL_PACKS = ["Vacumeerzak", "Pot 200", "Pot 500", "Anders"];
+const LABEL_PACKS = ["Vacumeerzak", "Pot 200", "Pot 500"];
 const LABEL_STORAGE = ["gekoeld", "ongekoeld", "bevroren", "droog"];
 function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const mapStore = (t) => { const x = String(t || "").toLowerCase(); if (/ongekoeld/.test(x)) return "ongekoeld"; if (/vrie|bevroren/.test(x)) return "bevroren"; if (/droog/.test(x)) return "droog"; if (/koel/.test(x)) return "gekoeld"; return ""; };
@@ -4881,7 +4882,14 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const [ready, setReady] = useState("");
   const [gram, setGram] = useState("");
   const [pack, setPack] = useState("");
-  const [packOther, setPackOther] = useState("");
+  // Eén dag erbij, gerekend vanaf de productiedatum: leeg veld → prod + 1,
+  // daarna telkens één dag verder vanaf de ingevulde datum.
+  const plusDag = (cur, set) => {
+    const basis = cur && !isNaN(new Date(cur + "T12:00:00")) ? cur : (prod || today);
+    const dt = new Date(basis + "T12:00:00");
+    dt.setDate(dt.getDate() + 1);
+    set(dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"));
+  };
   const [storage, setStorage] = useState("");
   const [note, setNote] = useState("");
   const [allergens, setAllergens] = useState([]);
@@ -4901,7 +4909,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
   const doPrint = () => {
     if (!name.trim()) { alert("Vul een productnaam in."); return; }
-    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack === "Anders" ? packOther.trim() : pack, storage, note, allergens });
+    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
   return (
@@ -4931,22 +4939,28 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
           </div>
           <div>
             <div className="text-xs mute mb-1">T.H.T.</div>
-            <input type="date" className="input px-2.5 py-2 w-full text-sm" value={tht} onChange={(e) => setTht(e.target.value)} />
+            <div className="flex gap-1">
+              <input type="date" className="input px-2.5 py-2 w-full text-sm min-w-0" value={tht} onChange={(e) => setTht(e.target.value)} />
+              <button type="button" onClick={() => plusDag(tht, setTht)} className="ff shrink-0 rounded-lg px-2 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag houdbaarheid erbij (vanaf de productiedatum)"><Plus size={14} /></button>
+            </div>
           </div>
           <div>
             <div className="text-xs mute mb-1">Klaar op</div>
-            <input type="date" className="input px-2.5 py-2 w-full text-sm" value={ready} onChange={(e) => setReady(e.target.value)} />
+            <div className="flex gap-1">
+              <input type="date" className="input px-2.5 py-2 w-full text-sm min-w-0" value={ready} onChange={(e) => setReady(e.target.value)} />
+              <button type="button" onClick={() => plusDag(ready, setReady)} className="ff shrink-0 rounded-lg px-2 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={14} /></button>
+            </div>
           </div>
           <div>
-            <div className="text-xs mute mb-1">Hoeveelheid (gram)</div>
-            <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="500" />
+            <div className="text-xs mute mb-1">Hoeveelheid</div>
+            <input type="text" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
           </div>
           <div>
             <div className="text-xs mute mb-1">Verpakkingswijze</div>
-            <select className="input px-2.5 py-2 w-full text-sm" value={pack} onChange={(e) => setPack(e.target.value)}>
-              <option value="">—</option>
-              {LABEL_PACKS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <input list="etiket-verpakkingen" className="input px-2.5 py-2 w-full text-sm" value={pack} onChange={(e) => setPack(e.target.value)} placeholder="Kies of typ zelf" />
+            <datalist id="etiket-verpakkingen">
+              {LABEL_PACKS.map((p) => <option key={p} value={p} />)}
+            </datalist>
           </div>
           <div>
             <div className="text-xs mute mb-1">Opslagmanier</div>
@@ -4955,12 +4969,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
               {LABEL_STORAGE.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           </div>
-          {pack === "Anders" && (
-            <div className="col-span-2">
-              <div className="text-xs mute mb-1">Verpakking (anders)</div>
-              <input className="input px-2.5 py-2 w-full text-sm" value={packOther} onChange={(e) => setPackOther(e.target.value)} placeholder="bv. bokaal 1 l" />
-            </div>
-          )}
         </div>
         <div className="mt-2">
           <button onClick={() => setAlgOpen((o) => !o)} className="ff w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm" style={{ border: "1px solid " + T.line, background: "#fff" }}>
@@ -5499,9 +5507,6 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
             </TechCard>
           );
         })}
-        {canEdit && (
-          <button onClick={onNewDoc} className="btno ff w-full inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-3"><Plus size={16} /> Nieuw werkwijze-document</button>
-        )}
       </div>
     </div>
   );
