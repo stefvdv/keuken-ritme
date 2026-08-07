@@ -4585,7 +4585,7 @@ const CATERING_STANDARDS = [
 // Etiket printen via de Zebra-printerdriver (geen ZebraDesigner nodig).
 // Formaat van het etiket (breedte x hoogte in mm) — ZD421: 102 x 38 mm.
 const LABEL_MM = { w: 102, h: 38 };
-function printLabel(recipe) {
+function printLabel(recipe, inhoud) {
   const prod = localDate();
   let tht = "";
   if (recipe.shelfDays) {
@@ -4610,12 +4610,15 @@ function printLabel(recipe) {
     // Alles vet en ruim bemeten: dunne letters verdwijnen in het raster van de
     // thermische driver (203 dpi), dikke streken blijven staan.
     ".naam{font-weight:bold;font-size:14pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
+    // Inhoudsregel (bv. "500 gram vacumeer zak"): alleen geprint als hij is ingevuld.
+    ".inh{font-weight:bold;font-size:10pt;line-height:1.15;margin:0 0 0.5mm 0;word-wrap:break-word}" +
     ".rij{font-weight:bold;font-size:12pt;line-height:1.3;margin:0}" +
     // Allergenen: iets kleiner zodat de regel op het etiket past, wel vetgedrukt.
     ".alg{font-weight:bold;font-size:9pt;line-height:1.15;margin:1mm 0 0 0;word-wrap:break-word}" +
     "</style></head><body>" +
     '<div class="wrap">' +
     '<div class="naam">' + esc(recipe.name) + "</div>" +
+    (inhoud && String(inhoud).trim() ? '<div class="inh">' + esc(String(inhoud).trim()) + "</div>" : "") +
     '<div class="rij">Gemaakt: ' + fmt(prod) + "</div>" +
     (tht ? '<div class="rij">T.H.T.: ' + fmt(tht) + "</div>" : "") +
     (() => { const alg = recipeAllergens(recipe); return alg.length ? '<div class="alg">Allergenen: ' + esc(alg.join(", ")) + "</div>" : ""; })() +
@@ -4623,6 +4626,45 @@ function printLabel(recipe) {
   w.document.close();
   w.focus();
   setTimeout(() => { w.print(); }, 250);
+}
+
+// Popup bij "Etiket": vraagt gewicht en verpakkingswijze (bv. 500 gram vacumeer
+// zak) voor op het etiket. Leeg gelaten = niets extra's printen. Sluit vanzelf
+// zodra de printactie is gestart.
+function LabelPrintModal({ recipe, onClose }) {
+  const [gram, setGram] = useState("");
+  const [pak, setPak] = useState("");
+  const doPrint = () => {
+    const inhoud = [gram.trim() ? gram.trim() + " gram" : "", pak.trim()].filter(Boolean).join(" ");
+    printLabel(recipe, inhoud);
+    onClose();
+  };
+  const enter = (e) => { if (e.key === "Enter") { e.preventDefault(); doPrint(); } };
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }}>
+      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="serif ink text-xl leading-tight">Etiket printen</div>
+            <div className="text-xs mute mt-0.5 truncate">{recipe.name}</div>
+          </div>
+          <button onClick={onClose} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <div>
+            <div className="text-xs mute mb-1">Gram</div>
+            <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value.replace(/[^0-9.,]/g, ""))} onKeyDown={enter} placeholder="500" />
+          </div>
+          <div>
+            <div className="text-xs mute mb-1">Verpakkingswijze</div>
+            <input className="input px-2.5 py-2 w-full text-sm" value={pak} onChange={(e) => setPak(e.target.value)} onKeyDown={enter} placeholder="vacumeer zak" />
+          </div>
+        </div>
+        <p className="text-[11px] mute mt-2">Leeg gelaten? Dan wordt er niets extra's aan het etiket toegevoegd.</p>
+        <button onClick={doPrint} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
+      </div>
+    </div>
+  );
 }
 
 // In welk jaar is deze voorraad gemaakt? (productiedatum; anders het huidige jaar)
@@ -5977,6 +6019,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
 }
 
 function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onEndorse, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete }) {
+  const [labelOpen, setLabelOpen] = useState(false); // etiket-popup: gewicht + verpakkingswijze
   // Hoeveelheid als breuk (teller/noemer): ÷2, ÷10 en ×2 stapelen exact.
   const [frac, setFrac] = useState({ n: 1, d: 1 });
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
@@ -5988,10 +6031,11 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   const critical = criticalValues(recipe);
   return (
     <div>
+      {labelOpen && <LabelPrintModal recipe={recipe} onClose={() => setLabelOpen(false)} />}
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)} printText="Print recept"
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={canEdit ? <>
-          <button onClick={() => printLabel(recipe)} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Etiket printen (naam, productiedatum, THT)"><Tag size={14} /> Etiket</button>
+          <button onClick={() => setLabelOpen(true)} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Etiket printen (naam, inhoud, productiedatum, THT)"><Tag size={14} /> Etiket</button>
           <button onClick={onAddStock} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }}><Package size={14} /> In voorraad</button>
         </> : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
