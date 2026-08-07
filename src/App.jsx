@@ -3554,14 +3554,14 @@ function App() {
       </main>
 
       {showFab && (
-        <button onClick={fabAction} className="btnp ff fixed bottom-[9.5rem] right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
+        <button onClick={fabAction} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : "Batch"}
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
       {user && canEdit && (
         <button onClick={() => setFabLabelOpen(true)} title="Etiket maken"
-          className="ff fixed bottom-[5.25rem] right-4 sm:right-6 z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+          className="ff fixed bottom-[5.25rem] right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
           style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
           <Tag size={19} />
         </button>
@@ -3624,7 +3624,7 @@ function CalcWidget({ open, onOpen, onClose }) {
   return (
     <>
       {open && (
-        <div className="fixed bottom-24 right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line }}>
+        <div className="fixed bottom-[9.25rem] right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
             <button onClick={onClose} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
@@ -3645,7 +3645,7 @@ function CalcWidget({ open, onOpen, onClose }) {
         </div>
       )}
       <button onClick={open ? onClose : onOpen} title="Rekenmachine"
-        className="ff fixed bottom-6 right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+        className="ff fixed bottom-[5.25rem] right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
         style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green }}>
         {open ? <X size={20} /> : <Percent size={19} />}
       </button>
