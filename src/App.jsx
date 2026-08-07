@@ -2666,6 +2666,7 @@ function App() {
   const [checkForDate, setCheckForDate] = useState(null); // heropende dag die opnieuw ingevuld wordt
   const [measureOpen, setMeasureOpen] = useState(false);
   const [measureFor, setMeasureFor] = useState(null); // meting-popup voor één batch (vanuit de aandacht-banner)
+  const [batchLabelFor, setBatchLabelFor] = useState(null); // etiket-popup na het registreren van een batch
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
@@ -2734,6 +2735,7 @@ function App() {
     if (!(await persistBatch(b))) return;
     setBatches((bs) => [b, ...bs]);
     flash("Batch geregistreerd");
+    setBatchLabelFor(b); // etiket-popup: direct een vat-/potetiket kunnen printen
   };
   const addBatchMeasurement = async (id, m) => {
     const b = batches.find((x) => x.id === id);
@@ -3476,6 +3478,9 @@ function App() {
       )}
       {measureFor && canEdit && (
         <BatchMeasureModal batches={batches.filter((b) => b.id === measureFor && !b.done)} onAdd={addBatchMeasurement} onFinish={saveMeasureAndFinish} onClose={() => setMeasureFor(null)} />
+      )}
+      {batchLabelFor && canEdit && (
+        <BatchLabelModal batch={batchLabelFor} onClose={() => setBatchLabelFor(null)} />
       )}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit} forDate={checkForDate}
@@ -4707,6 +4712,97 @@ function LabelPrintModal({ recipe, onClose }) {
           </div>
         </div>
         <p className="text-[11px] mute mt-2">Gram en verpakking leeg gelaten? Dan wordt er niets extra's aan het etiket toegevoegd.</p>
+        <button onClick={doPrint} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
+      </div>
+    </div>
+  );
+}
+
+// Vat-/potetiket voor een fermentatiebatch: naam, startdatum, verwachte klaar-datum,
+// streefwaarden (pH / °Brix) en het fermentatietype. Zelfde thermische opmaak als
+// het productetiket (102×38 mm, alles vet voor de 203 dpi-driver).
+function printBatchLabel(d) {
+  const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const doel = [d.ph ? "pH " + d.ph : "", d.brix ? d.brix + " °Brix" : ""].filter(Boolean).join(" · ");
+  const w = window.open("", "_blank", "width=420,height=260");
+  if (!w) { alert("Sta pop-ups toe om etiketten te printen."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+    "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
+    "html,body{margin:0;padding:0}" +
+    "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
+    "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+    ".wrap{position:absolute;top:2.5mm;left:3mm;right:3mm;text-align:center}" +
+    ".naam{font-weight:bold;font-size:13pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
+    ".rij{font-weight:bold;font-size:10.5pt;line-height:1.25;margin:0}" +
+    "</style></head><body>" +
+    '<div class="wrap">' +
+    '<div class="naam">' + esc(d.name) + "</div>" +
+    (d.type ? '<div class="rij">' + esc(d.type) + "</div>" : "") +
+    '<div class="rij">Start: ' + esc(fmtDMY(d.start)) + "</div>" +
+    (d.ready ? '<div class="rij">Klaar rond: ' + esc(fmtDMY(d.ready)) + "</div>" : "") +
+    (doel ? '<div class="rij">Doel: ' + esc(doel) + "</div>" : "") +
+    "</div></body></html>");
+  w.document.close();
+  w.focus();
+  setTimeout(() => { try { w.print(); } catch (e) {} }, 150);
+}
+
+// Popup na het registreren van een batch: vraagt of er een etiket geprint moet
+// worden. Alles vooringevuld en aanpasbaar, behalve de naam van het recept.
+function BatchLabelModal({ batch, onClose }) {
+  const dagen = Number(batch.days) || 0;
+  const readyVan = (st) => {
+    if (!st || !dagen) return "";
+    const dt = new Date(st + "T12:00:00");
+    if (isNaN(dt)) return "";
+    dt.setDate(dt.getDate() + dagen);
+    return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  };
+  const tgt = FERMENT_TARGETS[batch.method] || FERMENT_TARGETS[batch.type] || {};
+  const [start, setStart] = useState(batch.startDate || localDate());
+  const [ready, setReady] = useState(() => readyVan(batch.startDate || localDate()));
+  const [readyTouched, setReadyTouched] = useState(false);
+  const changeStart = (v) => { setStart(v); if (!readyTouched) setReady(readyVan(v)); };
+  const [ph, setPh] = useState(tgt.phEnd != null ? String(tgt.phEnd).replace(".", ",") : "");
+  const [brix, setBrix] = useState("");
+  const [type, setType] = useState(batch.method || batch.type || "");
+  const doPrint = () => {
+    printBatchLabel({ name: batch.product, start: start || localDate(), ready, ph: ph.trim(), brix: brix.trim(), type: type.trim() });
+    onClose(); // sluit vanzelf zodra de printactie gestart is
+  };
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="serif ink text-xl leading-tight">Batch-etiket printen</div>
+            <div className="text-xs mute mt-0.5 truncate">{batch.product}</div>
+          </div>
+          <button onClick={onClose} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <div>
+            <div className="text-xs mute mb-1">Startdatum</div>
+            <input type="date" className="input px-2.5 py-2 w-full text-sm" value={start} onChange={(e) => changeStart(e.target.value)} />
+          </div>
+          <div>
+            <div className="text-xs mute mb-1">Klaar rond</div>
+            <input type="date" className="input px-2.5 py-2 w-full text-sm" value={ready} onChange={(e) => { setReady(e.target.value); setReadyTouched(true); }} />
+          </div>
+          <div>
+            <div className="text-xs mute mb-1">Doel-pH</div>
+            <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={ph} onChange={(e) => setPh(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="3,5" />
+          </div>
+          <div>
+            <div className="text-xs mute mb-1">°Brix (suiker)</div>
+            <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={brix} onChange={(e) => setBrix(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="12" />
+          </div>
+          <div className="col-span-2">
+            <div className="text-xs mute mb-1">Fermentatietype</div>
+            <input className="input px-2.5 py-2 w-full text-sm" value={type} onChange={(e) => setType(e.target.value)} placeholder="Melkzuur" />
+          </div>
+        </div>
+        <p className="text-[11px] mute mt-2">Lege velden worden niet op het etiket gezet.</p>
         <button onClick={doPrint} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
       </div>
     </div>
