@@ -3710,10 +3710,10 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "schoonmaak" ? "Taak" : "Batch"}
         </button>
       )}
-      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
+      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab} />}
       {user && canEdit && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
-          className="ff fixed bottom-[5.25rem] right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+          className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab ? "bottom-[5.25rem]" : "bottom-6")}
           style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
           <Tag size={19} />
         </button>
@@ -3750,7 +3750,7 @@ function App() {
 }
 
 // Zwevende rekenmachine, beschikbaar op elke pagina.
-function CalcWidget({ open, onOpen, onClose }) {
+function CalcWidget({ open, onOpen, onClose, raised }) {
   const [expr, setExpr] = useState("");
   const [result, setResult] = useState("");
   // Veilige evaluatie: alleen cijfers en rekenkundige tekens.
@@ -3776,7 +3776,7 @@ function CalcWidget({ open, onOpen, onClose }) {
   return (
     <>
       {open && (
-        <div className="fixed bottom-[9.25rem] right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line }}>
+        <div className={"fixed right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3 " + (raised ? "bottom-[9.25rem]" : "bottom-24")} style={{ background: T.paper, border: "1px solid " + T.line }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
             <button onClick={onClose} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
@@ -3797,7 +3797,7 @@ function CalcWidget({ open, onOpen, onClose }) {
         </div>
       )}
       <button onClick={open ? onClose : onOpen} title="Rekenmachine"
-        className="ff fixed bottom-[5.25rem] right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+        className={"ff fixed right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (raised ? "bottom-[5.25rem]" : "bottom-6")}
         style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green }}>
         {open ? <X size={20} /> : <Percent size={19} />}
       </button>
