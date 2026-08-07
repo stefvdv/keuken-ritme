@@ -393,11 +393,17 @@ function softMatch(haystack, needle) {
   const hWords = h.split(/[^a-z0-9]+/).filter(Boolean);
   return q.split(/\s+/).filter(Boolean).every((w) => {
     if (h.includes(w)) return true;
-    if (w.length < 4) return false;
+    // Typefout-tolerantie pas vanaf 6 letters: bij korte woorden is één letter
+    // verschil vaak een ánder woord (zoet/zout, peer/peen) in plaats van een typo.
+    if (w.length < 6) return false;
     const cap = typoBudget(w.length);
     for (const hw of hWords) {
       if (typoDistance(hw, w, cap) <= cap) return true;
-      if (hw.length > w.length && typoDistance(hw.slice(0, Math.ceil(w.length + cap)), w, cap) <= cap) return true;
+      // Prefix-vergelijking op meerdere lengtes, zodat een typo vóór een
+      // samenstelling ook matcht ("courgete" → "courgette(jam)").
+      for (let L = w.length; L <= Math.ceil(w.length + cap); L++) {
+        if (hw.length > w.length && hw.length >= L && typoDistance(hw.slice(0, L), w, cap) <= cap) return true;
+      }
     }
     return false;
   });
@@ -2315,20 +2321,33 @@ function scaleAmount(str, f) {
   }
   return str;
 }
+// Grootte van een verpakking in gram(equivalent): "1 kg" → 1000, "500 gram" → 500,
+// "1,5 l" → 1500, kaal getal → gram. Gebruikt door het meeschalen van ingrediënten
+// én de Excel-totalen, zodat kg en gram eerlijk met elkaar vergeleken worden.
+function unitSizeG(u) {
+  const t = String(u || "").toLowerCase().replace(",", ".");
+  const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|gram|gr|g|liter|l|dl|cl|ml)?\b/);
+  if (!m || !m[1]) return null;
+  const n = Number(m[1]);
+  const eh = m[2] || "";
+  if (eh === "kg" || eh === "l" || eh === "liter") return n * 1000;
+  if (eh === "dl") return n * 100;
+  if (eh === "cl") return n * 10;
+  return n; // g, gr, gram, ml of kaal getal: gram
+}
 // Referentie voor het meeschalen van ingrediënten in het voorraadformulier.
 // Gebruikt yieldAmount/yieldUnit als die er zijn; anders wordt de opbrengsttekst
 // gelezen ("≈ 3 potten" → 3 stuks, "≈ 500 g" → 1 × 500). Zo klopt de schaling
 // ook voor bibliotheekrecepten en oudere recepten zonder losse opbrengstvelden.
 function parseYieldRef(amount, unitText, yieldText) {
-  const num = (s) => { const m = String(s ?? "").match(/\d+(?:[.,]\d+)?/); return m ? Number(m[0].replace(",", ".")) : null; };
   let a = amount != null && !isNaN(Number(amount)) && Number(amount) > 0 ? Number(amount) : null;
-  let u = num(unitText);
+  let u = unitSizeG(unitText); // in gram, zodat "1 kg" en "500 gram" vergelijkbaar zijn
   if (a === null) {
     const m = String(yieldText || "").match(/(\d+(?:[.,]\d+)?)\s*(?:×|x)?\s*([a-zà-ÿ]*)/i);
     if (m) {
       const n = Number(m[1].replace(",", "."));
       const w = (m[2] || "").toLowerCase();
-      if (/^(g|gr|gram|kg|ml|cl|dl|l|liter)$/.test(w)) { if (u === null) u = n; a = 1; }
+      if (/^(g|gr|gram|kg|ml|cl|dl|l|liter)$/.test(w)) { if (u === null) u = unitSizeG(m[1] + " " + w); a = 1; }
       else a = n;
     }
   }
@@ -3091,20 +3110,7 @@ function App() {
     };
     const MAANDEN = ["Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"];
     const rows = [["Product", "Gemaakt in " + jaar, "Verpakkingseenheid", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Totaal stuks", "Totaal gewicht (g)"]];
-    // Gewicht per verpakking uit de eenheidstekst. Een kaal getal telt als gram
-    // ("200" → 200 g); kg/l/dl/cl/ml worden naar gram(equivalent) omgerekend.
-    const unitSize = (u) => {
-      const t = String(u || "").toLowerCase().replace(",", ".");
-      const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|gram|gr|g|liter|l|dl|cl|ml)?\b/);
-      if (!m || !m[1]) return null;
-      const n = Number(m[1]);
-      const eh = m[2] || "";
-      if (eh === "kg") return n * 1000;
-      if (eh === "l" || eh === "liter") return n * 1000;
-      if (eh === "dl") return n * 100;
-      if (eh === "cl") return n * 10;
-      return n; // g, gr, gram, ml of zonder eenheid: gram
-    };
+    const unitSize = unitSizeG; // gedeelde gram-parser, zelfde als het meeschalen van ingrediënten
     const num = (x) => { const n = Number(String(x ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
     const fmtN = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
     // Gegroepeerd per productiemaand, chronologisch; zonder datum achteraan.
@@ -4828,7 +4834,8 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     if (!refIngs) return;
     const q1 = Number(String(qty ?? "").replace(",", "."));
     const qtyRatio = refYield && q1 > 0 && !isNaN(q1) ? q1 / refYield : 1;
-    const un = parseNum(unit);
+    // In gram vergeleken: "500 gram" t.o.v. "1 kg" geeft 0,5 in plaats van 500.
+    const un = unitSizeG(unit);
     const unitRatio = un && refUnitNum ? un / refUnitNum : 1;
     const f = qtyRatio * unitRatio;
     if (!isFinite(f) || f <= 0) return;
