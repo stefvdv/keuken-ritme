@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Package, Minus, Tag
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -2357,6 +2357,32 @@ function parseYieldRef(amount, unitText, yieldText) {
   }
   return { refYield: a, refUnitNum: u };
 }
+// Stellage-icoon (eigen tekening in Lucide-lijnstijl): twee staanders, drie
+// planken met potten en bakken — herkenbaarder als "voorraad" dan de doos.
+function ShelfIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 2v20M20 2v20" />
+      <path d="M4 8h16M4 15h16M4 22h16" />
+      <rect x="7" y="4.2" width="3.6" height="3.8" />
+      <rect x="13" y="10.8" width="4.6" height="4.2" />
+      <rect x="7.5" y="18" width="3.4" height="4" />
+    </svg>
+  );
+}
+
+// Boerderijhuis-icoon (eigen tekening): het logo-rondje wordt de home-knop.
+function FarmhouseIcon({ size = 16, style }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} aria-hidden="true">
+      <path d="M3 11 12 4l9 7" />
+      <path d="M5 10v10h14V10" />
+      <path d="M10 20v-6h4v6" />
+      <path d="M10 14l4 3M14 14l-4 3" />
+    </svg>
+  );
+}
+
 function roleLabel(role) {
   return { chef: "Chef", souschef: "Souschef", kok: "Zelfstandig kok",
            leerling: "Leerling kok", hulpkok: "Hulpkok", guest: "Gast" }[role] || role;
@@ -2433,7 +2459,7 @@ export default function AppRoot() {
 
 function App() {
   const [user, setUser] = useState(null);
-  const [section, setSection] = useState("home");
+  const [section, setSection] = useState("recepten"); // de app opent op de receptenpagina
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
   // Live (met database): start leeg tot de echte batches geladen zijn — de
@@ -3638,7 +3664,7 @@ function Wordmark({ size = "small", onHome }) {
   const Tag = onHome ? "button" : "div";
   return (
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
-      <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}><Sprout size={15} style={{ color: T.paper }} /></span>
+      <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}><FarmhouseIcon size={15} style={{ color: T.paper }} /></span>
       <span className="serif ink text-base leading-none truncate">In het ritme van het land</span>
     </Tag>
   );
@@ -3775,12 +3801,11 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut })
 }
 
 const SECTIONS = [
-  { id: "home", label: "Home", icon: <Home size={14} /> },
   { id: "gerechten", label: "Gerechten", icon: <Utensils size={14} /> },
   { id: "recepten", label: "Recepten", icon: <Layers size={14} /> },
   { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={14} /> },
   { id: "smaak", label: "Smaak", icon: <Blend size={14} /> },
-  { id: "voorraad", label: "Voorraad", icon: <Package size={14} /> },
+  { id: "voorraad", label: "Voorraad", icon: <ShelfIcon size={14} /> },
   { id: "technieken", label: "Werkwijze", icon: <BookOpen size={14} /> },
   { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={14} /> },
 ];
@@ -3869,7 +3894,7 @@ function HomeScreen({ stock, recipes, batches, dishes, onOpenRecipe, onOpenDish,
       <p className="text-sm mute mb-5">Het laatste uit de keuken van Wilde Wortels — vers gemaakt, nieuw bedacht en net afgerond.</p>
       {blok("Vers in de voorraad", "voorraad", "Nog niets toegevoegd.", recentStock.map((v) => (
         <button key={v.id} onClick={() => onGoSection("voorraad")} className="card cardh ff w-full text-left px-4 py-3 flex items-center gap-3">
-          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Package size={15} /></span>
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><ShelfIcon size={15} /></span>
           <div className="flex-1 min-w-0">
             <div className="font-medium ink truncate">{v.product}</div>
             <div className="text-xs mute truncate">{[v.unit, v.storage, v.by, v.productionDate ? "gemaakt " + fmtDMY(v.productionDate) : null].filter(Boolean).join(" · ")}</div>
@@ -6415,7 +6440,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={canEdit ? (
-          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><Package size={18} /></button>
+          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={18} /></button>
         ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
