@@ -3091,18 +3091,58 @@ function App() {
     };
     const MAANDEN = ["Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"];
     const rows = [["Product", "Gemaakt in " + jaar, "Verpakkingseenheid", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door"]];
+    // Gewicht per verpakking uit de eenheidstekst ("200 gr pot" → 200 g, "1,5 l" → 1500 ml).
+    const unitSize = (u) => {
+      const t = String(u || "").toLowerCase().replace(",", ".");
+      const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|gram|gr|g|liter|l|dl|cl|ml)\b/);
+      if (!m) return null;
+      const n = Number(m[1]);
+      const eh = m[2];
+      if (eh === "kg") return { g: n * 1000 };
+      if (eh === "g" || eh === "gr" || eh === "gram") return { g: n };
+      if (eh === "l" || eh === "liter") return { ml: n * 1000 };
+      if (eh === "dl") return { ml: n * 100 };
+      if (eh === "cl") return { ml: n * 10 };
+      return { ml: n };
+    };
+    const num = (x) => { const n = Number(String(x ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
+    const fmtStuks = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
+    // Totaal gewicht/volume leesbaar; "≥" als niet elke verpakking een meetbaar gewicht had.
+    const fmtTot = (g, ml, incompleet) => {
+      const p = [];
+      if (g > 0) p.push(g >= 1000 ? String(Math.round(g / 100) / 10).replace(".", ",") + " kg" : Math.round(g) + " g");
+      if (ml > 0) p.push(ml >= 1000 ? String(Math.round(ml / 100) / 10).replace(".", ",") + " l" : Math.round(ml) + " ml");
+      if (!p.length) return incompleet ? "gewicht onbekend" : "";
+      return (incompleet ? "≥ " : "") + p.join(" + ");
+    };
     // Gegroepeerd per productiemaand, chronologisch; zonder datum achteraan.
     const maandVan = (v) => { const m = Number(String(v.productionDate || "").slice(5, 7)); return m >= 1 && m <= 12 ? m : 13; };
     const maanden = [...new Set(items.map(maandVan))].sort((a, b) => a - b);
     maanden.forEach((m) => {
       rows.push([]);
       rows.push([m === 13 ? "ZONDER PRODUCTIEDATUM" : MAANDEN[m - 1].toUpperCase() + " " + jaar]);
-      items
+      // Per product bij elkaar (dan op datum), zodat het producttotaal er direct onder past.
+      const lijst = items
         .filter((v) => maandVan(v) === m)
-        .sort((a, b) => (a.productionDate || "") < (b.productionDate || "") ? -1 : (a.productionDate || "") > (b.productionDate || "") ? 1 : a.product.localeCompare(b.product, "nl"))
-        .forEach((v) => {
+        .sort((a, b) => a.product.localeCompare(b.product, "nl") || ((a.productionDate || "") < (b.productionDate || "") ? -1 : (a.productionDate || "") > (b.productionDate || "") ? 1 : 0));
+      let mStuks = 0, mG = 0, mMl = 0, mInc = false;
+      let i = 0;
+      while (i < lijst.length) {
+        const prod = lijst[i].product;
+        let pStuks = 0, pG = 0, pMl = 0, pInc = false;
+        while (i < lijst.length && lijst[i].product === prod) {
+          const v = lijst[i];
           rows.push([v.product, String(v.initialQty).replace(".", ","), v.unit, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || ""]);
-        });
+          const q = num(v.initialQty);
+          const sz = unitSize(v.unit);
+          pStuks += q;
+          if (sz && sz.g) pG += q * sz.g; else if (sz && sz.ml) pMl += q * sz.ml; else pInc = true;
+          i++;
+        }
+        rows.push(["TOTAAL " + prod, fmtStuks(pStuks) + " stuks", fmtTot(pG, pMl, pInc)]);
+        mStuks += pStuks; mG += pG; mMl += pMl; mInc = mInc || pInc;
+      }
+      rows.push(["TOTAAL " + (m === 13 ? "ZONDER DATUM" : MAANDEN[m - 1].toUpperCase()), fmtStuks(mStuks) + " stuks", fmtTot(mG, mMl, mInc)]);
     });
     const csv = "\uFEFF" + "sep=;\n" + rows.map((r) => r.map(esc).join(";")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
