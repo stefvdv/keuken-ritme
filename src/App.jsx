@@ -2588,6 +2588,23 @@ function App() {
   }, [live, !!user]);
 
   const current = stack[stack.length - 1];
+  // Diagnose voor de "niets aanklikbaar"-bug: typ in de browserconsole (F12)
+  // __ritmeDebug() zodra het gebeurt. Toont alle popup-standen én welk element
+  // er in het midden van het scherm bovenop ligt — dat wijst de dader aan.
+  useEffect(() => {
+    window.__ritmeDebug = () => {
+      const el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+      const info = {
+        scherm: current ? current.screen : "lijst", sectie: section, geladen: loaded,
+        popups: { schoonmaak: checkOpen, schoonmaakBanner: checkBanner, metingen: measureOpen, metingVoor: measureFor, rekenmachine: calcOpen },
+        bovensteElement: el ? el.outerHTML.slice(0, 220) : "geen",
+        stackDiepte: stack.length,
+      };
+      console.log("RITME DEBUG:", JSON.stringify(info, null, 2));
+      return info;
+    };
+    return () => { delete window.__ritmeDebug; };
+  });
   const push = (s) => { setStack((st) => [...st, s]); try { window.history.pushState({ app: "ritme" }, ""); } catch (e) {} };
   const back = () => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
   const resetTo = (s) => setStack([s]);
@@ -4660,7 +4677,7 @@ function LabelPrintModal({ recipe, onClose }) {
   };
   const enter = (e) => { if (e.key === "Enter") { e.preventDefault(); doPrint(); } };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -5868,7 +5885,7 @@ function BatchMeasureModal({ batches, onAdd, onFinish, onClose }) {
     onFinish(b.id, m); // slaat de meting op, rondt de batch af en opent de voorraad-popup
   };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -5927,7 +5944,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
   const [showAll, setShowAll] = useState(!!forDate);
   const areas = [...new Set(withStatus.map((x) => x.t.area))].sort((a, b) => a.localeCompare(b, "nl"));
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
