@@ -2575,10 +2575,16 @@ function App() {
   useEffect(() => {
     if (!live || !user) return;
     loadShared();
+    // Realtime-events bundelen: tekent een collega bv. de hele schoonmaakdag af,
+    // dan komen er tientallen events vlak achter elkaar binnen. Eén volledige
+    // herlaad per event zette de app seconden op slot (nergens op kunnen klikken);
+    // nu wachten we tot de burst stil is en herladen we één keer.
+    let t = null;
+    const kick = () => { if (t) clearTimeout(t); t = setTimeout(() => { t = null; loadShared(); }, 800); };
     const ch = supabase.channel("gedeeld")
-      .on("postgres_changes", { event: "*", schema: "public" }, () => loadShared())
+      .on("postgres_changes", { event: "*", schema: "public" }, kick)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { if (t) clearTimeout(t); supabase.removeChannel(ch); };
   }, [live, !!user]);
 
   const current = stack[stack.length - 1];
@@ -4585,10 +4591,10 @@ const CATERING_STANDARDS = [
 // Etiket printen via de Zebra-printerdriver (geen ZebraDesigner nodig).
 // Formaat van het etiket (breedte x hoogte in mm) — ZD421: 102 x 38 mm.
 const LABEL_MM = { w: 102, h: 38 };
-function printLabel(recipe, inhoud) {
-  const prod = localDate();
-  let tht = "";
-  if (recipe.shelfDays) {
+function printLabel(recipe, inhoud, dates) {
+  const prod = (dates && dates.prod) || localDate();
+  let tht = (dates && dates.tht) || "";
+  if (!tht && recipe.shelfDays) {
     const dt = new Date(prod + "T12:00:00");
     dt.setDate(dt.getDate() + Number(recipe.shelfDays));
     tht = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
@@ -4634,9 +4640,22 @@ function printLabel(recipe, inhoud) {
 function LabelPrintModal({ recipe, onClose }) {
   const [gram, setGram] = useState("");
   const [pak, setPak] = useState("");
+  // THT uit de houdbaarheid van het recept, gerekend vanaf een productiedatum.
+  const thtVan = (p) => {
+    if (!recipe.shelfDays || !p) return "";
+    const dt = new Date(p + "T12:00:00");
+    if (isNaN(dt)) return "";
+    dt.setDate(dt.getDate() + Number(recipe.shelfDays));
+    return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  };
+  const [prod, setProd] = useState(localDate());
+  const [tht, setTht] = useState(() => thtVan(localDate()));
+  const [thtTouched, setThtTouched] = useState(false);
+  // Productiedatum aangepast? Reken de THT mee, tenzij die zelf al is aangepast.
+  const changeProd = (p) => { setProd(p); if (!thtTouched) setTht(thtVan(p)); };
   const doPrint = () => {
     const inhoud = [gram.trim() ? gram.trim() + " gram" : "", pak.trim()].filter(Boolean).join(" ");
-    printLabel(recipe, inhoud);
+    printLabel(recipe, inhoud, { prod: prod || localDate(), tht });
     onClose();
   };
   const enter = (e) => { if (e.key === "Enter") { e.preventDefault(); doPrint(); } };
@@ -4660,7 +4679,17 @@ function LabelPrintModal({ recipe, onClose }) {
             <input className="input px-2.5 py-2 w-full text-sm" value={pak} onChange={(e) => setPak(e.target.value)} onKeyDown={enter} placeholder="vacumeer zak" />
           </div>
         </div>
-        <p className="text-[11px] mute mt-2">Leeg gelaten? Dan wordt er niets extra's aan het etiket toegevoegd.</p>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div>
+            <div className="text-xs mute mb-1">Productiedatum</div>
+            <input type="date" className="input px-2.5 py-2 w-full text-sm" value={prod} onChange={(e) => changeProd(e.target.value)} />
+          </div>
+          <div>
+            <div className="text-xs mute mb-1">T.H.T.</div>
+            <input type="date" className="input px-2.5 py-2 w-full text-sm" value={tht} onChange={(e) => { setTht(e.target.value); setThtTouched(true); }} />
+          </div>
+        </div>
+        <p className="text-[11px] mute mt-2">Gram en verpakking leeg gelaten? Dan wordt er niets extra's aan het etiket toegevoegd.</p>
         <button onClick={doPrint} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
       </div>
     </div>
