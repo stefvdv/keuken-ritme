@@ -2811,6 +2811,9 @@ function App() {
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
   useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
+  const [fabLabelOpen, setFabLabelOpen] = useState(false); // vrij etiket via de zwevende etiket-knop
+  // (declaratie stáát bewust vóór het effect hieronder: de dependency-array
+  // wordt al tijdens het renderen gelezen — andersom crasht de app bij het opstarten)
   const fabLabelRef = React.useRef(false);
   useEffect(() => { fabLabelRef.current = fabLabelOpen; }, [fabLabelOpen]);
   useEffect(() => {
@@ -2890,7 +2893,6 @@ function App() {
   const [measureOpen, setMeasureOpen] = useState(false);
   const [measureFor, setMeasureFor] = useState(null); // meting-popup voor één batch (vanuit de aandacht-banner)
   const [batchLabelFor, setBatchLabelFor] = useState(null); // etiket-popup na het registreren van een batch
-  const [fabLabelOpen, setFabLabelOpen] = useState(false); // vrij etiket via de zwevende etiket-knop
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
