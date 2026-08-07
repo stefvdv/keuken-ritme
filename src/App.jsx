@@ -238,7 +238,7 @@ function printHaccp(tempLogs, records) {
   else {
     body += "<table><thead><tr><th>Datum</th>" + HACCP_UNITS.map((u) => "<th>" + pEsc(u.name) + "</th>").join("") + "<th>IJking</th><th>Door</th></tr></thead><tbody>";
     for (const l of [...tempLogs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1))) {
-      body += "<tr><td>" + pEsc(l.checkDate) + "</td>" +
+      body += "<tr><td>" + pEsc(fmtDMY(l.checkDate)) + "</td>" +
         HACCP_UNITS.map((u) => { const v = l.values[u.id]; const bad = inRange(u, v) === false; return "<td" + (bad ? " class='warn'" : "") + ">" + (v == null ? "—" : String(v).replace(".", ",") + " °C") + "</td>"; }).join("") +
         "<td>" + (l.calibration && l.calibration.measured != null ? String(l.calibration.measured).replace(".", ",") + " °C" : "—") + "</td><td>" + pEsc(l.doneBy) + "</td></tr>";
     }
@@ -251,7 +251,7 @@ function printHaccp(tempLogs, records) {
     body += "<table><thead><tr><th>Datum</th>" + cfg.cols.map((c) => "<th>" + pEsc(c.label) + "</th>").join("") + "<th>Door</th></tr></thead><tbody>";
     for (const r of rows) {
       const bad = cfg.ok(r) === false;
-      body += "<tr><td>" + pEsc(r.date) + "</td>" +
+      body += "<tr><td>" + pEsc(fmtDMY(r.date)) + "</td>" +
         cfg.cols.map((c) => "<td>" + (c.type === "num" ? (r[c.id] == null ? "—" : String(r[c.id]).replace(".", ",") + " °C") : pEsc(r[c.id])) + "</td>").join("") +
         "<td>" + pEsc(r.by) + (bad ? " <span class='warn'>⚠</span>" : "") + "</td></tr>";
     }
@@ -491,6 +491,9 @@ function localDate(d) {
   return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
 }
 const isoDate = (d) => localDate(d);
+// Weergave van datums, overal in de app: dag-maand-jaar. Intern (opslag,
+// vergelijkingen, datumvelden) blijft alles ISO (jaar-maand-dag).
+const fmtDMY = (iso) => { const t = String(iso || "").slice(0, 10); const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[3] + "-" + m[2] + "-" + m[1] : t; };
 const daysAgo = (iso) => Math.floor((new Date().setHours(0,0,0,0) - new Date(iso).setHours(0,0,0,0)) / 86400000);
 // Weeknummer (ISO) voor het logboek per week
 function weekKey(iso) {
@@ -3098,7 +3101,7 @@ function App() {
         .filter((v) => maandVan(v) === m)
         .sort((a, b) => (a.productionDate || "") < (b.productionDate || "") ? -1 : (a.productionDate || "") > (b.productionDate || "") ? 1 : a.product.localeCompare(b.product, "nl"))
         .forEach((v) => {
-          rows.push([v.product, String(v.initialQty).replace(".", ","), v.unit, v.productionDate || "", v.expiryDate || "", dagen(v), v.storage || "", v.by || ""]);
+          rows.push([v.product, String(v.initialQty).replace(".", ","), v.unit, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || ""]);
         });
     });
     const csv = "\uFEFF" + "sep=;\n" + rows.map((r) => r.map(esc).join(";")).join("\n");
@@ -3728,7 +3731,6 @@ function HomeScreen({ stock, recipes, batches, dishes, onOpenRecipe, onOpenDish,
     .sort((a, b) => Number(String(b.id).slice(1)) - Number(String(a.id).slice(1)))
     .slice(0, 5);
   const doneBatches = batches.filter((b) => b.done && b.finishedDate).sort((a, b) => (b.finishedDate < a.finishedDate ? -1 : 1)).slice(0, 4);
-  const fmtD = (iso) => { if (!iso) return ""; const [y, m, d] = String(iso).slice(0, 10).split("-"); return d + "-" + m + "-" + y; };
   const blok = (titel, sectie, leeg, children) => (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-2">
@@ -3746,7 +3748,7 @@ function HomeScreen({ stock, recipes, batches, dishes, onOpenRecipe, onOpenDish,
           <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><Package size={15} /></span>
           <div className="flex-1 min-w-0">
             <div className="font-medium ink truncate">{v.product}</div>
-            <div className="text-xs mute truncate">{[v.unit, v.storage, v.by, v.productionDate ? "gemaakt " + fmtD(v.productionDate) : null].filter(Boolean).join(" · ")}</div>
+            <div className="text-xs mute truncate">{[v.unit, v.storage, v.by, v.productionDate ? "gemaakt " + fmtDMY(v.productionDate) : null].filter(Boolean).join(" · ")}</div>
           </div>
           <ChevronRight size={16} className="shrink-0" style={{ color: "#c4c2b2" }} />
         </button>
@@ -3766,7 +3768,7 @@ function HomeScreen({ stock, recipes, batches, dishes, onOpenRecipe, onOpenDish,
           <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#e8ebe0", color: T.green }}><FlaskConical size={15} /></span>
           <div className="flex-1 min-w-0">
             <div className="font-medium ink truncate">{b.product}</div>
-            <div className="text-xs mute truncate">{[b.method, "afgerond " + fmtD(b.finishedDate)].filter(Boolean).join(" · ")}</div>
+            <div className="text-xs mute truncate">{[b.method, "afgerond " + fmtDMY(b.finishedDate)].filter(Boolean).join(" · ")}</div>
           </div>
           <ChevronRight size={16} className="shrink-0" style={{ color: "#c4c2b2" }} />
         </button>
@@ -3946,6 +3948,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
   // Zolang niemand het handmatig heeft omgezet, volgt het paneel de openstaande handelingen.
   useEffect(() => { if (!touchedActive) setOpenActive(openAction); }, [openAction, touchedActive]);
   const [openDone, setOpenDone] = useState(false);
+  const [openMonths, setOpenMonths] = useState({}); // per maand in-/uitklappen van afgeronde batches
   const searching = q.trim().length > 0;
   const showActive = openActive && !searching;
   // Actief: wat het eerst klaar is bovenaan; afgerond: meest recent eerst.
@@ -3958,6 +3961,18 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
     const fa = String(a.finishedDate || ""), fb = String(b.finishedDate || "");
     return fa < fb ? 1 : fa > fb ? -1 : 0;
   });
+  // Afgeronde batches gebundeld per maand (nieuwste maand bovenaan), elk apart
+  // in te klappen zodat de lijst overzichtelijk blijft naarmate hij groeit.
+  const MAANDEN = ["januari","februari","maart","april","mei","juni","juli","augustus","september","oktober","november","december"];
+  const doneGroups = (() => {
+    const g = {};
+    for (const b of done) { const k = String(b.finishedDate || b.startDate || "").slice(0, 7) || "?"; (g[k] = g[k] || []).push(b); }
+    return Object.keys(g).sort((a, b) => (a < b ? 1 : -1)).map((k) => {
+      const [y, m] = k.split("-");
+      const label = m && MAANDEN[Number(m) - 1] ? MAANDEN[Number(m) - 1] + " " + y : "Datum onbekend";
+      return { k, label, list: g[k] };
+    });
+  })();
   const madeCount = {};
   (stock || []).forEach((v) => { if (v.recipeId) madeCount[v.recipeId] = (madeCount[v.recipeId] || 0) + 1; });
   const varsOf = (id) => recipes.filter((r) => r.baseId === id && r.ferment).sort((a, b) => (madeCount[b.id] || 0) - (madeCount[a.id] || 0) || a.name.localeCompare(b.name, "nl"));
@@ -3998,7 +4013,17 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
           {openDone ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
           <Eyebrow>Afgerond ({done.length})</Eyebrow>
         </button>
-        {openDone && <div className="grid grid-cols-2 gap-2.5">{done.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>}
+        {openDone && <div className="space-y-3">
+          {doneGroups.map((gr) => (
+            <div key={gr.k}>
+              <button onClick={() => setOpenMonths((o) => ({ ...o, [gr.k]: !o[gr.k] }))} className="ff w-full flex items-baseline justify-between mb-1.5">
+                <span className="inline-flex items-center gap-1 text-[13px] font-semibold ink">{openMonths[gr.k] ? <ChevronUp size={13} className="acc" /> : <ChevronDown size={13} className="acc" />} <span className="capitalize">{gr.label}</span></span>
+                <span className="text-[11.5px] mute">{gr.list.length} {gr.list.length === 1 ? "batch" : "batches"}</span>
+              </button>
+              {openMonths[gr.k] && <div className="grid grid-cols-2 gap-2.5">{gr.list.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>}
+            </div>
+          ))}
+        </div>}
       </>}
       <div className="mt-7 flex items-center justify-between"><Eyebrow>Fermentatierecepten</Eyebrow>
         {canEdit && <button onClick={onNewFermentRecipe} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuw fermentatierecept</button>}
@@ -4155,7 +4180,7 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
         <span className="shrink-0">
           {tgt && tgt.phEnd != null && <>pH ≤ {String(tgt.phEnd).replace(".", ",")}{lastPh != null && <span className="ink font-medium"> · {String(lastPh.ph).replace(".", ",")}</span>}</>}
           {lastBrix != null && <> · {String(lastBrix.brix).replace(".", ",")}°Bx</>}
-          {b.done && b.finishedDate && <>{b.finishedDate}</>}
+          {b.done && b.finishedDate && <>{fmtDMY(b.finishedDate)}</>}
         </span>
       </div>
       <div className="flex items-center justify-between gap-2 mt-1.5">
@@ -4175,8 +4200,8 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
       {open && (
         <div className="mt-1.5 pt-1.5 border-t text-[12px] mute leading-snug" style={{ borderColor: T.line }}>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-            <span>Start {b.startDate}</span>
-            {b.finishedDate && <span>Klaar {b.finishedDate}</span>}
+            <span>Start {fmtDMY(b.startDate)}</span>
+            {b.finishedDate && <span>Klaar {fmtDMY(b.finishedDate)}</span>}
             {b.saltPct ? <span>Zout {String(b.saltPct).replace(".", ",")}%</span> : null}
             {b.sugarPct ? <span>Suiker {String(b.sugarPct).replace(".", ",")}%</span> : null}
             {b.tempC ? <span>{b.tempC}°C</span> : null}
@@ -4191,7 +4216,7 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
             const parts = [last.ph != null && last.ph !== "" && ("pH " + String(last.ph).replace(".", ",")), last.brix != null && last.brix !== "" && (String(last.brix).replace(".", ",") + " °Bx"), last.tempC != null && last.tempC !== "" && (String(last.tempC).replace(".", ",") + " °C")].filter(Boolean);
             return (
               <div className="mt-1.5 rounded-lg px-2.5 py-1.5" style={{ background: "#eef1e6" }}>
-                <span className="font-medium" style={{ color: T.green }}>Laatste meting</span> <span className="ink">{last.date}</span>{parts.length > 0 && <span className="ink"> · {parts.join(" · ")}</span>}
+                <span className="font-medium" style={{ color: T.green }}>Laatste meting</span> <span className="ink">{fmtDMY(last.date)}</span>{parts.length > 0 && <span className="ink"> · {parts.join(" · ")}</span>}
                 {last.note && <span className="italic"> · {last.note}</span>}
               </div>
             );
@@ -4610,7 +4635,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
             <div className="text-[12.5px] mute mt-0.5">
               {v.storage && <>{v.storage} · </>}gemaakt in {jaar}: {fmtQty(v.initialQty, v.unit)}
               {v.by && <> · {v.by}</>}
-              {v.expiryDate && <> · THT {v.expiryDate}</>}
+              {v.expiryDate && <> · THT {fmtDMY(v.expiryDate)}</>}
               {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
               {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
             </div>
@@ -4627,8 +4652,8 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
               <div className="flex justify-between gap-2"><span className="mute">Op voorraad</span><span className="ink font-medium">{fmtQty(v.qty, v.unit)}</span></div>
               <div className="flex justify-between gap-2"><span className="mute">Gemaakt in {jaar}</span><span className="ink font-medium">{fmtQty(v.initialQty, v.unit)}</span></div>
               {v.storage && <div className="flex justify-between gap-2"><span className="mute">Opslaglocatie</span><span className="ink font-medium">{v.storage}</span></div>}
-              {v.productionDate && <div className="flex justify-between gap-2"><span className="mute">Gemaakt op</span><span className="ink font-medium">{v.productionDate}</span></div>}
-              {v.expiryDate && <div className="flex justify-between gap-2"><span className="mute">Houdbaar tot</span><span className="ink font-medium">{v.expiryDate}</span></div>}
+              {v.productionDate && <div className="flex justify-between gap-2"><span className="mute">Gemaakt op</span><span className="ink font-medium">{fmtDMY(v.productionDate)}</span></div>}
+              {v.expiryDate && <div className="flex justify-between gap-2"><span className="mute">Houdbaar tot</span><span className="ink font-medium">{fmtDMY(v.expiryDate)}</span></div>}
               {v.by && <div className="flex justify-between gap-2"><span className="mute">Door</span><span className="ink font-medium">{v.by}</span></div>}
             </div>
             {(v.ingredients || []).length > 0 && (
@@ -4737,6 +4762,11 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const [refUnitNum, setRefUnitNum] = useState(initRef.refUnitNum);
   const setIng = (i, veld, w) => setIngs((xs) => xs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const addIng = () => setIngs((xs) => [...xs, { item: "", amount: "" }]);
+  // Enter in het hoeveelheid-vakje: nieuwe rij direct eronder, cursor in het naamveld.
+  const addIngAt = (i) => {
+    setIngs((xs) => [...xs.slice(0, i + 1), { item: "", amount: "" }, ...xs.slice(i + 1)]);
+    setTimeout(() => { const el = document.querySelector('[data-vf-item="' + (i + 1) + '"]'); if (el) el.focus(); }, 0);
+  };
   const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
   // Houdbaar tot = productiedatum + dagen (bij toevoegen); daarna altijd handmatig aanpasbaar.
   const computedExpiry = (() => {
@@ -4828,8 +4858,8 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
       <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
           <div key={idx} className="flex gap-2">
-            <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} placeholder="Ingrediënt" />
-            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} placeholder="Hoeveelheid" />
+            <input data-vf-item={idx} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} placeholder="Ingrediënt" />
+            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(idx); } }} placeholder="Hoeveelheid" />
             {ings.length > 1 && <button onClick={() => delIng(idx)} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>}
           </div>
         ))}
@@ -5261,14 +5291,14 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
           <Eyebrow>Logboek per week</Eyebrow>
         </button>
         {logOpen && <div className="flex items-center gap-1.5 mb-2">
-          <button onClick={() => printCleaning(wk.replace("-W", " · week "), isoDate(monday) + " t/m " + isoDate(sunday), weekDays, taskName)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Logboek van deze week printen"><Printer size={13} /></button>
+          <button onClick={() => printCleaning(wk.replace("-W", " · week "), fmtDMY(isoDate(monday)) + " t/m " + fmtDMY(isoDate(sunday)), weekDays, taskName)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Logboek van deze week printen"><Printer size={13} /></button>
           <button onClick={() => setWeekOffset((w) => w - 1)} className="ff pill rounded-md w-7 h-7 flex items-center justify-center" title="Vorige week"><ArrowLeft size={13} /></button>
           <span className="pillon rounded-md px-2 h-7 flex items-center text-[12.5px] font-semibold">{wk.replace("-W", " · week ")}</span>
           <button onClick={() => setWeekOffset((w) => Math.min(0, w + 1))} disabled={weekOffset >= 0} className="ff pill rounded-md w-7 h-7 flex items-center justify-center disabled:opacity-40" title="Volgende week"><ChevronRight size={13} /></button>
         </div>}
       </div>
       {logOpen && <>
-      <div className="text-xs mute mb-2">{isoDate(monday)} t/m {isoDate(sunday)} · {weekSignCount} aftekeningen</div>
+      <div className="text-xs mute mb-2">{fmtDMY(isoDate(monday))} t/m {fmtDMY(isoDate(sunday))} · {weekSignCount} aftekeningen</div>
       {weekLogs.length === 0
         ? <Empty label="Deze week is er nog niets afgetekend." />
         : <div className="space-y-3">
@@ -5350,7 +5380,7 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
       {doneThisWeek
         ? <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#e8ebe0", color: T.green }}>
             <Check size={16} className="shrink-0 mt-0.5" />
-            <span>Deze week gecontroleerd op {doneThisWeek.checkDate} door <span className="font-medium">{doneThisWeek.doneBy}</span>{warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
+            <span>Deze week gecontroleerd op {fmtDMY(doneThisWeek.checkDate)} door <span className="font-medium">{doneThisWeek.doneBy}</span>{warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
           </div>
         : <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
             <Bell size={16} className="shrink-0 mt-0.5" />
@@ -5362,7 +5392,7 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
           <div key={l.id} className="card p-3.5">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-sm font-medium ink">{l.checkDate} · week {weekKey(l.checkDate).split("-W")[1]}</div>
+                <div className="text-sm font-medium ink">{fmtDMY(l.checkDate)} · week {weekKey(l.checkDate).split("-W")[1]}</div>
                 <div className="text-[12.5px] mute mt-0.5">afgetekend door <span className="ink font-medium">{l.doneBy}</span></div>
               </div>
               {canEdit && (
@@ -5512,7 +5542,7 @@ function HaccpRecordBlock({ kind, records, canEdit, onOpen, onEdit, onDelete }) 
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[13px] font-medium ink truncate flex items-center gap-1.5">{cfg.summary(r)}{ok === false && <AlertTriangle size={22} className="shrink-0" strokeWidth={2.5} style={{ color: "#8a4a3a" }} />}</div>
-                      <div className="text-[11.5px] mute mt-0.5">{r.date} · {r.by}</div>
+                      <div className="text-[11.5px] mute mt-0.5">{fmtDMY(r.date)} · {r.by}</div>
                     </div>
                     {canEdit && (
                       <div className="flex items-center gap-1 shrink-0">
@@ -6082,6 +6112,17 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
   const [translating, setTranslating] = useState(false);
   const [err, setErr] = useState(null);
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
+  // Enter in het hoeveelheid-vakje: nieuwe ingrediëntrij direct eronder, met de
+  // cursor alvast in het naamveld. Voor stappen idem (Shift+Enter = nieuwe regel).
+  const addIngAt = (i) => {
+    setAlgOpen(null);
+    setIngredients((a) => [...a.slice(0, i + 1), { item: "", amount: "" }, ...a.slice(i + 1)]);
+    setTimeout(() => { const el = document.querySelector('[data-rf-item="' + (i + 1) + '"]'); if (el) el.focus(); }, 0);
+  };
+  const addStepAt = (i) => {
+    setSteps((a) => [...a.slice(0, i + 1), "", ...a.slice(i + 1)]);
+    setTimeout(() => { const el = document.querySelector('[data-rf-step="' + (i + 1) + '"]'); if (el) el.focus(); }, 0);
+  };
   // Handmatige allergenen per ingrediënt: open paneel + aan/uit per allergeen.
   const [algOpen, setAlgOpen] = useState(null);
   const toggleAlg = (i, label) => setIngredients((a) => a.map((x, idx) => {
@@ -6227,8 +6268,8 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); const manual = hasAllergenOverride(ing); return (
         <div key={i}>
           <div className="flex gap-2">
-            <input className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
-            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} placeholder="Hoeveelheid" />
+            <input data-rf-item={i} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
+            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } }} placeholder="Hoeveelheid" />
             <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
@@ -6266,7 +6307,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       <div className="space-y-2 mb-2">{steps.map((s, i) => (
         <div key={i} className="flex gap-2 items-start">
           <span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-2" style={{ background: "#e8ebe0", color: T.green }}>{i + 1}</span>
-          <textarea rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} placeholder="Beschrijf de stap — of plak de hele bereiding" />
+          <textarea data-rf-step={i} rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStepAt(i); } }} placeholder="Beschrijf de stap — of plak de hele bereiding" />
           <button onClick={() => setSteps((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1 mt-2"><Trash2 size={16} /></button>
         </div>))}
       </div>
@@ -6445,8 +6486,8 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
       <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">Fermentatie-logboek</div>
       <h1 className="serif ink text-2xl leading-tight">{batch.product}</h1>
       <div className="flex flex-wrap gap-2 mt-2 text-xs mute">
-        <span className="inline-flex items-center gap-1"><Calendar size={12} /> Start {batch.startDate}</span>
-        {batch.finishedDate && <span className="inline-flex items-center gap-1"><Check size={12} /> Afgerond {batch.finishedDate}</span>}
+        <span className="inline-flex items-center gap-1"><Calendar size={12} /> Start {fmtDMY(batch.startDate)}</span>
+        {batch.finishedDate && <span className="inline-flex items-center gap-1"><Check size={12} /> Afgerond {fmtDMY(batch.finishedDate)}</span>}
         <span className="inline-flex items-center gap-1"><FlaskConical size={12} /> {batch.method || batch.type}</span>
         {tgt && tgt.phEnd != null && <span className="inline-flex items-center gap-1">Doel pH ≤ {String(tgt.phEnd).replace(".", ",")}</span>}
       </div>
@@ -6474,7 +6515,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
           </div>
           {rows.map((r, i) => (
             <div key={i} className={"grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-x-3 items-center px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}>
-              <span className="mute text-xs">{r.date}</span>
+              <span className="mute text-xs">{fmtDMY(r.date)}</span>
               <span className="ink font-medium">{r.ph != null ? String(r.ph).replace(".", ",") : "—"}</span>
               <span className="mute">{r.brix != null ? String(r.brix).replace(".", ",") : "—"}</span>
               <span className="mute">{r.tempC != null ? r.tempC : "—"}</span>
