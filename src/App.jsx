@@ -446,8 +446,11 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const MEASURE_HOUR = 13; // middagherinnering: metingen voor actieve fermentatiebatches
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
+// De "keukendag" loopt tot 02:00 's nachts: metingen, afvinkingen en het wegklikken
+// van de aandacht-banner gelden tot dan; om 02:00 begint de nieuwe dag en komt de
+// banner terug met de aandacht (metingen, handelingen) voor die dag.
+function kitchenDate(d) { const x = d ? new Date(d) : new Date(); if (x.getHours() < AUTO_OFF_HOUR) x.setDate(x.getDate() - 1); return localDate(x); }
 const TEMP_TASK_ID = "c-temperaturen"; // schoonmaaktaak die aan de HACCP-log hangt
 // Extra HACCP-registraties (elk een eigen wekelijkse schoonmaaktaak).
 const HACCP_KIND_TASK = {
@@ -2419,7 +2422,7 @@ function App() {
   // Weggeklikte "vraagt aandacht"-banner: bewaard op het apparaat (alleen vandaag),
   // zodat een refresh de keuze niet vergeet.
   const [dismissedNotices, setDismissedNotices] = useState(() => { try { return JSON.parse(localStorage.getItem("ritme:notice-dismiss") || "{}") || {}; } catch (e) { return {}; } });
-  useEffect(() => { try { const k = localDate(); localStorage.setItem("ritme:notice-dismiss", JSON.stringify(dismissedNotices[k] ? { [k]: true } : {})); } catch (e) {} }, [dismissedNotices]);
+  useEffect(() => { try { const k = kitchenDate(); localStorage.setItem("ritme:notice-dismiss", JSON.stringify(dismissedNotices[k] ? { [k]: true } : {})); } catch (e) {} }, [dismissedNotices]);
   const [dishDraft, setDishDraft] = useState(null);
   const [cleaningTasks, setCleaningTasks] = useState(CLEANING_SEED);
   const [cleaningLogs, setCleaningLogs] = useState([]);
@@ -2604,8 +2607,8 @@ function App() {
   const [noticeShown, setNoticeShown] = useState(false);
   useEffect(() => {
     if (!user || !user.canEdit || !loaded || noticeShown) return;
-    const { ready, due } = collectNotices(batches);
-    const n = ready.length + due.length;
+    const { ready, due, measure } = collectNotices(batches);
+    const n = ready.length + due.length + measure.length;
     const exp = stock.filter((v) => v.qty > 0 && v.expiryDate && daysUntil(v.expiryDate) !== null && daysUntil(v.expiryDate) <= 7).length;
     setNoticeShown(true); // hoe dan ook maar één keer per sessie proberen
     const parts = [];
@@ -2616,34 +2619,7 @@ function App() {
   const [stockNoticeClosed, setStockNoticeClosed] = useState(null); // per dag te sluiten
   const [checkForDate, setCheckForDate] = useState(null); // heropende dag die opnieuw ingevuld wordt
   const [measureOpen, setMeasureOpen] = useState(false);
-  const [measureBanner, setMeasureBanner] = useState(false);
-  // Vanaf 13:00: banner die om metingen voor de actieve fermentatiebatches vraagt.
-  // Weggeklikt vóór 16:45 → komt om 16:45 nog één keer terug; daarna niet meer.
-  // De keuze wordt op het apparaat bewaard, dus een refresh haalt de banner niet terug.
-  // Zodra alle actieve batches vandaag gemeten zijn, verdwijnt de banner vanzelf.
-  useEffect(() => {
-    if (!user || !user.canEdit || !loaded) { setMeasureBanner(false); return; }
-    const tick = () => {
-      const now = new Date();
-      const key = localDate(now);
-      if (now.getHours() < MEASURE_HOUR) { setMeasureBanner(false); return; }
-      const open = batches.filter((b) => !b.done && !(b.log || []).some((e) => String(e.date).slice(0, 10) === key));
-      if (!open.length) { setMeasureBanner(false); return; }
-      let dis = null; try { dis = JSON.parse(localStorage.getItem("ritme:measure-dismiss") || "null"); } catch (e) {}
-      const d = dis && dis.key === key ? dis : null;
-      const past2 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
-      setMeasureBanner(!d || (d.stage === 1 && past2));
-    };
-    tick();
-    const t = setInterval(tick, 30000);
-    return () => clearInterval(t);
-  }, [user, loaded, batches]);
-  const dismissMeasureBanner = () => {
-    const now = new Date();
-    const past2 = now.getHours() > CHECK_HOUR || (now.getHours() === CHECK_HOUR && now.getMinutes() >= CHECK_MIN);
-    try { localStorage.setItem("ritme:measure-dismiss", JSON.stringify({ key: localDate(), stage: past2 ? 2 : 1 })); } catch (e) {}
-    setMeasureBanner(false);
-  };
+  const [measureFor, setMeasureFor] = useState(null); // meting-popup voor één batch (vanuit de aandacht-banner)
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
@@ -2781,7 +2757,7 @@ function App() {
   const ackAction = async (id, label) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const today = localDate();
+    const today = kitchenDate(); // geldt tot 02:00, daarna nieuwe keukendag
     if ((b.actionsDone || []).some((a) => a.date === today && a.label === label)) return;
     const nb = { ...b, actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), { date: today, label, by: user.name }] };
     if (!(await persistBatch(nb))) return;
@@ -3259,6 +3235,7 @@ function App() {
   };
 
   const todayKey = localDate();
+  const noticeKey = kitchenDate(); // aandacht-banner: weggeklikt tot 02:00, dan nieuwe dag
   const swipe = useSwipeSections(section, (s) => { setSection(s); setSearch(""); });
 
   // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks): toont een banner
@@ -3342,13 +3319,8 @@ function App() {
           <div {...swipe}>
             {/* Pas tonen als de teamdata geladen is: anders knippert de banner
                 bij elke refresh kort op basis van de lokale startdata. */}
-            {canEdit && loaded && !dismissedNotices[todayKey] && (
-              <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [todayKey]: true }))} />
-            )}
-            {canEdit && measureBanner && (
-              <ReminderBanner icon={<FlaskConical size={15} />} title="Fermentatiemetingen"
-                text="Er zijn actieve batches die vandaag nog niet gemeten zijn."
-                actionLabel="Metingen invullen" onAction={() => setMeasureOpen(true)} onDismiss={dismissMeasureBanner} />
+            {canEdit && loaded && !dismissedNotices[noticeKey] && (
+              <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onMeasure={(id) => setMeasureFor(id)} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [noticeKey]: true }))} />
             )}
             {canEdit && checkBanner && (
               <ReminderBanner icon={<Sparkles size={15} />} title="Schoonmaakcontrole"
@@ -3425,6 +3397,9 @@ function App() {
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
       {measureOpen && canEdit && (
         <BatchMeasureModal batches={batches.filter((b) => !b.done)} onAdd={addBatchMeasurement} onClose={() => setMeasureOpen(false)} />
+      )}
+      {measureFor && canEdit && (
+        <BatchMeasureModal batches={batches.filter((b) => b.id === measureFor && !b.done)} onAdd={addBatchMeasurement} onClose={() => setMeasureFor(null)} />
       )}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit} forDate={checkForDate}
@@ -4059,14 +4034,18 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
 
 // Welke batches vragen vandaag aandacht? (klaar of handeling verschuldigd)
 function collectNotices(batches) {
-  const ready = [], due = [];
+  const ready = [], due = [], measure = [];
+  const kday = kitchenDate();
   for (const b of batches) {
     if (b.done) continue;
     const st = batchStatus(b);
     if (st.ready) ready.push({ b, day: st.day });
     else if (st.due.length) due.push({ b, label: st.due[0] });
+    // Elke actieve batch vraagt dagelijks om een meting; een meting op of na de
+    // keukendag (>= vangt ook 00:00–02:00) haalt het punt uit de banner.
+    if (!(b.log || []).some((e) => String(e.date).slice(0, 10) >= kday)) measure.push({ b, day: st.day });
   }
-  return { ready, due };
+  return { ready, due, measure };
 }
 
 // Herinneringsbanner (fermentatiemetingen, schoonmaakcontrole): valt op zonder
@@ -4086,9 +4065,9 @@ function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss })
   );
 }
 
-function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
-  const { ready, due } = collectNotices(batches);
-  if (ready.length === 0 && due.length === 0) return null;
+function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) {
+  const { ready, due, measure } = collectNotices(batches);
+  if (ready.length === 0 && due.length === 0 && measure.length === 0) return null;
   return (
     <div className="rounded-xl p-4 mt-4" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
       <div className="flex items-start justify-between gap-3">
@@ -4109,10 +4088,17 @@ function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
                 {canAck && <button onClick={() => onAck(b.id, label)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Gedaan — verberg tot de volgende beurt">Afvinken</button>}
               </li>
             ))}
+            {measure.map(({ b, day }) => (
+              <li key={b.id + "__meting"} className="flex items-start gap-1.5">
+                <Thermometer size={14} className="shrink-0 mt-0.5" />
+                <span className="flex-1"><span className="font-medium">{b.product}</span>: meting van vandaag — dag {day}/{b.days}</span>
+                {canAck && <button onClick={() => onMeasure(b.id)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Meting invullen voor deze batch">Meten</button>}
+              </li>
+            ))}
           </ul>
           <button onClick={onOpen} className="ff mt-2.5 inline-flex items-center gap-1 text-xs font-semibold underline">Naar fermentatie</button>
         </div>
-        <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Verberg voor vandaag"><X size={16} /></button>
+        <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Verberg tot 02:00 vannacht"><X size={16} /></button>
       </div>
     </div>
   );
@@ -4121,7 +4107,7 @@ function NoticeBanner({ batches, canAck, onAck, onOpen, onDismiss }) {
 // Wat moet er vandaag met deze batch gebeuren, en is hij klaar?
 function batchStatus(b) {
   const day = daysBetween(b.startDate);
-  const today = localDate();
+  const today = kitchenDate(); // afvinkingen gelden tot 02:00
   const acked = (b.actionsDone || []).filter((a) => a.date === today).map((a) => a.label);
   const readyRaw = !b.done && day >= b.days;
   const ready = readyRaw && !acked.includes(READY_KEY);
