@@ -2362,11 +2362,11 @@ function parseYieldRef(amount, unitText, yieldText) {
 function ShelfIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 2v20M20 2v20" />
-      <path d="M4 8h16M4 15h16M4 22h16" />
-      <rect x="7" y="4.2" width="3.6" height="3.8" />
-      <rect x="13" y="10.8" width="4.6" height="4.2" />
-      <rect x="7.5" y="18" width="3.4" height="4" />
+      <path d="M4 2.5v19M20 2.5v19" />
+      <path d="M4 9h16M4 16h16M4 21.5h16" />
+      <rect x="7" y="4.3" width="4.2" height="4.7" />
+      <rect x="12.6" y="10.8" width="4.8" height="5.2" />
+      <rect x="7.3" y="17.2" width="3.8" height="4.3" />
     </svg>
   );
 }
@@ -2375,10 +2375,12 @@ function ShelfIcon({ size = 16 }) {
 function FarmhouseIcon({ size = 16, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} aria-hidden="true">
-      <path d="M3 11 12 4l9 7" />
-      <path d="M5 10v10h14V10" />
-      <path d="M10 20v-6h4v6" />
-      <path d="M10 14l4 3M14 14l-4 3" />
+      <path d="M1.5 10 9.5 3.5 17.5 10" />
+      <path d="M3.5 9.5V20.5h12V9.5" />
+      <path d="M7.5 20.5v-5h4v5" />
+      <path d="M20.5 20.5v-5.5" />
+      <path d="M20.5 15c0-2.4 1.4-4 3.2-4.4.2 2.4-1 4.2-3.2 4.4Z" />
+      <path d="M20.5 13c0-2.2-1.3-3.7-3-4 0 2.2 1.1 3.8 3 4Z" />
     </svg>
   );
 }
@@ -3664,7 +3666,7 @@ function Wordmark({ size = "small", onHome }) {
   const Tag = onHome ? "button" : "div";
   return (
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
-      <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}><FarmhouseIcon size={15} style={{ color: T.paper }} /></span>
+      <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}><FarmhouseIcon size={26} style={{ color: T.paper }} /></span>
       <span className="serif ink text-base leading-none truncate">In het ritme van het land</span>
     </Tag>
   );
@@ -6386,9 +6388,9 @@ function BackBar({ onBack, onEdit, onPrint, printText = "Print", extra = null, o
       <button onClick={onBack} className="ff shrink-0 inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-3 py-2.5 hover:opacity-80" style={{ background: "#e8ebe0", color: T.green }}><ArrowLeft size={18} /> Terug</button>
       <div className="flex items-center gap-1.5 flex-wrap justify-end">
         {extra}
-        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title={printText}><Printer size={18} /></button>}
-        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Bewerken"><Pencil size={18} /></button>}
-        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Verwijderen"><Trash2 size={18} /></button>}
+        {onPrint && <button onClick={onPrint} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title={printText}><Printer size={22} /></button>}
+        {onEdit && <button onClick={onEdit} className="ff inline-flex items-center acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Bewerken"><Pencil size={22} /></button>}
+        {onDelete && <button onClick={onDelete} className="ff inline-flex items-center rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Verwijderen"><Trash2 size={22} /></button>}
       </div>
     </div>
   );
@@ -6440,7 +6442,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={canEdit ? (
-          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={18} /></button>
+          <button onClick={onAddStock} className="ff inline-flex items-center gap-1 acc rounded-lg px-2.5 py-2 hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={26} /></button>
         ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
