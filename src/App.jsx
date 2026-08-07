@@ -155,12 +155,13 @@ const FERMENT_TARGETS = {
   Azijnfermentatie: { phStart: null, phEnd: 3.0, note: "Azijn: verzuurt tot pH ~2,5–3,0; heeft zuurstof nodig (doek, geen deksel)." },
 };
 // Standaard handelingsschema per fermentatiemethode (voor herinneringen)
+
+
 const FERMENT_ACTIONS = {
   Melkzuur: [{ label: "Controleer onderdompeling en proef", everyDays: 2 }],
   Suikerfermentatie: [{ label: "Roer om / voed en ontlucht de fles", everyDays: 1 }],
   Azijnfermentatie: [{ label: "Proef en controleer de moeder", everyDays: 3 }],
 };
-
 
 // ---------- printen ----------
 // Opent een schone printweergave in een nieuw venster (A4), los van de app-UI.
@@ -2607,8 +2608,8 @@ function App() {
   const [noticeShown, setNoticeShown] = useState(false);
   useEffect(() => {
     if (!user || !user.canEdit || !loaded || noticeShown) return;
-    const { ready, due, measure } = collectNotices(batches);
-    const n = ready.length + due.length + measure.length;
+    const { ready, items } = collectNotices(batches);
+    const n = ready.length + items.length;
     const exp = stock.filter((v) => v.qty > 0 && v.expiryDate && daysUntil(v.expiryDate) !== null && daysUntil(v.expiryDate) <= 7).length;
     setNoticeShown(true); // hoe dan ook maar één keer per sessie proberen
     const parts = [];
@@ -2698,6 +2699,20 @@ function App() {
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
     flash("Meting toegevoegd aan het logboek");
+  };
+  // Vanuit de meting-popup: meting opslaan, batch in één keer afronden en door
+  // naar de voorraad-popup (de gewone eindmeting is dan al gedaan).
+  const saveMeasureAndFinish = async (id, m) => {
+    const b = batches.find((x) => x.id === id);
+    if (!b) return;
+    const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
+    const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: user.name };
+    const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH, done: true, finishedDate: localDate() };
+    if (!(await persistBatch(nb))) return;
+    setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
+    setMeasureFor(null); setMeasureOpen(false);
+    flash("Meting opgeslagen · batch afgerond");
+    push({ screen: "voorraadForm", editing: null, prefill: stockPrefillForBatch(nb) });
   };
   const deleteBatchMeasurement = async (id, idx) => {
     const b = batches.find((x) => x.id === id);
@@ -3396,10 +3411,10 @@ function App() {
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
       {measureOpen && canEdit && (
-        <BatchMeasureModal batches={batches.filter((b) => !b.done)} onAdd={addBatchMeasurement} onClose={() => setMeasureOpen(false)} />
+        <BatchMeasureModal batches={batches.filter((b) => !b.done)} onAdd={addBatchMeasurement} onFinish={saveMeasureAndFinish} onClose={() => setMeasureOpen(false)} />
       )}
       {measureFor && canEdit && (
-        <BatchMeasureModal batches={batches.filter((b) => b.id === measureFor && !b.done)} onAdd={addBatchMeasurement} onClose={() => setMeasureFor(null)} />
+        <BatchMeasureModal batches={batches.filter((b) => b.id === measureFor && !b.done)} onAdd={addBatchMeasurement} onFinish={saveMeasureAndFinish} onClose={() => setMeasureFor(null)} />
       )}
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit} forDate={checkForDate}
@@ -4034,18 +4049,20 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
 
 // Welke batches vragen vandaag aandacht? (klaar of handeling verschuldigd)
 function collectNotices(batches) {
-  const ready = [], due = [], measure = [];
+  const ready = [], items = [];
   const kday = kitchenDate();
   for (const b of batches) {
     if (b.done) continue;
     const st = batchStatus(b);
     if (st.ready) ready.push({ b, day: st.day });
-    else if (st.due.length) due.push({ b, label: st.due[0] });
-    // Elke actieve batch vraagt dagelijks om een meting; een meting op of na de
-    // keukendag (>= vangt ook 00:00–02:00) haalt het punt uit de banner.
-    if (!(b.log || []).some((e) => String(e.date).slice(0, 10) >= kday)) measure.push({ b, day: st.day });
+    // Eén regel per batch: de eigen handeling van de kok (als die er is) en de
+    // dagelijkse meting samen. Een meting op of na de keukendag (>= vangt ook
+    // 00:00–02:00) haalt de meting eruit; afvinken haalt de handeling eruit.
+    const needMeasure = !(b.log || []).some((e) => String(e.date).slice(0, 10) >= kday);
+    const label = st.due.length ? st.due[0] : null;
+    if (label || needMeasure) items.push({ b, day: st.day, label, needMeasure });
   }
-  return { ready, due, measure };
+  return { ready, items };
 }
 
 // Herinneringsbanner (fermentatiemetingen, schoonmaakcontrole): valt op zonder
@@ -4066,8 +4083,9 @@ function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss })
 }
 
 function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) {
-  const { ready, due, measure } = collectNotices(batches);
-  if (ready.length === 0 && due.length === 0 && measure.length === 0) return null;
+  const { ready, items } = collectNotices(batches);
+  if (ready.length === 0 && items.length === 0) return null;
+  const short = (t) => (t.length > 48 ? t.slice(0, 48).trim() + "…" : t);
   return (
     <div className="rounded-xl p-4 mt-4" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
       <div className="flex items-start justify-between gap-3">
@@ -4081,18 +4099,14 @@ function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) 
                 {canAck && <button onClick={() => onAck(b.id, READY_KEY)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Gezien — verberg tot morgen">Afvinken</button>}
               </li>
             ))}
-            {due.map(({ b, label }) => (
-              <li key={b.id + label} className="flex items-start gap-1.5">
+            {items.map(({ b, day, label, needMeasure }) => (
+              <li key={b.id + "__item"} className="flex items-start gap-1.5">
                 <FlaskConical size={14} className="shrink-0 mt-0.5" />
-                <span className="flex-1"><span className="font-medium">{b.product}</span>: {label.toLowerCase()}</span>
-                {canAck && <button onClick={() => onAck(b.id, label)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Gedaan — verberg tot de volgende beurt">Afvinken</button>}
-              </li>
-            ))}
-            {measure.map(({ b, day }) => (
-              <li key={b.id + "__meting"} className="flex items-start gap-1.5">
-                <Thermometer size={14} className="shrink-0 mt-0.5" />
-                <span className="flex-1"><span className="font-medium">{b.product}</span>: meting van vandaag — dag {day}/{b.days}</span>
-                {canAck && <button onClick={() => onMeasure(b.id)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Meting invullen voor deze batch">Meten</button>}
+                <span className="flex-1"><span className="font-medium">{b.product}</span> aandacht: {[label ? short(label) : null, needMeasure ? "meting" : null].filter(Boolean).join(" en ")} — dag {day}/{b.days}</span>
+                <div className="flex flex-wrap justify-end gap-1 shrink-0">
+                  {label && canAck && <button onClick={() => onAck(b.id, label)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Handeling gedaan — verberg tot morgen">Afvinken</button>}
+                  {needMeasure && canAck && <button onClick={() => onMeasure(b.id)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Meting invullen voor deze batch">Meten</button>}
+                </div>
               </li>
             ))}
           </ul>
@@ -5692,17 +5706,29 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
 
 // Metingen voor alle actieve fermentatiebatches, direct in te vullen per batch.
 // Opent via de 13:00-banner of via de knop "Metingen" op de fermentatiepagina.
-function BatchMeasureModal({ batches, onAdd, onClose }) {
+function BatchMeasureModal({ batches, onAdd, onFinish, onClose }) {
   const [vals, setVals] = useState({}); // per batch: {ph, brix, tempC, note}
   const [saved, setSaved] = useState({});
   const set = (id, veld, w) => setVals((v) => ({ ...v, [id]: { ...(v[id] || {}), [veld]: w } }));
   const today = localDate();
   const measuredToday = (b) => (b.log || []).some((e) => String(e.date).slice(0, 10) === today) || saved[b.id];
-  const save = (b) => {
+  const check = (b) => {
     const v = vals[b.id] || {};
-    if (!v.ph && !v.brix && !v.tempC && !(v.note || "").trim()) { alert("Vul minstens één waarde in."); return; }
-    onAdd(b.id, { date: today, ph: v.ph || "", brix: v.brix || "", tempC: v.tempC || "", note: (v.note || "").trim() });
+    if (!v.ph && !v.brix && !v.tempC && !(v.note || "").trim()) { alert("Vul minstens één waarde in."); return null; }
+    return { date: today, ph: v.ph || "", brix: v.brix || "", tempC: v.tempC || "", note: (v.note || "").trim() };
+  };
+  const save = (b) => {
+    const m = check(b);
+    if (!m) return;
+    onAdd(b.id, m);
     setSaved((sv) => ({ ...sv, [b.id]: true }));
+    // Was dit de laatste openstaande meting, dan direct terug naar het scherm erachter.
+    if (batches.every((x) => x.id === b.id || measuredToday(x))) onClose();
+  };
+  const finish = (b) => {
+    const m = check(b);
+    if (!m) return;
+    onFinish(b.id, m); // slaat de meting op, rondt de batch af en opent de voorraad-popup
   };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }}>
@@ -5737,9 +5763,10 @@ function BatchMeasureModal({ batches, onAdd, onClose }) {
                       <label className="block"><span className="text-[11.5px] mute">Temp (°C)</span>
                         <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={(vals[b.id] || {}).tempC || ""} onChange={(e) => set(b.id, "tempC", e.target.value.replace(/[^0-9.,-]/g, ""))} /></label>
                     </div>
-                    <div className="flex gap-2 mt-2">
-                      <input className="input px-2.5 py-2 flex-1 text-sm" style={{ width: "auto" }} value={(vals[b.id] || {}).note || ""} onChange={(e) => set(b.id, "note", e.target.value)} placeholder="Opmerking (optioneel)" />
-                      <button onClick={() => save(b)} className="btnp ff shrink-0 inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2"><Check size={14} /> Opslaan</button>
+                    <input className="input px-2.5 py-2 w-full text-sm mt-2" value={(vals[b.id] || {}).note || ""} onChange={(e) => set(b.id, "note", e.target.value)} placeholder="Opmerking (optioneel)" />
+                    <div className="flex flex-wrap justify-end gap-2 mt-2">
+                      <button onClick={() => finish(b)} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" title="Meting opslaan, batch afronden en toevoegen aan de voorraad"><Check size={14} /> Opslaan + afronden</button>
+                      <button onClick={() => save(b)} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2"><Check size={14} /> Opslaan</button>
                     </div>
                   </>
                 )}
