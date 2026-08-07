@@ -757,7 +757,7 @@ const BASES = [
     steps:["Blancheer de {x} kort.","Blister heet in de iVario met olie.","Maak af met zout en kruiden."] },
 
   // ---- FERMENTATIE ----
-  { id:"lacto", baseName:"Melkzuurgefermenteerde groente", varTemplate:"Gefermenteerde {x}", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, chefsPick:true, endorsements:["Simon","Stef"], gear:"Fermentatiemateriaal",
+  { id:"lacto", baseName:"Melkzuurgefermenteerde groente", varTemplate:"Ferment {x}", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, chefsPick:true, endorsements:["Simon","Stef"], gear:"Fermentatiemateriaal",
     mains:[...ROOT,...BRASSICA,...STALK],
     ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout (2,5%)",amount:"25 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
     steps:["Weeg de {x} en 2,5% zout af.","Kneus of meng tot vocht vrijkomt; pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; proef en koel bij de gewenste zuurte."] },
@@ -769,11 +769,11 @@ const BASES = [
     mains:["chinese kool","paksoi","amsoi","rode kool","koolrabi","radijs"],
     ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout",amount:"25 g"},{item:"Kimchipasta (ui, knoflook, gember, chili)",amount:"200 g"}],
     steps:["Zout de {x} en laat 2 uur wellen; spoel en dep.","Meng met de pasta.","Ferment 3–7 dagen op ±20°C; daarna koelen."] },
-  { id:"fhot", baseName:"Gefermenteerde hotsauce", varTemplate:"Hotsauce van {x}", generic:"groente", category:"Fermentatie", yield:"≈ 500 g", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:22,days:14}, gear:"Fermentatiemateriaal",
+  { id:"fhot", baseName:"Ferment hotsauce", varTemplate:"Hotsauce van {x}", generic:"groente", category:"Fermentatie", yield:"≈ 500 g", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:22,days:14}, gear:"Fermentatiemateriaal",
     mains:["tomaat","radijs","ui","knoflook","rode biet"],
     ingredients:[{item:"{X} + chili",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"}],
     steps:["Mix de {x} met chili en zout.","Ferment 1–2 weken onder pekel op ±22°C.","Mix glad, passeer en bottel; koel."] },
-  { id:"fcaper", baseName:"Gefermenteerde bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
+  { id:"fcaper", baseName:"Ferment bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
     mains:["oost-indische kers","madelief","goudsbloem"],
     ingredients:[{item:"Knoppen van {x}",amount:"200 g"},{item:"Zout (3,5%)",amount:"7 g"},{item:"Water",amount:"200 g"}],
     steps:["Leg de knoppen onder een 3,5% pekel.","Ferment 1–2 weken op ±20°C.","Bewaar in de pekel; gebruik als kappertjes."] },
@@ -787,11 +787,11 @@ const BASES = [
     mains:["meiknol","radijs","chinese kool","koolrabi"],
     ingredients:[{item:"{X}, in parten",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"},{item:"Knoflook, gember, ui",amount:"naar smaak"}],
     steps:["Leg de {x} met de aromaten onder de pekel.","Ferment 5–10 dagen op ±18°C tot de pekel licht bruist.","Serveer de groente én de sprankelende pekel ijskoud."] },
-  { id:"fstem", baseName:"Gefermenteerde stelen", varTemplate:"Gefermenteerde stelen van {x}", generic:"steelgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, gear:"Fermentatiemateriaal",
+  { id:"fstem", baseName:"Ferment stelen", varTemplate:"Ferment stelen van {x}", generic:"steelgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, gear:"Fermentatiemateriaal",
     mains:["snijbiet","bleekselderij","kardoen","paksoi"],
     ingredients:[{item:"Stelen van {x}, in stukken",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
     steps:["Snijd de stelen van de {x} op maat en weeg 2,5% zout af.","Pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; de stelen blijven knapperig."] },
-  { id:"fherbpaste", baseName:"Gefermenteerde kruidenpasta", varTemplate:"Kruidenpasta van {x}", generic:"kruid", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:5,tempC:20,days:14}, gear:"Fermentatiemateriaal",
+  { id:"fherbpaste", baseName:"Ferment kruidenpasta", varTemplate:"Kruidenpasta van {x}", generic:"kruid", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:5,tempC:20,days:14}, gear:"Fermentatiemateriaal",
     mains:["lavas","dragon","koriander","peterselie","bieslook","tuinzuring"],
     ingredients:[{item:"{X}, fijngehakt",amount:"200 g"},{item:"Zout (5%)",amount:"10 g"}],
     steps:["Hak de {x} fijn en kneed met 5% zout tot een natte pasta.","Druk luchtvrij aan in een klein potje.","Ferment 2 weken op ±20°C; daarna koel bewaren als smaakmaker."] },
@@ -807,7 +807,7 @@ const BASES = [
     mains:["pruim","reine claude"],
     ingredients:[{item:"{X}, net niet rijp",amount:"1 kg"},{item:"Zout (10%)",amount:"100 g"},{item:"Rode melde (als shiso-alternatief)",amount:"een handvol"}],
     steps:["Wrijf de {x} in met het zout en verzwaar zodat er pekel vrijkomt.","Ferment 4 weken op ±20°C met de rode melde erbij voor kleur en aroma.","Droog de vruchten daarna kort na in de droogoven en bewaar in de eigen pekel."] },
-  { id:"fmustard", baseName:"Gefermenteerde mosterd", generic:"mosterd", category:"Fermentatie", yield:"≈ 300 g", mode:"flavor", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
+  { id:"fmustard", baseName:"Ferment mosterd", generic:"mosterd", category:"Fermentatie", yield:"≈ 300 g", mode:"flavor", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
     ingredients:[{item:"Geel en bruin mosterdzaad",amount:"150 g"},{item:"Zuurkoolpekel (levend)",amount:"150 g"},{item:"Zout (2,5%)",amount:"8 g"}],
     steps:["Week het mosterdzaad in de levende zuurkoolpekel met het zout.","Ferment 3–5 dagen op ±20°C; roer dagelijks.","Maal grof of glad en rijp koel — de scherpte verzacht met de tijd."],
     variations:[{name:"Klassieke gefermenteerde mosterd"},{name:"Honingmosterd",add:"Roer na fermentatie honing erdoor."},{name:"Dragonmosterd",add:"Meng fijngehakte dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Bietenmosterd",add:"Vervang een deel pekel door bietensap."}] },
@@ -1621,14 +1621,46 @@ function withShelfDefaults(r) {
   const n = (r.name || "").toLowerCase(); // chutney/jam op de náám toetsen (de categorie heet "Chutney & jam")
   let shelfDays, shelfStorage;
   if (/ijs\b|sorbet|granit|parfait|semifreddo/.test(t)) { shelfDays = 178; shelfStorage = "vriezer bewaren"; }
-  else if (/chips|krokant|kletskop|meringue|merengue|cracker|granola|tuile|tuille|kroepoek/.test(t)) { shelfDays = 178; shelfStorage = "ongekoeld bewaren"; }
+  else if (/chips|krokant|kletskop|meringue|merengue|cracker|granola|tuile|tuille|kroepoek/.test(t) && !/kip|vlees|vis\b|garnaal|bitterbal|ei\b|eidooier/.test(n)) { shelfDays = 178; shelfStorage = "ongekoeld bewaren"; } // maar niet voor verse eiwitten (kip, ei …)
+  else if (/gedroogde?\b|poeder\b|zout van|suiker van|dukkah/.test(n)) { shelfDays = 178; shelfStorage = "ongekoeld bewaren"; }
   else if (/chutney/.test(n)) { shelfDays = 178; shelfStorage = "gekoeld bewaren"; }
-  else if (/jam\b|confituur|marmelade/.test(n)) { shelfDays = 365; shelfStorage = "ongekoeld bewaren"; }
+  else if (/jam\b|confituur|marmelade|gelei\b/.test(n)) { shelfDays = 365; shelfStorage = "ongekoeld bewaren"; }
+  else if (/likeur|limoncello/.test(n)) { shelfDays = 365; shelfStorage = "ongekoeld bewaren"; }
+  // — Correcties op de vroegere "alles 4 dagen"-uitschieters, per productsoort: —
+  else if (/mayonaise|aioli|a\u00efoli/.test(n)) { shelfDays = 3; shelfStorage = "gekoeld bewaren"; } // verse ei-emulsie
+  else if (/pickle|piccalilly|zoetzuur|tafelzuur|ingelegd|augurk/.test(t) && !r.ferment && !/mousse|cr\u00e8me|creme|soep|salade|schuim/.test(n)) { shelfDays = 90; shelfStorage = "gekoeld bewaren"; } // azijn-inleg (niet de verse bereidingen ermee)
+  else if (/siroop|stroop/.test(n)) { shelfDays = 90; shelfStorage = "gekoeld bewaren"; } // hoog suiker
+  else if (/pesto/.test(n)) { shelfDays = 7; shelfStorage = "gekoeld bewaren"; }
+  else if (/geconfijte|confit\b/.test(n)) { shelfDays = 14; shelfStorage = "gekoeld bewaren"; } // onder vet/siroop
+  else if (/compote/.test(n)) { shelfDays = 14; shelfStorage = "gekoeld bewaren"; } // gekookt met suiker
+  else if (/vinaigrette|dressing/.test(n)) { shelfDays = 14; shelfStorage = "gekoeld bewaren"; } // azijnbasis
+  else if (/boter$|kruidenboter/.test(n)) { shelfDays = 14; shelfStorage = "gekoeld bewaren"; } // samengestelde boter
+  else if (/olie$|^olie van|kruidenolie/.test(n.trim())) { shelfDays = 30; shelfStorage = "gekoeld bewaren"; } // ge\u00efnfuseerde olie
+  else if (/karamel|caramel/.test(n) && !/mousse|bavarois|taart|cr\u00e8me|creme|schuim/.test(n)) { shelfDays = 30; shelfStorage = "gekoeld bewaren"; }
   else if (r.ferment) { shelfDays = 365; shelfStorage = "gekoeld bewaren"; }
   else { shelfDays = 4; shelfStorage = "gekoeld bewaren"; }
   return { ...r, shelfDays, shelfStorage: r.shelfStorage || shelfStorage };
 }
-const initialRecipes = [...CURATED, ...PATISSERIE, ...KEUKENMAP, ...LIBRARY].map(withShelfDefaults).map((r) => ({ ...r, category: normCategory(r.category) }));
+// Variaties erven de hoeveelheden van hun basisrecept: voor elk ingrediënt dat
+// (op naam) ook in de basis staat, geldt de hoeveelheid van de basis. Extra
+// ingrediënten van de variatie houden hun eigen hoeveelheid.
+function alignVariationAmounts(recs) {
+  const byId = new Map(recs.map((r) => [r.id, r]));
+  const key = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  return recs.map((r) => {
+    if (!r.baseId || !byId.has(r.baseId)) return r;
+    const base = byId.get(r.baseId);
+    const bmap = new Map((base.ingredients || []).map((i) => [key(i.item), i.amount]));
+    let changed = false;
+    const ings = (r.ingredients || []).map((i) => {
+      const ba = bmap.get(key(i.item));
+      if (ba != null && ba !== i.amount) { changed = true; return { ...i, amount: ba }; }
+      return i;
+    });
+    return changed ? { ...r, ingredients: ings } : r;
+  });
+}
+const initialRecipes = alignVariationAmounts([...CURATED, ...PATISSERIE, ...KEUKENMAP, ...LIBRARY].map(withShelfDefaults).map((r) => ({ ...r, category: normCategory(r.category) })));
 
 const seedDishes = [
   { id:"d1", name:"Salade Caprese", course:"Zomervoorgerecht", season:["Zomer"], diet:"Vegetarisch",
@@ -2300,6 +2332,87 @@ const PAIRINGS = [
   { name:"bleekselderij", pairs:["appel","walnoot","blauwe kaas","ui"], note:"Fris en zoutig; rauw of fond." },
   { name:"groenlof", pairs:["sinaasappel","blauwe kaas","walnoot","honing"], note:"Bitter; zoet en zout eroverheen." },
   { name:"madelief", pairs:["salade","kruiden"], note:"Madeliefje; milde eetbare bloem als garnituur." },
+
+  // — Aangevuld: eerder alleen genoemd als combinatie, nu eigen entry met
+  // terugverwijzingen, zodat elke smaakchip aanklikbaar doorlinkt. —
+  { name:"aardappel", pairs:["andijvie","bieslook","boerenkool","lavas","rozemarijn","savooikool","tuinzuring","uiensoepboom","utrechtse ui"], note:"Neutraal en aards; draagt vet, kruid en zuur." },
+  { name:"amandel", pairs:["framboos","princessenbonen","pruim","reine claude","sperziebonen"], note:"Zacht nootachtig; bindt fruit en gebak." },
+  { name:"ansjovis", pairs:["kardoen","palmkool"], note:"Zout en umami; smelt weg in vet." },
+  { name:"augurk", pairs:["dille","kapucijners"], note:"Knapperig zuur; snijdt door vet en peulvruchten." },
+  { name:"azijn", pairs:["ui"], note:"Puur zuur; wekt zoet en aards op." },
+  { name:"balsamico", pairs:["aardbei","rucola"], note:"Donker zoetzuur; rondt fruit en blad af." },
+  { name:"basilicum", pairs:["aardbei","tomaat"], note:"Zoet-kruidig; hoort bij tomaat en fruit." },
+  { name:"biet", pairs:["geitenkaas","veldsla"], note:"Aards zoet; vraagt zuur en romig tegenwicht." },
+  { name:"blauwe kaas", pairs:["bleekselderij","druif","groenlof","peer","rode eikenbladsla"], note:"Zout en scherp; zoekt zoet fruit en noot." },
+  { name:"bonenkruid", pairs:["princessenbonen","snijbonen","sperziebonen"], note:"Peperig kruid; klassiek bij bonen." },
+  { name:"bosvruchten", pairs:["lavendel","vanille"], note:"Zoet-zuur rood fruit; houdt van bloemig.", season:["Zomer"] },
+  { name:"boter", pairs:["dahlia","goudsbloem","kardoen","meiknol","peterselie","peultjes","princessenbonen","radijs","salie","spitskool","uiensoepboom","utrechtse ui"], note:"Rond en romig; drager van zachte groenten." },
+  { name:"bouillon", pairs:["lavas"], note:"Hartige basis; diepte voor blad en knol." },
+  { name:"chili", pairs:["boerenkool","chinese kool","koriander","paksoi","palmkool"], note:"Hitte; wakkert kool en koriander aan." },
+  { name:"chocolade", pairs:["braam","framboos","lavendel","munt","peer"], note:"Bitterzoet; omarmt rood fruit en munt." },
+  { name:"citroen", pairs:["aardpeer","amaranth","blauwe bes","boerenkool","courgette","courgettebloem","dille","dragon","erwten","ijsbergsla","japanse wijnbes","kardoen","knoflook","komkommer","korenbloem","lavendel","leeuwenbek","meiknol","peterselie","peultjes","radijs","rode melde","rozemarijn","rucola","snijbiet","spinazie","tijm","venkel"], note:"Helder zuur; frist vet en aards op." },
+  { name:"citrus", pairs:["afrikaantjes"], note:"Fris zuur-bitter; licht bloemen en blad op." },
+  { name:"ei", pairs:["andijvie","bieslook","bindsla","dragon","goudsbloem","lavas","meiknol","oost-indische kers","rode melde","spinazie","tuinzuring","uiensoepboom","utrechtse ui","veldsla"], note:"Rijk en bindend; drager van kruiden en blad." },
+  { name:"feta", pairs:["courgette"], note:"Zilt en fris; breekt zoete groenten." },
+  { name:"geitenkaas", pairs:["chioggia biet","gele biet","rode biet"], note:"Fris-zuur romig; klassiek bij biet." },
+  { name:"gember", pairs:["amsoi","chinese kool","paksoi","rabarber","wortel"], note:"Warm en scherp; wakkert kool en fruit aan." },
+  { name:"gevogelte", pairs:["tijm"], note:"Mild vlees; drager van tuinkruiden." },
+  { name:"ham", pairs:["koolrabi"], note:"Zout en rokerig; zoet contrast met knol." },
+  { name:"hazelnoot", pairs:["aardpeer","dahlia","knolselderij","pastinaak"], note:"Geroosterd zoet; verdiept knolgroenten." },
+  { name:"honing", pairs:["aardpeer bloem","chioggia biet","citroenmelisse","groenlof","japanse wijnbes","kamille","lavendel","pastinaak","reine claude","rozemarijn","wortel"], note:"Bloemig zoet; verzacht bitter en zuur." },
+  { name:"kaas", pairs:["bieslook","korenbloem","oregano","ui","uiensoepboom"], note:"Zout-umami; maat van ui en kruid." },
+  { name:"kaneel", pairs:["appel","blauwe bes","mispel","pruim","rode kool"], note:"Warm zoet kruid; hoort bij herfstfruit." },
+  { name:"karamel", pairs:["appel","zeezout"], note:"Gebrand zoet; houdt van zuur fruit." },
+  { name:"karwij", pairs:["biet","spitskool"], note:"Anijsachtig kruid; klassiek bij kool." },
+  { name:"kastanje", pairs:["savooikool","spruitjes"], note:"Melig zoet; wintermaat van kool.", season:["Herfst"] },
+  { name:"kokos", pairs:["koriander"], note:"Romig zoet; drager van kruidige gerechten." },
+  { name:"komijn", pairs:["koriander","wortel"], note:"Warm aards kruid; bij wortel en peul." },
+  { name:"kruidnagel", pairs:["rode kool"], note:"Intens warm kruid; spaarzaam bij kool en fruit." },
+  { name:"lam", pairs:["munt","rozemarijn"], note:"Uitgesproken vlees; houdt van munt en rozemarijn." },
+  { name:"limoen", pairs:["koriander"], note:"Scherp fris zuur; bij koriander en chili." },
+  { name:"lychee", pairs:["framboos","rozenwater"], note:"Bloemig zoet; verrassend bij framboos." },
+  { name:"melk", pairs:["laurier"], note:"Zacht en romig; trekt zachte kruiden." },
+  { name:"mierikswortel", pairs:["koolrabi","rode biet","rundvlees"], note:"Scherp en heet; wakkert biet en rund aan." },
+  { name:"mosterd", pairs:["andijvie","bindsla","dille","dragon","kapucijners","knolselderij","koolrabi","spitskool","varkensvlees"], note:"Scherp zuur; ruggengraat voor dressing." },
+  { name:"mozzarella", pairs:["basilicum","tomaat"], note:"Melkzacht; canvas voor tomaat." },
+  { name:"nootmuskaat", pairs:["pastinaak","savooikool","spinazie"], note:"Warm kruid; bij spinazie en knol." },
+  { name:"olijf", pairs:["citroen","tomaat"], note:"Zilt en rijp; mediterrane diepte." },
+  { name:"olijfolie", pairs:["knoflook","oregano"], note:"Fruitig vet; drager van knoflook en kruid." },
+  { name:"paddenstoel", pairs:["tijm"], note:"Umami en bosachtig; bij tijm." },
+  { name:"parmezaan", pairs:["courgettebloem","kardoen","rucola"], note:"Zout umami; verdiept blad en bloem." },
+  { name:"pecorino", pairs:["palmkool"], note:"Zout schapig; pittige maat van kool." },
+  { name:"perzik", pairs:["burrata","citroenmelisse","rozemarijn"], note:"Sappig zomerzoet; houdt van bloemig.", season:["Zomer"] },
+  { name:"peulvrucht", pairs:["laurier"], note:"Melig hartig; drager van laurier." },
+  { name:"pijnboompit", pairs:["rucola","snijbiet"], note:"Zacht harsig; geroosterd bij blad." },
+  { name:"pompoen", pairs:["kaneel","salie"], note:"Zoet en vol; klassiek bij salie.", season:["Herfst"] },
+  { name:"ricotta", pairs:["courgettebloem","erwten","snijbiet"], note:"Licht en melkzoet; vulling voor bloem en blad." },
+  { name:"rijst", pairs:["goudsbloem"], note:"Neutraal; canvas voor bloem en kruid." },
+  { name:"rode wijn", pairs:["peer","pruim","rundvlees"], note:"Donker en wrang; stooft fruit en vlees." },
+  { name:"room", pairs:["aalbes","aardbei","blauwe bes","citroenmelisse","framboos","japanse wijnbes","kamille","laurier","mispel","rabarber","spinazie","tuinzuring"], note:"Vol en zacht; verzacht zuur fruit." },
+  { name:"rozijn", pairs:["snijbiet"], note:"Geconcentreerd zoet; tegen bitter blad." },
+  { name:"selderij", pairs:["lavas"], note:"Groen en zout-aards; bouillonmaat." },
+  { name:"sesam", pairs:["amaranth","amsoi","paksoi","peultjes"], note:"Nootachtig geroosterd; bij Aziatisch blad." },
+  { name:"sinaasappel", pairs:["chioggia biet","gele biet","groenlof","rabarber","rode biet","venkel","wortel"], note:"Zoet zuur; licht biet en venkel op.", season:["Winter"] },
+  { name:"sjalot", pairs:["princessenbonen","rode eikenbladsla","veldsla"], note:"Fijn ui-zoet; basis van vinaigrette." },
+  { name:"sojasaus", pairs:["amsoi","chinese kool","paksoi"], note:"Diep umami-zout; bij kool en paksoi." },
+  { name:"spek", pairs:["aardpeer","andijvie","kapucijners","pronkbonen","savooikool","snijbonen","spitskool","veldsla"], note:"Rokerig vet; zoete maat van bonen en kool." },
+  { name:"thee", pairs:["citroenmelisse","honing"], note:"Bitter-bloemig; trekt citroenmelisse aan." },
+  { name:"truffel", pairs:["ei","knolselderij"], note:"Aards parfum; bij knolselderij." },
+  { name:"vanille", pairs:["aalbes","blauwe bes","braam","japanse wijnbes","kamille","kweepeer","rabarber","reine claude"], note:"Zacht bloemig zoet; rondt fruit af." },
+  { name:"vis", pairs:["bieslook","peterselie","tuinzuring"], note:"Zilt en teer; vraagt frisse kruiden." },
+  { name:"walnoot", pairs:["appel","bleekselderij","chioggia biet","druif","gele biet","groenlof","mispel","peer","rode biet","rode eikenbladsla","veldsla"], note:"Bitterzoet; klassiek bij fruit en kaas." },
+  { name:"wild", pairs:["aalbes","laurier"], note:"Diep en donker; houdt van zuur fruit." },
+  { name:"witte bonen", pairs:["palmkool","salie"], note:"Romig melig; drager van salie." },
+  { name:"witte chocolade", pairs:["aalbes"], note:"Melkzoet; maat van zure bes." },
+  { name:"yoghurt", pairs:["ijsbergsla","komkommer"], note:"Fris zuur; koelt komkommer en sla." },
+  { name:"zachte kaas", pairs:["oost-indische kers"], note:"Romig mild; laat bloemen spreken." },
+  { name:"zout", pairs:["radijs"], note:"Versterker; maakt zoet en bitter helder." },
+  { name:"zure room", pairs:["bieslook"], note:"Fris en vol; drager van bieslook." },
+  { name:"zwarte peper", pairs:["aardbei"], note:"Warme scherpte; wekt aardbei op." },
+  { name:"burrata", pairs:["perzik","tomaat","basilicum","olijfolie"], note:"Romig hart; canvas voor rijp zomerfruit." },
+  { name:"rozenwater", pairs:["lychee","framboos","aardbei","honing"], note:"Bloemig parfum; spaarzaam bij rood fruit." },
+  { name:"spruitjes", pairs:["kastanje","spek","hazelnoot","nootmuskaat"], note:"Bitterzoet wintergroen; houdt van rook en noot.", season:["Winter"] },
+  { name:"zeezout", pairs:["karamel","chocolade","tomaat"], note:"Knapperige versterker; maakt zoet dieper." },
 ];
 
 const seedBatches = [
@@ -2357,6 +2470,39 @@ function parseYieldRef(amount, unitText, yieldText) {
   }
   return { refYield: a, refUnitNum: u };
 }
+// Keuzelijst in app-stijl: native <select> toont op telefoons het donkere
+// systeemmenu dat vloekt met de app. Deze knop opent een eigen lijstje in de
+// app-kleuren; tikken kiest en sluit. Ondersteunt dezelfde plek/breedte als
+// de oude selects via className/style.
+function AppSelect({ value, onChange, options, className, style, title, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
+  const cur = opts.find((o) => o.value === value);
+  const label = cur ? (cur.label || "\u2014") : (placeholder || "\u2014");
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={(className || "input px-2.5 py-2 w-full text-sm") + " ff text-left inline-flex items-center justify-between gap-2"} style={style} title={title}>
+        <span className={"truncate " + (cur && cur.value !== "" ? "ink" : "mute")}>{label}</span>
+        <ChevronDown size={15} className="acc shrink-0" />
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setOpen(false); }}>
+          <div className="w-full max-w-sm rounded-2xl p-2 shadow-xl" style={{ background: T.paper, maxHeight: "70vh", overflowY: "auto" }}>
+            {title && <div className="text-xs mute px-3 pt-2 pb-1">{title}</div>}
+            {opts.map((o) => (
+              <button key={String(o.value)} type="button" disabled={o.disabled} onClick={() => { onChange(o.value); setOpen(false); }}
+                className={"ff w-full text-left rounded-xl px-3 py-2.5 text-sm flex items-center justify-between gap-2 disabled:opacity-40 " + (o.value === value ? "pillon" : "ink hover:opacity-70")}>
+                <span>{o.label || "\u2014"}</span>
+                {o.value === value && <Check size={15} />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Stellage-icoon (eigen tekening in Lucide-lijnstijl): twee staanders, drie
 // planken met potten en bakken — herkenbaarder als "voorraad" dan de doos.
 function ShelfIcon({ size = 16 }) {
@@ -2665,9 +2811,12 @@ function App() {
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
   useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
+  const fabLabelRef = React.useRef(false);
+  useEffect(() => { fabLabelRef.current = fabLabelOpen; }, [fabLabelOpen]);
   useEffect(() => {
     const onPop = () => {
       if (calcOpenRef.current) { setCalcOpen(false); try { window.history.pushState({ app: "ritme" }, ""); } catch (e) {} return; }
+      if (fabLabelRef.current) { setFabLabelOpen(false); try { window.history.pushState({ app: "ritme" }, ""); } catch (e) {} return; }
       setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
     };
     window.addEventListener("popstate", onPop);
@@ -2675,7 +2824,7 @@ function App() {
   }, []);
   // Escape sluit eerst de rekenmachine.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && calcOpenRef.current) { e.preventDefault(); setCalcOpen(false); } };
+    const onKey = (e) => { if (e.key === "Escape") { if (calcOpenRef.current) { e.preventDefault(); setCalcOpen(false); } else if (fabLabelRef.current) { e.preventDefault(); setFabLabelOpen(false); } } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -3466,8 +3615,9 @@ function App() {
     else if (section === "smaak") setNewPairing((n) => n + 1);
     else if (section === "voorraad") push({ screen: "voorraadForm", editing: null, prefill: null });
     else if (section === "technieken") push({ screen: "werkDocForm", editing: null });
+    else if (section === "schoonmaak") push({ screen: "cleaningForm", editing: null });
   };
-  const showFab = current.screen === "list" && canEdit && section !== "schoonmaak" && section !== "home";
+  const showFab = current.screen === "list" && canEdit && section !== "home";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -3555,12 +3705,12 @@ function App() {
 
       {showFab && (
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
-          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : "Batch"}
+          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "schoonmaak" ? "Taak" : "Batch"}
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} />}
       {user && canEdit && (
-        <button onClick={() => setFabLabelOpen(true)} title="Etiket maken"
+        <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
           className="ff fixed bottom-[5.25rem] right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
           style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
           <Tag size={19} />
@@ -3944,9 +4094,7 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen }) {
     <div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" /></div>
-        <select value={courseF} onChange={(e) => setCourseF(e.target.value)} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op gang">
-          {COURSE_FILTERS.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <AppSelect value={courseF} onChange={setCourseF} options={COURSE_FILTERS} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op gang" />
       </div>
       <div className="flex items-center gap-1.5 mb-2 text-xs overflow-x-auto no-scrollbar -mx-4 px-4">
         <button onClick={() => setSortMode("seizoen")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "seizoen" ? "pillon" : "pill")}>Seizoen</button>
@@ -4018,9 +4166,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
     <div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={search} onChange={(v) => { setSearch(v); setLimit(60); }} placeholder="Zoek op naam of ingrediënt (bv. citroen)" /></div>
-        <select value={catF} onChange={(e) => { setCatF(e.target.value); setLimit(60); }} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op categorie">
-          {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <AppSelect value={catF} onChange={(v) => { setCatF(v); setLimit(60); }} options={cats} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op categorie" />
       </div>
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 mb-2 -mx-4 px-4 text-xs">
         {["Alle", ...SEASONS].map((s) => (
@@ -4040,7 +4186,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
-                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
+                {(r.isBase || varsOf(r.id).length > 0) && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
                 {r.ferment && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
@@ -4139,9 +4285,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
     <div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={q} onChange={(v) => { setQ(v); setLimit(30); }} placeholder="Zoek op naam of ingrediënt" /></div>
-        <select value={methodF} onChange={(e) => { setMethodF(e.target.value); setLimit(30); }} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op fermentatiesoort">
-          {["Alle", ...FERMENT_METHODS].map((m) => <option key={m} value={m}>{m === "Alle" ? "Alle methodes" : m}</option>)}
-        </select>
+        <AppSelect value={methodF} onChange={(v) => { setMethodF(v); setLimit(30); }} options={["Alle", ...FERMENT_METHODS].map((m) => ({ value: m, label: m === "Alle" ? "Alle methodes" : m }))} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op fermentatiesoort" />
       </div>
       <div className="flex items-center justify-between mb-2">
         <button onClick={() => { setTouchedActive(true); setOpenActive((o) => !o); }} className="ff inline-flex items-center gap-1" disabled={searching}>
@@ -4193,7 +4337,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
-                {r.isBase && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
+                {(r.isBase || varsOf(r.id).length > 0) && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
                 {r.fermentMethod && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> {r.fermentMethod}</span>}
               </div>
               <div className="text-sm mute mt-0.5 truncate">{r.category} · {r.yield}</div>
@@ -4382,6 +4526,16 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
 }
 
 function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openNew, onOpenedNew }) {
+  // Doorklikken op een combinatie-chip: spring naar dat product (open + scroll),
+  // zodat koks van smaak naar smaak kunnen blijven combineren.
+  const cardRefs = React.useRef({});
+  const jumpTo = (naam) => {
+    const doel = pairings.find((pp) => norm(pp.name) === norm(naam));
+    if (!doel) return;
+    setQ(""); setSeasonF("Alle");
+    setOpen(doel.name);
+    setTimeout(() => { const el = cardRefs.current[doel.name]; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 60);
+  };
   const [q, setQ] = useState("");
   const [sortMode, setSortMode] = useState("seizoen");
   const [open, setOpen] = useState(null);
@@ -4428,7 +4582,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
       <div className="text-right text-xs mute mb-2">{shown.length} producten</div>
       <div className="space-y-2">
         {shown.map((p) => (
-          <div key={p.name} className="card overflow-hidden">
+          <div key={p.name} ref={(el) => { cardRefs.current[p.name] = el; }} className="card overflow-hidden">
             <button onClick={() => setOpen(open === p.name ? null : p.name)} className="ff w-full flex items-center justify-between px-4 py-3 text-left">
               <span className="serif ink text-lg flex items-center gap-2 flex-wrap">{cap(p.name)} {(((p.season && p.season.length) ? p.season : (SEASON[p.name] || [])).filter((s) => s !== "Hele jaar")).map((s) => <SeasonPill key={s} s={s} />)}</span>
               <ChevronRight size={16} className={"transition-transform " + (open === p.name ? "rotate-90" : "")} style={{ color: "#c4c2b2" }} />
@@ -4436,7 +4590,12 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
             {open === p.name && editing !== p.name && (
               <div className="px-4 pb-4 -mt-1">
                 <p className="text-xs mute mb-2 italic">{p.note}</p>
-                <div className="flex flex-wrap gap-1.5">{p.pairs.map((x) => <span key={x} className="chip rounded-full text-xs font-medium px-2.5 py-1">{x}</span>)}</div>
+                <div className="flex flex-wrap gap-1.5">{p.pairs.map((x) => {
+                  const bestaat = pairings.some((pp) => norm(pp.name) === norm(x));
+                  return bestaat
+                    ? <button key={x} onClick={() => jumpTo(x)} className="chip ff rounded-full text-xs font-medium px-2.5 py-1 inline-flex items-center gap-1 hover:opacity-70" title={"Spring naar " + x}>{x} <ChevronRight size={11} /></button>
+                    : <span key={x} className="chip rounded-full text-xs font-medium px-2.5 py-1">{x}</span>;
+                })}</div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <button onClick={() => onSearchRecipes(p.name)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Search size={12} /> Bekijk recepten met {p.name}</button>
                   {PRODUCT_INFO[p.name] && <button onClick={() => setInfoFor(infoFor === p.name ? null : p.name)} className="inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><Info size={12} /> Info</button>}
@@ -4740,6 +4899,86 @@ function printLabel(recipe, inhoud, dates) {
 // Popup bij "Etiket": vraagt gewicht en verpakkingswijze (bv. 500 gram vacumeer
 // zak) voor op het etiket. Leeg gelaten = niets extra's printen. Sluit vanzelf
 // zodra de printactie is gestart.
+// Hoeveelheidstekst van een ingrediënt of opbrengst naar gram(equivalent) of
+// stuks, voor het op-maat rekenen: "33,6 kg" → 33600 g, "8 st" → 8 stuks,
+// "12 l" → 12000, kaal getal → stuks.
+function parseAmountFlex(text) {
+  const t = String(text || "").toLowerCase().replace(",", ".").trim();
+  const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|gram|gr|g|liter|l|dl|cl|ml|st|stuks?|x|×)?/);
+  if (!m || !m[1]) return null;
+  const n = Number(m[1]);
+  const eh = m[2] || "";
+  if (eh === "kg" || eh === "l" || eh === "liter") return { g: n * 1000 };
+  if (eh === "dl") return { g: n * 100 };
+  if (eh === "cl") return { g: n * 10 };
+  if (eh === "g" || eh === "gr" || eh === "gram" || eh === "ml") return { g: n };
+  return { count: n }; // st, x of kaal getal
+}
+
+// Op-maat rekenen: naar een doelopbrengst (C) of naar wat er van een ingrediënt
+// beschikbaar is (D). Geeft de factor t.o.v. het originele recept.
+function MaatModal({ recipe, onApply, onClose }) {
+  const [doel, setDoel] = useState("");
+  const [ingIdx, setIngIdx] = useState(0);
+  const [beschikbaar, setBeschikbaar] = useState("");
+  const [fout, setFout] = useState(null);
+  const ings = recipe.ingredients || [];
+  const ref = parseYieldRef(recipe.yieldAmount, recipe.yieldUnit, recipe.yield);
+  const rekenOpbrengst = () => {
+    const d = parseAmountFlex(doel);
+    if (!d) { setFout("Vul een doelopbrengst in, bv. 12 l of 40 potten."); return; }
+    let f = null;
+    if (d.g != null && ref.refYield && ref.refUnitNum) f = d.g / (ref.refYield * ref.refUnitNum);
+    else if (d.g != null && !ref.refYield && ref.refUnitNum) f = d.g / ref.refUnitNum;
+    else if (d.count != null && ref.refYield) f = d.count / ref.refYield;
+    if (!f || !isFinite(f) || f <= 0) { setFout("Kan de opbrengst van dit recept niet vergelijken met \"" + doel + "\" — probeer dezelfde eenheid als de receptopbrengst (" + (recipe.yield || "onbekend") + ")."); return; }
+    onApply(f); onClose();
+  };
+  const rekenIngredient = () => {
+    const ing = ings[ingIdx];
+    if (!ing) return;
+    const heb = parseAmountFlex(beschikbaar);
+    const nodig = parseAmountFlex(ing.amount);
+    if (!heb) { setFout("Vul in hoeveel je hebt, bv. 33,6 kg of 8 st."); return; }
+    if (!nodig) { setFout("De hoeveelheid van \"" + ing.item + "\" (" + (ing.amount || "leeg") + ") is niet als getal te lezen."); return; }
+    let f = null;
+    if (heb.g != null && nodig.g != null) f = heb.g / nodig.g;
+    else if (heb.count != null && nodig.count != null) f = heb.count / nodig.count;
+    else if (heb.g != null && nodig.count != null) f = null;
+    else if (heb.count != null && nodig.g != null) f = null;
+    if (!f || !isFinite(f) || f <= 0) { setFout("Eenheden passen niet op elkaar: het recept vraagt \"" + ing.amount + "\" en jij vulde \"" + beschikbaar + "\" in."); return; }
+    onApply(f); onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper, maxHeight: "85vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="serif ink text-xl leading-tight">Op maat rekenen</div>
+          <button onClick={onClose} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
+        </div>
+        <div className="mt-4">
+          <div className="text-xs font-semibold uppercase tracking-widest acc mb-1">Naar opbrengst</div>
+          <p className="text-[11.5px] mute mb-1.5">Recept geeft {recipe.yield || "?"}. Hoeveel wil je maken?</p>
+          <div className="flex gap-2">
+            <input className="input px-2.5 py-2 flex-1 text-sm" value={doel} onChange={(e) => { setDoel(e.target.value); setFout(null); }} onKeyDown={(e) => { if (e.key === "Enter") rekenOpbrengst(); }} placeholder="bv. 12 l of 40" />
+            <button onClick={rekenOpbrengst} className="btnp ff shrink-0 rounded-lg px-3 text-sm font-semibold">Reken</button>
+          </div>
+        </div>
+        <div className="mt-4 pt-4" style={{ borderTop: "1px solid " + T.line }}>
+          <div className="text-xs font-semibold uppercase tracking-widest acc mb-1">Naar wat je hebt</div>
+          <p className="text-[11.5px] mute mb-1.5">Kies een ingrediënt en vul in hoeveel er is — de rest schaalt mee.</p>
+          <AppSelect value={String(ingIdx)} onChange={(v) => setIngIdx(Number(v))} options={ings.map((i, j) => ({ value: String(j), label: i.item + " (" + (i.amount || "—") + ")" }))} />
+          <div className="flex gap-2 mt-2">
+            <input className="input px-2.5 py-2 flex-1 text-sm" value={beschikbaar} onChange={(e) => { setBeschikbaar(e.target.value); setFout(null); }} onKeyDown={(e) => { if (e.key === "Enter") rekenIngredient(); }} placeholder="bv. 33,6 kg" />
+            <button onClick={rekenIngredient} className="btnp ff shrink-0 rounded-lg px-3 text-sm font-semibold">Reken</button>
+          </div>
+        </div>
+        {fout && <p className="text-xs mt-3" style={{ color: "#8a4a3a" }}>{fout}</p>}
+      </div>
+    </div>
+  );
+}
+
 function LabelPrintModal({ recipe, onClose }) {
   const [gram, setGram] = useState("");
   const [pak, setPak] = useState("");
@@ -4887,9 +5126,7 @@ function BatchLabelModal({ batch, onClose }) {
           </div>
           <div className="col-span-2">
             <div className="text-xs mute mb-1">Fermentatietype</div>
-            <select className="input px-2.5 py-2 w-full text-sm" value={type} onChange={(e) => setType(e.target.value)}>
-              {[...new Set(["Melkzuur", "Suikerfermentatie", "Azijnfermentatie", type].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            <AppSelect value={type} onChange={setType} options={[...new Set(["Melkzuur", "Suikerfermentatie", "Azijnfermentatie", type].filter(Boolean))]} />
           </div>
           <div className="col-span-2">
             <div className="text-xs mute mb-1">Handeling / opmerking</div>
@@ -5024,17 +5261,14 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
           </div>
           <div>
             <div className="text-xs mute mb-1">Verpakkingswijze</div>
-            <input list="etiket-verpakkingen" className="input px-2.5 py-2 w-full text-sm" value={pack} onChange={(e) => setPack(e.target.value)} placeholder="Kies of typ zelf" />
-            <datalist id="etiket-verpakkingen">
-              {LABEL_PACKS.map((p) => <option key={p} value={p} />)}
-            </datalist>
+            <input className="input px-2.5 py-2 w-full text-sm" value={pack} onChange={(e) => setPack(e.target.value)} placeholder="Kies of typ zelf" />
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {LABEL_PACKS.map((p) => <button key={p} type="button" onClick={() => setPack(p)} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (pack === p ? "pillon" : "pill")}>{p}</button>)}
+            </div>
           </div>
           <div>
             <div className="text-xs mute mb-1">Opslagmanier</div>
-            <select className="input px-2.5 py-2 w-full text-sm" value={storage} onChange={(e) => setStorage(e.target.value)}>
-              <option value="">—</option>
-              {LABEL_STORAGE.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            <AppSelect value={storage} onChange={setStorage} options={[{ value: "", label: "—" }, ...LABEL_STORAGE]} />
           </div>
         </div>
         <div className="mt-2">
@@ -5074,6 +5308,42 @@ function daysUntil(dateStr) {
   return Math.round((d - now) / 86400000);
 }
 
+// Voorraadregels van hetzelfde product als één item: elke registratie blijft
+// een eigen batch met eigen details (uitklapbaar), en de −1 pakt altijd de
+// oudste (kortst houdbare) batch met voorraad eerst. Bestaande dubbele
+// invoeren vallen hierdoor vanzelf samen — er hoeft niets gemigreerd.
+function groupStock(items) {
+  const g = {};
+  const key = (v) => norm(String(v.product || "")).trim();
+  for (const v of items) (g[key(v)] = g[key(v)] || []).push(v);
+  return Object.values(g).map((entries) => {
+    const sorted = [...entries].sort((a, b) => {
+      const ea = a.expiryDate || "9999", eb = b.expiryDate || "9999";
+      if (ea !== eb) return ea < eb ? -1 : 1;
+      const pa = a.productionDate || "9999", pb = b.productionDate || "9999";
+      return pa < pb ? -1 : pa > pb ? 1 : 0;
+    });
+    const qty = sorted.reduce((n, v) => n + (Number(v.qty) || 0), 0);
+    return { key: key(sorted[0]) || sorted[0].id, product: sorted[0].product, entries: sorted, qty };
+  });
+}
+const oldestOpenStock = (entries) => entries.find((v) => (Number(v.qty) || 0) > 0) || null;
+// Binnen een productgroep: per verpakkingseenheid (200 gr pot, 500 gr pot …) een
+// eigen regel met totaal en een eigen −1-knop; die pakt de oudste batch van die
+// eenheid. Gesorteerd van kleine naar grote verpakking.
+function unitGroupsOf(entries) {
+  const m = new Map();
+  for (const v of entries) {
+    const u = String(v.unit || "").trim() || "—";
+    if (!m.has(u)) m.set(u, { unit: u, entries: [], qty: 0 });
+    const g = m.get(u);
+    g.entries.push(v); // entries komen al oudste-eerst binnen
+    g.qty += Number(v.qty) || 0;
+  }
+  return [...m.values()].map((g) => ({ ...g, oldest: oldestOpenStock(g.entries) }))
+    .sort((a, b) => { const sa = unitSizeG(a.unit) ?? 1e12, sb = unitSizeG(b.unit) ?? 1e12; return sa - sb || a.unit.localeCompare(b.unit, "nl"); });
+}
+
 function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
@@ -5087,67 +5357,100 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
   };
   const [openEmpty, setOpenEmpty] = useState(false);
   const yearItems = stock.filter((v) => stockYear(v) === currentYear && match(v));
-  const shown = yearItems.filter((v) => v.qty > 0).sort(sortFn);
-  const emptyItems = yearItems.filter((v) => v.qty <= 0).sort(sortFn);
+  const groupSort = (a, b) => {
+    const oa = oldestOpenStock(a.entries), ob = oldestOpenStock(b.entries);
+    const da = (oa && oa.expiryDate) || "9999", db2 = (ob && ob.expiryDate) || "9999";
+    return da < db2 ? -1 : da > db2 ? 1 : a.product.localeCompare(b.product, "nl");
+  };
+  const allGroups = groupStock(yearItems);
+  const shown = allGroups.filter((g) => g.qty > 0).sort(groupSort);
+  const emptyItems = allGroups.filter((g) => g.qty <= 0).sort(groupSort);
   const pastYears = [...new Set(stock.filter((v) => stockYear(v) < currentYear).map((v) => stockYear(v)))].sort((a, b) => b - a);
   const fmtQty = (n, unit) => String(n).replace(".", ",") + "×" + (unit ? " " + unit : "");
-  const kaart = (v) => {
-    const dgn = daysUntil(v.expiryDate);
+  const kaart = (g) => {
+    const oud = oldestOpenStock(g.entries);
+    const ref = oud || g.entries[0];
+    const dgn = daysUntil(ref.expiryDate);
     const verlopen = dgn !== null && dgn < 0;
     const bijna = dgn !== null && dgn >= 0 && dgn <= 3;
-    const op = v.qty <= 0;
-    const isOpen = open === v.id;
-    const jaar = stockYear(v);
+    const op = g.qty <= 0;
+    const isOpen = open === g.key;
+    const jaar = stockYear(g.entries[0]);
+    const multi = g.entries.length > 1;
+    const ugs = unitGroupsOf(g.entries);
+    const batchDetail = (v, idx) => {
+      const ug = ugs.find((x) => x.entries.some((e) => e.id === v.id));
+      const isOud = ug && ug.oldest && v.id === ug.oldest.id;
+      const leeg = (Number(v.qty) || 0) <= 0;
+      return (
+        <div key={v.id} className={multi ? "rounded-xl p-3 mt-2" : "mt-2.5"} style={multi ? { border: "1px solid " + T.line, background: "#fff", opacity: leeg ? 0.55 : 1 } : undefined}>
+          {multi && (
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[13px] font-semibold ink">{String(v.qty).replace(".", ",")} st. × {v.unit || "—"}{leeg ? " · op" : ""}</span>
+              {isOud && !leeg && <span className="text-[10.5px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>oudste — eerst gebruiken</span>}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px]">
+            <div className="flex justify-between gap-2"><span className="mute">Op voorraad</span><span className="ink font-medium">{fmtQty(v.qty, v.unit)}</span></div>
+            <div className="flex justify-between gap-2"><span className="mute">Gemaakt in {stockYear(v)}</span><span className="ink font-medium">{fmtQty(v.initialQty, v.unit)}</span></div>
+            {v.storage && <div className="flex justify-between gap-2"><span className="mute">Opslaglocatie</span><span className="ink font-medium">{v.storage}</span></div>}
+            {v.productionDate && <div className="flex justify-between gap-2"><span className="mute">Gemaakt op</span><span className="ink font-medium">{fmtDMY(v.productionDate)}</span></div>}
+            {v.expiryDate && <div className="flex justify-between gap-2"><span className="mute">Houdbaar tot</span><span className="ink font-medium">{fmtDMY(v.expiryDate)}</span></div>}
+            {v.by && <div className="flex justify-between gap-2"><span className="mute">Door</span><span className="ink font-medium">{v.by}</span></div>}
+          </div>
+          {(v.ingredients || []).length > 0 && (
+            <div className="mt-2.5">
+              <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">Ingrediënten</div>
+              <ul className="space-y-0.5 text-[13px]">
+                {v.ingredients.map((i, j) => (
+                  <li key={j} className="flex justify-between gap-3"><span className="ink">{i.item}</span><span className="mute shrink-0">{i.amount}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {canEdit && (
+            <div className="flex items-center gap-2 mt-3">
+              <button onClick={() => onDec(v.id)} disabled={leeg} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2 disabled:opacity-40"><Minus size={15} /> 1 gebruikt</button>
+              <button onClick={() => onEdit(v.id)} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Pencil size={14} /> Bewerken</button>
+              <button onClick={() => onDelete(v.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a" }}><Trash2 size={14} /></button>
+            </div>
+          )}
+        </div>
+      );
+    };
     return (
-      <div key={v.id} className={"card overflow-hidden" + (isOpen ? " relative z-20" : "")} style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
+      <div key={g.key} className={"card overflow-hidden" + (isOpen ? " relative z-20" : "")} style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
         <div className="px-4 py-3">
-          <button onClick={() => setOpen(isOpen ? null : v.id)} className="ff w-full text-left">
-            <div className="serif ink text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{v.product}</div>
+          <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff w-full text-left">
+            <div className="serif ink text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{g.product}</div>
           </button>
           <div className="flex items-end gap-2 mt-0.5">
-            <button onClick={() => setOpen(isOpen ? null : v.id)} className="ff flex-1 min-w-0 text-left">
+            <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff flex-1 min-w-0 text-left">
               <div className="text-[12.5px] mute">
-                {v.storage && <>{v.storage} · </>}gemaakt in {jaar}: {fmtQty(v.initialQty, v.unit)}
-                {v.by && <> · {v.by}</>}
-                {v.expiryDate && <> · THT {fmtDMY(v.expiryDate)}</>}
+                {multi
+                  ? <>{g.entries.length} batches{ref.storage && <> · {ref.storage}</>}{ref.expiryDate && <> · eerste THT {fmtDMY(ref.expiryDate)}</>}</>
+                  : <>{ref.storage && <>{ref.storage} · </>}gemaakt in {jaar}: {fmtQty(ref.initialQty, ref.unit)}{ref.by && <> · {ref.by}</>}{ref.expiryDate && <> · THT {fmtDMY(ref.expiryDate)}</>}</>}
                 {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
                 {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
               </div>
             </button>
-            <div className="shrink-0 text-right max-w-[8.5rem]">
-              <div className="serif ink text-xl leading-none" style={op ? { color: "#8a4a3a" } : undefined}>{String(v.qty).replace(".", ",")}×</div>
-              <div className="text-[11px] mute truncate">{op ? "op" : (v.unit || "op voorraad")}</div>
+            <div className="shrink-0 flex flex-col gap-1.5 items-end">
+              {unitGroupsOf(g.entries).map((ug) => (
+                <div key={ug.unit} className="flex items-center gap-2">
+                  <div className="text-right">
+                    <span className="serif ink text-xl leading-none" style={ug.qty <= 0 ? { color: "#8a4a3a" } : undefined}>{String(ug.qty).replace(".", ",")}</span>
+                    <span className="text-[12px] mute"> st.</span>
+                    <div className="text-[12px] ink font-medium max-w-[7.5rem] truncate">{ug.qty <= 0 ? "op · " + ug.unit : ug.unit}</div>
+                  </div>
+                  {canEdit && <button onClick={() => ug.oldest && onDec(ug.oldest.id)} disabled={!ug.oldest} className="btnp ff shrink-0 inline-flex items-center justify-center rounded-lg w-9 h-9 disabled:opacity-40" title={"1 gebruikt van " + ug.unit + " — oudste eerst"}><Minus size={16} /></button>}
+                </div>
+              ))}
             </div>
-            {canEdit && <button onClick={() => onDec(v.id)} disabled={op} className="btnp ff shrink-0 inline-flex items-center justify-center rounded-lg w-9 h-9 disabled:opacity-40" title="1 gebruikt"><Minus size={16} /></button>}
           </div>
         </div>
         {isOpen && (
           <div className="px-4 pb-3 text-sm" style={{ borderTop: "1px solid " + T.line }}>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2.5 text-[12.5px]">
-              <div className="flex justify-between gap-2"><span className="mute">Op voorraad</span><span className="ink font-medium">{fmtQty(v.qty, v.unit)}</span></div>
-              <div className="flex justify-between gap-2"><span className="mute">Gemaakt in {jaar}</span><span className="ink font-medium">{fmtQty(v.initialQty, v.unit)}</span></div>
-              {v.storage && <div className="flex justify-between gap-2"><span className="mute">Opslaglocatie</span><span className="ink font-medium">{v.storage}</span></div>}
-              {v.productionDate && <div className="flex justify-between gap-2"><span className="mute">Gemaakt op</span><span className="ink font-medium">{fmtDMY(v.productionDate)}</span></div>}
-              {v.expiryDate && <div className="flex justify-between gap-2"><span className="mute">Houdbaar tot</span><span className="ink font-medium">{fmtDMY(v.expiryDate)}</span></div>}
-              {v.by && <div className="flex justify-between gap-2"><span className="mute">Door</span><span className="ink font-medium">{v.by}</span></div>}
-            </div>
-            {(v.ingredients || []).length > 0 && (
-              <div className="mt-2.5">
-                <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">Ingrediënten</div>
-                <ul className="space-y-0.5 text-[13px]">
-                  {v.ingredients.map((i, j) => (
-                    <li key={j} className="flex justify-between gap-3"><span className="ink">{i.item}</span><span className="mute shrink-0">{i.amount}</span></li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {canEdit && (
-              <div className="flex items-center gap-2 mt-3">
-                <button onClick={() => onDec(v.id)} disabled={op} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2 disabled:opacity-40"><Minus size={15} /> 1 gebruikt</button>
-                <button onClick={() => onEdit(v.id)} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Pencil size={14} /> Bewerken</button>
-                <button onClick={() => onDelete(v.id)} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a" }}><Trash2 size={14} /></button>
-              </div>
-            )}
+            {g.entries.map(batchDetail)}
           </div>
         )}
       </div>
@@ -5190,7 +5493,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
           <h2 className="serif ink text-xl leading-tight mb-2">Eerdere jaren</h2>
           <div className="space-y-2.5">
             {pastYears.map((jaar) => {
-              const items = stock.filter((v) => stockYear(v) === jaar && match(v)).sort(sortFn);
+              const items = groupStock(stock.filter((v) => stockYear(v) === jaar && match(v))).sort(groupSort);
               const uit = openYear === jaar;
               return (
                 <div key={jaar}>
@@ -5329,7 +5632,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
           : <Field label="Dagen houdbaar"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>}
       </div>
       {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{computedExpiry}</span> — later nog aan te passen via Bewerken.</p>}
-      <Field label="Opslaglocatie"><select className={inputCls} value={storage} onChange={(e) => setStorage(e.target.value)}>{["ongekoeld", "gekoeld", "ingevroren"].map((o) => <option key={o} value={o}>{o}</option>)}</select></Field>
+      <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={setStorage} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
       <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
       <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
@@ -5704,7 +6007,6 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
               <button key={a} onClick={() => setAreaF(a)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (areaF === a ? "pillon" : "pill")}>{a}</button>
             ))}
           </div>
-          {canEdit && <button onClick={onNewTask} className="btno ff mb-2 inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2"><Plus size={15} /> Taak toevoegen</button>}
           <div className="space-y-3">
             {grouped.map((g) => (
               <div key={g.area}>
@@ -6212,7 +6514,7 @@ function CleaningTaskForm({ task, onCancel, onSave }) {
     <div>
       <FormBar title={task ? "Taak bewerken" : "Nieuwe schoonmaaktaak"} onCancel={onCancel} onSave={submit} />
       <Field label="Wat moet er schoongemaakt worden?"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Vloer fermentatieruimte" /></Field>
-      <Field label="Ruimte"><select className={inputCls} value={area} onChange={(e) => setArea(e.target.value)}>{CLEANING_AREAS.map((a) => <option key={a}>{a}</option>)}</select></Field>
+      <Field label="Ruimte"><AppSelect className={inputCls} value={area} onChange={setArea} options={CLEANING_AREAS} /></Field>
       <Field label="Om de hoeveel dagen"><input type="number" min="1" className={inputCls} value={intervalDays} onChange={(e) => setIntervalDays(e.target.value)} /></Field>
       <div className="flex flex-wrap gap-1.5 -mt-2">
         {[1, 2, 3, 7, 14, 30, 90].map((d) => (
@@ -6434,14 +6736,24 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   // Hoeveelheid als breuk (teller/noemer): ÷2, ÷10 en ×2 stapelen exact.
   const [frac, setFrac] = useState({ n: 1, d: 1 });
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-  const apply = (mn, md) => setFrac((f) => { const n = f.n * mn, d = f.d * md, g = gcd(n, d); return { n: n / g, d: d / g }; });
   const factor = frac.n / frac.d;
   const setReset = () => setFrac({ n: 1, d: 1 });
-  const fracLabel = frac.d === 1 ? "×" + frac.n : frac.n + "/" + frac.d;
+  // Vaste standen (één tik = één stand) + "op maat" rekenen naar opbrengst of
+  // naar een beschikbare hoeveelheid van een ingrediënt.
+  const setStand = (n, d) => setFrac({ n, d });
+  const setFactorDecimal = (f) => {
+    if (!isFinite(f) || f <= 0) return;
+    const n0 = Math.round(f * 1000), d0 = 1000, g = gcd(n0, d0);
+    setFrac({ n: n0 / g, d: d0 / g });
+  };
+  const [maatOpen, setMaatOpen] = useState(false);
+  const fracLabel = frac.d === 1 ? "×" + frac.n : (Math.round(factor * 100) / 100).toString().replace(".", ",") + "×";
+  const isStand = (n, d) => frac.n === n && frac.d === d;
   if (!recipe) return null;
   const critical = criticalValues(recipe);
   return (
     <div>
+      {maatOpen && <MaatModal recipe={recipe} onApply={setFactorDecimal} onClose={() => setMaatOpen(false)} />}
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={canEdit ? (
@@ -6460,7 +6772,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         {recipe.garden && <span className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2.5 py-1" style={{ background: "#e4ecdc", color: "#3f5a34" }}><Sprout size={12} /> eigen tuin</span>}
         {recipe.season.filter((s) => s !== "Hele jaar").map((s) => <SeasonPill key={s} s={s} />)}
         {recipe.diet !== "Vegetarisch" && <MeatPill diet={recipe.diet} />}
-        {recipe.isBase && <span className="inline-flex items-center gap-1 rounded-full text-xs font-semibold px-2.5 py-1" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={12} /> basisrecept</span>}
+        {(recipe.isBase || variations.length > 0) && <span className="inline-flex items-center gap-1 rounded-full text-xs font-semibold px-2.5 py-1" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={12} /> basisrecept</span>}
         <AllergenPills list={recipeAllergens(recipe)} />
       </div>
 
@@ -6494,11 +6806,11 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
 
       <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => apply(1, 2)} className="ff pill rounded-md w-9 h-8 flex items-center justify-center text-xs font-bold" title="Helft van de huidige hoeveelheid">÷2</button>
-          <button onClick={() => apply(1, 10)} className="ff pill rounded-md w-9 h-8 flex items-center justify-center text-xs font-bold" title="Een tiende van de huidige hoeveelheid">÷10</button>
-          <button onClick={() => apply(2, 1)} className="ff pill rounded-md w-9 h-8 flex items-center justify-center text-xs font-bold" title="Huidige hoeveelheid keer 2">×2</button>
-          <span className="pillon rounded-md px-2.5 h-8 flex items-center text-xs font-semibold" title="Ten opzichte van het originele recept">{fracLabel === "×1" ? "×1" : fracLabel + (frac.d === 1 ? "" : " recept")}</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {[[1, 2, "×½"], [1, 1, "×1"], [2, 1, "×2"], [4, 1, "×4"]].map(([n, d, lbl]) => (
+            <button key={lbl} onClick={() => setStand(n, d)} className={"ff rounded-md w-9 h-8 flex items-center justify-center text-xs font-bold " + (isStand(n, d) ? "pillon" : "pill")} title={"Hele recept " + lbl}>{lbl}</button>
+          ))}
+          <button onClick={() => setMaatOpen(true)} className={"ff rounded-md px-2.5 h-8 flex items-center text-xs font-bold " + ([[1,2],[1,1],[2,1],[4,1]].some(([n,d]) => isStand(n,d)) ? "pill" : "pillon")} title="Reken naar een opbrengst of een beschikbare hoeveelheid ingrediënt">Op maat{![[1,2],[1,1],[2,1],[4,1]].some(([n,d]) => isStand(n,d)) ? " · " + fracLabel : ""}</button>
           {factor !== 1 && <button onClick={setReset} className="ff mute text-xs underline">reset</button>}
         </div>
         {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
@@ -6580,6 +6892,34 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
   const [recipeType, setRecipeType] = useState(recipe && recipe.baseId ? "variatie" : "basis");
   const [basePick, setBasePick] = useState(recipe && recipe.baseId ? { id: recipe.baseId, name: recipe.baseName || "" } : null);
   const [baseQ, setBaseQ] = useState("");
+  // Variatie starten = het basisrecept overnemen: ingrediënten mét hoeveelheden,
+  // stappen, opbrengst, categorie enz. — daarna handmatig aanpassen/aanvullen.
+  // Alleen bij een níeuw recept met nog leeg formulier, zodat we nooit werk wissen.
+  const adoptBase = (b) => {
+    if (recipe) return; // bestaand recept bewerken: niets overschrijven
+    const leegI = ingredients.every((x) => !String(x.item || "").trim() && !String(x.amount || "").trim());
+    const leegS = steps.every((x) => !String(x || "").trim());
+    if (!leegI && !leegS) return;
+    if (leegI && (b.ingredients || []).length) setIngredients(b.ingredients.map((x) => ({ ...x })));
+    if (leegS && (b.steps || []).length) setSteps([...b.steps]);
+    if (!category && b.category) setCategory(b.category);
+    if (b.yieldAmount || b.yieldUnit) setYields([{ count: b.yieldAmount ? String(b.yieldAmount) : "", size: b.yieldUnit || "", pack: "" }]);
+    else if (Array.isArray(b.yields) && b.yields.length) setYields(b.yields.map((y) => ({ ...y })));
+    if (b.season && b.season.length) setSeasons(b.season.filter((x) => x !== "Hele jaar"));
+    if (b.diet) setDiet(b.diet);
+    if (b.shelfDays) { setShelfDays(String(b.shelfDays)); }
+    if (b.shelfStorage) { setShelfStorage(b.shelfStorage); setStorageOpt(detectOpt(b.shelfStorage)); }
+    if (b.ferment) {
+      setFerment(true);
+      if (b.fermentMethod) setFermentMethod(b.fermentMethod);
+      const fdb = b.fermentDefaults || {};
+      if (fdb.saltPct) setFSalt(String(fdb.saltPct));
+      if (fdb.tempC) setFTemp(String(fdb.tempC));
+      if (fdb.days) setFDays(String(fdb.days));
+      if (fdb.phTarget != null) setFPh(String(fdb.phTarget));
+      if (fdb.sugarPct) setFSugar(String(fdb.sugarPct));
+    }
+  };
   // Alleen basisrecepten (geen variaties) kunnen nieuwe variaties krijgen.
   const baseMatches = baseQ.trim() ? (allRecipes || []).filter((r) => (!recipe || r.id !== recipe.id) && !r.baseId && softMatchAny([r.name, r.category], baseQ)).slice(0, 8) : [];
   const [ingredients, setIngredients] = useState(recipe?.ingredients?.length ? recipe.ingredients : [{ item: "", amount: "" }]);
@@ -6675,15 +7015,8 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       {err && <p className="text-xs mb-3" style={{ color: "#a23b2c" }}>{err}</p>}
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Gefermenteerde rode biet" /></Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Categorie"><select className={inputCls} value={RECIPE_CATEGORIES.includes(category) ? category : (category ? "__custom" : "")} onChange={(e) => { if (e.target.value === "__custom") setCategory(category && !RECIPE_CATEGORIES.includes(category) ? category : "Zonder categorie"); else setCategory(e.target.value); }}>
-          <option value="" disabled>Kies een categorie…</option>
-          {RECIPE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          <option value="__custom">Anders…</option>
-        </select></Field>
-        <Field label="Soort recept"><select className={inputCls} value={recipeType} onChange={(e) => { setRecipeType(e.target.value); if (e.target.value === "basis") setBasePick(null); }}>
-          <option value="basis">Basisrecept</option>
-          <option value="variatie">Variatie op een ander recept</option>
-        </select></Field>
+        <Field label="Categorie"><AppSelect className={inputCls} value={RECIPE_CATEGORIES.includes(category) ? category : (category ? "__custom" : "")} onChange={(v) => { if (v === "__custom") setCategory(category && !RECIPE_CATEGORIES.includes(category) ? category : "Zonder categorie"); else setCategory(v); }} placeholder="Kies een categorie…" options={[...RECIPE_CATEGORIES, { value: "__custom", label: "Anders…" }]} /></Field>
+        <Field label="Soort recept"><AppSelect className={inputCls} value={recipeType} onChange={(v) => { setRecipeType(v); if (v === "basis") setBasePick(null); }} options={[{ value: "basis", label: "Basisrecept" }, { value: "variatie", label: "Variatie op een ander recept" }]} /></Field>
         {recipeType === "variatie" && (
           <div className="col-span-2 mb-3 -mt-1">
             {basePick
@@ -6693,7 +7026,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
                   {baseMatches.length > 0 && (
                     <div className="card overflow-hidden -mt-1">
                       {baseMatches.map((r, i) => (
-                        <button key={r.id} onClick={() => { setBasePick({ id: r.id, name: r.name }); setBaseQ(""); }} className={"ff w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left " + (i > 0 ? "divi" : "")}>
+                        <button key={r.id} onClick={() => { setBasePick({ id: r.id, name: r.name }); setBaseQ(""); adoptBase(r); }} className={"ff w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left " + (i > 0 ? "divi" : "")}>
                           <ChefHat size={14} className="acc shrink-0" /><span className="flex-1 min-w-0 text-sm ink truncate">{r.name}</span><span className="text-xs mute shrink-0">{r.category}</span>
                         </button>
                       ))}
@@ -6723,13 +7056,11 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
           <button key={s} type="button" onClick={() => toggleSeason(s)} className={"ff rounded-full px-3 py-1.5 text-xs font-medium " + (seasons.includes(s) ? "pillon" : "pill")}>{s}</button>
         ))}
       </div>
-      <Field label="Dieet"><select className={inputCls} value={diet} onChange={(e) => setDiet(e.target.value)}>{["Vegetarisch","Varkensvlees","Rundvlees"].map((d) => <option key={d}>{d}</option>)}</select></Field>
+      <Field label="Dieet"><AppSelect className={inputCls} value={diet} onChange={setDiet} options={["Vegetarisch","Varkensvlees","Rundvlees"]} /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Houdbaar (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={shelfDays} onChange={(e) => setShelfDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>
         <Field label="Type opslag">
-          <select className={inputCls} value={storageOpt} onChange={(e) => { setStorageOpt(e.target.value); if (e.target.value !== "anders") setShelfStorage(e.target.value); else setShelfStorage(""); }}>
-            {["ongekoeld", "gekoeld", "bevroren", "droog", "anders"].map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <AppSelect className={inputCls} value={storageOpt} onChange={(v) => { setStorageOpt(v); if (v !== "anders") setShelfStorage(v); else setShelfStorage(""); }} options={["ongekoeld", "gekoeld", "bevroren", "droog", "anders"]} />
           {storageOpt === "anders" && <input className={inputCls + " mt-2"} value={shelfStorage} onChange={(e) => setShelfStorage(e.target.value)} placeholder="Omschrijf de opslag" />}
         </Field>
       </div>
@@ -6740,7 +7071,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
         </button>
         {ferment && (
           <div className="mt-3">
-            <Field label="Fermentatiemethode"><select className={inputCls} value={fermentMethod} onChange={(e) => setFermentMethod(e.target.value)}>{FERMENT_METHODS.map((m) => <option key={m}>{m}</option>)}</select></Field>
+            <Field label="Fermentatiemethode"><AppSelect className={inputCls} value={fermentMethod} onChange={setFermentMethod} options={FERMENT_METHODS} /></Field>
             <div className="text-sm font-medium ink mb-1.5">Batchrichtlijn <span className="mute font-normal">(voorgevuld bij een nieuwe batch)</span></div>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Zout (%)"><input type="text" inputMode="decimal" className={inputCls} value={fSalt} onChange={(e) => setFSalt(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
@@ -6792,7 +7123,10 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
           <button type="button" onClick={splitAll} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><GitBranch size={13} /> Verdeel in stappen</button>
         )}
       </div>
-      <p className="text-xs mute mb-2 -mt-1">Typ of plak gerust de hele bereiding in één vak, en gebruik daarna de knop "Opdelen in stappen".</p>
+      <div className="flex items-center gap-2 mb-2 -mt-1">
+        <p className="text-xs mute flex-1 min-w-0">Typ of plak gerust de hele bereiding in één vak, en gebruik daarna de knop "Opdelen in stappen".</p>
+        <button onClick={splitAll} className="btno ff shrink-0 inline-flex items-center gap-1.5 rounded-xl text-[13px] font-medium px-2.5 py-2" title="Deelt geplakte tekst op in losse stappen"><Layers size={14} /> Opdelen in stappen</button>
+      </div>
       <div className="space-y-2 mb-2">{steps.map((s, i) => (
         <div key={i} className="flex gap-2 items-start">
           <span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-2" style={{ background: "#e8ebe0", color: T.green }}>{i + 1}</span>
@@ -6800,10 +7134,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
           <button onClick={() => setSteps((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1 mt-2"><Trash2 size={16} /></button>
         </div>))}
       </div>
-      <div className="flex gap-2">
-        <div className="flex-1"><AddRow onClick={() => setSteps((a) => [...a, ""])} label="Stap toevoegen" /></div>
-        <button onClick={splitAll} className="btno ff flex-1 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2.5 mb-4" title="Deelt geplakte tekst op in losse stappen"><Layers size={15} /> Opdelen in stappen</button>
-      </div>
+      <AddRow onClick={() => setSteps((a) => [...a, ""])} label="Stap toevoegen" />
     </div>
   );
 }
@@ -6843,7 +7174,7 @@ function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNew
           <button key={g} type="button" onClick={() => suggestCourse(g)} className="ff pill rounded-full px-2.5 py-1 text-xs font-medium">{g}</button>
         ))}
       </div>
-      <Field label="Dieet"><select className={inputCls} value={diet} onChange={(e) => setDiet(e.target.value)}>{["Vegetarisch","Varkensvlees","Rundvlees"].map((d) => <option key={d}>{d}</option>)}</select></Field>
+      <Field label="Dieet"><AppSelect className={inputCls} value={diet} onChange={setDiet} options={["Vegetarisch","Varkensvlees","Rundvlees"]} /></Field>
       <Field label="Omschrijving"><textarea rows={2} className={inputCls + " resize-none"} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Korte regel over het gerecht" /></Field>
       <div className="text-sm font-medium ink mb-1.5 mt-1">Recepten in dit gerecht <span className="mute font-normal">({recipeIds.length})</span></div>
       {recipeIds.length > 0 && <div className="flex flex-wrap gap-1.5 mb-2">{recipeIds.map((id, i) => { const r = recipeById(id); if (!r) return null; return <span key={id} className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2 py-1" style={{ background: "#e8ebe0", color: T.green }}>#{i + 1} {r.name}<button onClick={() => toggle(id)}><X size={12} /></button></span>; })}</div>}
@@ -6921,7 +7252,7 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
         )}
       </>}
       <Field label="Product / recept"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Zuurkool van rode kool" /></Field>
-      <Field label="Type / methode"><select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}>{["Melkzuur","Suikerfermentatie","Azijnfermentatie","Zuurkool","Kimchi","Hotsauce","Kappertjes","Kombucha","Waterkefir","Gemberbier","Wilde drank","Landwijn / cider","Zuivel","Zoutpruimen","Anders"].map((t) => <option key={t}>{t}</option>)}</select></Field>
+      <Field label="Type / methode"><AppSelect className={inputCls} value={type} onChange={setType} options={["Melkzuur","Suikerfermentatie","Azijnfermentatie","Zuurkool","Kimchi","Hotsauce","Kappertjes","Kombucha","Waterkefir","Gemberbier","Wilde drank","Landwijn / cider","Zuivel","Zoutpruimen","Anders"]} /></Field>
       {tgt && <p className="text-xs mute -mt-2 mb-4">{tgt.note}</p>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Startdatum"><input type="date" className={inputCls} value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
