@@ -2421,8 +2421,8 @@ html{font-size:17px}
 .cardh{transition:border-color .15s}.cardh:hover{border-color:#8fa07d}
 .btnp{background:#3a4b30;color:#f4f2ea;transition:background .15s}.btnp:hover{background:#2b3823}
 .btno{border:1px solid #d8d5c8;color:#3a4b30;background:#fff;transition:border-color .15s,color .15s}.btno:hover{border-color:#3a4b30}
-.pill{background:#e8ebe0;color:#565a4b;transition:color .15s}.pill:hover{color:#2b3823}
-.pillon{background:#3a4b30;color:#f4f2ea}
+.pill{background:#e8ebe0;color:#565a4b;border:1px solid #3a4b30;transition:color .15s}.pill:hover{color:#2b3823}
+.pillon{background:#3a4b30;color:#f4f2ea;border:1px solid #3a4b30}
 .chip{background:#eceadf;color:#5b5e4f}
 .tintbox{background:#eef1e7;border:1px solid #e0e5d6}
 .input{width:100%;border:1px solid #d8d5c8;background:#fff;border-radius:10px;font-size:15px;color:#33352c}
@@ -3554,7 +3554,7 @@ function App() {
       </main>
 
       {showFab && (
-        <button onClick={fabAction} className="btnp ff fixed bottom-6 right-20 sm:right-24 z-20 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
+        <button onClick={fabAction} className="btnp ff fixed bottom-[9.5rem] right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : "Batch"}
         </button>
       )}
@@ -3562,7 +3562,7 @@ function App() {
       {user && canEdit && (
         <button onClick={() => setFabLabelOpen(true)} title="Etiket maken"
           className="ff fixed bottom-[5.25rem] right-4 sm:right-6 z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
-          style={{ background: T.paper, color: T.green, border: "1px solid " + T.line }}>
+          style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
           <Tag size={19} />
         </button>
       )}
@@ -3646,7 +3646,7 @@ function CalcWidget({ open, onOpen, onClose }) {
       )}
       <button onClick={open ? onClose : onOpen} title="Rekenmachine"
         className="ff fixed bottom-6 right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
-        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + (open ? T.green : "#cfe0c4") }}>
+        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green }}>
         {open ? <X size={20} /> : <Percent size={19} />}
       </button>
     </>
@@ -3803,13 +3803,13 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut })
 }
 
 const SECTIONS = [
-  { id: "gerechten", label: "Gerechten", icon: <Utensils size={19} /> },
-  { id: "recepten", label: "Recepten", icon: <Layers size={19} /> },
-  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={19} /> },
-  { id: "smaak", label: "Smaak", icon: <Blend size={19} /> },
-  { id: "voorraad", label: "Voorraad", icon: <ShelfIcon size={19} /> },
-  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={19} /> },
-  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={19} /> },
+  { id: "gerechten", label: "Gerechten", icon: <Utensils size={24} /> },
+  { id: "recepten", label: "Recepten", icon: <Layers size={24} /> },
+  { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={24} /> },
+  { id: "smaak", label: "Smaak", icon: <Blend size={24} /> },
+  { id: "voorraad", label: "Voorraad", icon: <ShelfIcon size={24} /> },
+  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={24} /> },
+  { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={24} /> },
 ];
 
 // Horizontaal vegen om tussen de secties te wisselen. Verticaal scrollen en
@@ -4150,7 +4150,6 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
         </button>
         <div className="flex items-center gap-3">
           {canEdit && active.length > 0 && <button onClick={onOpenMeasure} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2" title="Metingen invullen voor alle actieve batches"><Thermometer size={14} /> Metingen</button>}
-          {canEdit && <button onClick={onStartBatch} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70 mb-2"><Plus size={14} /> Nieuwe batch</button>}
         </div>
       </div>
       {showActive && (active.length > 0
@@ -5101,22 +5100,26 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
     const jaar = stockYear(v);
     return (
       <div key={v.id} className={"card overflow-hidden" + (isOpen ? " relative z-20" : "")} style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
-        <div className="flex items-center gap-2 px-4 py-3">
-          <button onClick={() => setOpen(isOpen ? null : v.id)} className="ff flex-1 min-w-0 text-left">
-            <div className="serif ink text-lg leading-tight truncate" style={op ? { opacity: 0.5 } : undefined}>{v.product}</div>
-            <div className="text-[12.5px] mute mt-0.5">
-              {v.storage && <>{v.storage} · </>}gemaakt in {jaar}: {fmtQty(v.initialQty, v.unit)}
-              {v.by && <> · {v.by}</>}
-              {v.expiryDate && <> · THT {fmtDMY(v.expiryDate)}</>}
-              {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
-              {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
-            </div>
+        <div className="px-4 py-3">
+          <button onClick={() => setOpen(isOpen ? null : v.id)} className="ff w-full text-left">
+            <div className="serif ink text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{v.product}</div>
           </button>
-          <div className="shrink-0 text-right max-w-[8.5rem]">
-            <div className="serif ink text-xl leading-none" style={op ? { color: "#8a4a3a" } : undefined}>{String(v.qty).replace(".", ",")}×</div>
-            <div className="text-[11px] mute truncate">{op ? "op" : (v.unit || "op voorraad")}</div>
+          <div className="flex items-end gap-2 mt-0.5">
+            <button onClick={() => setOpen(isOpen ? null : v.id)} className="ff flex-1 min-w-0 text-left">
+              <div className="text-[12.5px] mute">
+                {v.storage && <>{v.storage} · </>}gemaakt in {jaar}: {fmtQty(v.initialQty, v.unit)}
+                {v.by && <> · {v.by}</>}
+                {v.expiryDate && <> · THT {fmtDMY(v.expiryDate)}</>}
+                {verlopen && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>verlopen</span>}
+                {bijna && <span className="ml-1 font-semibold" style={{ color: "#8a6a2a" }}>nog {dgn === 0 ? "vandaag" : dgn + (dgn === 1 ? " dag" : " dagen")}</span>}
+              </div>
+            </button>
+            <div className="shrink-0 text-right max-w-[8.5rem]">
+              <div className="serif ink text-xl leading-none" style={op ? { color: "#8a4a3a" } : undefined}>{String(v.qty).replace(".", ",")}×</div>
+              <div className="text-[11px] mute truncate">{op ? "op" : (v.unit || "op voorraad")}</div>
+            </div>
+            {canEdit && <button onClick={() => onDec(v.id)} disabled={op} className="btnp ff shrink-0 inline-flex items-center justify-center rounded-lg w-9 h-9 disabled:opacity-40" title="1 gebruikt"><Minus size={16} /></button>}
           </div>
-          {canEdit && <button onClick={() => onDec(v.id)} disabled={op} className="btnp ff shrink-0 inline-flex items-center justify-center rounded-lg w-9 h-9 disabled:opacity-40" title="1 gebruikt"><Minus size={16} /></button>}
         </div>
         {isOpen && (
           <div className="px-4 pb-3 text-sm" style={{ borderTop: "1px solid " + T.line }}>
