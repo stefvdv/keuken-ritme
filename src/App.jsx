@@ -979,7 +979,7 @@ function buildLibrary() {
   for (const b of BASES) {
     const noun = b.noun || b.baseName;
     out.push({
-      id: b.id, name: b.baseName + " (basis)", category: b.category, yield: b.yield,
+      id: b.id, name: b.baseName, category: b.category, yield: b.yield,
       ingredients: b.ingredients.map((x) => ({ item: fill(x.item, b.generic), amount: x.amount })),
       steps: b.steps.map((s) => fill(s, b.generic)),
       endorsements: b.endorsements ? [...b.endorsements] : [], chefsPick: !!b.chefsPick,
@@ -1433,7 +1433,7 @@ const KEUKENMAP = [
     ingredients:[{item:"Notenmix",amount:"1 kg"},{item:"Cashewnoten",amount:"1 kg"},{item:"Gedroogde cranberry's",amount:"200 g"},{item:"Kruidenolie (lavas)",amount:"om te besprenkelen"}],
     steps:["Besprenkel de noten met de kruidenolie.","Rooster op 180 °C, twee keer 6 minuten."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"map-pickle-marinade", name:"Picklemarinade (basis)", category:"Pickles & zuur", yield:"≈ 3,5 l",
+  { id:"map-pickle-marinade", name:"Picklemarinade", category:"Pickles & zuur", yield:"≈ 3,5 l",
     ingredients:[{item:"Water",amount:"2 l"},{item:"Azijn",amount:"1 l"},{item:"Zout",amount:"87,5 g"},{item:"Suiker",amount:"500 g"},{item:"(Verse) smaakmakers",amount:"passend bij het product"}],
     steps:["Verwarm alles samen."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
@@ -2702,7 +2702,7 @@ function App() {
     setOpenCounts(oc);
     const hidden = new Set((hi.data || []).map((h) => h.recipe_id));
     recs = recs.filter((r) => !hidden.has(r.id));
-    recs = recs.map((r) => ({ ...r, category: normCategory(r.category) }));
+    recs = recs.map((r) => ({ ...r, category: normCategory(r.category), name: String(r.name || "").replace(/\s*\(basis\)\s*$/i, "") }));
     setRecipes(recs);
     const fpRows = fp.data || [];
     const fpMap = new Map(fpRows.map((x) => [x.name, x]));
