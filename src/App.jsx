@@ -237,7 +237,7 @@ function printCleaning(weekLabel, range, days, taskName) {
 // HACCP: temperaturen + registraties als tabellen.
 function printHaccp(tempLogs, records) {
   let body = "<h1>HACCP-logboek</h1><div class='sub'>Temperatuur, bereiding, terugkoelen en leveringen</div>";
-  body += "<h2>Wekelijkse temperatuurcontrole</h2>";
+  body += "<h2>Temperatuurcontrole (om de dag)</h2>";
   if (!tempLogs.length) body += "<p>Nog geen metingen.</p>";
   else {
     body += "<table><thead><tr><th>Datum</th>" + HACCP_UNITS.map((u) => "<th>" + pEsc(u.name) + "</th>").join("") + "<th>IJking</th><th>Door</th></tr></thead><tbody>";
@@ -458,6 +458,15 @@ const CLEANING_SEED = [
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
+const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
+// Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
+function isCookedRecipe(r) {
+  const t = ((r && r.name) || "") + " " + (((r && r.steps) || []).join(" "));
+  return /\b(oven|garen|gaart?|gaar|koken?|kookt|gekookt|stoven?|stooft?|gestoofd|bakken?|bakt|gebakken|frituren?|frituurt?|sous.?vide|blancheer|blancheren|pocheer|pocheren|rooster(en|t)?|geroosterd|grill(en|t)?|stomen?|stoomt|gestoomd|karamelliseer)\b/i.test(t);
+}
+const binnenWerkdag = (d) => { const m = d.getHours() * 60 + d.getMinutes(); return m >= WORKDAY_START * 60 && m <= WORKDAY_END * 60; };
+const COOK_OPEN_MS = 2 * 60000; // recept ≥ 2 minuten open = er wordt echt mee gewerkt
+const naamMatch = (a, b) => { const x = norm(String(a || "")).trim(), y = norm(String(b || "")).trim(); return !!x && !!y && (x.includes(y) || y.includes(x)); };
 // De "keukendag" loopt tot 02:00 's nachts: metingen, afvinkingen en het wegklikken
 // van de aandacht-banner gelden tot dan; om 02:00 begint de nieuwe dag en komt de
 // banner terug met de aandacht (metingen, handelingen) voor die dag.
@@ -2893,6 +2902,36 @@ function App() {
   const [measureOpen, setMeasureOpen] = useState(false);
   const [measureFor, setMeasureFor] = useState(null); // meting-popup voor één batch (vanuit de aandacht-banner)
   const [batchLabelFor, setBatchLabelFor] = useState(null); // etiket-popup na het registreren van een batch
+  // ---------- HACCP-kookbewaking ----------
+  // Staat een recept dat gegaard wordt ≥ 2 minuten open, dan start een "kook-
+  // sessie" op dit apparaat: eerst een banner voor de garingscontrole, en op
+  // 3 en 5 uur na de garing (of het openen) een banner voor de terugkoelcheck —
+  // alleen als dat moment binnen de werkdag (07:00–17:00) valt.
+  const [cookSessions, setCookSessions] = useState(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("ritme:cook-sessions") || "[]");
+      return raw.filter((x) => kitchenDate(new Date(x.at)) === kitchenDate());
+    } catch (e) { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem("ritme:cook-sessions", JSON.stringify(cookSessions)); } catch (e) {} }, [cookSessions]);
+  const [cookDismiss, setCookDismiss] = useState(() => {
+    try { const m = JSON.parse(localStorage.getItem("ritme:cook-dismiss") || "{}"); const k = kitchenDate(); return m[k] || {}; } catch (e) { return {}; }
+  });
+  useEffect(() => { try { localStorage.setItem("ritme:cook-dismiss", JSON.stringify({ [kitchenDate()]: cookDismiss })); } catch (e) {} }, [cookDismiss]);
+  const dismissCook = (k) => setCookDismiss((d) => ({ ...d, [k]: true }));
+  const [, setCookTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setCookTick((n) => n + 1), 60000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (current.screen !== "recipeDetail") return;
+    const r = recipeById(current.id);
+    if (!r || !isCookedRecipe(r)) return;
+    const t = setTimeout(() => {
+      setCookSessions((ss) => ss.some((x) => x.id === r.id && kitchenDate(new Date(x.at)) === kitchenDate())
+        ? ss
+        : [...ss.filter((x) => kitchenDate(new Date(x.at)) === kitchenDate()), { id: r.id, name: r.name, at: Date.now(), garingAt: null }]);
+    }, COOK_OPEN_MS);
+    return () => clearTimeout(t);
+  }, [current]);
   const [techFocus, setTechFocus] = useState(null); // kaart op de Werkwijze-pagina die open moet
   const openTech = (key) => { setTechFocus(key); setSection("technieken"); resetTo({ screen: "list" }); };
 
@@ -3236,6 +3275,10 @@ function App() {
       return;
     }
     const row = { id: "hr" + Date.now(), kind, date, by: naam, note, ...fields };
+    // Kookbewaking bijwerken: een garingsregistratie start de 3/5-uurs terug-
+    // koeltimers voor de bijbehorende sessie; een terugkoelregistratie sluit hem.
+    if (kind === "bereiding") setCookSessions((ss) => ss.map((x) => !x.garingAt && naamMatch(row.gerecht, x.name) ? { ...x, garingAt: Date.now() } : x));
+    if (kind === "terugkoelen") setCookSessions((ss) => ss.filter((x) => !naamMatch(row.product, x.name)));
     if (live) {
       const { error } = await supabase.from("haccp_records").insert({ id: row.id, kind, record_date: date, done_by: naam, note, data: fields });
       if (dbFail(error)) return;
@@ -3635,6 +3678,43 @@ function App() {
           <div {...swipe}>
             {/* Pas tonen als de teamdata geladen is: anders knippert de banner
                 bij elke refresh kort op basis van de lokale startdata. */}
+            {canEdit && loaded && (() => {
+              // HACCP-kookbanners: garing invullen, en op 3/5 uur de terugkoelcheck.
+              const nu = new Date();
+              const uit = [];
+              for (const ses of cookSessions) {
+                if (kitchenDate(new Date(ses.at)) !== kitchenDate()) continue;
+                const koelKlaar = haccpRecords.some((r) => r.kind === "terugkoelen" && r.date === localDate() && naamMatch(r.product, ses.name));
+                if (koelKlaar) continue;
+                const garingKlaar = ses.garingAt || haccpRecords.some((r) => r.kind === "bereiding" && r.date === localDate() && naamMatch(r.gerecht, ses.name));
+                if (!garingKlaar && binnenWerkdag(nu) && !cookDismiss[ses.id + ":g"]) {
+                  uit.push(<ReminderBanner key={ses.id + "g"} icon={<Thermometer size={15} />} title="HACCP · garing"
+                    text={'Je werkt met "' + ses.name + '". Vul de garingscontrole (kerntemperatuur) in.'}
+                    actionLabel="Invullen" onAction={() => push({ screen: "haccpRecordForm", recordKind: "bereiding", editing: null, prefill: { gerecht: ses.name } })}
+                    onDismiss={() => dismissCook(ses.id + ":g")} />);
+                }
+                const basis = ses.garingAt || ses.at;
+                for (const uur of [5, 3]) {
+                  const t = new Date(basis + uur * 3600000);
+                  if (nu >= t && binnenWerkdag(t) && !cookDismiss[ses.id + ":" + uur]) {
+                    uit.push(<ReminderBanner key={ses.id + "k" + uur} icon={<Thermometer size={15} />} title={"HACCP · terugkoelen (" + uur + " uur)"}
+                      text={'"' + ses.name + '" staat ' + uur + ' uur sinds de ' + (ses.garingAt ? "garing" : "start") + '. Is het gemaakt? Check de temperatuur' + (uur === 5 ? " — die moet nu ≤ 7 °C zijn" : "") + ' en leg de terugkoeling vast.'}
+                      actionLabel="Invullen" onAction={() => push({ screen: "haccpRecordForm", recordKind: "terugkoelen", editing: null, prefill: { product: ses.name } })}
+                      onDismiss={() => dismissCook(ses.id + ":" + uur)} />);
+                    break; // toon alleen de verst gevorderde fase
+                  }
+                }
+              }
+              // Leveringsbanner: dinsdag en vrijdag, zolang er vandaag nog geen leveringscontrole is.
+              const dow = nu.getDay();
+              if ((dow === 2 || dow === 5) && binnenWerkdag(nu) && !cookDismiss["levering"] && !haccpRecords.some((r) => r.kind === "levering" && r.date === localDate())) {
+                uit.push(<ReminderBanner key="lev" icon={<Thermometer size={15} />} title="HACCP · levering"
+                  text="Leveringsdag — check de temperatuur van de gekoelde leveringen bij ontvangst."
+                  actionLabel="Invullen" onAction={() => push({ screen: "haccpRecordForm", recordKind: "levering", editing: null, prefill: null })}
+                  onDismiss={() => dismissCook("levering")} />);
+              }
+              return uit;
+            })()}
             {canEdit && loaded && !dismissedNotices[noticeKey] && (
               <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onMeasure={(id) => setMeasureFor(id)} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [noticeKey]: true }))} />
             )}
@@ -3696,7 +3776,7 @@ function App() {
         {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => { addBatchMeasurement(current.id, m); goBack(); }} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
         {current.screen === "batchEindmeting" && <EindmetingForm batch={batches.find((b) => b.id === current.id)} onCancelBack={goBack} onSkip={() => finishEindmeting(current.id, null)} onSave={(m) => finishEindmeting(current.id, m)} />}
         {current.screen === "haccpForm" && <HaccpForm editing={current.editing ? haccpLogs.find((l) => l.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccp(d, current.editing); goBack(); }} />}
-        {current.screen === "haccpRecordForm" && <HaccpRecordForm kind={current.recordKind} editing={current.editing ? haccpRecords.find((r) => r.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccpRecord(d, current.editing); goBack(); }} />}
+        {current.screen === "haccpRecordForm" && <HaccpRecordForm kind={current.recordKind} editing={current.editing ? haccpRecords.find((r) => r.id === current.editing) : null} prefill={current.prefill || null} onCancel={goBack} onSave={(d) => { saveHaccpRecord(d, current.editing); goBack(); }} />}
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
         {current.screen === "fermentGuideForm" && <FermentGuideForm rows={fermentRows} onCancel={goBack} onSave={(rows) => { saveFermentGuide(rows); goBack(); }} />}
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
@@ -6141,9 +6221,10 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
 const doneThisWeekInit = (rows) => rows.some((l) => weekKey(String(l.checkDate || l.date)) === weekKey(localDate()));
 function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
   const [openAll, setOpenAll] = useState(false);
-  const thisWeek = weekKey(localDate());
+  // Om de dag: de laatste controle telt als "gedaan" zolang hij van vandaag of
+  // gisteren is; ouder = opnieuw invullen.
   const sorted = [...logs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1));
-  const doneThisWeek = sorted.find((l) => weekKey(l.checkDate) === thisWeek) || null;
+  const doneThisWeek = sorted.length && daysBetween(sorted[0].checkDate) <= 1 ? sorted[0] : null;
   const shown = openAll ? sorted : sorted.slice(0, 3);
   const warn = (l) => HACCP_UNITS.some((u) => inRange(u, l.values[u.id]) === false) || (l.calibration && l.calibration.ok === false);
   // Inklapbaar: al gedaan deze week → start dicht; nog niet gedaan → start open.
@@ -6165,11 +6246,11 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
       {doneThisWeek
         ? <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#e8ebe0", color: T.green }}>
             <Check size={16} className="shrink-0 mt-0.5" />
-            <span>Deze week gecontroleerd op {fmtDMY(doneThisWeek.checkDate)} door <span className="font-medium">{doneThisWeek.doneBy}</span>{warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
+            <span>Gecontroleerd op {fmtDMY(doneThisWeek.checkDate)} door <span className="font-medium">{doneThisWeek.doneBy}</span> (om de dag){warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
           </div>
         : <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
             <Bell size={16} className="shrink-0 mt-0.5" />
-            <span>Deze week nog niet gecontroleerd. Meet koelcel, koelwerkbank, vrieskast en vriescel, en ijk de thermometer.</span>
+            <span>Om-de-dagcontrole: nog niet gedaan. Meet koelcel, koelwerkbank, vrieskast en vriescel, en ijk de thermometer.</span>
           </div>}
 
       <div className="mt-3 space-y-2">
@@ -6367,12 +6448,12 @@ function HaccpRecordBlock({ kind, records, canEdit, onOpen, onEdit, onDelete }) 
   );
 }
 
-function HaccpRecordForm({ kind, editing, onCancel, onSave }) {
+function HaccpRecordForm({ kind, editing, prefill, onCancel, onSave }) {
   const cfg = HACCP_KINDS[kind];
   const [date, setDate] = useState(editing ? editing.date : localDate());
   const [vals, setVals] = useState(() => {
     const v = {};
-    cfg.cols.forEach((c) => { v[c.id] = editing && editing[c.id] != null ? String(editing[c.id]) : ""; });
+    cfg.cols.forEach((c) => { v[c.id] = editing && editing[c.id] != null ? String(editing[c.id]) : (prefill && prefill[c.id] != null ? String(prefill[c.id]) : ""); });
     return v;
   });
   const [note, setNote] = useState(editing ? editing.note || "" : "");
