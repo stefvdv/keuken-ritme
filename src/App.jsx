@@ -2483,6 +2483,34 @@ function parseYieldRef(amount, unitText, yieldText) {
 // systeemmenu dat vloekt met de app. Deze knop opent een eigen lijstje in de
 // app-kleuren; tikken kiest en sluit. Ondersteunt dezelfde plek/breedte als
 // de oude selects via className/style.
+// Typveld mét dropdown: rechtstreeks typen kan altijd, en de pijl opent een
+// klein menu met de standaardopties (vervangt de aparte "Anders…"-keuze).
+function ComboInput({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <input className="input pl-2.5 pr-8 py-2 w-full text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      <button type="button" onClick={() => setOpen((o) => !o)} className="ff absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md hover:opacity-70" title="Standaardopties">
+        <ChevronDown size={15} className="acc" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "12rem", overflowY: "auto" }}>
+            {options.map((o) => (
+              <button key={o} type="button" onClick={() => { onChange(o); setOpen(false); }}
+                className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 " + (o === value ? "pillon" : "ink hover:opacity-70")}>
+                <span>{o}</span>
+                {o === value && <Check size={15} />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AppSelect({ value, onChange, options, className, style, title, placeholder, compact }) {
   const [open, setOpen] = useState(false);
   const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
@@ -5289,7 +5317,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const [ready, setReady] = useState("");
   const [gram, setGram] = useState("");
   const [pack, setPack] = useState("");
-  const [packVrij, setPackVrij] = useState(""); // bij "Anders…"
   // Eén dag erbij, gerekend vanaf de productiedatum: leeg veld → prod + 1,
   // daarna telkens één dag verder vanaf de ingevulde datum.
   const schuifDag = (cur, set, richting) => {
@@ -5327,8 +5354,8 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
     if (!name.trim()) { alert("Vul een productnaam in."); return; }
     // Invulling bewaren voor de "Vorige"-knop: extra stickers van dezelfde
     // soort zijn dan zo teruggehaald, ook na het sluiten van de popup.
-    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, packVrij, storage, note, allergens })); } catch (e) {}
-    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack === "__anders" ? packVrij.trim() : pack.trim(), storage, note, allergens });
+    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
+    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
@@ -5336,7 +5363,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
     if (!vorige) return;
     setName(vorige.name || ""); setPicked(true);
     setProd(vorige.prod || today); setTht(vorige.tht || ""); setReady(vorige.ready || "");
-    setGram(vorige.gram || ""); setPack(vorige.pack || ""); setPackVrij(vorige.packVrij || "");
+    setGram(vorige.gram || ""); setPack(vorige.pack === "__anders" ? (vorige.packVrij || "") : (vorige.pack || ""));
     setStorage(vorige.storage || ""); setNote(vorige.note || "");
     setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
   };
@@ -5346,12 +5373,12 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
         <div>
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="text-xs mute">Productnaam</div>
-            <div className="flex items-center gap-1.5">
-              {vorige && <button onClick={herstelVorige} className="ff inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
-              <button onClick={onClose} className="ff shrink-0 rounded-lg p-0.5 hover:opacity-70" title="Sluiten"><X size={16} /></button>
-            </div>
+            <button onClick={onClose} className="ff shrink-0 rounded-lg p-0.5 hover:opacity-70" title="Sluiten"><X size={16} /></button>
           </div>
-          <input className="input px-2.5 py-2 w-full text-sm" value={name} onChange={(e) => { setName(e.target.value); setPicked(false); }} placeholder="Zoek een recept of typ een eigen naam" />
+          <div className="flex gap-1.5">
+            <input className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name} onChange={(e) => { setName(e.target.value); setPicked(false); }} placeholder="Zoek een recept of typ een eigen naam" />
+            {vorige && <button onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
+          </div>
           {sugg.length > 0 && (
             <div className="card mt-1 overflow-hidden">
               {sugg.map((r) => (
@@ -5395,18 +5422,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
           </div>
           <div>
             <div className="text-xs mute mb-1">Verpakkingswijze</div>
-            <AppSelect compact value={pack} onChange={setPack} options={[{ value: "", label: "—" }, ...LABEL_PACKS, { value: "__anders", label: "Anders…" }]} />
+            <ComboInput value={pack} onChange={setPack} options={LABEL_PACKS} placeholder="Typ of kies" />
           </div>
           <div>
             <div className="text-xs mute mb-1">Opslagmanier</div>
-            <AppSelect compact value={storage} onChange={setStorage} options={[{ value: "", label: "—" }, ...LABEL_STORAGE]} />
+            <ComboInput value={storage} onChange={setStorage} options={LABEL_STORAGE} placeholder="Typ of kies" />
           </div>
-          {pack === "__anders" && (
-            <div className="col-span-2">
-              <div className="text-xs mute mb-1">Verpakking (zelf omschrijven)</div>
-              <input className="input px-2.5 py-2 w-full text-sm" value={packVrij} onChange={(e) => setPackVrij(e.target.value)} placeholder="bv. bokaal 1 l" />
-            </div>
-          )}
+
         </div>
         <div className="mt-1.5">
           <button onClick={() => setAlgOpen((o) => !o)} className="ff w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm" style={{ border: "1px solid " + T.line, background: "#fff" }}>
