@@ -5292,11 +5292,19 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const [packVrij, setPackVrij] = useState(""); // bij "Anders…"
   // Eén dag erbij, gerekend vanaf de productiedatum: leeg veld → prod + 1,
   // daarna telkens één dag verder vanaf de ingevulde datum.
-  const plusDag = (cur, set) => {
+  const schuifDag = (cur, set, richting) => {
     const basis = cur && !isNaN(new Date(cur + "T12:00:00")) ? cur : (prod || today);
     const dt = new Date(basis + "T12:00:00");
-    dt.setDate(dt.getDate() + 1);
+    dt.setDate(dt.getDate() + richting);
     set(dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"));
+  };
+  const plusDag = (cur, set) => schuifDag(cur, set, 1);
+  // Aantal dagen t.o.v. de productiedatum, voor de teller boven de +/− knoppen.
+  const dagenVanaf = (cur) => {
+    if (!cur || !prod) return null;
+    const a = new Date(prod + "T12:00:00"), b = new Date(cur + "T12:00:00");
+    if (isNaN(a) || isNaN(b)) return null;
+    return Math.round((b - a) / 86400000);
   };
   const [storage, setStorage] = useState("");
   const [note, setNote] = useState("");
@@ -5317,18 +5325,32 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
   const doPrint = () => {
     if (!name.trim()) { alert("Vul een productnaam in."); return; }
+    // Invulling bewaren voor de "Vorige"-knop: extra stickers van dezelfde
+    // soort zijn dan zo teruggehaald, ook na het sluiten van de popup.
+    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, packVrij, storage, note, allergens })); } catch (e) {}
     printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack === "__anders" ? packVrij.trim() : pack.trim(), storage, note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
+  const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
+  const herstelVorige = () => {
+    if (!vorige) return;
+    setName(vorige.name || ""); setPicked(true);
+    setProd(vorige.prod || today); setTht(vorige.tht || ""); setReady(vorige.ready || "");
+    setGram(vorige.gram || ""); setPack(vorige.pack || ""); setPackVrij(vorige.packVrij || "");
+    setStorage(vorige.storage || ""); setNote(vorige.note || "");
+    setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
+  };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper, maxHeight: "88vh", overflowY: "auto" }}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="serif ink text-xl leading-tight">Etiket maken</div>
-          <button onClick={onClose} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
-        </div>
-        <div className="mt-3">
-          <div className="text-xs mute mb-1">Productnaam</div>
+      <div className="w-full max-w-sm rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="text-xs mute">Productnaam</div>
+            <div className="flex items-center gap-1.5">
+              {vorige && <button onClick={herstelVorige} className="ff inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
+              <button onClick={onClose} className="ff shrink-0 rounded-lg p-0.5 hover:opacity-70" title="Sluiten"><X size={16} /></button>
+            </div>
+          </div>
           <input className="input px-2.5 py-2 w-full text-sm" value={name} onChange={(e) => { setName(e.target.value); setPicked(false); }} placeholder="Zoek een recept of typ een eigen naam" />
           {sugg.length > 0 && (
             <div className="card mt-1 overflow-hidden">
@@ -5340,23 +5362,31 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
             </div>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-2 mt-2">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 mt-1.5">
           <div>
             <div className="text-xs mute mb-1">Productiedatum</div>
             <input type="date" className="input px-2.5 py-2 w-full text-sm" value={prod} onChange={(e) => setProd(e.target.value)} />
           </div>
           <div>
-            <div className="text-xs mute mb-1">T.H.T.</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs mute">T.H.T.</div>
+              {dagenVanaf(tht) != null && <div className="text-[11px] font-semibold acc">{dagenVanaf(tht)} {dagenVanaf(tht) === 1 ? "dag" : "dagen"}</div>}
+            </div>
             <div className="flex gap-1">
               <input type="date" className="input px-2.5 py-2 w-full text-sm min-w-0" value={tht} onChange={(e) => setTht(e.target.value)} />
-              <button type="button" onClick={() => plusDag(tht, setTht)} className="ff shrink-0 rounded-lg px-2 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag houdbaarheid erbij (vanaf de productiedatum)"><Plus size={14} /></button>
+              <button type="button" onClick={() => schuifDag(tht, setTht, -1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
+              <button type="button" onClick={() => schuifDag(tht, setTht, 1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
           </div>
           <div>
-            <div className="text-xs mute mb-1">Klaar op</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs mute">Klaar op</div>
+              {dagenVanaf(ready) != null && <div className="text-[11px] font-semibold acc">{dagenVanaf(ready)} {dagenVanaf(ready) === 1 ? "dag" : "dagen"}</div>}
+            </div>
             <div className="flex gap-1">
               <input type="date" className="input px-2.5 py-2 w-full text-sm min-w-0" value={ready} onChange={(e) => setReady(e.target.value)} />
-              <button type="button" onClick={() => plusDag(ready, setReady)} className="ff shrink-0 rounded-lg px-2 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={14} /></button>
+              <button type="button" onClick={() => schuifDag(ready, setReady, -1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
+              <button type="button" onClick={() => schuifDag(ready, setReady, 1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
           </div>
           <div>
@@ -5378,7 +5408,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
             </div>
           )}
         </div>
-        <div className="mt-2">
+        <div className="mt-1.5">
           <button onClick={() => setAlgOpen((o) => !o)} className="ff w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm" style={{ border: "1px solid " + T.line, background: "#fff" }}>
             <span className="ink">Allergenen{allergens.length ? " · " + allergens.join(" · ") : ""}</span>
             {algOpen ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
@@ -5391,12 +5421,12 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
             </div>
           )}
         </div>
-        <div className="mt-2">
+        <div className="mt-1.5">
           <div className="text-xs mute mb-1">Opmerkingen / handelingen</div>
           <input className="input px-2.5 py-2 w-full text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. 1× per dag roeren" />
         </div>
-        <p className="text-[11px] mute mt-2">Lege velden worden niet op het etiket gezet.</p>
-        <button onClick={doPrint} className="btnp ff w-full mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
+        <p className="text-[11px] mute mt-1.5">Lege velden worden niet op het etiket gezet.</p>
+        <button onClick={doPrint} className="btnp ff w-full mt-2 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
       </div>
     </div>
   );
