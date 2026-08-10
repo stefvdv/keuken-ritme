@@ -2849,6 +2849,7 @@ function App() {
         scherm: current ? current.screen : "lijst", sectie: section, geladen: loaded,
         popups: { schoonmaak: checkOpen, schoonmaakBanner: checkBanner, metingen: measureOpen, metingVoor: measureFor, rekenmachine: calcOpen },
         bovensteElement: el ? el.outerHTML.slice(0, 220) : "geen",
+        paginavullendeLagen: [...document.querySelectorAll("div")].filter((d) => { const st = getComputedStyle(d); return st.position === "fixed" && d.offsetWidth >= window.innerWidth * 0.9 && d.offsetHeight >= window.innerHeight * 0.9; }).map((d) => (d.className || "?") + " · z" + getComputedStyle(d).zIndex).slice(0, 8),
         focusOp: document.activeElement ? document.activeElement.tagName + " · " + String(document.activeElement.outerHTML || "").slice(0, 160) : "geen",
         stackDiepte: stack.length,
       };
@@ -5362,10 +5363,24 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const herstelVorige = () => {
     if (!vorige) return;
     setName(vorige.name || ""); setPicked(true);
-    setProd(vorige.prod || today); setTht(vorige.tht || ""); setReady(vorige.ready || "");
+    // Productiedatum blijft vandaag: extra stickers worden vandaag gemaakt.
+    // De THT/klaar-op schuiven mee met hetzelfde aantal dagen als het origineel.
+    const dagen = (van, tot) => {
+      if (!van || !tot) return null;
+      const a = new Date(van + "T12:00:00"), b = new Date(tot + "T12:00:00");
+      return isNaN(a) || isNaN(b) ? null : Math.round((b - a) / 86400000);
+    };
+    const plus = (n) => { const dt = new Date(today + "T12:00:00"); dt.setDate(dt.getDate() + n); return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"); };
+    const dT = dagen(vorige.prod, vorige.tht), dR = dagen(vorige.prod, vorige.ready);
+    setProd(today);
+    setTht(dT != null ? plus(dT) : "");
+    setReady(dR != null ? plus(dR) : "");
     setGram(vorige.gram || ""); setPack(vorige.pack === "__anders" ? (vorige.packVrij || "") : (vorige.pack || ""));
     setStorage(vorige.storage || ""); setNote(vorige.note || "");
     setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
+    // Focus van de knop af: voorkomt dat Chrome blijft "hangen" en tekstvelden
+    // daarna geen klikken meer aannemen (zelfde kuur als de eerdere klik-bug).
+    setTimeout(() => { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }, 0);
   };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -5377,7 +5392,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
           </div>
           <div className="flex gap-1.5">
             <input className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name} onChange={(e) => { setName(e.target.value); setPicked(false); }} placeholder="Zoek een recept of typ een eigen naam" />
-            {vorige && <button onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
+            {vorige && <button type="button" onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
           </div>
           {sugg.length > 0 && (
             <div className="card mt-1 overflow-hidden">
