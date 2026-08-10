@@ -457,6 +457,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
+const RITME_VERSIE = "2026-08-10c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2663,6 +2664,7 @@ export default function AppRoot() {
   return <AppErrorBoundary><App /></AppErrorBoundary>;
 }
 
+if (typeof console !== "undefined") console.log("Ritme " + RITME_VERSIE);
 function App() {
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("recepten"); // de app opent op de receptenpagina
@@ -2846,6 +2848,7 @@ function App() {
     window.__ritmeDebug = () => {
       const el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
       const info = {
+        versie: RITME_VERSIE,
         scherm: current ? current.screen : "lijst", sectie: section, geladen: loaded,
         popups: { schoonmaak: checkOpen, schoonmaakBanner: checkBanner, metingen: measureOpen, metingVoor: measureFor, rekenmachine: calcOpen },
         bovensteElement: el ? el.outerHTML.slice(0, 220) : "geen",
@@ -4079,6 +4082,7 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut })
       <div className="mt-8">
         <button onClick={onSignOut} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><LogOut size={15} /> Dit apparaat uitloggen</button>
         <p className="text-[11px] mute mt-1.5">Daarna is opnieuw het keukenwachtwoord nodig.</p>
+        <p className="text-[11px] mute mt-3">App-versie: {RITME_VERSIE}</p>
       </div>
     </div>
   );
@@ -5360,6 +5364,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
+  const [herstelTik, setHerstelTik] = useState(0); // key-wissel: velden vers opbouwen na herstel
   const herstelVorige = () => {
     if (!vorige) return;
     setName(vorige.name || ""); setPicked(true);
@@ -5378,13 +5383,15 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
     setGram(vorige.gram || ""); setPack(vorige.pack === "__anders" ? (vorige.packVrij || "") : (vorige.pack || ""));
     setStorage(vorige.storage || ""); setNote(vorige.note || "");
     setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
-    // Focus van de knop af: voorkomt dat Chrome blijft "hangen" en tekstvelden
-    // daarna geen klikken meer aannemen (zelfde kuur als de eerdere klik-bug).
+    // Chrome zet na deze knop de invoervelden op slot (knoppen werken nog wel,
+    // velden niet — zelfde familie als de eerdere klik-bug). De kuur: alle
+    // velden opnieuw opbouwen via de key hieronder; waarden blijven staan.
+    setHerstelTik((t) => t + 1);
     setTimeout(() => { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }, 0);
   };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-sm rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
+      <div key={herstelTik} className="w-full max-w-sm rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
         <div>
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="text-xs mute">Productnaam</div>
