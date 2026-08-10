@@ -2512,15 +2512,23 @@ function parseYieldRef(amount, unitText, yieldText) {
 // klein menu met de standaardopties (vervangt de aparte "Anders…"-keuze).
 function ComboInput({ value, onChange, options, placeholder }) {
   const [open, setOpen] = useState(false);
+  const boxRef = React.useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const klik = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener("mousedown", klik, true);
+    document.addEventListener("keydown", toets, true);
+    return () => { document.removeEventListener("mousedown", klik, true); document.removeEventListener("keydown", toets, true); };
+  }, [open]);
   return (
-    <div className="relative">
+    <div ref={boxRef} className="relative">
       <input className="input pl-2.5 pr-8 py-2 w-full text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
       <button type="button" onClick={() => setOpen((o) => !o)} className="ff absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md hover:opacity-70" title="Standaardopties">
         <ChevronDown size={15} className="acc" />
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "12rem", overflowY: "auto" }}>
             {options.map((o) => (
               <button key={o} type="button" onClick={() => { onChange(o); setOpen(false); }}
@@ -2538,6 +2546,17 @@ function ComboInput({ value, onChange, options, placeholder }) {
 
 function AppSelect({ value, onChange, options, className, style, title, placeholder, compact = true }) {
   const [open, setOpen] = useState(false);
+  const boxRef = React.useRef(null);
+  // Klik buiten het menu of Escape sluit het — document-breed, zodat het in
+  // elke laag van de app werkt (formulieren, popups, filters).
+  useEffect(() => {
+    if (!open) return;
+    const klik = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener("mousedown", klik, true);
+    document.addEventListener("keydown", toets, true);
+    return () => { document.removeEventListener("mousedown", klik, true); document.removeEventListener("keydown", toets, true); };
+  }, [open]);
   const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
   const cur = opts.find((o) => o.value === value);
   const label = cur ? (cur.label || "\u2014") : (placeholder || "\u2014");
@@ -2558,11 +2577,10 @@ function AppSelect({ value, onChange, options, className, style, title, placehol
   // anders het grote paneel (voor lange lijsten zoals categorieën).
   if (compact) {
     return (
-      <div className="relative" style={style}>
+      <div ref={boxRef} className="relative" style={style}>
         {knop}
         {open && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
             <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "16rem", overflowY: "auto" }}>
               {title && <div className="text-xs mute px-3 pt-1.5 pb-1">{title}</div>}
               {lijst}
