@@ -3802,11 +3802,12 @@ function App() {
               // HACCP-kookbanners: garing invullen, en op 3/5 uur de terugkoelcheck.
               const nu = new Date();
               const uit = [];
+              const garingDezeWeek = haccpRecords.some((r) => r.kind === "bereiding" && weekKey(r.date) === weekKey(localDate()));
               for (const ses of cookSessions) {
                 if (kitchenDate(new Date(ses.at)) !== kitchenDate()) continue;
                 const koelKlaar = haccpRecords.some((r) => r.kind === "terugkoelen" && r.date === localDate() && naamMatch(r.product, ses.name));
                 if (koelKlaar) continue;
-                const garingKlaar = ses.garingAt || haccpRecords.some((r) => r.kind === "bereiding" && r.date === localDate() && naamMatch(r.gerecht, ses.name));
+                const garingKlaar = ses.garingAt || garingDezeWeek;
                 if (!garingKlaar && binnenWerkdag(nu) && !cookDismiss[ses.id + ":g"]) {
                   uit.push(<ReminderBanner key={ses.id + "g"} icon={<Thermometer size={15} />} title="HACCP · garing"
                     text={'Je werkt met "' + ses.name + '". Vul de garingscontrole (kerntemperatuur) in.'}
