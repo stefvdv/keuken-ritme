@@ -169,6 +169,34 @@ const FERMENT_ACTIONS = {
 
 // ---------- printen ----------
 // Opent een schone printweergave in een nieuw venster (A4), los van de app-UI.
+// Printen zonder tabblad-wissel: een onzichtbaar frame in deze pagina print en
+// ruimt zichzelf op. Dit voorkomt de veld-blokkade die ontstond doordat het
+// print-tabblad de focus meenam — na terugkeren waren tekstvelden dood tot een
+// refresh. Geen pop-uptoestemming meer nodig, en de focus blijft gewoon hier.
+function printHtmlInPagina(html) {
+  try {
+    const fr = document.createElement("iframe");
+    fr.setAttribute("aria-hidden", "true");
+    fr.style.position = "fixed"; fr.style.right = "0"; fr.style.bottom = "0";
+    fr.style.width = "0"; fr.style.height = "0"; fr.style.border = "0";
+    document.body.appendChild(fr);
+    const doc = fr.contentDocument || fr.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    let opgeruimd = false;
+    const opruimen = () => {
+      if (opgeruimd) return; opgeruimd = true;
+      setTimeout(() => {
+        try { if (fr.parentNode) fr.parentNode.removeChild(fr); } catch (e) {}
+        try { window.focus(); } catch (e) {}
+        try { if (document.activeElement && document.activeElement.tagName === "IFRAME") document.activeElement.blur(); } catch (e) {}
+      }, 300);
+    };
+    try { fr.contentWindow.onafterprint = opruimen; } catch (e) {}
+    setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { opruimen(); } }, 250);
+    setTimeout(opruimen, 120000); // vangnet: ruim ook op als afterprint nooit vuurt
+  } catch (e) {}
+}
+
 function openPrint(title, bodyHTML) {
   const esc = (x) => String(x == null ? "" : x);
   const html =
@@ -192,11 +220,7 @@ function openPrint(title, bodyHTML) {
     "</style></head><body>" + bodyHTML +
     "<div class='foot'>Ritme · In het ritme van het land — Wilde Wortels, Landgoed de Beug · afgedrukt op " + new Date().toLocaleString("nl-NL") + "</div>" +
     "</body></html>";
-  const w = window.open("", "_blank");
-  if (!w) { alert("Sta pop-ups toe om te kunnen printen."); return; }
-  w.document.open(); w.document.write(html); w.document.close();
-  w.focus();
-  setTimeout(() => { try { w.print(); } catch (e) {} }, 350);
+  printHtmlInPagina(html);
 }
 const pEsc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -5021,9 +5045,7 @@ function printLabel(recipe, inhoud, dates) {
   }
   const fmt = (iso) => { const [y, m, d] = iso.split("-"); return d + "-" + m + "-" + y; };
   const esc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const w = window.open("", "_blank");
-  if (!w) { alert("Sta pop-ups toe om etiketten te printen."); return; }
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -5049,9 +5071,6 @@ function printLabel(recipe, inhoud, dates) {
     (tht ? '<div class="rij">T.H.T.: ' + fmt(tht) + "</div>" : "") +
     (() => { const alg = recipeAllergens(recipe); return alg.length ? '<div class="alg">Allergenen: ' + esc(alg.join(", ")) + "</div>" : ""; })() +
     "</div></body></html>");
-  w.document.close();
-  w.focus();
-  setTimeout(() => { w.print(); }, 250);
 }
 
 // Popup bij "Etiket": vraagt gewicht en verpakkingswijze (bv. 500 gram vacumeer
@@ -5203,9 +5222,7 @@ function printBatchLabel(d) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const doel = [d.ph ? "pH " + d.ph : "", d.brix ? d.brix + " °Brix" : ""].filter(Boolean).join(" · ");
   const nota = String(d.note || "").trim();
-  const w = window.open("", "_blank"); // zelfde tabbladgedrag als de andere etiketten
-  if (!w) { alert("Sta pop-ups toe om etiketten te printen."); return; }
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -5224,9 +5241,6 @@ function printBatchLabel(d) {
     (doel ? '<div class="rij">Doel: ' + esc(doel) + "</div>" : "") +
     (nota ? '<div class="nota">' + esc(nota) + "</div>" : "") +
     "</div></body></html>");
-  w.document.close();
-  w.focus();
-  setTimeout(() => { try { w.print(); } catch (e) {} }, 150);
 }
 
 // Popup na het registreren van een batch: vraagt of er een etiket geprint moet
@@ -5304,9 +5318,7 @@ function BatchLabelModal({ batch, onClose }) {
 function printCustomLabel(f) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const inhoud = [f.gram || "", f.pack || ""].filter(Boolean).join(" ");
-  const w = window.open("", "_blank");
-  if (!w) { alert("Sta pop-ups toe om etiketten te printen."); return; }
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -5326,9 +5338,6 @@ function printCustomLabel(f) {
     (f.storage ? '<div class="klein">Opslag: ' + esc(f.storage) + "</div>" : "") +
     (String(f.note || "").trim() ? '<div class="klein">' + esc(String(f.note).trim()) + "</div>" : "") +
     "</div></body></html>");
-  w.document.close();
-  w.focus();
-  setTimeout(() => { try { w.print(); } catch (e) {} }, 150);
 }
 
 const LABEL_PACKS = ["Vacumeerzak", "Pot 200", "Pot 500"];
@@ -5458,7 +5467,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             <div className="text-xs font-bold ink mb-1">Hoeveelheid</div>
             <input type="text" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
           </div>
-          </div>
           <div>
             <div className="flex items-center justify-between mb-1">
               <div className="text-xs font-bold ink">Klaar op</div>
@@ -5469,6 +5477,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
               <button type="button" onClick={() => schuifDag(ready, setReady, -1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
               <button type="button" onClick={() => schuifDag(ready, setReady, 1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
+          </div>
           <div>
             <div className="text-xs font-bold ink mb-1">Verpakkingswijze</div>
             <ComboInput value={pack} onChange={setPack} options={LABEL_PACKS} placeholder="Typ of kies" />
@@ -5477,7 +5486,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             <div className="text-xs font-bold ink mb-1">Opslagmanier</div>
             <ComboInput value={storage} onChange={setStorage} options={LABEL_STORAGE} placeholder="Typ of kies" />
           </div>
-
         </div>
         <div className="mt-1.5">
           <button onClick={() => setAlgOpen((o) => !o)} className="ff w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm" style={{ border: "1px solid " + T.line, background: "#fff" }}>
