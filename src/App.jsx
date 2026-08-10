@@ -3855,7 +3855,8 @@ function App() {
       {fabLabelOpen && canEdit && (
         <UniversalLabelModal recipes={recipes}
           prefillRecipe={current && current.screen === "recipeDetail" ? recipeById(current.id) : null}
-          onClose={() => setFabLabelOpen(false)} />
+          onClose={() => setFabLabelOpen(false)}
+          onAddStock={(pf) => { setFabLabelOpen(false); push({ screen: "voorraadForm", editing: null, prefill: pf }); }} />
       )}
       {measureOpen && canEdit && (
         <BatchMeasureModal batches={batches.filter((b) => !b.done)} onAdd={addBatchMeasurement} onFinish={saveMeasureAndFinish} onClose={() => setMeasureOpen(false)} />
@@ -5311,7 +5312,7 @@ function printCustomLabel(f) {
 
 const LABEL_PACKS = ["Vacumeerzak", "Pot 200", "Pot 500"];
 const LABEL_STORAGE = ["gekoeld", "ongekoeld", "bevroren", "droog"];
-function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
+function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const mapStore = (t) => { const x = String(t || "").toLowerCase(); if (/ongekoeld/.test(x)) return "ongekoeld"; if (/vrie|bevroren/.test(x)) return "bevroren"; if (/droog/.test(x)) return "droog"; if (/koel/.test(x)) return "gekoeld"; return ""; };
   const thtVan = (p, dgn) => { if (!p || !dgn) return ""; const dt = new Date(p + "T12:00:00"); if (isNaN(dt)) return ""; dt.setDate(dt.getDate() + Number(dgn)); return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"); };
   const today = localDate();
@@ -5362,6 +5363,17 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
     try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
     printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
+  };
+  // Printen én direct in de voorraad: zelfde print, daarna opent het voorraad-
+  // formulier voorgevuld (naam, productiedatum, houdbaarheid, eenheid, opslag).
+  // Het opslaan zelf vraagt zoals altijd wie het doet via de naam-popup.
+  const doPrintEnVoorraad = () => {
+    if (!name.trim()) { alert("Vul een productnaam in."); return; }
+    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
+    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
+    const dgn = (() => { if (!tht || !prod) return null; const a = new Date(prod + "T12:00:00"), b = new Date(tht + "T12:00:00"); return isNaN(a) || isNaN(b) ? null : Math.round((b - a) / 86400000); })();
+    const eenheid = [gram.trim(), pack.trim()].filter(Boolean).join(" ").trim();
+    onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: eenheid, shelfStorage: storage || "" });
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
   const [herstelTik, setHerstelTik] = useState(0); // key-wissel: velden vers opbouwen na herstel
@@ -5470,7 +5482,10 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
           <input className="input px-2.5 py-2 w-full text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. 1× per dag roeren" />
         </div>
         <p className="text-[11px] mute mt-1.5">Lege velden worden niet op het etiket gezet.</p>
-        <button onClick={doPrint} className="btnp ff w-full mt-2 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3.5 py-2"><Printer size={15} /> Printen</button>
+        <div className="flex gap-2 mt-2">
+          <button onClick={doPrint} className="btnp ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2"><Printer size={15} /> Printen</button>
+          <button onClick={doPrintEnVoorraad} className="btno ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2" title="Print het etiket en zet het product daarna in de voorraad"><ShelfIcon size={15} /> Print + voorraad</button>
+        </div>
       </div>
     </div>
   );
