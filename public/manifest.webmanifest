@@ -1,17 +1,16 @@
 {
   "name": "In het ritme van het land",
-  "short_name": "Het ritme",
-  "description": "Receptenboek van de moestuinkeuken — Wilde Wortels, Landgoed de Beug.",
-  "lang": "nl",
+  "short_name": "Ritme",
+  "description": "Het receptenboek van de moestuinkeuken van Wilde Wortels — Landgoed de Beug, Odijk.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#f2f0e8",
   "theme_color": "#3a4b30",
+  "lang": "nl",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
     { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
