@@ -481,7 +481,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-10c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-10d"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2536,13 +2536,13 @@ function ComboInput({ value, onChange, options, placeholder }) {
   );
 }
 
-function AppSelect({ value, onChange, options, className, style, title, placeholder, compact }) {
+function AppSelect({ value, onChange, options, className, style, title, placeholder, compact = true }) {
   const [open, setOpen] = useState(false);
   const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
   const cur = opts.find((o) => o.value === value);
   const label = cur ? (cur.label || "\u2014") : (placeholder || "\u2014");
   const knop = (
-    <button type="button" onClick={() => setOpen((o) => !o)} className={(className || "input px-2.5 py-2 w-full text-sm") + " ff text-left inline-flex items-center justify-between gap-2"} style={style} title={title}>
+    <button type="button" onClick={() => setOpen((o) => !o)} className={(className || "input px-2.5 py-2 w-full text-sm") + " ff w-full text-left inline-flex items-center justify-between gap-2"} style={compact ? undefined : style} title={title}>
       <span className={"truncate " + (cur && cur.value !== "" ? "ink" : "mute")}>{label}</span>
       <ChevronDown size={15} className="acc shrink-0" />
     </button>
@@ -2558,12 +2558,13 @@ function AppSelect({ value, onChange, options, className, style, title, placehol
   // anders het grote paneel (voor lange lijsten zoals categorieën).
   if (compact) {
     return (
-      <div className="relative">
+      <div className="relative" style={style}>
         {knop}
         {open && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "14rem", overflowY: "auto" }}>
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "16rem", overflowY: "auto" }}>
+              {title && <div className="text-xs mute px-3 pt-1.5 pb-1">{title}</div>}
               {lijst}
             </div>
           </>
@@ -5153,10 +5154,9 @@ function MaatModal({ recipe, onApply, onClose }) {
     onApply(f); onClose();
   };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper, maxHeight: "85vh", overflowY: "auto" }}>
+    <div className="card p-4 mt-2 max-w-md">
         <div className="flex items-start justify-between gap-3">
-          <div className="serif ink text-xl leading-tight">Op maat rekenen</div>
+          <div className="serif ink text-lg leading-tight">Op maat rekenen</div>
           <button onClick={onClose} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
         </div>
         <div className="mt-4">
@@ -5177,7 +5177,6 @@ function MaatModal({ recipe, onApply, onClose }) {
           </div>
         </div>
         {fout && <p className="text-xs mt-3" style={{ color: "#8a4a3a" }}>{fout}</p>}
-      </div>
     </div>
   );
 }
@@ -5291,6 +5290,11 @@ function BatchLabelModal({ batch, onClose }) {
   const [brix, setBrix] = useState(batch.sugarPct != null ? String(batch.sugarPct).replace(".", ",") : "");
   const [type, setType] = useState(batch.method || batch.type || "Melkzuur");
   const [note, setNote] = useState(batch.notes || "");
+  // Alles leegmaken behalve de startdatum (de productiedatum van de batch).
+  const maakLeeg = () => {
+    setReady(""); setReadyTouched(true);
+    setPh(""); setBrix(""); setNote("");
+  };
   const doPrint = () => {
     printBatchLabel({ name: batch.product, start: start || localDate(), ready, ph: ph.trim(), brix: brix.trim(), type: type.trim(), note });
     onClose(); // sluit vanzelf zodra de printactie gestart is
@@ -5300,7 +5304,10 @@ function BatchLabelModal({ batch, onClose }) {
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="serif ink text-xl leading-tight">Batch-etiket printen</div>
+            <div className="flex items-center gap-2">
+              <div className="serif ink text-xl leading-tight">Batch-etiket printen</div>
+              <button type="button" onClick={maakLeeg} className="ff shrink-0 inline-flex items-center justify-center rounded-lg px-2 py-1" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Velden leegmaken (startdatum blijft)"><Trash2 size={14} /></button>
+            </div>
             <div className="text-xs mute mt-0.5 truncate">{batch.product}</div>
           </div>
           <button onClick={onClose} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
@@ -7030,7 +7037,6 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   const critical = criticalValues(recipe);
   return (
     <div>
-      {maatOpen && <MaatModal recipe={recipe} onApply={setFactorDecimal} onClose={() => setMaatOpen(false)} />}
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={canEdit ? (
@@ -7090,6 +7096,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           <button onClick={() => setMaatOpen(true)} className={"ff rounded-md px-2.5 h-8 flex items-center text-xs font-bold " + ([[1,2],[1,1],[2,1],[4,1]].some(([n,d]) => isStand(n,d)) ? "pill" : "pillon")} title="Reken naar een opbrengst of een beschikbare hoeveelheid ingrediënt">Op maat{![[1,2],[1,1],[2,1],[4,1]].some(([n,d]) => isStand(n,d)) ? " · " + fracLabel : ""}</button>
           {factor !== 1 && <button onClick={setReset} className="ff mute text-xs underline">reset</button>}
         </div>
+        {maatOpen && <MaatModal recipe={recipe} onApply={setFactorDecimal} onClose={() => setMaatOpen(false)} />}
         {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
       </div>
       <div className="card overflow-hidden">
