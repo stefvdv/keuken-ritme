@@ -2483,28 +2483,49 @@ function parseYieldRef(amount, unitText, yieldText) {
 // systeemmenu dat vloekt met de app. Deze knop opent een eigen lijstje in de
 // app-kleuren; tikken kiest en sluit. Ondersteunt dezelfde plek/breedte als
 // de oude selects via className/style.
-function AppSelect({ value, onChange, options, className, style, title, placeholder }) {
+function AppSelect({ value, onChange, options, className, style, title, placeholder, compact }) {
   const [open, setOpen] = useState(false);
   const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
   const cur = opts.find((o) => o.value === value);
   const label = cur ? (cur.label || "\u2014") : (placeholder || "\u2014");
+  const knop = (
+    <button type="button" onClick={() => setOpen((o) => !o)} className={(className || "input px-2.5 py-2 w-full text-sm") + " ff text-left inline-flex items-center justify-between gap-2"} style={style} title={title}>
+      <span className={"truncate " + (cur && cur.value !== "" ? "ink" : "mute")}>{label}</span>
+      <ChevronDown size={15} className="acc shrink-0" />
+    </button>
+  );
+  const lijst = opts.map((o) => (
+    <button key={String(o.value)} type="button" disabled={o.disabled} onClick={() => { onChange(o.value); setOpen(false); }}
+      className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 disabled:opacity-40 " + (o.value === value ? "pillon" : "ink hover:opacity-70")}>
+      <span>{o.label || "\u2014"}</span>
+      {o.value === value && <Check size={15} />}
+    </button>
+  ));
+  // Compact: klein menu direct onder het veld (voor korte lijstjes in popups);
+  // anders het grote paneel (voor lange lijsten zoals categorieën).
+  if (compact) {
+    return (
+      <div className="relative">
+        {knop}
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "14rem", overflowY: "auto" }}>
+              {lijst}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={(className || "input px-2.5 py-2 w-full text-sm") + " ff text-left inline-flex items-center justify-between gap-2"} style={style} title={title}>
-        <span className={"truncate " + (cur && cur.value !== "" ? "ink" : "mute")}>{label}</span>
-        <ChevronDown size={15} className="acc shrink-0" />
-      </button>
+      {knop}
       {open && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setOpen(false); }}>
           <div className="w-full max-w-sm rounded-2xl p-2 shadow-xl" style={{ background: T.paper, maxHeight: "70vh", overflowY: "auto" }}>
             {title && <div className="text-xs mute px-3 pt-2 pb-1">{title}</div>}
-            {opts.map((o) => (
-              <button key={String(o.value)} type="button" disabled={o.disabled} onClick={() => { onChange(o.value); setOpen(false); }}
-                className={"ff w-full text-left rounded-xl px-3 py-2.5 text-sm flex items-center justify-between gap-2 disabled:opacity-40 " + (o.value === value ? "pillon" : "ink hover:opacity-70")}>
-                <span>{o.label || "\u2014"}</span>
-                {o.value === value && <Check size={15} />}
-              </button>
-            ))}
+            {lijst}
           </div>
         </div>
       )}
@@ -5268,6 +5289,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const [ready, setReady] = useState("");
   const [gram, setGram] = useState("");
   const [pack, setPack] = useState("");
+  const [packVrij, setPackVrij] = useState(""); // bij "Anders…"
   // Eén dag erbij, gerekend vanaf de productiedatum: leeg veld → prod + 1,
   // daarna telkens één dag verder vanaf de ingevulde datum.
   const plusDag = (cur, set) => {
@@ -5295,7 +5317,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
   const doPrint = () => {
     if (!name.trim()) { alert("Vul een productnaam in."); return; }
-    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
+    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack === "__anders" ? packVrij.trim() : pack.trim(), storage, note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
   return (
@@ -5343,15 +5365,18 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose }) {
           </div>
           <div>
             <div className="text-xs mute mb-1">Verpakkingswijze</div>
-            <input className="input px-2.5 py-2 w-full text-sm" value={pack} onChange={(e) => setPack(e.target.value)} placeholder="Kies of typ zelf" />
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {LABEL_PACKS.map((p) => <button key={p} type="button" onClick={() => setPack(p)} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (pack === p ? "pillon" : "pill")}>{p}</button>)}
-            </div>
+            <AppSelect compact value={pack} onChange={setPack} options={[{ value: "", label: "—" }, ...LABEL_PACKS, { value: "__anders", label: "Anders…" }]} />
           </div>
           <div>
             <div className="text-xs mute mb-1">Opslagmanier</div>
-            <AppSelect value={storage} onChange={setStorage} options={[{ value: "", label: "—" }, ...LABEL_STORAGE]} />
+            <AppSelect compact value={storage} onChange={setStorage} options={[{ value: "", label: "—" }, ...LABEL_STORAGE]} />
           </div>
+          {pack === "__anders" && (
+            <div className="col-span-2">
+              <div className="text-xs mute mb-1">Verpakking (zelf omschrijven)</div>
+              <input className="input px-2.5 py-2 w-full text-sm" value={packVrij} onChange={(e) => setPackVrij(e.target.value)} placeholder="bv. bokaal 1 l" />
+            </div>
+          )}
         </div>
         <div className="mt-2">
           <button onClick={() => setAlgOpen((o) => !o)} className="ff w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm" style={{ border: "1px solid " + T.line, background: "#fff" }}>
