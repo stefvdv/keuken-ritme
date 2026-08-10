@@ -5408,10 +5408,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   // Eén dag erbij, gerekend vanaf de productiedatum: leeg veld → prod + 1,
   // daarna telkens één dag verder vanaf de ingevulde datum.
   const schuifDag = (cur, set, richting) => {
+    if (!cur && richting < 0) return; // leeg veld: er valt niets af te halen
     const basis = cur && !isNaN(new Date(cur + "T12:00:00")) ? cur : (prod || today);
     const dt = new Date(basis + "T12:00:00");
     dt.setDate(dt.getDate() + richting);
-    set(dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"));
+    const nieuw = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+    if (nieuw === (prod || today)) { set(""); return; } // 0 dagen → leeg, print niet mee
+    set(nieuw);
   };
   const plusDag = (cur, set) => schuifDag(cur, set, 1);
   // Aantal dagen t.o.v. de productiedatum, voor de teller boven de +/− knoppen.
