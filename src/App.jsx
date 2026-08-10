@@ -2964,8 +2964,9 @@ function App() {
   });
   const answerName = (naam) => {
     const p = namePrompt;
-    if (!p || !naam) return;
+    if (!p) return;
     setNamePrompt(null);
+    if (!naam) { p.resolve(null); return; } // geannuleerd (misklik) — actie breekt af
     quickNameRef.current = { name: naam, cat: p.cat, at: Date.now() };
     try { localStorage.setItem("ritme:last-name", naam); } catch (e) {}
     p.resolve(naam);
@@ -3029,6 +3030,7 @@ function App() {
 
   const saveRecipe = async (data, editingId) => {
     const naam = await askName("groot", "Recept opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const stamped = { ...data, updatedBy: naam, updatedAt: "zojuist" };
     if (editingId) {
       const existing = recipes.find((r) => r.id === editingId);
@@ -3057,6 +3059,7 @@ function App() {
   };
   const saveDish = async (data, editingId) => {
     const naam = await askName("groot", "Gerecht opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const stamped = { ...data, updatedBy: naam, updatedAt: "zojuist" };
     const id = editingId || "d" + Date.now();
     if (live) {
@@ -3091,6 +3094,7 @@ function App() {
       return;
     }
     const naam = await askName("groot", "Batch registreren");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const b = { ...data, id: "b" + Date.now(), by: naam, finishedDate: null, log: data.log || [] };
     if (!(await persistBatch(b))) return;
     setBatches((bs) => [b, ...bs]);
@@ -3102,6 +3106,7 @@ function App() {
     if (!b) return;
     const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
     const naam = await askName("metingen", "Meting vastleggen");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: naam };
     // Wie meet, is er ook bij: de nog openstaande handeling(en) van vandaag
     // voor deze batch worden automatisch mee afgevinkt onder dezelfde naam.
@@ -3121,6 +3126,7 @@ function App() {
     if (!b) return;
     const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
     const naam = await askName("groot", "Batch afronden");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: naam };
     const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH, done: true, finishedDate: localDate() };
     if (!(await persistBatch(nb))) return;
@@ -3190,6 +3196,7 @@ function App() {
     const today = kitchenDate(); // geldt tot 02:00, daarna nieuwe keukendag
     if ((b.actionsDone || []).some((a) => a.date === today && a.label === label)) return;
     const naam = await askName("afvinken", "Handeling afvinken");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const nb = { ...b, actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), { date: today, label, by: naam }] };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
@@ -3213,6 +3220,7 @@ function App() {
   const signCleaning = async (taskId, quiet, forDate) => {
     const today = forDate || localDate();
     const naam = await askName("schoonmaak", "Schoonmaak aftekenen");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const row = { id: "cl" + Date.now(), taskId, doneDate: today, doneBy: naam, note: "", edits: [] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: taskId, done_date: today, done_by: naam, note: "", edits: [] });
@@ -3226,6 +3234,7 @@ function App() {
     const today = forDate || localDate();
     if (cleaningLogs.some((l) => l.taskId === DAY_DONE_ID && l.doneDate === today)) return;
     const naam = await askName("schoonmaak", "Dag afronden");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const row = { id: "dd" + Date.now(), taskId: DAY_DONE_ID, doneDate: today, doneBy: naam, note: "", edits: [] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_DONE_ID, done_date: today, done_by: naam, note: "", edits: [] });
@@ -3258,6 +3267,7 @@ function App() {
       if (dbFail(error)) return;
     }
     const naam = await askName("schoonmaak", "Vrije dag registreren");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const row = { id: "off" + Date.now(), taskId: DAY_OFF_ID, doneDate: d, doneBy: naam, note: "Bedrijf dicht", edits: [] };
     if (live) {
       const { error } = await supabase.from("cleaning_logs").insert({ id: row.id, task_id: DAY_OFF_ID, done_date: d, done_by: naam, note: "Bedrijf dicht", edits: [] });
@@ -3323,6 +3333,7 @@ function App() {
   };
   const saveHaccp = async (data, editingId) => {
     const naam = await askName("groot", "HACCP-controle vastleggen");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const now = new Date().toISOString().slice(0, 16).replace("T", " ");
     if (editingId) {
       const old = haccpLogs.find((x) => x.id === editingId);
@@ -3360,6 +3371,7 @@ function App() {
   };
   const saveHaccpRecord = async (data, editingId) => {
     const naam = await askName("groot", "Registratie vastleggen");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const { kind, date, note, ...fields } = data;
     if (editingId) {
       const old = haccpRecords.find((x) => x.id === editingId);
@@ -3413,6 +3425,7 @@ function App() {
     const nm = String(name || "").trim();
     if (!nm) return;
     const naam = await askName("groot", "Allergenencorrectie (hele app)");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const rows = (allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name && algKey(r.name) !== algKey(nm));
     if (Array.isArray(list)) rows.push({ name: nm, allergens: list });
     const row = { id: ALLERGEN_FIX_DOC_ID, title: "Allergenencorrecties", intro: "", sections: rows, updatedBy: naam };
@@ -3449,6 +3462,7 @@ function App() {
   };
   const saveTechTable = async (tableKey, rows) => {
     const naam = await askName("groot", "Tabel opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const cfg = TECH_TABLE_CONFIGS[tableKey];
     const row = { id: cfg.docId, title: cfg.title, intro: "", sections: rows, updatedBy: naam };
     if (live) {
@@ -3475,6 +3489,7 @@ function App() {
       return;
     }
     const naam = await askName("groot", "Voorraad opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const nv = { id: "st" + Date.now(), ...data, by: naam };
     if (!(await persistStock(nv, true))) return;
     setStock((ss) => [nv, ...ss]);
@@ -3557,6 +3572,7 @@ function App() {
   const saveWerkDoc = async (data, editingId) => {
     const id = editingId || "wd" + Date.now();
     const naam = await askName("groot", "Werkwijze opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const row = { id, title: data.title, intro: data.intro, sections: data.secties, updatedBy: naam };
     if (live) {
       const { error } = await supabase.from("werkwijze_docs").upsert({ id, title: row.title, intro: row.intro, sections: row.sections, updated_by: naam, updated_at: new Date().toISOString() });
@@ -3576,6 +3592,7 @@ function App() {
   };
   const saveFermentGuide = async (rows) => {
     const naam = await askName("groot", "Fermenteerlijst opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const row = { id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updatedBy: naam };
     if (live) {
       const { error } = await supabase.from("werkwijze_docs").upsert({ id: FERMENT_DOC_ID, title: "Fermenteren", intro: "", sections: rows, updated_by: naam, updated_at: new Date().toISOString() });
@@ -3588,6 +3605,7 @@ function App() {
     const l = cleaningLogs.find((x) => x.id === logId);
     if (!l || (l.note || "") === note) { return; }
     const naam = await askName("groot", "Notitie aanpassen");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const edit = { at: new Date().toISOString().slice(0, 16).replace("T", " "), by: naam, from: l.note || "", to: note };
     const nl = { ...l, note, edits: [...(l.edits || []), edit] };
     if (live) {
@@ -3599,6 +3617,7 @@ function App() {
   };
   const saveCleaningTask = async (data, editingId) => {
     const naam = await askName("groot", "Schoonmaaktaak opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const id = editingId || "ct" + Date.now();
     const row = { id, name: data.name, area: data.area, intervalDays: data.intervalDays, minutes: data.minutes, active: true };
     if (live) {
@@ -3621,6 +3640,7 @@ function App() {
   };
   const saveTechNotes = async (key, lines) => {
     const naam = await askName("groot", "Notities opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     if (live) {
       const { error } = await supabase.from("technique_notes").upsert({ key, lines, updated_by: naam, updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
@@ -3631,6 +3651,7 @@ function App() {
 
   const savePairing = async (name, pairs, note, season) => {
     const naam = await askName("groot", "Smaakcombinatie opslaan");
+    if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const clean = { name: name.trim().toLowerCase(), pairs: pairs.map((x) => x.trim().toLowerCase()).filter(Boolean), note: (note || "").trim(), season: season || [], addedAt: Date.now() };
     if (!clean.name || clean.pairs.length === 0) { flash("Vul een naam en minstens één partner in"); return; }
     if (live) {
@@ -4013,8 +4034,13 @@ function NamePromptModal({ label, onPick }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
-        <div className="serif ink text-xl leading-tight">Wie doet dit?</div>
-        {label && <div className="text-xs mute mt-0.5">{label}</div>}
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="serif ink text-xl leading-tight">Wie doet dit?</div>
+            {label && <div className="text-xs mute mt-0.5">{label}</div>}
+          </div>
+          <button onClick={() => onPick(null)} className="ff shrink-0 rounded-lg px-2 py-1 text-xs font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }} title="Per ongeluk? Er wordt dan niets vastgelegd.">Annuleren</button>
+        </div>
         <div className="grid grid-cols-2 gap-2 mt-4">
           {namen.map((n) => (
             <button key={n} onClick={() => onPick(n)} className={"ff rounded-xl px-3 py-3 text-sm font-semibold " + (n === laatst ? "btnp" : "card cardh ink")}>{n}</button>
@@ -5385,6 +5411,8 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     if (r.ferment && fd && fd.days) setReady(thtVan(basis, fd.days));
   };
   useEffect(() => { if (prefillRecipe) applyRecipe(prefillRecipe, today); }, []);
+  const naamRef = React.useRef(null);
+  useEffect(() => { if (!prefillRecipe) setTimeout(() => { try { if (naamRef.current) naamRef.current.focus(); } catch (e) {} }, 60); }, []);
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
   const [suggIdx, setSuggIdx] = useState(-1); // pijltjesmarkering in de suggestielijst
   const verplichtOk = () => {
@@ -5415,6 +5443,14 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: eenheid, shelfStorage: storage || "" });
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
+  // Alles leegmaken voor een vers etiket; alleen de productiedatum blijft vandaag.
+  const maakLeeg = () => {
+    setName(""); setPicked(false); setSuggIdx(-1);
+    setProd(today); setTht(""); setReady("");
+    setGram(""); setPack(""); setStorage("");
+    setNote(""); setAllergens([]); setAlgOpen(false);
+    setTimeout(() => { try { if (naamRef.current) naamRef.current.focus(); } catch (e) {} }, 30);
+  };
   const herstelVorige = () => {
     if (!vorige) return;
     setName(vorige.name || ""); setPicked(true);
@@ -5443,7 +5479,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             <button onClick={onClose} className="ff shrink-0 rounded-lg p-0.5 hover:opacity-70" title="Sluiten"><X size={16} /></button>
           </div>
           <div className="flex gap-1.5">
-            <input className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name}
+            <input ref={naamRef} className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name}
               onChange={(e) => { setName(e.target.value); setPicked(false); setSuggIdx(-1); }}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown" && sugg.length) { e.preventDefault(); setSuggIdx((x) => (x + 1) % sugg.length); }
@@ -5453,6 +5489,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
               }}
               onBlur={() => setTimeout(() => setPicked(true), 120)}
               placeholder="Zoek een recept of typ een eigen naam" />
+            <button type="button" onClick={maakLeeg} className="ff shrink-0 inline-flex items-center justify-center rounded-lg px-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Alles leegmaken (productiedatum blijft vandaag)"><Trash2 size={14} /></button>
             {vorige && <button type="button" onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
           </div>
           {sugg.length > 0 && (
