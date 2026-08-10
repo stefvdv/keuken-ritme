@@ -5434,13 +5434,17 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             <button onClick={onClose} className="ff shrink-0 rounded-lg p-0.5 hover:opacity-70" title="Sluiten"><X size={16} /></button>
           </div>
           <div className="flex gap-1.5">
-            <input className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name} onChange={(e) => { setName(e.target.value); setPicked(false); }} placeholder="Zoek een recept of typ een eigen naam" />
+            <input className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name}
+              onChange={(e) => { setName(e.target.value); setPicked(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPicked(true); } }}
+              onBlur={() => setTimeout(() => setPicked(true), 120)}
+              placeholder="Zoek een recept of typ een eigen naam" />
             {vorige && <button type="button" onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
           </div>
           {sugg.length > 0 && (
             <div className="card mt-1 overflow-hidden">
               {sugg.map((r) => (
-                <button key={r.id} onClick={() => applyRecipe(r)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70 divi first:border-0">
+                <button key={r.id} onMouseDown={(e) => { e.preventDefault(); applyRecipe(r); }} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70 divi first:border-0">
                   <span className="ink">{r.name}</span> <span className="text-xs mute">· {r.category}</span>
                 </button>
               ))}
@@ -5851,7 +5855,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
           : <Field label="Dagen houdbaar"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>}
       </div>
       {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{computedExpiry}</span> — later nog aan te passen via Bewerken.</p>}
-      <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={setStorage} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
+      <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={(v) => { setStorage(v); if (v === "ingevroren") setDays("365"); }} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
       <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
       <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
