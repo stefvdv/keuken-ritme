@@ -5386,8 +5386,17 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   };
   useEffect(() => { if (prefillRecipe) applyRecipe(prefillRecipe, today); }, []);
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
+  const [suggIdx, setSuggIdx] = useState(-1); // pijltjesmarkering in de suggestielijst
+  const verplichtOk = () => {
+    const mist = [];
+    if (!name.trim()) mist.push("productnaam");
+    if (!prod) mist.push("productiedatum");
+    if (!tht) mist.push("T.H.T.");
+    if (mist.length) { alert("Vul eerst in: " + mist.join(", ") + "."); return false; }
+    return true;
+  };
   const doPrint = () => {
-    if (!name.trim()) { alert("Vul een productnaam in."); return; }
+    if (!verplichtOk()) return;
     // Invulling bewaren voor de "Vorige"-knop: extra stickers van dezelfde
     // soort zijn dan zo teruggehaald, ook na het sluiten van de popup.
     try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
@@ -5398,7 +5407,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   // formulier voorgevuld (naam, productiedatum, houdbaarheid, eenheid, opslag).
   // Het opslaan zelf vraagt zoals altijd wie het doet via de naam-popup.
   const doPrintEnVoorraad = () => {
-    if (!name.trim()) { alert("Vul een productnaam in."); return; }
+    if (!verplichtOk()) return;
     try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
     printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
     const dgn = (() => { if (!tht || !prod) return null; const a = new Date(prod + "T12:00:00"), b = new Date(tht + "T12:00:00"); return isNaN(a) || isNaN(b) ? null : Math.round((b - a) / 86400000); })();
@@ -5435,8 +5444,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           </div>
           <div className="flex gap-1.5">
             <input className="input px-2.5 py-2 w-full text-sm flex-1 min-w-0" value={name}
-              onChange={(e) => { setName(e.target.value); setPicked(false); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPicked(true); } }}
+              onChange={(e) => { setName(e.target.value); setPicked(false); setSuggIdx(-1); }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown" && sugg.length) { e.preventDefault(); setSuggIdx((x) => (x + 1) % sugg.length); }
+                else if (e.key === "ArrowUp" && sugg.length) { e.preventDefault(); setSuggIdx((x) => (x <= 0 ? sugg.length - 1 : x - 1)); }
+                else if (e.key === "Enter") { e.preventDefault(); if (suggIdx >= 0 && sugg[suggIdx]) applyRecipe(sugg[suggIdx]); else setPicked(true); setSuggIdx(-1); }
+                else if (e.key === "Escape" && sugg.length) { e.preventDefault(); e.stopPropagation(); setPicked(true); setSuggIdx(-1); }
+              }}
               onBlur={() => setTimeout(() => setPicked(true), 120)}
               placeholder="Zoek een recept of typ een eigen naam" />
             {vorige && <button type="button" onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
@@ -5444,7 +5458,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           {sugg.length > 0 && (
             <div className="card mt-1 overflow-hidden">
               {sugg.map((r) => (
-                <button key={r.id} onMouseDown={(e) => { e.preventDefault(); applyRecipe(r); }} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70 divi first:border-0">
+                <button key={r.id} onMouseDown={(e) => { e.preventDefault(); applyRecipe(r); }} className={"ff w-full text-left px-3 py-2 text-sm hover:opacity-70 divi first:border-0" + (sugg[suggIdx] && sugg[suggIdx].id === r.id ? " pillon" : "")}>
                   <span className="ink">{r.name}</span> <span className="text-xs mute">· {r.category}</span>
                 </button>
               ))}
@@ -5488,7 +5502,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           </div>
           <div>
             <div className="text-xs font-bold ink mb-1">Opslagmanier</div>
-            <ComboInput value={storage} onChange={(v) => { setStorage(v); if (/bevroren|vrie/i.test(v)) setTht(thtVan(prod || today, 365)); }} options={LABEL_STORAGE} placeholder="Typ of kies" />
+            <ComboInput value={storage} onChange={(v) => { setStorage(v); if (/bevroren|vrie/i.test(v)) setTht(thtVan(prod || today, 365)); else if (tht === thtVan(prod || today, 365)) setTht(""); }} options={LABEL_STORAGE} placeholder="Typ of kies" />
           </div>
         </div>
         <div className="mt-1.5">
@@ -5813,6 +5827,8 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     if (!product.trim()) { alert("Vul de productnaam in."); return; }
     const q1 = nm(qty);
     if (q1 === null) { alert("Vul het aantal in."); return; }
+    if (!productionDate) { alert("Vul de productiedatum in."); return; }
+    if (editing ? !expiryDate : !(Number(days) > 0)) { alert("Vul de houdbaarheid in (dagen of T.H.T.)."); return; }
     const q0 = editing ? (nm(initialQty) ?? q1) : q1;
     onSave({
       product: product.trim(), qty: q1, initialQty: q0, unit: unit.trim(),
@@ -5855,7 +5871,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
           : <Field label="Dagen houdbaar"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>}
       </div>
       {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{computedExpiry}</span> — later nog aan te passen via Bewerken.</p>}
-      <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={(v) => { setStorage(v); if (v === "ingevroren") setDays("365"); }} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
+      <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={(v) => { setStorage(v); if (v === "ingevroren") setDays("365"); else if (days === "365") setDays(""); }} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
       <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
       <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
@@ -7208,7 +7224,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       if (Array.isArray(p.steps) && p.steps.length) setSteps(p.steps);
     } catch (e) { setErr("Vertalen lukte niet. Probeer opnieuw."); } finally { setTranslating(false); }
   }
-  const submit = () => { if (!name.trim()) return; if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } onSave({
+  const submit = () => { if (!name.trim()) { alert("Geef het recept een naam."); return; } if (!(Number(shelfDays) > 0)) { alert("Vul de houdbaarheid in (dagen)."); return; } if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } onSave({
     name: name.trim(), category: normCategory(category.trim()) || "Zonder categorie",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
     season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
