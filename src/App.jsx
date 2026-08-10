@@ -5427,7 +5427,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-sm rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
+      <div className="w-full max-w-md rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
         <div>
           <div className="flex items-center justify-between gap-2 mb-1">
             <div className="text-xs font-bold ink">Productnaam</div>
@@ -5459,8 +5459,8 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             </div>
             <div className="flex gap-1">
               <input type="date" className="input px-2.5 py-2 w-full text-sm min-w-0" value={tht} onChange={(e) => setTht(e.target.value)} />
-              <button type="button" onClick={() => schuifDag(tht, setTht, -1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
-              <button type="button" onClick={() => schuifDag(tht, setTht, 1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
+              <button type="button" onClick={() => schuifDag(tht, setTht, -1)} className="ff shrink-0 rounded-lg px-1 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
+              <button type="button" onClick={() => schuifDag(tht, setTht, 1)} className="ff shrink-0 rounded-lg px-1 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
           </div>
           <div>
@@ -5474,8 +5474,8 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             </div>
             <div className="flex gap-1">
               <input type="date" className="input px-2.5 py-2 w-full text-sm min-w-0" value={ready} onChange={(e) => setReady(e.target.value)} />
-              <button type="button" onClick={() => schuifDag(ready, setReady, -1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
-              <button type="button" onClick={() => schuifDag(ready, setReady, 1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
+              <button type="button" onClick={() => schuifDag(ready, setReady, -1)} className="ff shrink-0 rounded-lg px-1 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
+              <button type="button" onClick={() => schuifDag(ready, setReady, 1)} className="ff shrink-0 rounded-lg px-1 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
           </div>
           <div>
@@ -5484,7 +5484,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           </div>
           <div>
             <div className="text-xs font-bold ink mb-1">Opslagmanier</div>
-            <ComboInput value={storage} onChange={setStorage} options={LABEL_STORAGE} placeholder="Typ of kies" />
+            <ComboInput value={storage} onChange={(v) => { setStorage(v); if (/bevroren|vrie/i.test(v)) setTht(thtVan(prod || today, 365)); }} options={LABEL_STORAGE} placeholder="Typ of kies" />
           </div>
         </div>
         <div className="mt-1.5">
