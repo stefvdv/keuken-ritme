@@ -5442,12 +5442,8 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
   const [suggIdx, setSuggIdx] = useState(-1); // pijltjesmarkering in de suggestielijst
   const verplichtOk = () => {
-    const mist = [];
-    if (!name.trim()) mist.push("productnaam");
-    if (!prod) mist.push("productiedatum");
-    if (!tht) mist.push("T.H.T.");
-    if (mist.length) { alert("Vul eerst in: " + mist.join(", ") + "."); return false; }
-    return true;
+    if (!name.trim()) { alert("Vul een productnaam in."); return false; }
+    return true; // datums zijn vrij: soms is een etiket alleen tekst
   };
   const doPrint = () => {
     if (!verplichtOk()) return;
