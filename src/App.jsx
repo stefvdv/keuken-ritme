@@ -2832,10 +2832,25 @@ function App() {
     const fix = (e) => {
       const el = e.target && e.target.closest ? e.target.closest("input, select, textarea") : null;
       if (!el || el.disabled) return;
+      const onderdrukt = e.defaultPrevented; // iemand blokkeerde de focus-actie van deze klik?
       setTimeout(() => {
         if (document.activeElement === el) return; // focus kwam gewoon aan
         try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
         try { el.focus(); } catch (err) {}
+        // Tweede controle: hielp het geforceerde focussen ook niet, dan hebben we
+        // een echte blokkade te pakken — print alles wat nodig is om hem te vinden.
+        setTimeout(() => {
+          if (document.activeElement === el) return;
+          try {
+            console.warn("RITME veld-blokkade:", {
+              veld: (el.tagName || "?") + " · " + (el.placeholder || el.type || ""),
+              veldNogInPagina: el.isConnected,
+              mousedownOnderdrukt: onderdrukt,
+              focusStaatOp: document.activeElement ? document.activeElement.tagName + "." + (document.activeElement.className || "").split(" ").slice(0, 3).join(".") : "niets",
+              popupOpen: !!document.querySelector(".fixed.inset-0"),
+            });
+          } catch (err) {}
+        }, 80);
       }, 80);
     };
     document.addEventListener("mousedown", fix, true);
@@ -3064,10 +3079,16 @@ function App() {
     const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
     const naam = await askName("metingen", "Meting vastleggen");
     const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note || "", by: naam };
-    const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH };
+    // Wie meet, is er ook bij: de nog openstaande handeling(en) van vandaag
+    // voor deze batch worden automatisch mee afgevinkt onder dezelfde naam.
+    const today = kitchenDate();
+    const nogTeDoen = batchStatus(b).due;
+    const extraAcks = nogTeDoen.map((label) => ({ date: today, label, by: naam }));
+    const nb = { ...b, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH,
+      actionsDone: [...(b.actionsDone || []).filter((a) => a.date >= today), ...(b.actionsDone || []).filter((a) => a.date === today), ...extraAcks].filter((a, i, arr) => arr.findIndex((x) => x.date === a.date && x.label === a.label) === i) };
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
-    flash("Meting toegevoegd aan het logboek");
+    flash(extraAcks.length ? "Meting toegevoegd — handeling ook afgevinkt (" + naam + ")" : "Meting toegevoegd aan het logboek");
   };
   // Vanuit de meting-popup: meting opslaan, batch in één keer afronden en door
   // naar de voorraad-popup (de gewone eindmeting is dan al gedaan).
@@ -3915,18 +3936,18 @@ function CalcWidget({ open, onOpen, onClose, raised }) {
             <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
             <button onClick={onClose} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
           </div>
-          <div className="rounded-xl px-3 py-2 mb-2 text-right" style={{ background: "#eef1e6", minHeight: "3.2rem" }}>
+          <div className="rounded-xl px-3 py-1.5 mb-1.5 text-right" style={{ background: "#eef1e6", minHeight: "2.6rem" }}>
             <div className="ink text-lg leading-tight break-all">{expr || "0"}</div>
-            <div className="text-sm mute h-5">{result !== "" && expr !== result ? "= " + result : ""}</div>
+            <div className="text-sm mute h-4">{result !== "" && expr !== result ? "= " + result : ""}</div>
           </div>
           <div className="grid grid-cols-4 gap-1.5">
             {keys.flat().map((k) => (
               <button key={k} onClick={() => tap(k)}
-                className={"ff rounded-lg py-2.5 text-sm font-medium " + (k === "=" ? "btnp" : ["÷", "×", "−", "+"].includes(k) ? "pillon" : "pill")}>
+                className={"ff rounded-lg py-1.5 text-sm font-medium " + (k === "=" ? "btnp" : ["÷", "×", "−", "+"].includes(k) ? "pillon" : "pill")}>
                 {k}
               </button>
             ))}
-            <button onClick={() => tap("⌫")} className="ff pill rounded-lg py-2 text-sm font-medium col-span-4 mt-0.5 inline-flex items-center justify-center gap-1"><ArrowLeft size={14} /> Wis laatste</button>
+            <button onClick={() => tap("⌫")} className="ff pill rounded-lg py-1.5 text-sm font-medium col-span-4 mt-0.5 inline-flex items-center justify-center gap-1"><ArrowLeft size={14} /> Wis laatste</button>
           </div>
         </div>
       )}
@@ -5376,7 +5397,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: eenheid, shelfStorage: storage || "" });
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
-  const [herstelTik, setHerstelTik] = useState(0); // key-wissel: velden vers opbouwen na herstel
   const herstelVorige = () => {
     if (!vorige) return;
     setName(vorige.name || ""); setPicked(true);
@@ -5395,18 +5415,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     setGram(vorige.gram || ""); setPack(vorige.pack === "__anders" ? (vorige.packVrij || "") : (vorige.pack || ""));
     setStorage(vorige.storage || ""); setNote(vorige.note || "");
     setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
-    // Chrome zet na deze knop de invoervelden op slot (knoppen werken nog wel,
-    // velden niet — zelfde familie als de eerdere klik-bug). De kuur: alle
-    // velden opnieuw opbouwen via de key hieronder; waarden blijven staan.
-    setHerstelTik((t) => t + 1);
-    setTimeout(() => { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }, 0);
   };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div key={herstelTik} className="w-full max-w-sm rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
+      <div className="w-full max-w-sm rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
         <div>
           <div className="flex items-center justify-between gap-2 mb-1">
-            <div className="text-xs mute">Productnaam</div>
+            <div className="text-xs font-bold ink">Productnaam</div>
             <button onClick={onClose} className="ff shrink-0 rounded-lg p-0.5 hover:opacity-70" title="Sluiten"><X size={16} /></button>
           </div>
           <div className="flex gap-1.5">
@@ -5425,12 +5440,12 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
         </div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 mt-1.5">
           <div>
-            <div className="text-xs mute mb-1">Productiedatum</div>
+            <div className="text-xs font-bold ink mb-1">Productiedatum</div>
             <input type="date" className="input px-2.5 py-2 w-full text-sm" value={prod} onChange={(e) => setProd(e.target.value)} />
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
-              <div className="text-xs mute">T.H.T.</div>
+              <div className="text-xs font-bold ink">T.H.T.</div>
               {dagenVanaf(tht) != null && <div className="text-[11px] font-semibold acc">{dagenVanaf(tht)} {dagenVanaf(tht) === 1 ? "dag" : "dagen"}</div>}
             </div>
             <div className="flex gap-1">
@@ -5440,8 +5455,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             </div>
           </div>
           <div>
+            <div className="text-xs font-bold ink mb-1">Hoeveelheid</div>
+            <input type="text" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
+          </div>
+          </div>
+          <div>
             <div className="flex items-center justify-between mb-1">
-              <div className="text-xs mute">Klaar op</div>
+              <div className="text-xs font-bold ink">Klaar op</div>
               {dagenVanaf(ready) != null && <div className="text-[11px] font-semibold acc">{dagenVanaf(ready)} {dagenVanaf(ready) === 1 ? "dag" : "dagen"}</div>}
             </div>
             <div className="flex gap-1">
@@ -5449,17 +5469,12 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
               <button type="button" onClick={() => schuifDag(ready, setReady, -1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
               <button type="button" onClick={() => schuifDag(ready, setReady, 1)} className="ff shrink-0 rounded-lg px-1.5 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
-          </div>
           <div>
-            <div className="text-xs mute mb-1">Hoeveelheid</div>
-            <input type="text" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
-          </div>
-          <div>
-            <div className="text-xs mute mb-1">Verpakkingswijze</div>
+            <div className="text-xs font-bold ink mb-1">Verpakkingswijze</div>
             <ComboInput value={pack} onChange={setPack} options={LABEL_PACKS} placeholder="Typ of kies" />
           </div>
           <div>
-            <div className="text-xs mute mb-1">Opslagmanier</div>
+            <div className="text-xs font-bold ink mb-1">Opslagmanier</div>
             <ComboInput value={storage} onChange={setStorage} options={LABEL_STORAGE} placeholder="Typ of kies" />
           </div>
 
@@ -5478,13 +5493,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           )}
         </div>
         <div className="mt-1.5">
-          <div className="text-xs mute mb-1">Opmerkingen / handelingen</div>
+          <div className="text-xs font-bold ink mb-1">Opmerkingen / handelingen</div>
           <input className="input px-2.5 py-2 w-full text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. 1× per dag roeren" />
         </div>
         <p className="text-[11px] mute mt-1.5">Lege velden worden niet op het etiket gezet.</p>
         <div className="flex gap-2 mt-2">
-          <button onClick={doPrint} className="btnp ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2"><Printer size={15} /> Printen</button>
           <button onClick={doPrintEnVoorraad} className="btno ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2" title="Print het etiket en zet het product daarna in de voorraad"><ShelfIcon size={15} /> Print + voorraad</button>
+          <button onClick={doPrint} className="btnp ff flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-semibold px-3 py-2"><Printer size={15} /> Printen</button>
         </div>
       </div>
     </div>
