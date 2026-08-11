@@ -361,7 +361,29 @@ function splitSteps(raw) {
     else merged.push(p);
   }
   const restore = (x) => x.replace(/\u0001/g, ",").replace(/\u0002/g, ".").trim();
-  return merged.map(restore).filter(Boolean);
+  const result = merged.map(restore).filter(Boolean);
+  if (result.length > 1) return result;
+
+  // 4. Geen punten of regels? Splits vóór keukenwerkwoorden in de gebiedende
+  // wijs ("meng … roer … voeg … draai … bak af …"), en knip verbindings-
+  // woorden aan het eind van elke stap weg.
+  if (text.length > 60) {
+    const werkw = "meng|roer|voeg|draai|bak|kook|breng|schep|snijd|snij|giet|laat|zet|haal|klop|spatel|verwarm|verhit|doe|pureer|mix|kneed|rol|vouw|bestrooi|bedek|verdeel|schenk|gaar|stoof|blancheer|pocheer|rooster|grill|stoom|koel|zeef|blus|fruit|smelt|week|marineer|pekel|vacumeer|vul|verwijder|schil|rasp|hak|pers|weeg|frituur|wentel|paneer|serveer|garneer|proef|bewaar";
+    const delen = text.split(new RegExp("(?=\\b(?:" + werkw + ")\\b)", "i")).map((x) => x.trim()).filter(Boolean);
+    if (delen.length > 1) {
+      const schoon = delen
+        .map((x) => x.replace(/(?:[,;]\s*|\s+)(en|dan|en dan|vervolgens|daarna|hierna|nu)\s*$/i, "").trim())
+        .filter((x) => x.replace(/\s/g, "").length > 2);
+      // korte flarden bij de vorige voegen
+      const samen = [];
+      for (const p of schoon) {
+        if (samen.length && p.replace(/\s/g, "").length < 12) samen[samen.length - 1] += " " + p;
+        else samen.push(p);
+      }
+      if (samen.length > 1) return samen;
+    }
+  }
+  return result;
 }
 
 // ---------- zoeken dat tegen een typefout kan ----------
@@ -438,6 +460,14 @@ function softMatch(haystack, needle) {
 }
 // Meerdere velden tegelijk doorzoeken.
 const softMatchAny = (fields, needle) => !norm(needle).trim() || fields.some((f) => softMatch(f || "", needle));
+// Strikte variant zonder typo-tolerantie: elk zoekwoord moet letterlijk (als
+// deel van een woord) voorkomen. "madeleine" matcht dus níet "madelief".
+const strictMatchAny = (fields, needle) => {
+  const woorden = norm(needle).trim().split(/\s+/).filter(Boolean);
+  if (!woorden.length) return true;
+  const hooi = norm(fields.filter(Boolean).join(" "));
+  return woorden.every((w) => hooi.includes(w));
+};
 
 // ---------- schoonmaak ----------
 const CLEANING_AREAS = ["Keuken", "Bijkeuken", "Afwasruimte", "Koelruimte", "Opslag"];
@@ -481,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-10d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-11a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4360,6 +4390,10 @@ function matchRecipe(r, q) {
   if (!q) return true;
   return softMatchAny([r.name, (r.ingredients || []).map((i) => i.item).join(" ")], q);
 }
+function strictMatchRecipe(r, q) {
+  if (!q) return true;
+  return strictMatchAny([r.name, (r.ingredients || []).map((i) => i.item).join(" ")], q);
+}
 
 function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
   const [sortMode, setSortMode] = useState("nieuw");
@@ -4373,9 +4407,17 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
   (stock || []).forEach((v) => { if (v.recipeId) madeCount[v.recipeId] = (madeCount[v.recipeId] || 0) + 1; });
   const varsOf = (id) => recipes.filter((r) => r.baseId === id).sort((a, b) => (madeCount[b.id] || 0) - (madeCount[a.id] || 0) || a.name.localeCompare(b.name, "nl"));
   // Variaties staan niet los in de lijst, maar zijn wél via de zoekbalk te vinden.
-  let shown = q
-    ? recipes.filter((r) => matchRecipe(r, q))
-    : recipes.filter((r) => !r.baseId);
+  let bedoeldeJe = false;
+  let shown;
+  if (q) {
+    shown = recipes.filter((r) => strictMatchRecipe(r, q));
+    if (shown.length === 0) {
+      shown = recipes.filter((r) => matchRecipe(r, q)); // typo-tolerante terugval
+      bedoeldeJe = shown.length > 0;
+    }
+  } else {
+    shown = recipes.filter((r) => !r.baseId);
+  }
   const cats = ["Alle", "Basisrecepten", ...[...new Set(recipes.map((r) => r.category))].sort((a, b) => a.localeCompare(b, "nl"))];
   if (catF === "Basisrecepten") shown = shown.filter((r) => r.isBase || varsOf(r.id).length > 0);
   else if (catF !== "Alle") shown = shown.filter((r) => r.category === catF);
@@ -4409,6 +4451,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
         <button onClick={() => setSortMode("used")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "used" ? "pillon" : "pill")}>Veel gebruikt</button>
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
+      {bedoeldeJe && <div className="rounded-xl p-3 mb-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{q}" — bedoelde je:</div>}
       <div className="text-right text-xs mute mb-2">{sorted.length} {sorted.length === 1 ? "recept" : "recepten"}</div>
       <div className="space-y-2.5">
         {visible.map((r) => (
@@ -4502,7 +4545,12 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
   const varsOf = (id) => recipes.filter((r) => r.baseId === id && r.ferment).sort((a, b) => (madeCount[b.id] || 0) - (madeCount[a.id] || 0) || a.name.localeCompare(b.name, "nl"));
   const query = q.trim().toLowerCase();
   // Zonder zoekterm: variaties niet los tonen; met zoekterm: zoek op naam en ingrediënten.
-  let fermentRecipes = recipes.filter((r) => r.ferment && (query ? matchRecipe(r, query) : !r.baseId));
+  let bedoeldeJe = false;
+  let fermentRecipes = recipes.filter((r) => r.ferment && (query ? strictMatchRecipe(r, query) : !r.baseId));
+  if (query && fermentRecipes.length === 0) {
+    fermentRecipes = recipes.filter((r) => r.ferment && matchRecipe(r, query));
+    bedoeldeJe = fermentRecipes.length > 0;
+  }
   if (seasonF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.season.includes(seasonF) || r.season.includes("Hele jaar"));
   if (methodF !== "Alle") fermentRecipes = fermentRecipes.filter((r) => r.fermentMethod === methodF);
   fermentRecipes = fermentRecipes.sort((a, b) => {
@@ -4560,6 +4608,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
         <button onClick={() => setFSort("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
         <button onClick={() => setFSort("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (fSort === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
+      {bedoeldeJe && <div className="rounded-xl p-3 mb-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{query}" — bedoelde je:</div>}
       <div className="text-right text-xs mute mb-2">{fermentRecipes.length} recepten</div>
       <div className="space-y-2.5">
         {fermentRecipes.slice(0, limit).map((r) => (
@@ -5866,6 +5915,12 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     setTimeout(() => { const el = document.querySelector('[data-vf-item="' + (i + 1) + '"]'); if (el) el.focus(); }, 0);
   };
   const delIng = (i) => setIngs((xs) => xs.filter((_, j) => j !== i));
+  // Backspace in een lege rij (behalve de eerste) verwijdert de rij en zet de
+  // cursor in het vorige hoeveelheid-vak.
+  const backIng = (i) => {
+    setIngs((xs) => xs.filter((_, j) => j !== i));
+    setTimeout(() => { const el = document.querySelector('[data-vf-amt="' + (i - 1) + '"]'); if (el) el.focus(); }, 0);
+  };
   // Houdbaar tot = productiedatum + dagen (bij toevoegen); daarna altijd handmatig aanpasbaar.
   const computedExpiry = (() => {
     const d = Number(days);
@@ -5963,8 +6018,8 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
       <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
           <div key={idx} className="flex gap-2">
-            <input data-vf-item={idx} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} placeholder="Ingrediënt" />
-            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(idx); } }} placeholder="Hoeveelheid" />
+            <input data-vf-item={idx} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={i.item} onChange={(e) => setIng(idx, "item", e.target.value)} onKeyDown={(e) => { if (e.key === "Backspace" && idx > 0 && !String(i.item || "").trim() && !String(i.amount || "").trim()) { e.preventDefault(); backIng(idx); } }} placeholder="Ingrediënt" />
+            <input data-vf-amt={idx} className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={i.amount} onChange={(e) => setIng(idx, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(idx); } else if (e.key === "Backspace" && idx > 0 && !String(i.item || "").trim() && !String(i.amount || "").trim()) { e.preventDefault(); backIng(idx); } }} placeholder="Hoeveelheid" />
             {ings.length > 1 && <button onClick={() => delIng(idx)} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>}
           </div>
         ))}
@@ -7270,6 +7325,16 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
   const setIng = (i, k, v) => setIngredients((a) => a.map((x, idx) => (idx === i ? { ...x, [k]: v } : x)));
   // Enter in het hoeveelheid-vakje: nieuwe ingrediëntrij direct eronder, met de
   // cursor alvast in het naamveld. Voor stappen idem (Shift+Enter = nieuwe regel).
+  // Backspace in een lege rij (behalve de eerste) verwijdert de rij en zet de
+  // cursor in het vorige hoeveelheid-vak; bij stappen in de vorige stap.
+  const backIng = (i) => {
+    setIngredients((a) => a.filter((_, x) => x !== i));
+    setTimeout(() => { const el = document.querySelector('[data-rf-amt="' + (i - 1) + '"]'); if (el) el.focus(); }, 0);
+  };
+  const backStep = (i) => {
+    setSteps((a) => a.filter((_, x) => x !== i));
+    setTimeout(() => { const el = document.querySelector('[data-rf-step="' + (i - 1) + '"]'); if (el) { el.focus(); const L = el.value.length; try { el.setSelectionRange(L, L); } catch (e) {} } }, 0);
+  };
   const addIngAt = (i) => {
     setAlgOpen(null);
     setIngredients((a) => [...a.slice(0, i + 1), { item: "", amount: "" }, ...a.slice(i + 1)]);
@@ -7387,7 +7452,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       <div className="grid grid-cols-2 gap-3">
         <Field label="Houdbaar (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={shelfDays} onChange={(e) => setShelfDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>
         <Field label="Type opslag">
-          <AppSelect className={inputCls} value={storageOpt} onChange={(v) => { setStorageOpt(v); if (v !== "anders") setShelfStorage(v); else setShelfStorage(""); }} options={["ongekoeld", "gekoeld", "bevroren", "droog", "anders"]} />
+          <AppSelect className={inputCls} value={storageOpt} onChange={(v) => { setStorageOpt(v); if (v !== "anders") setShelfStorage(v); else setShelfStorage(""); if (v === "bevroren") setShelfDays("365"); else if (shelfDays === "365") setShelfDays(""); }} options={["ongekoeld", "gekoeld", "bevroren", "droog", "anders"]} />
           {storageOpt === "anders" && <input className={inputCls + " mt-2"} value={shelfStorage} onChange={(e) => setShelfStorage(e.target.value)} placeholder="Omschrijf de opslag" />}
         </Field>
       </div>
@@ -7415,8 +7480,8 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); const manual = hasAllergenOverride(ing); return (
         <div key={i}>
           <div className="flex gap-2">
-            <input data-rf-item={i} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} placeholder="Ingrediënt" />
-            <input className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } }} placeholder="Hoeveelheid" />
+            <input data-rf-item={i} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} onKeyDown={(e) => { if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Ingrediënt" />
+            <input data-rf-amt={i} className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
             <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
@@ -7457,7 +7522,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       <div className="space-y-2 mb-2">{steps.map((s, i) => (
         <div key={i} className="flex gap-2 items-start">
           <span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-2" style={{ background: "#e8ebe0", color: T.green }}>{i + 1}</span>
-          <textarea data-rf-step={i} rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStepAt(i); } }} placeholder="Beschrijf de stap — of plak de hele bereiding" />
+          <textarea data-rf-step={i} rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStepAt(i); } else if (e.key === "Backspace" && i > 0 && !String(s || "").trim()) { e.preventDefault(); backStep(i); } }} placeholder="Beschrijf de stap — of plak de hele bereiding" />
           <button onClick={() => setSteps((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1 mt-2"><Trash2 size={16} /></button>
         </div>))}
       </div>
