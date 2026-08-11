@@ -2678,10 +2678,10 @@ const T = { paper:"#f2f0e8", green:"#3a4b30", ink:"#2b3823", line:"#e3e0d4" };
 const serif = { fontFamily: "'Cormorant Garamond', Georgia, 'Times New Roman', serif" };
 const inputCls = "input px-3 py-2.5 placeholder:text-neutral-400";
 const seasonStyle = {
-  Lente:{ background:"#e4ecdc", color:"#3f5a34" },
-  Zomer:{ background:"#f1ead2", color:"#7a6420" },
-  Herfst:{ background:"#efe0d3", color:"#8a5a34" },
-  Winter:{ background:"#dfe6e6", color:"#3f5560" },
+  Lente:{ background:"#e0f0d6", color:"#3c6b2c" },   // lichtgroen
+  Zomer:{ background:"#f6d9d2", color:"#9c3a2a" },   // rood
+  Herfst:{ background:"#e8d9c2", color:"#6f4a1f" },  // bruin
+  Winter:{ background:"#daeaf5", color:"#2f5d7d" },  // lichtblauw
 };
 
 function BrandCSS() {
@@ -6012,7 +6012,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
           ? <Field label="Houdbaar tot"><input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} /></Field>
           : <Field label="Dagen houdbaar"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>}
       </div>
-      {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{computedExpiry}</span> — later nog aan te passen via Bewerken.</p>}
+      {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{fmtDMY(computedExpiry)}</span> — later nog aan te passen via Bewerken.</p>}
       <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={(v) => { setStorage(v); if (v === "ingevroren") setDays("365"); else if (days === "365") setDays(""); }} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
       <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
       <div className="space-y-2 mb-2">
@@ -7511,9 +7511,6 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
       <div className="flex items-center justify-between gap-2 mt-5 mb-1.5">
         <span className="text-sm font-medium ink">Bereiding</span>
-        {steps.some((x) => splitSteps(x).length > 1) && (
-          <button type="button" onClick={splitAll} className="ff inline-flex items-center gap-1 text-xs font-medium acc hover:opacity-70"><GitBranch size={13} /> Verdeel in stappen</button>
-        )}
       </div>
       <div className="flex items-center gap-2 mb-2 -mt-1">
         <p className="text-xs mute flex-1 min-w-0">Typ of plak gerust de hele bereiding in één vak, en gebruik daarna de knop "Opdelen in stappen".</p>
