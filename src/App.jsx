@@ -2927,6 +2927,8 @@ function App() {
   const replaceTop = (sNew) => setStack((st) => [...st.slice(0, -1), sNew]);
   const goBack = () => { if (stack.length > 1) { try { window.history.back(); } catch (e) { back(); } } };
   const goHome = () => { resetTo({ screen: "list" }); setSection("home"); };
+  // Elke schermwissel (formulier, detail, terug) begint bovenaan de pagina.
+  useEffect(() => { try { window.scrollTo(0, 0); } catch (e) {} }, [current, section]);
   // Op formulieren geen navigatiebalk: één tik zou anders je invoer weggooien.
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
@@ -5851,7 +5853,6 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const [storage, setStorage] = useState(editing ? (editing.storage || "gekoeld") : mapStorage(prefill && prefill.shelfStorage));
   const [recipeId, setRecipeId] = useState(src.recipeId || null);
   const [ings, setIngs] = useState((src.ingredients && src.ingredients.length ? src.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
-  const [pick, setPick] = useState("");
   // Referentie voor het meeschalen: opbrengst + originele hoeveelheden van het recept.
   const [refYield, setRefYield] = useState(initRef.refYield);
   const [refIngs, setRefIngs] = useState(prefill && prefill.ingredients && prefill.ingredients.length ? prefill.ingredients.map((i) => ({ ...i })) : null);
@@ -5874,7 +5875,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
   })();
   const applyRecipe = (r) => {
-    setProduct(r.name);
+    setProduct(r.name); setPicked(true);
     setRecipeId(r.id);
     setIngs((r.ingredients && r.ingredients.length ? r.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
     if (r.shelfDays) setDays(String(r.shelfDays));
@@ -5886,7 +5887,6 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     if (r.yieldUnit) setUnit(r.yieldUnit);
     setRefUnitNum(ref.refUnitNum);
     setRefIngs(r.ingredients && r.ingredients.length ? r.ingredients.map((i) => ({ ...i })) : null);
-    setPick("");
   };
   // Wijkt het ingevulde aantal af van de receptopbrengst, dan schalen de
   // ingrediëntenhoeveelheden automatisch mee.
@@ -5903,7 +5903,8 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
     if (!isFinite(f) || f <= 0) return;
     setIngs(refIngs.map((i) => ({ item: i.item, amount: Math.abs(f - 1) < 1e-9 ? i.amount : scaleAmount(i.amount, f) })));
   }, [qty, unit, refYield, refUnitNum, refIngs]);
-  const pickMatches = pick.trim() ? (allRecipes || []).filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], pick)).slice(0, 8) : [];
+  const [picked, setPicked] = useState(!!editing);
+  const pickMatches = !picked && product.trim().length >= 2 ? (allRecipes || []).filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], product)).slice(0, 6) : [];
   const nm = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
   const submit = () => {
     if (!product.trim()) { alert("Vul de productnaam in."); return; }
@@ -5924,28 +5925,32 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   return (
     <div>
       <FormBar title={editing ? "Voorraad bewerken" : "Toevoegen aan de voorraad"} onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
-      {!editing && <>
-        <div className="text-sm font-medium ink mb-1.5">Kies een recept <span className="mute font-normal">(vult naam, ingrediënten en houdbaarheid in)</span></div>
-        <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een recept (ook fermentatie)" className={inputCls + " pl-9"} /></div>
-        {pickMatches.length > 0 && (
-          <div className="card overflow-hidden mb-4">
-            {pickMatches.map((r, i) => (
-              <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
-                {r.ferment ? <FlaskConical size={15} className="acc shrink-0" /> : <ChefHat size={15} className="acc shrink-0" />}
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.category}{r.shelfDays ? " · " + r.shelfDays + " dagen houdbaar" : ""}</div></div>
-              </button>
-            ))}
-          </div>
-        )}
-      </>}
-      <Field label="Product"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Pruimenjam met rozemarijn" /></Field>
+      <Field label={editing ? "Product" : "Product / recept"}>
+        <div className="relative">
+          <input className={inputCls} value={product}
+            onChange={(e) => { setProduct(e.target.value); setPicked(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPicked(true); } }}
+            onBlur={() => setTimeout(() => setPicked(true), 120)}
+            placeholder="Zoek een recept of typ een eigen naam" />
+          {pickMatches.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "16rem", overflowY: "auto" }}>
+              {pickMatches.map((r) => (
+                <button key={r.id} type="button" onMouseDown={(e) => { e.preventDefault(); applyRecipe(r); }} className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
+                  {r.name} <span className="mute">· {r.fermentMethod || r.category}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {!editing && <p className="text-[11.5px] mute mt-1">Een recept kiezen vult naam, ingrediënten en houdbaarheid in.</p>}
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
         {editing
           ? <Field label="Ooit gemaakt (totaal)"><input type="text" inputMode="decimal" className={inputCls} value={initialQty} onChange={(e) => setInitialQty(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
-          : <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 200 g pot" /></Field>}
+          : <Field label="Hoeveelheid / verpakkingswijze"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 200 g pot" /></Field>}
       </div>
-      {editing && <Field label="Verpakkingseenheid"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 1 l vacumeerzak" /></Field>}
+      {editing && <Field label="Hoeveelheid / verpakkingswijze"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 1 l vacumeerzak" /></Field>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Productiedatum"><input type="date" className={inputCls} value={productionDate} onChange={(e) => setProductionDate(e.target.value)} /></Field>
         {editing
@@ -7359,12 +7364,12 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
         )}
       </div>
       <div className="mb-1 text-sm font-medium ink">Opbrengst</div>
-      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11.5px] mute mb-0.5"><span>Aantal</span><span>Eenheid</span><span>Verpakking</span><span /></div>
+      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-[11.5px] mute mb-0.5"><span>Aantal</span><span>Hoeveelheid</span><span>Verpakkingswijze</span><span /></div>
       <div className="space-y-2 mb-2">
         {yields.map((y, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
             <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={y.count} onChange={(e) => setYieldRow(i, "count", e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="20 St." />
-            <input className="input px-2.5 py-2 w-full text-sm" value={y.size} onChange={(e) => setYieldRow(i, "size", e.target.value)} placeholder="200 gr" />
+            <input className="input px-2.5 py-2 w-full text-sm" value={y.size} onChange={(e) => setYieldRow(i, "size", e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
             <input className="input px-2.5 py-2 w-full text-sm" value={y.pack} onChange={(e) => setYieldRow(i, "pack", e.target.value)} placeholder="kleine pot" />
             {yields.length > 1 ? <button onClick={() => setYields((ys) => ys.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={15} /></button> : <span className="w-6" />}
           </div>
@@ -7534,9 +7539,8 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
   const [pH, setPH] = useState(editing && editing.pH != null ? String(editing.pH) : (fd && fd.phTarget != null ? String(fd.phTarget) : ""));
   const [sugarPct, setSugarPct] = useState(editing && editing.sugarPct != null ? String(editing.sugarPct) : (fd && fd.sugarPct ? String(fd.sugarPct) : ""));
   const [notes, setNotes] = useState(editing ? editing.notes : "");
-  const [pick, setPick] = useState("");
   const applyRecipe = (r) => {
-    setProduct(r.name); setRecipeId(r.id);
+    setProduct(r.name); setRecipeId(r.id); setPicked(true);
     if (r.fermentMethod) setType(r.fermentMethod);
     const d = r.fermentDefaults;
     if (d) {
@@ -7546,9 +7550,9 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
       setPH(d.phTarget != null ? String(d.phTarget) : "");
       setSugarPct(d.sugarPct ? String(d.sugarPct) : "");
     }
-    setPick("");
   };
-  const pickMatches = pick.trim() ? (fermentRecipes || []).filter((r) => softMatchAny([r.name, r.fermentMethod, r.category], pick)).slice(0, 8) : [];
+  const [picked, setPicked] = useState(!!editing || !!prefill);
+  const pickMatches = !picked && product.trim().length >= 2 ? (fermentRecipes || []).filter((r) => softMatchAny([r.name, r.fermentMethod, r.category], product)).slice(0, 6) : [];
   const isMethod = FERMENT_METHODS.includes(type);
   const tgt = FERMENT_TARGETS[type];
   const nz = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
@@ -7559,31 +7563,35 @@ function BatchForm({ prefill, editing, fermentRecipes, onCancel, onSave }) {
   return (
     <div>
       <FormBar title={editing ? "Batch bewerken" : "Nieuwe batch"} onCancel={onCancel} onSave={submit} saveLabel={editing ? "Opslaan" : "Registreer"} />
-      {!editing && <>
-        <div className="text-sm font-medium ink mb-1.5">Kies een fermentatierecept <span className="mute font-normal">(vult naam, methode en richtlijn in)</span></div>
-        <div className="relative mb-2"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" /><input value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Zoek een fermentatierecept" className={inputCls + " pl-9"} /></div>
-        {pickMatches.length > 0 && (
-          <div className="card overflow-hidden mb-4">
-            {pickMatches.map((r, i) => (
-              <button key={r.id} onClick={() => applyRecipe(r)} className={"ff w-full flex items-center gap-3 px-4 py-3 text-left " + (i > 0 ? "divi" : "")}>
-                <FlaskConical size={15} className="acc shrink-0" />
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium ink truncate">{r.name}</div><div className="text-xs mute">{r.fermentMethod || r.category}{r.fermentDefaults ? [r.fermentDefaults.saltPct ? r.fermentDefaults.saltPct + "%" : null, r.fermentDefaults.days ? r.fermentDefaults.days + " dgn" : null].filter(Boolean).map((x) => " · " + x).join("") : ""}</div></div>
-              </button>
-            ))}
-          </div>
-        )}
-      </>}
-      <Field label="Product / recept"><input className={inputCls} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="bv. Zuurkool van rode kool" /></Field>
+      <Field label="Product / recept">
+        <div className="relative">
+          <input className={inputCls} value={product}
+            onChange={(e) => { setProduct(e.target.value); setPicked(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPicked(true); } }}
+            onBlur={() => setTimeout(() => setPicked(true), 120)}
+            placeholder="Zoek een fermentatierecept of typ een eigen naam" />
+          {pickMatches.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "16rem", overflowY: "auto" }}>
+              {pickMatches.map((r) => (
+                <button key={r.id} type="button" onMouseDown={(e) => { e.preventDefault(); applyRecipe(r); }} className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
+                  {r.name} <span className="mute">· {r.fermentMethod || r.category}{r.fermentDefaults && r.fermentDefaults.days ? " · " + r.fermentDefaults.days + " dgn" : ""}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-[11.5px] mute mt-1">Een recept kiezen vult naam, methode en richtlijn in.</p>
+      </Field>
       <Field label="Type / methode"><AppSelect className={inputCls} value={type} onChange={setType} options={["Melkzuur","Suikerfermentatie","Azijnfermentatie","Zuurkool","Kimchi","Hotsauce","Kappertjes","Kombucha","Waterkefir","Gemberbier","Wilde drank","Landwijn / cider","Zuivel","Zoutpruimen","Anders"]} /></Field>
       {tgt && <p className="text-xs mute -mt-2 mb-4">{tgt.note}</p>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Startdatum"><input type="date" className={inputCls} value={startDate} onChange={(e) => setStartDate(e.target.value)} /></Field>
         <Field label="Duur (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="volgt het recept" /></Field>
         <Field label="Zoutgehalte (%) (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={saltPct} onChange={(e) => setSaltPct(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
-        <Field label="Temperatuur (°C)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
-        <Field label="Hoeveelheid"><input className={inputCls} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="bv. 3 kg" /></Field>
-        <Field label="Gewenste pH (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={pH} onChange={(e) => setPH(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,5" /></Field>
+        <Field label="Temperatuur (°C) (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
         <Field label="Suikergehalte (%) (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={sugarPct} onChange={(e) => setSugarPct(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
+        <Field label="Gewenste pH (optioneel)"><input type="text" inputMode="decimal" className={inputCls} value={pH} onChange={(e) => setPH(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 3,5" /></Field>
+        <Field label="Hoeveelheid"><input className={inputCls} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="bv. 3 kg" /></Field>
       </div>
       <Field label="Handelingen / opmerkingen"><textarea rows={2} className={inputCls + " resize-none"} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Waarnemingen, handelingen, proefnotities…" /></Field>
       <p className="text-xs mute -mt-2">Metingen (pH, suiker) over de dagen leg je vast in het logboek, na het opslaan van de batch.</p>
