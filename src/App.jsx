@@ -5420,10 +5420,10 @@ function BatchLabelModal({ batch, onClose }) {
 // niet geprint; zelfde thermische opmaak (102×38 mm) als de andere etiketten.
 function printCustomLabel(f) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inhoud = [f.gram || "", f.pack || ""].filter(Boolean).join(" ");
+  const inhoud = String(f.gram || "").trim();
   // Alleen naam (evt. + productiedatum) ingevuld → grote vul-layout:
   // de tekst wordt automatisch zo groot geschaald dat hij de sticker vult.
-  const bijnaLeeg = !f.tht && !f.ready && !inhoud && !f.storage && !String(f.note || "").trim() && !(f.allergens && f.allergens.length);
+  const bijnaLeeg = !f.tht && !f.ready && !inhoud && !String(f.note || "").trim() && !(f.allergens && f.allergens.length);
   if (bijnaLeeg) {
     const fmtD = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd + "-" + m + "-" + y; };
     const voet = f.prod ? '<div class="voet">Gemaakt: ' + fmtD(f.prod) + "</div>" : "";
@@ -5458,13 +5458,10 @@ function printCustomLabel(f) {
     (f.tht ? '<div class="rij">T.H.T.: ' + esc(fmtDMY(f.tht)) + "</div>" : "") +
     (f.ready ? '<div class="rij">Klaar rond: ' + esc(fmtDMY(f.ready)) + "</div>" : "") +
     (f.allergens && f.allergens.length ? '<div class="klein">Allergenen: ' + esc(f.allergens.join(", ")) + "</div>" : "") +
-    (f.storage ? '<div class="klein">Opslag: ' + esc(f.storage) + "</div>" : "") +
     (String(f.note || "").trim() ? '<div class="klein">' + esc(String(f.note).trim()) + "</div>" : "") +
     "</div></body></html>");
 }
 
-const LABEL_PACKS = ["Vacumeerzak", "Pot 200", "Pot 500"];
-const LABEL_STORAGE = ["gekoeld", "ongekoeld", "bevroren", "droog"];
 function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const mapStore = (t) => { const x = String(t || "").toLowerCase(); if (/ongekoeld/.test(x)) return "ongekoeld"; if (/vrie|bevroren/.test(x)) return "bevroren"; if (/droog/.test(x)) return "droog"; if (/koel/.test(x)) return "gekoeld"; return ""; };
   const thtVan = (p, dgn) => { if (!p || !dgn) return ""; const dt = new Date(p + "T12:00:00"); if (isNaN(dt)) return ""; dt.setDate(dt.getDate() + Number(dgn)); return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"); };
@@ -5475,7 +5472,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const [tht, setTht] = useState("");
   const [ready, setReady] = useState("");
   const [gram, setGram] = useState("");
-  const [pack, setPack] = useState("");
   // Eén dag erbij, gerekend vanaf de productiedatum: leeg veld → prod + 1,
   // daarna telkens één dag verder vanaf de ingevulde datum.
   const schuifDag = (cur, set, richting) => {
@@ -5495,7 +5491,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     if (isNaN(a) || isNaN(b)) return null;
     return Math.round((b - a) / 86400000);
   };
-  const [storage, setStorage] = useState("");
   const [note, setNote] = useState("");
   const [allergens, setAllergens] = useState([]);
   const [algOpen, setAlgOpen] = useState(false);
@@ -5524,8 +5519,8 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     if (!verplichtOk()) return;
     // Invulling bewaren voor de "Vorige"-knop: extra stickers van dezelfde
     // soort zijn dan zo teruggehaald, ook na het sluiten van de popup.
-    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
-    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
+    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, note, allergens })); } catch (e) {}
+    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
   // Printen én direct in de voorraad: zelfde print, daarna opent het voorraad-
@@ -5533,19 +5528,17 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   // Het opslaan zelf vraagt zoals altijd wie het doet via de naam-popup.
   const doPrintEnVoorraad = () => {
     if (!verplichtOk()) return;
-    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, pack, storage, note, allergens })); } catch (e) {}
-    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), pack: pack.trim(), storage, note, allergens });
+    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, note, allergens })); } catch (e) {}
+    printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), note, allergens });
     const dgn = (() => { if (!tht || !prod) return null; const a = new Date(prod + "T12:00:00"), b = new Date(tht + "T12:00:00"); return isNaN(a) || isNaN(b) ? null : Math.round((b - a) / 86400000); })();
-    const eenheid = [gram.trim(), pack.trim()].filter(Boolean).join(" ").trim();
-    onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: eenheid, shelfStorage: storage || "" });
+    onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: gram.trim() });
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
   // Alles leegmaken voor een vers etiket; alleen de productiedatum blijft vandaag.
   const maakLeeg = () => {
     setName(""); setPicked(false); setSuggIdx(-1);
     setProd(today); setTht(""); setReady("");
-    setGram(""); setPack(""); setStorage("");
-    setNote(""); setAllergens([]); setAlgOpen(false);
+    setGram(""); setNote(""); setAllergens([]); setAlgOpen(false);
     setTimeout(() => { try { if (naamRef.current) naamRef.current.focus(); } catch (e) {} }, 30);
   };
   const herstelVorige = () => {
@@ -5563,8 +5556,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     setProd(today);
     setTht(dT != null ? plus(dT) : "");
     setReady(dR != null ? plus(dR) : "");
-    setGram(vorige.gram || ""); setPack(vorige.pack === "__anders" ? (vorige.packVrij || "") : (vorige.pack || ""));
-    setStorage(vorige.storage || ""); setNote(vorige.note || "");
+    setGram(vorige.gram || ""); setNote(vorige.note || "");
     setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
   };
   return (
@@ -5629,14 +5621,6 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
               <button type="button" onClick={() => schuifDag(ready, setReady, -1)} className="ff shrink-0 rounded-lg px-1 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag eraf"><Minus size={13} /></button>
               <button type="button" onClick={() => schuifDag(ready, setReady, 1)} className="ff shrink-0 rounded-lg px-1 text-sm font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title="Eén dag erbij (vanaf de productiedatum)"><Plus size={13} /></button>
             </div>
-          </div>
-          <div>
-            <div className="text-xs font-bold ink mb-1">Verpakkingswijze</div>
-            <ComboInput value={pack} onChange={setPack} options={LABEL_PACKS} placeholder="Typ of kies" />
-          </div>
-          <div>
-            <div className="text-xs font-bold ink mb-1">Opslagmanier</div>
-            <ComboInput value={storage} onChange={(v) => { setStorage(v); if (/bevroren|vrie/i.test(v)) setTht(thtVan(prod || today, 365)); else if (tht === thtVan(prod || today, 365)) setTht(""); }} options={LABEL_STORAGE} placeholder="Typ of kies" />
           </div>
         </div>
         <div className="mt-1.5">
