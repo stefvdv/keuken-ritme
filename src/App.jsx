@@ -5370,6 +5370,26 @@ function BatchLabelModal({ batch, onClose }) {
 function printCustomLabel(f) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const inhoud = [f.gram || "", f.pack || ""].filter(Boolean).join(" ");
+  // Alleen naam (evt. + productiedatum) ingevuld → grote vul-layout:
+  // de tekst wordt automatisch zo groot geschaald dat hij de sticker vult.
+  const bijnaLeeg = !f.tht && !f.ready && !inhoud && !f.storage && !String(f.note || "").trim() && !(f.allergens && f.allergens.length);
+  if (bijnaLeeg) {
+    const fmtD = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd + "-" + m + "-" + y; };
+    const voet = f.prod ? '<div class="voet">Gemaakt: ' + fmtD(f.prod) + "</div>" : "";
+    printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+      "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
+      "html,body{margin:0;padding:0}" +
+      "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
+      "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+      '.vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:' + (f.prod ? "6mm" : "1.5mm") + ';display:flex;align-items:center;justify-content:center;overflow:hidden}' +
+      "#groot{font-weight:bold;line-height:1.05;text-align:center;word-wrap:break-word;max-width:100%}" +
+      ".voet{position:absolute;left:2.5mm;right:2.5mm;bottom:1.2mm;font-weight:bold;font-size:9pt;text-align:center}" +
+      "</style></head><body>" +
+      '<div class="vul"><div id="groot">' + esc(f.name) + "</div></div>" + voet +
+      "<scr" + 'ipt>(function(){var t=document.getElementById("groot"),b=t.parentElement,lo=8,hi=140;while(hi-lo>1){var m=(lo+hi)>>1;t.style.fontSize=m+"px";if(t.scrollWidth<=b.clientWidth&&t.scrollHeight<=b.clientHeight){lo=m;}else{hi=m;}}t.style.fontSize=lo+"px";})();</scr' + "ipt>" +
+      "</body></html>");
+    return;
+  }
   printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
