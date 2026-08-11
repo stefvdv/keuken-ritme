@@ -5505,10 +5505,11 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     setName(r.name); setPicked(true);
     if (r.shelfDays) setTht(thtVan(basis, r.shelfDays));
     setAllergens(recipeAllergens(r));
-    const st = mapStore(r.shelfStorage);
-    if (st) setStorage(st);
     const fd = r.fermentDefaults;
     if (r.ferment && fd && fd.days) setReady(thtVan(basis, fd.days));
+    // Handelingen: bij fermentatierecepten de standaardhandeling van de methode.
+    const acties = r.ferment && r.fermentMethod && FERMENT_ACTIONS[r.fermentMethod];
+    if (acties && acties.length) setNote(acties.map((a) => a.label + (a.everyDays > 1 ? " (elke " + a.everyDays + " dagen)" : " (dagelijks)")).join(" · "));
   };
   useEffect(() => { if (prefillRecipe) applyRecipe(prefillRecipe, today); }, []);
   const naamRef = React.useRef(null);
