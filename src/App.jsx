@@ -3890,7 +3890,7 @@ function App() {
               <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onMeasure={(id) => setMeasureFor(id)} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [noticeKey]: true }))} />
             )}
             {canEdit && checkBanner && (
-              <ReminderBanner icon={<Sparkles size={15} />} title="Schoonmaakcontrole"
+              <ReminderBanner groep="Schoonmaak" icon={<Sparkles size={15} />} title="Schoonmaakcontrole"
                 text={"Het is " + String(CHECK_HOUR).padStart(2, "0") + ":" + String(CHECK_MIN).padStart(2, "0") + " geweest — tijd om de schoonmaak van vandaag af te tekenen."}
                 actionLabel="Aftekenen" onAction={() => setCheckOpen(true)} onDismiss={dismissCheckBanner} />
             )}
@@ -4663,7 +4663,19 @@ function collectNotices(batches) {
 
 // Herinneringsbanner (fermentatiemetingen, schoonmaakcontrole): valt op zonder
 // het werk te blokkeren. Zit net onder de navigatie, weg te klikken met het kruisje.
-function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss }) {
+function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss, groep = "HACCP" }) {
+  // Inklapbaar: de ingeklapte stand wordt per keukendag onthouden, zodat de
+  // banner klein blijft tot 02:00 maar de volgende werkdag weer open begint.
+  const dichtKey = "ritme:banner-dicht:" + groep + ":" + title;
+  const [dicht, setDicht] = useState(() => { try { return localStorage.getItem(dichtKey) === kitchenDate(); } catch (e) { return false; } });
+  const zetDicht = (v) => { setDicht(v); try { if (v) localStorage.setItem(dichtKey, kitchenDate()); else localStorage.removeItem(dichtKey); } catch (e) {} };
+  if (dicht) return (
+    <div className="rounded-xl px-4 py-3 mt-4 flex items-center gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+      <div className="font-semibold flex items-center gap-1.5 text-sm flex-1 min-w-0 truncate">{icon} {groep} vraagt aandacht</div>
+      <button onClick={() => zetDicht(false)} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Uitklappen"><ChevronDown size={16} /></button>
+      <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
+    </div>
+  );
   return (
     <div className="rounded-xl p-4 mt-4" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
       <div className="flex items-start justify-between gap-3">
@@ -4672,6 +4684,7 @@ function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss })
           <p className="mt-1 text-sm">{text}</p>
           <button onClick={onAction} className="ff mt-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }}>{actionLabel}</button>
         </div>
+        <button onClick={() => zetDicht(true)} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Inklappen"><ChevronUp size={16} /></button>
         <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Sluiten"><X size={16} /></button>
       </div>
     </div>
@@ -4682,6 +4695,16 @@ function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) 
   const { ready, items } = collectNotices(batches);
   if (ready.length === 0 && items.length === 0) return null;
   const short = (t) => (t.length > 48 ? t.slice(0, 48).trim() + "…" : t);
+  const dichtKey = "ritme:banner-dicht:Fermentatie";
+  const [dicht, setDicht] = useState(() => { try { return localStorage.getItem(dichtKey) === kitchenDate(); } catch (e) { return false; } });
+  const zetDicht = (v) => { setDicht(v); try { if (v) localStorage.setItem(dichtKey, kitchenDate()); else localStorage.removeItem(dichtKey); } catch (e) {} };
+  if (dicht) return (
+    <div className="rounded-xl px-4 py-3 mt-4 flex items-center gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+      <div className="font-semibold flex items-center gap-1.5 text-sm flex-1 min-w-0 truncate"><Bell size={15} /> Fermentatie vraagt aandacht</div>
+      <button onClick={() => zetDicht(false)} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Uitklappen"><ChevronDown size={16} /></button>
+      <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Verberg tot 02:00 vannacht"><X size={16} /></button>
+    </div>
+  );
   return (
     <div className="rounded-xl p-4 mt-4" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
       <div className="flex items-start justify-between gap-3">
@@ -4708,7 +4731,10 @@ function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) 
           </ul>
           <button onClick={onOpen} className="ff mt-2.5 inline-flex items-center gap-1 text-xs font-semibold underline">Naar fermentatie</button>
         </div>
-        <button onClick={onDismiss} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Verberg tot 02:00 vannacht"><X size={16} /></button>
+        <div className="flex shrink-0 gap-0.5">
+          <button onClick={() => zetDicht(true)} className="ff rounded-lg p-1 hover:opacity-70" title="Inklappen"><ChevronUp size={16} /></button>
+          <button onClick={onDismiss} className="ff rounded-lg p-1 hover:opacity-70" title="Verberg tot 02:00 vannacht"><X size={16} /></button>
+        </div>
       </div>
     </div>
   );
