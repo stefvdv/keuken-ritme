@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-11b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-12b"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2773,6 +2773,10 @@ function App() {
   const [haccpRecords, setHaccpRecords] = useState([]);
   const [werkDocs, setWerkDocs] = useState([]); // aanpassingen/nieuwe werkwijze-documenten
   const [stock, setStock] = useState([]); // voorraad
+  // Chef-modus: alleen deze sessie (React-state, dus weg na verversen).
+  const [chefMode, setChefMode] = useState(false);
+  const [assortiment, setAssortiment] = useState([]);
+  const [bdArtikelen, setBdArtikelen] = useState([]);
   const [catSettings, setCatSettings] = useState(() => {
     // Start met de lokale cache; de gedeelde versie uit Supabase overschrijft dit bij het laden.
     try { return { eigen: JSON.parse(localStorage.getItem("ritme:cats-eigen") || "[]") || [], verborgen: JSON.parse(localStorage.getItem("ritme:cats-verborgen") || "[]") || [] }; } catch (e) { return { eigen: [], verborgen: [] }; }
@@ -2788,6 +2792,85 @@ function App() {
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
     flash("Backup gedownload (" + recipes.length + " recepten · " + dishes.length + " gerechten · " + stock.length + " voorraaditems)");
+  };
+  // ---- Assortiment (chef): producten met kost-/verkoopprijs ----
+  const saveAssortimentItem = async (item) => {
+    const it = { ...item, id: item.id || "as" + Date.now() };
+    setAssortiment((xs) => { const i = xs.findIndex((x) => x.id === it.id); return i >= 0 ? xs.map((x) => (x.id === it.id ? it : x)) : [...xs, it]; });
+    if (live) {
+      const { error } = await supabase.from("assortiment").upsert({ id: it.id, data: it, updated_by: user?.naam || "team", updated_at: new Date().toISOString() });
+      if (error) flash("Alleen lokaal bewaard — draai eerst de assortiment-SQL in Supabase");
+    }
+    return it.id;
+  };
+  const deleteAssortimentItem = async (id) => {
+    setAssortiment((xs) => xs.filter((x) => x.id !== id));
+    if (live) await supabase.from("assortiment").delete().eq("id", id);
+  };
+  // ---- BD-Totaal artikelen (inkoop) importeren uit een webshop-Excel ----
+  const importBdArtikelen = async (file) => {
+    const laadXLSX = () => new Promise((res, rej) => {
+      if (window.XLSX) return res(window.XLSX);
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      sc.onload = () => res(window.XLSX); sc.onerror = () => rej(new Error("cdn"));
+      document.head.appendChild(sc);
+    });
+    let XLSX;
+    try { XLSX = await laadXLSX(); } catch (e) { alert("Kon de Excel-bibliotheek niet laden — controleer de internetverbinding."); return; }
+    let rows;
+    try {
+      // XLSX.read leest ook .csv/.txt/.tsv (scheidingsteken wordt herkend)
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
+    } catch (e) { alert("Dit bestand kon niet gelezen worden. Ondersteund: .xlsx, .xls, .csv, .txt (tab- of puntkomma-gescheiden)."); return; }
+    // Kopregel zoeken met soepele kolomnamen, zodat exports van andere
+    // leveranciers ook werken zolang er een omschrijving- en prijskolom is.
+    const syn = {
+      code: ["code", "artikel", "artikelnr", "artikelnummer", "art.nr", "artnr", "art nr"],
+      oms: ["omschrijving", "artikelomschrijving", "naam", "product", "beschrijving", "titel"],
+      merk: ["merknaam", "merk", "brand"],
+      inhoud: ["inhoud", "verpakking", "eenheid", "colli", "collo", "inh"],
+      prijs: ["prijs", "price", "nettoprijs", "netto", "stukprijs", "prijs excl", "prijs excl."],
+      ppe: ["ppe", "prijs per eenheid", "prijs/eenheid", "eenheidsprijs", "prijs p/e"],
+    };
+    const vind = (kop, namen) => { for (const n of namen) { const i = kop.indexOf(n); if (i >= 0) return i; } return -1; };
+    let kopIdx = -1, kop = [];
+    for (let i = 0; i < Math.min(rows.length, 25); i++) {
+      const k = rows[i].map((c) => String(c).trim().toLowerCase());
+      if (vind(k, syn.oms) >= 0 && (vind(k, syn.prijs) >= 0 || vind(k, syn.ppe) >= 0)) { kopIdx = i; kop = k; break; }
+    }
+    if (kopIdx < 0) { alert("Geen kolomkoppen gevonden. Het bestand heeft minimaal een kolom Omschrijving/Naam en een kolom Prijs of PPE nodig."); return; }
+    const iCode = vind(kop, syn.code), iOms = vind(kop, syn.oms), iMerk = vind(kop, syn.merk), iInh = vind(kop, syn.inhoud), iPrijs = vind(kop, syn.prijs), iPpe = vind(kop, syn.ppe);
+    const num = (v) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? null : n; };
+    const perCode = {};
+    for (const r of rows.slice(kopIdx + 1)) {
+      const oms = String(r[iOms] || "").trim();
+      if (!oms || /^-+$/.test(oms)) continue; // streepjesregel of leeg
+      let code = iCode >= 0 ? String(r[iCode] || "").trim() : "";
+      if (/^-+$/.test(code)) continue;
+      if (!code) code = "n:" + oms.toLowerCase(); // leverancier zonder artikelcode
+      perCode[code] = { code, omschrijving: oms, merk: iMerk >= 0 ? String(r[iMerk] || "").trim() : "", inhoud: iInh >= 0 ? String(r[iInh] || "").trim() : "", prijs: iPrijs >= 0 ? num(r[iPrijs]) : null, ppe: iPpe >= 0 ? num(r[iPpe]) : null };
+    }
+    const arts = Object.values(perCode);
+    if (!arts.length) { alert("Geen artikelen gevonden in dit bestand."); return; }
+    // Samenvoegen met wat er al is (nieuwe import overschrijft per artikelcode)
+    setBdArtikelen((xs) => { const map = {}; for (const a of xs) map[a.code] = a; for (const a of arts) map[a.code] = a; return Object.values(map); });
+    if (live) {
+      const stempel = new Date().toISOString();
+      let fout = null;
+      const dbRows = arts.map((a) => ({ ...a, updated_at: stempel }));
+      for (let i = 0; i < dbRows.length && !fout; i += 200) fout = (await supabase.from("bd_artikelen").upsert(dbRows.slice(i, i + 200))).error;
+      if (fout) { flash("Artikelen alleen lokaal — draai eerst de bd_artikelen-SQL in Supabase"); return; }
+    }
+    flash(arts.length + " BD-artikelen ingelezen" + (live ? " — gedeeld met het team" : ""));
+  };
+  const updateBdArtikel = async (art) => {
+    setBdArtikelen((xs) => xs.map((a) => (a.code === art.code ? art : a)));
+    if (live) {
+      const { error } = await supabase.from("bd_artikelen").upsert({ ...art, updated_at: new Date().toISOString() });
+      if (error) flash("Alleen lokaal bewaard — draai eerst de bd_artikelen-SQL in Supabase");
+    }
   };
   const maakWordBackup = async () => {
     const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2909,7 +2992,7 @@ function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
-    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs, ass, bda] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -2927,6 +3010,8 @@ function App() {
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
       supabase.from("app_settings").select("*").eq("key", "recipe_categories"),
+      supabase.from("assortiment").select("*"),
+      supabase.from("bd_artikelen").select("*"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -2961,6 +3046,8 @@ function App() {
     // Gedeelde categorielijst; ontbreekt de tabel of rij nog, dan blijft de lokale cache gelden.
     const csRow = (cs && cs.data && cs.data[0]) || null;
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
+    if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
+    if (bda && bda.data) setBdArtikelen(bda.data.map((r) => ({ code: r.code, omschrijving: r.omschrijving || "", merk: r.merk || "", inhoud: r.inhoud || "", prijs: r.prijs === null ? null : Number(r.prijs), ppe: r.ppe === null ? null : Number(r.ppe) })));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -3935,6 +4022,7 @@ function App() {
     else if (section === "smaak") setNewPairing((n) => n + 1);
     else if (section === "voorraad") push({ screen: "voorraadForm", editing: null, prefill: null });
     else if (section === "technieken") push({ screen: "werkDocForm", editing: null });
+    else if (section === "assortiment") push({ screen: "assortimentForm", editing: null });
     else if (section === "schoonmaak") push({ screen: "cleaningForm", editing: null });
   };
   const showFab = current.screen === "list" && canEdit && section !== "home";
@@ -3946,7 +4034,7 @@ function App() {
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
         {!FORM_SCREENS.has(current.screen) && (
-          <SectionNav section={current.screen === "list" ? section : null}
+          <SectionNav chef={chefMode} section={current.screen === "list" ? section : null}
             setSection={(s) => { setSection(s); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }} />
         )}
         {current.screen === "list" && (
@@ -4004,7 +4092,12 @@ function App() {
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} stock={stock} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} stock={stock} canEdit={canEdit} onExtend={extendBatch} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onOpenMeasure={() => setMeasureOpen(true)} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
-            {section === "voorraad" && <VoorraadList stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
+            {section === "voorraad" && <VoorraadList chefMode={chefMode} recipeById={recipeById} stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
+            {section === "assortiment" && chefMode && <AssortimentList producten={assortiment} bdArtikelen={bdArtikelen}
+              onNew={() => push({ screen: "assortimentForm", editing: null })}
+              onEdit={(id) => push({ screen: "assortimentForm", editing: id })}
+              onDelete={(id) => { if (window.confirm("Dit product verwijderen?")) deleteAssortimentItem(id); }}
+              onImport={importBdArtikelen} onUpdateArtikel={updateBdArtikel} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               focusKey={techFocus} onFocusDone={() => setTechFocus(null)}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
@@ -4030,9 +4123,9 @@ function App() {
               onDeleteTask={deleteCleaningTask}  onReopenOff={(logId, date) => { if (logId) removeCleaningLog(logId, true); setCheckForDate(date); setCheckOpen(true); }} />}
           </div>
         )}
-        {current.screen === "dishDetail" && <DishDetail dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
+        {current.screen === "dishDetail" && <DishDetail chefMode={chefMode} dish={dishById(current.id)} recipeById={recipeById} canEdit={canEdit} onBack={goBack} onEdit={() => push({ screen: "dishForm", editing: current.id })} onOpenRecipe={openRecipe} onDelete={deleteDish} />}
         {current.screen === "recipeDetail" && (() => { const r = recipeById(current.id); return (
-          <RecipeDetail recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
+          <RecipeDetail chefMode={chefMode} recipe={r} user={user} canEdit={canEdit} usageCount={usageCount(current.id)}
             baseRecipe={r?.baseId ? recipeById(r.baseId) : null} variations={variationsOf(current.id)}
             onBack={goBack} onEdit={() => push({ screen: "recipeForm", editing: current.id })}
             openCount={openCounts[current.id] || 0} onOpenRecipe={openRecipe} onDelete={deleteRecipe}
@@ -4044,7 +4137,7 @@ function App() {
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
           onCancel={() => { setDishDraft(null); goBack(); }}
           onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onCancel={goBack}
+        {current.screen === "recipeForm" && <RecipeForm chefMode={chefMode} catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onCancel={goBack}
           onSave={async (d) => { const newId = await saveRecipe(d, current.editing);
             if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
             goBack(); }} />}
@@ -4058,12 +4151,16 @@ function App() {
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
         {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
+        {current.screen === "assortimentForm" && chefMode && <AssortimentForm
+          editing={current.editing ? assortiment.find((x) => x.id === current.editing) : null}
+          producten={assortiment} recipes={recipes} onCancel={goBack}
+          onSave={(item) => { saveAssortimentItem(item); goBack(); }} />}
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan) => { if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return; } const code = window.prompt("Chef-code:"); if (code === null) return; if (code.trim().toLowerCase() === "chefmichael") { setChefMode(true); flash("Chef-modus aan"); } else alert("Onjuiste code."); }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
 
       {showFab && (
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
-          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "schoonmaak" ? "Taak" : "Batch"}
+          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : "Batch"}
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab} />}
@@ -4270,7 +4367,266 @@ function Header({ user, onHome, onOpenSettings }) {
   );
 }
 
-function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore }) {
+
+// ---------- Assortiment (alleen chef-modus) ----------
+const eur = (v) => {
+  const n = parseFloat(String(v == null ? "" : v).replace(",", "."));
+  return isNaN(n) ? "—" : "€ " + n.toFixed(2).replace(".", ",");
+};
+const eurNum = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isNaN(n) ? null : n; };
+
+function printAssortimentProduct(p) {
+  const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const k = eurNum(p.cost), v = eurNum(p.price);
+  const items = (p.items || []).map((x) => (typeof x === "string" ? { text: x, cost: "" } : x)).filter((x) => String(x.text).trim());
+  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.name) + '</title><style>' +
+    "@page{size:A4;margin:18mm}body{font-family:Georgia,serif;color:#2c2e24}" +
+    "h1{font-size:26pt;margin:0 0 2mm}.sub{color:#6b6d5f;font-size:11pt;margin-bottom:8mm}" +
+    "table{border-collapse:collapse;margin-bottom:8mm}td{padding:1.5mm 8mm 1.5mm 0;font-size:12pt}" +
+    "ul{margin:2mm 0 0;padding-left:6mm}li{font-size:12pt;margin:1.2mm 0}h2{font-size:13pt;margin:6mm 0 1mm}" +
+    "</style></head><body>" +
+    "<h1>" + esc(p.name) + "</h1>" +
+    '<div class="sub">' + (p.fromP || p.toP ? "Vanaf " + esc(p.fromP || "?") + " tot " + esc(p.toP || "?") + " personen" : "") + "</div>" +
+    "<table>" +
+    (k !== null ? "<tr><td>Kostprijs p.p.</td><td><b>" + eur(k) + "</b></td></tr>" : "") +
+    (v !== null ? "<tr><td>Verkoopprijs p.p.</td><td><b>" + eur(v) + "</b></td></tr>" : "") +
+    (k !== null && v !== null && k > 0 ? "<tr><td>Marge</td><td>" + Math.round(((v - k) / k) * 100) + "% op kostprijs</td></tr>" : "") +
+    "</table>" +
+    (items.length ? "<h2>Items</h2><ul>" + items.map((i) => "<li>" + esc(i.text) + (eurNum(i.cost) !== null ? ' <span style="color:#666">— ' + eur(i.cost) + "</span>" : "") + "</li>").join("") + "</ul>" : "") +
+    (items.some((i) => eurNum(i.cost) !== null) ? '<p style="font-size:12pt"><b>Items samen: ' + eur(items.map((i) => eurNum(i.cost)).filter((x) => x !== null).reduce((a, b) => a + b, 0)) + "</b></p>" : "") +
+    "</body></html>");
+}
+
+function AssortimentList({ producten, bdArtikelen, onNew, onEdit, onDelete, onImport, onUpdateArtikel }) {
+  const [q, setQ] = useState("");
+  const importRef = React.useRef(null);
+  const [bewerk, setBewerk] = useState(null); // artikelcode in bewerking
+  const [bPrijs, setBPrijs] = useState("");
+  const [bPpe, setBPpe] = useState("");
+  const [bPct, setBPct] = useState("");
+  const startBewerk = (a) => { setBewerk(a.code); setBPrijs(a.prijs === null ? "" : String(a.prijs)); setBPpe(a.ppe === null ? "" : String(a.ppe)); setBPct(""); };
+  const pasPctToe = () => {
+    const p = eurNum(bPct);
+    if (p === null) return;
+    const f = 1 + p / 100;
+    const np = eurNum(bPrijs), ne = eurNum(bPpe);
+    if (np !== null) setBPrijs((np * f).toFixed(2));
+    if (ne !== null) setBPpe((ne * f).toFixed(2));
+    setBPct("");
+  };
+  const bewaarBewerk = (a) => {
+    onUpdateArtikel({ ...a, prijs: eurNum(bPrijs), ppe: eurNum(bPpe) });
+    setBewerk(null);
+  };
+  const hits = q.trim().length >= 2
+    ? bdArtikelen.filter((a) => strictMatchAny([a.omschrijving, a.merk, a.code], q)).slice(0, 30)
+    : [];
+  return (
+    <div>
+      <div className="rounded-xl p-3 mb-4 text-[13px]" style={{ background: "#eef2e6", border: "1px solid #d5ddc6", color: "#44502f" }}>
+        Chef-modus — dit tabblad en alle prijzen zijn alleen zichtbaar in deze sessie.
+      </div>
+      {producten.length === 0 && <div className="card p-4 text-sm mute mb-4">Nog geen producten. Maak er een met de knop rechtsonder.</div>}
+      <div className="space-y-3">
+        {producten.map((p) => {
+          const k = eurNum(p.cost), v = eurNum(p.price);
+          const items = (p.items || []).map((x) => (typeof x === "string" ? x : x.text)).filter((x) => String(x).trim());
+          return (
+            <div key={p.id} className="card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <button onClick={() => onEdit(p.id)} className="ff text-left min-w-0 flex-1">
+                  <div className="serif ink font-bold text-lg leading-tight">{p.name}</div>
+                  <div className="text-[13px] mute mt-0.5">{p.fromP || p.toP ? "Vanaf " + (p.fromP || "?") + " tot " + (p.toP || "?") + " personen" : "Aantal personen niet ingevuld"}</div>
+                </button>
+                <div className="flex shrink-0 gap-1">
+                  <button onClick={() => printAssortimentProduct(p)} className="ff mute hover:opacity-60 p-1.5" title="Printen"><Printer size={16} /></button>
+                  <button onClick={() => onEdit(p.id)} className="ff mute hover:opacity-60 p-1.5" title="Bewerken"><Pencil size={16} /></button>
+                  <button onClick={() => onDelete(p.id)} className="ff mute hover:opacity-60 p-1.5" title="Verwijderen"><Trash2 size={16} /></button>
+                </div>
+              </div>
+              <div className="text-sm ink mt-2">
+                Kost <span className="font-semibold">{eur(k)}</span> p.p. · Verkoop <span className="font-semibold">{eur(v)}</span> p.p.
+                {k !== null && v !== null && k > 0 && <span className="mute"> · marge {Math.round(((v - k) / k) * 100)}%</span>}
+              </div>
+              {items.length > 0 && <div className="text-[13px] mute mt-1.5">{items.slice(0, 6).join(" · ")}{items.length > 6 ? " +" + (items.length - 6) : ""}</div>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 mt-7 mb-2">
+        <span className="text-sm font-bold ink">BD-artikelen (inkoop) <span className="mute font-normal">· {bdArtikelen.length}</span></span>
+        <button onClick={() => { if (importRef.current) { importRef.current.value = ""; importRef.current.click(); } }} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-1.5"><Download size={13} /> Importeer prijslijst (.xlsx)</button>
+        <input ref={importRef} type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImport(f); }} />
+      </div>
+      <p className="text-[12px] mute mb-2">Lees een prijslijst of bestelhistorie in — Excel (.xlsx/.xls) of tekst (.csv/.txt) van welke leverancier dan ook, zolang er een omschrijving- en prijskolom in staat. Artikelen worden gedeeld met het team; opnieuw inlezen overschrijft per artikelcode.</p>
+      <div className="relative mb-2">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een inkoopartikel (bv. citroen)" className="input px-3 py-2.5 w-full text-sm pl-9" />
+      </div>
+      {q.trim().length >= 2 && hits.length === 0 && <div className="text-sm mute">Geen artikelen gevonden.</div>}
+      <div className="space-y-1.5">
+        {hits.map((a) => (
+          <div key={a.code} className="card px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm ink font-medium truncate">{a.omschrijving}</div>
+                <div className="text-[12px] mute truncate">{[a.merk, a.inhoud, String(a.code).startsWith("n:") ? null : "art. " + a.code].filter(Boolean).join(" · ")}</div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-sm ink font-semibold">{eur(a.prijs)}</div>
+                <div className="text-[12px] mute">{a.ppe !== null ? eur(a.ppe) + " p/e" : ""}</div>
+              </div>
+              <button onClick={() => (bewerk === a.code ? setBewerk(null) : startBewerk(a))} className="ff shrink-0 mute hover:opacity-60 p-1" title="Prijs aanpassen"><Pencil size={15} /></button>
+            </div>
+            {bewerk === a.code && (
+              <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid " + T.line }}>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div>
+                    <div className="text-[11.5px] font-bold ink mb-1">Prijs (€)</div>
+                    <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={bPrijs} onChange={(e) => setBPrijs(e.target.value.replace(/[^0-9.,]/g, ""))} />
+                  </div>
+                  <div>
+                    <div className="text-[11.5px] font-bold ink mb-1">Prijs per eenheid (€)</div>
+                    <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={bPpe} onChange={(e) => setBPpe(e.target.value.replace(/[^0-9.,]/g, ""))} />
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <div className="text-[11.5px] font-bold ink mb-1">% erbij (bv. tuinpercentage)</div>
+                    <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={bPct} onChange={(e) => setBPct(e.target.value.replace(/[^0-9.,-]/g, ""))} placeholder="bv. 30" />
+                  </div>
+                  <button onClick={pasPctToe} className="btno ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Pas % toe</button>
+                  <button onClick={() => bewaarBewerk(a)} className="btnp ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Bewaren</button>
+                </div>
+                <p className="text-[11px] mute mt-1.5">Het percentage rekent over beide prijzen; negatief kan ook. Bewaren deelt de nieuwe prijs met het team.</p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const normItem = (x) => (typeof x === "string" ? { text: x, recipeId: null, cost: "" } : { text: x.text || "", recipeId: x.recipeId || null, cost: x.cost != null ? String(x.cost) : "" });
+function AssortimentForm({ editing, producten, recipes, onCancel, onSave }) {
+  const [name, setName] = useState(editing?.name || "");
+  const [fromP, setFromP] = useState(editing?.fromP || "");
+  const [toP, setToP] = useState(editing?.toP || "");
+  const [cost, setCost] = useState(editing?.cost || "");
+  const [price, setPrice] = useState(editing?.price || "");
+  const [pct, setPct] = useState("");
+  const [items, setItems] = useState(editing?.items && editing.items.length ? editing.items.map(normItem) : [normItem("")]);
+  const [sugRow, setSugRow] = useState(-1); // rij met open receptsuggesties
+  const [laad, setLaad] = useState("");
+  const [rekenN, setRekenN] = useState("");
+  const setItem = (i, patch) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const addItemAt = (i) => {
+    setItems((xs) => [...xs.slice(0, i + 1), normItem(""), ...xs.slice(i + 1)]);
+    setTimeout(() => { const el = document.querySelector('[data-as-item="' + (i + 1) + '"]'); if (el) el.focus(); }, 30);
+  };
+  const backItem = (i) => {
+    setItems((xs) => xs.filter((_, j) => j !== i));
+    setTimeout(() => { const el = document.querySelector('[data-as-item="' + (i - 1) + '"]'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} } }, 0);
+  };
+  // Opslag-% over de kostprijs rekent de verkoopprijs uit; handmatig prijzen kan altijd.
+  const zetPct = (v) => {
+    setPct(v);
+    const p = eurNum(v), k = eurNum(cost);
+    if (p !== null && k !== null) setPrice(String((k * (1 + p / 100)).toFixed(2)).replace(".", ","));
+  };
+  const k = eurNum(cost), vP = eurNum(price);
+  const effectief = k !== null && vP !== null && k > 0 ? Math.round(((vP - k) / k) * 100) : null;
+  const nn = parseInt(rekenN, 10);
+  const laadProduct = (id) => {
+    const p = producten.find((x) => x.id === id);
+    if (!p) return;
+    const extra = (p.items || []).map(normItem).filter((x) => x.text.trim());
+    setItems((xs) => { const basis = xs.filter((x) => x.text.trim()); return [...basis, ...extra, normItem("")]; });
+    setLaad("");
+  };
+  const doSave = () => {
+    if (!name.trim()) { alert("Vul een naam in."); return; }
+    onSave({ id: editing?.id, name: name.trim(), fromP: fromP.trim(), toP: toP.trim(), cost: String(cost).trim(), price: String(price).trim(), items: items.map((x) => ({ text: x.text.trim(), recipeId: x.recipeId || null, cost: String(x.cost || "").trim() })).filter((x) => x.text) });
+  };
+  const inputCls = "input px-3.5 py-2.5 w-full text-[15px]";
+  return (
+    <div className="pb-28">
+      <div className="flex items-center justify-between gap-2 mb-5">
+        <button onClick={onCancel} className="ff inline-flex items-center gap-1 text-sm mute hover:opacity-70"><X size={16} /> Annuleren</button>
+        <span className="serif ink text-xl">{editing ? "Product bewerken" : "Nieuw product"}</span>
+        <button onClick={doSave} className="btnp ff inline-flex items-center gap-1.5 rounded-xl text-sm font-semibold px-4 py-2.5"><Check size={15} /> Opslaan</button>
+      </div>
+      <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Uitgebreide lunch" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Vanaf (personen)"><input type="text" inputMode="numeric" className={inputCls} value={fromP} onChange={(e) => setFromP(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 15" /></Field>
+        <Field label="Tot (personen)"><input type="text" inputMode="numeric" className={inputCls} value={toP} onChange={(e) => setToP(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 300" /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Kostprijs p.p. (€)"><input type="text" inputMode="decimal" className={inputCls} value={cost} onChange={(e) => setCost(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 15" /></Field>
+        <Field label="Opslag % op kostprijs"><input type="text" inputMode="decimal" className={inputCls} value={pct} onChange={(e) => zetPct(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 133" /></Field>
+      </div>
+      <Field label="Verkoopprijs p.p. (€)">
+        <input type="text" inputMode="decimal" className={inputCls} value={price} onChange={(e) => { setPrice(e.target.value.replace(/[^0-9.,]/g, "")); setPct(""); }} placeholder="bv. 35" />
+        {effectief !== null && <p className="text-[11.5px] mute mt-1">Dat is {effectief}% opslag op de kostprijs.</p>}
+      </Field>
+      <div className="grid grid-cols-2 gap-3 items-end">
+        <Field label="Reken met … personen"><input type="text" inputMode="numeric" className={inputCls} value={rekenN} onChange={(e) => setRekenN(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 40" /></Field>
+        <div className="pb-4 text-sm ink">{nn > 0 && k !== null ? <>Kost {eur(k * nn)}{vP !== null && <> · verkoop {eur(vP * nn)}</>}</> : <span className="mute">Totalen verschijnen hier</span>}</div>
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-2 mb-1.5">
+        <span className="text-sm font-medium ink">Items</span>
+        {producten.filter((p) => p.id !== editing?.id).length > 0 && (
+          <AppSelect value={laad} onChange={laadProduct} placeholder="Product laden…" title="Items overnemen uit"
+            options={producten.filter((p) => p.id !== editing?.id).map((p) => ({ value: p.id, label: p.name }))}
+            className="input px-2.5 py-1.5 text-xs" style={{ width: "12rem" }} />
+        )}
+      </div>
+      <p className="text-[11.5px] mute mb-2">Typ vrij, of kies uit de suggesties een recept — dan komt de batchkostprijs van dat recept mee (aanpasbaar).</p>
+      <div className="space-y-2">
+        {items.map((it, i) => {
+          const sug = sugRow === i && !it.recipeId && it.text.trim().length >= 2
+            ? (recipes || []).filter((r) => softMatchAny([r.name], it.text)).slice(0, 5) : [];
+          return (
+            <div key={i} className="flex gap-2 items-center">
+              <div className="relative flex-1 min-w-0">
+                <input data-as-item={i} className={inputCls + " w-full"} value={it.text}
+                  onChange={(e) => { setItem(i, { text: e.target.value, recipeId: null }); setSugRow(i); }}
+                  onFocus={() => setSugRow(i)}
+                  onBlur={() => setTimeout(() => setSugRow((r) => (r === i ? -1 : r)), 120)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); setSugRow(-1); addItemAt(i); }
+                    else if (e.key === "Backspace" && i > 0 && !it.text.trim()) { e.preventDefault(); backItem(i); }
+                  }} placeholder="bv. quiche mini" />
+                {sug.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "13rem", overflowY: "auto" }}>
+                    {sug.map((r) => (
+                      <button key={r.id} type="button" onMouseDown={(e) => { e.preventDefault(); setItem(i, { text: r.name, recipeId: r.id, cost: r.costPrice != null && String(r.costPrice) !== "" ? String(r.costPrice) : it.cost }); setSugRow(-1); }} className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
+                        {r.name} <span className="mute">· {r.costPrice != null && String(r.costPrice) !== "" ? eur(r.costPrice) : "geen kostprijs"}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {it.recipeId && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: "#eef2e6", color: "#44502f" }}>recept</span>}
+              </div>
+              <input type="text" inputMode="decimal" className={inputCls} style={{ width: "5.5rem", flex: "0 0 5.5rem" }} value={it.cost}
+                onChange={(e) => setItem(i, { cost: e.target.value.replace(/[^0-9.,]/g, "") })} placeholder="€" title="Kostprijs van dit item" />
+              {items.length > 1 && <button onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>}
+            </div>
+          );
+        })}
+      </div>
+      {(() => { const bekend = items.map((x) => eurNum(x.cost)).filter((x) => x !== null); if (!bekend.length) return null; const som = bekend.reduce((a, b) => a + b, 0); return <div className="text-sm ink mt-2">Items samen: <span className="font-semibold">{eur(som)}</span></div>; })()}
+      <AddRow onClick={() => setItems((xs) => [...xs, normItem("")])} label="Item toevoegen" />
+      <div className="mt-5">
+        <button onClick={() => printAssortimentProduct({ name, fromP, toP, cost, price, items })} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Printer size={16} /> Printen</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const iOS = /iphone|ipad|ipod/i.test(ua);
@@ -4305,6 +4661,12 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, o
         )}
       </div>
       <p className="text-xs mute mt-2 flex items-start gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /> Installeren werkt op jullie eigen webadres, nadat de app is gepubliceerd. In deze preview is de knop nog niet actief.</p>
+
+      <SectionTitle>Chef</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute mb-3">De chef-versie toont het Assortiment (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
+        <button onClick={() => onChef(!chefMode)} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
+      </div>
 
       <SectionTitle>Backup</SectionTitle>
       <div className="card p-4">
@@ -4370,9 +4732,9 @@ function useSwipeSections(section, setSection) {
   return { onTouchStart: onStart, onTouchEnd: onEnd };
 }
 
-function SectionNav({ section, setSection }) {
+function SectionNav({ section, setSection, chef }) {
   // section is null op detailpagina’s: geen knop actief, tik navigeert terug naar de lijst.
-  const items = SECTIONS;
+  const items = chef ? [...SECTIONS, { id: "assortiment", label: "Assortiment", icon: <Tag size={24} /> }] : SECTIONS;
   const scroller = React.useRef(null);
   const btns = React.useRef({});
   // De actieve knop netjes in het midden schuiven, ook na een swipe.
@@ -5849,7 +6211,7 @@ function unitGroupsOf(entries) {
     .sort((a, b) => { const sa = unitSizeG(a.unit) ?? 1e12, sb = unitSizeG(b.unit) ?? 1e12; return sa - sb || a.unit.localeCompare(b.unit, "nl"); });
 }
 
-function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice }) {
+function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice, chefMode, recipeById }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
   const [openYear, setOpenYear] = useState(null);
@@ -5928,6 +6290,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
         <div className="px-4 py-3">
           <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff w-full text-left">
             <div className="serif ink font-bold text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{g.product}</div>
+            {chefMode && (() => { const r = g.recipeId && recipeById ? recipeById(g.recipeId) : null; const kp = r ? eurNum(r.costPrice) : null; if (kp === null) return null; return <div className="text-[12.5px]" style={{ color: "#44502f" }}>Kostprijs batch {eur(kp)} <span className="mute">(chef)</span></div>; })()}
           </button>
           <div className="flex items-end gap-2 mt-0.5">
             <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff flex-1 min-w-0 text-left">
@@ -7236,13 +7599,20 @@ function BackBar({ onBack, onEdit, onPrint, printText = "Print", extra = null, o
 }
 function Eyebrow({ children }) { return <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-2">{children}</h3>; }
 
-function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, onDelete }) {
+function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, onDelete, chefMode }) {
   if (!dish) return null;
   return (
     <div>
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printDish(dish, recipeById)} onDelete={canEdit ? () => onDelete(dish.id) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{dish.name}</h1>
+        {chefMode && (() => {
+          const kps = (dish.recipeIds || []).map((id) => { const r = recipeById(id); return r ? eurNum(r.costPrice) : null; });
+          const bekend = kps.filter((x) => x !== null);
+          if (!bekend.length) return null;
+          const som = bekend.reduce((a, b) => a + b, 0);
+          return <div className="text-sm mt-1" style={{ color: "#44502f" }}>Kostprijs recepten samen: <span className="font-semibold">{eur(som)}</span>{bekend.length < kps.length && <span className="mute"> · {kps.length - bekend.length} recept(en) zonder prijs</span>} <span className="mute">(chef)</span></div>;
+        })()}
         <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">{dish.course}</span>
       </div>
       <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}<AllergenPills list={dishAllergens(dish, recipeById)} /></div>
@@ -7266,7 +7636,7 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
   );
 }
 
-function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete }) {
+function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe, variations, onBack, onEdit, onOpenRecipe, onStartBatch, onAddStock, onOpenTech, onDelete, chefMode }) {
   // Hoeveelheid als breuk (teller/noemer): ÷2, ÷10 en ×2 stapelen exact.
   const [frac, setFrac] = useState({ n: 1, d: 1 });
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
@@ -7294,6 +7664,9 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
+        {chefMode && recipe.costPrice != null && String(recipe.costPrice) !== "" && (
+          <div className="text-sm mt-1" style={{ color: "#44502f" }}>Kostprijs batch: <span className="font-semibold">{eur(recipe.costPrice)}</span>{recipe.yieldAmount > 0 && eurNum(recipe.costPrice) !== null && <> · {eur(eurNum(recipe.costPrice) / recipe.yieldAmount)} per {recipe.yieldUnit || "stuk"}</>} <span className="mute">(chef)</span></div>
+        )}
         <Chip>{recipe.category}</Chip>
       </div>
       {(recipe.shelfDays || recipe.shelfStorage) && (
@@ -7350,15 +7723,29 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         {factor !== 1 && <span className="text-xs mute">Opbrengst: {scaleAmount(recipe.yield, factor)}</span>}
       </div>
       <div className="card overflow-hidden">
-        {recipe.ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); return (
+        {recipe.ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); const kp = chefMode ? eurNum(ing.cost) : null; return (
           <div key={i} className={"flex items-center justify-between gap-3 px-4 py-2.5 text-sm " + (i > 0 ? "divi" : "")}>
             <span className="min-w-0" style={{ color: "#3b3d33" }}>
               {ing.item}
               {alg.length > 0 && <span className="block text-[11px] font-medium mt-0.5" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />{alg.join(" · ")}</span>}
             </span>
-            <span className={"shrink-0 font-medium " + (factor !== 1 ? "acc" : "mute")}>{scaleAmount(ing.amount, factor)}</span>
+            <span className="shrink-0 flex items-baseline gap-3">
+              <span className={"font-medium " + (factor !== 1 ? "acc" : "mute")}>{scaleAmount(ing.amount, factor)}</span>
+              {chefMode && <span className="w-16 text-right text-[12.5px] font-medium" style={{ color: "#44502f" }}>{kp !== null ? eur(kp * factor) : ""}</span>}
+            </span>
           </div>
         ); })}
+        {chefMode && (() => {
+          const bekend = recipe.ingredients.map((x) => eurNum(x.cost)).filter((x) => x !== null);
+          if (!bekend.length) return null;
+          const som = bekend.reduce((a, b) => a + b, 0) * factor;
+          return (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm divi" style={{ background: "#f4f2ea" }}>
+              <span className="font-semibold ink">Totaal ingrediënten{bekend.length < recipe.ingredients.length ? " (" + bekend.length + " van " + recipe.ingredients.length + " geprijsd)" : ""}</span>
+              <span className="shrink-0 font-bold" style={{ color: "#44502f" }}>{eur(som)}</span>
+            </div>
+          );
+        })()}
       </div>
 
       {recipe.fermentDefaults && (
@@ -7413,9 +7800,10 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onCancel, onSave }) {
+function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onCancel, onSave, chefMode }) {
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
+  const [costPrice, setCostPrice] = useState(recipe?.costPrice != null ? String(recipe.costPrice) : "");
   // Categorieën zijn beheerbaar en gedeeld met het hele team (app_settings in
   // Supabase); recepten zelf bewaren gewoon hun categorietekst.
   const eigenCats = (catSettings && catSettings.eigen) || [];
@@ -7558,6 +7946,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
     fermentDefaults: ferment ? (() => { const nz = (x) => { const v = Number(String(x).replace(",", ".")); return x !== "" && !isNaN(v) && v !== 0 ? v : null; }; return { saltPct: nz(fSalt), tempC: nz(fTemp), days: nz(fDays), phTarget: nz(fPh), sugarPct: nz(fSugar) }; })() : null,
     shelfDays: shelfDays !== "" && !isNaN(Number(shelfDays)) && Number(shelfDays) > 0 ? Number(shelfDays) : null,
     shelfStorage: (storageOpt !== "anders" ? storageOpt : shelfStorage.trim()),
+    costPrice: costPrice.trim() ? costPrice.trim().replace(",", ".") : null,
     ...(() => {
       const rows = yields.map((y) => ({ count: (y.count || "").trim(), size: (y.size || "").trim(), pack: (y.pack || "").trim() })).filter((y) => y.count || y.size || y.pack);
       const first = rows[0];
@@ -7642,7 +8031,6 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           <button key={s} type="button" onClick={() => toggleSeason(s)} className={"ff rounded-full px-3 py-1.5 text-xs font-medium " + (seasons.includes(s) ? "pillon" : "pill")}>{s}</button>
         ))}
       </div>
-      <Field label="Dieet"><AppSelect className={inputCls} value={diet} onChange={setDiet} options={["Vegetarisch","Varkensvlees","Rundvlees"]} /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Houdbaar (dagen)"><input type="text" inputMode="numeric" className={inputCls} value={shelfDays} onChange={(e) => setShelfDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>
         <Field label="Type opslag">
@@ -7670,12 +8058,14 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           </div>
         )}
       </div>
+      {chefMode && <Field label="Kostprijs per batch (€) · chef"><input type="text" inputMode="decimal" className={inputCls} value={costPrice} onChange={(e) => setCostPrice(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 12,50" /></Field>}
       <div className="text-sm font-medium ink mb-1.5">Ingrediënten</div>
       <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingredientAllergens(ing); const manual = hasAllergenOverride(ing); return (
         <div key={i}>
           <div className="flex gap-2">
             <input data-rf-item={i} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} onKeyDown={(e) => { if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Ingrediënt" />
-            <input data-rf-amt={i} className={inputCls} style={{ width: "7rem", flex: "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
+            <input data-rf-amt={i} className={inputCls} style={{ width: chefMode ? "5.5rem" : "7rem", flex: chefMode ? "0 0 5.5rem" : "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
+            {chefMode && <input type="text" inputMode="decimal" className={inputCls} style={{ width: "4.5rem", flex: "0 0 4.5rem" }} value={ing.cost != null ? ing.cost : ""} onChange={(e) => setIng(i, "cost", e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="€" title="Kostprijs van dit ingrediënt" />}
             <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
@@ -7702,6 +8092,17 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           ); })()}
         </div>); })}
       </div>
+      {chefMode && (() => {
+        const bekend = ingredients.map((x) => eurNum(x.cost)).filter((x) => x !== null);
+        if (!bekend.length) return null;
+        const som = bekend.reduce((a, b) => a + b, 0);
+        return (
+          <div className="flex items-center gap-2 mt-1.5 text-sm ink">
+            <span>Ingrediënten samen: <span className="font-semibold">{eur(som)}</span></span>
+            <button type="button" onClick={() => setCostPrice(som.toFixed(2).replace(".", ","))} className="ff text-xs font-semibold acc underline hover:opacity-70">zet als batchkostprijs</button>
+          </div>
+        );
+      })()}
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
       <div className="flex items-center justify-between gap-2 mt-5 mb-1.5">
         <span className="text-sm font-medium ink">Bereiding</span>
