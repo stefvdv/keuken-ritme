@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-12e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-12f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2877,8 +2877,14 @@ function App() {
       const map = {};
       for (const a of xs) map[a.code] = a;
       // Opmerkingen van het team blijven staan als dezelfde artikelcode opnieuw binnenkomt.
-      for (const a of arts) map[a.code] = { ...a, opmerking: (map[a.code] && map[a.code].opmerking) || "" };
-      return Object.values(map);
+      for (const a of arts) {
+        const oud = map[a.code];
+        // Zelf gegeven namen en opmerkingen blijven staan bij opnieuw inlezen.
+        map[a.code] = { ...a, opmerking: (oud && oud.opmerking) || "", categorie: (oud && oud.categorie) || a.categorie, leverancier: (oud && oud.leverancier) || a.leverancier };
+      }
+      const uit = Object.values(map);
+      bewaarArtikelEigen(uit);
+      return uit;
     });
     if (live) {
       const stempel = new Date().toISOString();
@@ -2898,9 +2904,10 @@ function App() {
     const nieuwe = bdArtikelen.filter(raakt).map((a) => (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }));
     if (!nieuwe.length) return;
     setBdArtikelen((xs) => xs.map((a) => (raakt(a) ? (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }) : a)));
+    bewaarArtikelEigen(nieuwe);
     if (live) {
       const uit = await upsertArtikelen(nieuwe.map((a) => ({ ...a, updated_at: new Date().toISOString() })));
-      if (uit !== "ok") { flash("Naam alleen lokaal gewijzigd — draai eerst de kolom-SQL in Supabase"); return; }
+      if (uit !== "ok") { flash("Naam staat op dit toestel; voor het hele team eerst de kolom-SQL in Supabase draaien"); return; }
     }
     flash(nieuwe.length + " artikelen staan nu onder " + naam);
   };
@@ -2910,6 +2917,7 @@ function App() {
   };
   const updateBdArtikel = async (art) => {
     setBdArtikelen((xs) => xs.map((a) => (a.code === art.code ? art : a)));
+    bewaarArtikelEigen([art]);
     if (live) {
       const uit = await upsertArtikelen([{ ...art, updated_at: new Date().toISOString() }]);
       if (uit === "fout") flash("Alleen lokaal bewaard — draai eerst de bd_artikelen-SQL in Supabase");
@@ -3091,7 +3099,12 @@ function App() {
     const csRow = (cs && cs.data && cs.data[0]) || null;
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
-    if (bda && bda.data) setBdArtikelen(bda.data.map((r) => ({ code: r.code, omschrijving: r.omschrijving || "", merk: r.merk || "", inhoud: r.inhoud || "", prijs: r.prijs === null ? null : Number(r.prijs), ppe: r.ppe === null ? null : Number(r.ppe) })));
+    if (bda && bda.data) setBdArtikelen(pasOverlayToe(bda.data.map((r) => ({
+      code: r.code, omschrijving: r.omschrijving || "", inhoud: r.inhoud || "",
+      prijs: r.prijs === null || r.prijs === undefined ? null : Number(r.prijs),
+      ppe: r.ppe === null || r.ppe === undefined ? null : Number(r.ppe),
+      leverancier: r.leverancier || "", categorie: r.categorie || "", opmerking: r.opmerking || "",
+    }))));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -4460,6 +4473,27 @@ const eurNum = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(
 // ---- Inkoopprijzen: ingrediënten koppelen aan de ingelezen leveranciersartikelen ----
 // De prijslijst staat in een module-variabele, zodat elk scherm 'm kan lezen
 // zonder dat de artikelen door de hele boom doorgegeven hoeven te worden.
+// Zelf gegeven leveranciers-, categorienamen en opmerkingen blijven ook op het
+// toestel staan. Zo overleven ze een refresh, ook als de kolommen in Supabase
+// nog niet bestaan; wat wél uit de database komt heeft voorrang.
+const ARTIKEL_EIGEN = "ritme:artikel-eigen";
+const leesArtikelEigen = () => { try { return JSON.parse(localStorage.getItem(ARTIKEL_EIGEN) || "{}") || {}; } catch (e) { return {}; } };
+const bewaarArtikelEigen = (arts) => {
+  try {
+    const o = leesArtikelEigen();
+    for (const a of arts) o[a.code] = { leverancier: a.leverancier || "", categorie: a.categorie || "", opmerking: a.opmerking || "" };
+    localStorage.setItem(ARTIKEL_EIGEN, JSON.stringify(o));
+  } catch (e) {}
+};
+const pasOverlayToe = (rows) => {
+  const o = leesArtikelEigen();
+  return rows.map((a) => {
+    const v = o[a.code];
+    if (!v) return a;
+    return { ...a, leverancier: a.leverancier || v.leverancier || "", categorie: a.categorie || v.categorie || "", opmerking: a.opmerking || v.opmerking || "" };
+  });
+};
+
 let PRIJSLIJST = { arts: [], cache: new Map() };
 const zetPrijslijst = (arts) => { PRIJSLIJST = { arts: Array.isArray(arts) ? arts : [], cache: new Map() }; };
 const zonderAccent = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
