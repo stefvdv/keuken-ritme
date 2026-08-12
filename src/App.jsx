@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-12d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-12e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2842,7 +2842,6 @@ function App() {
     const syn = {
       code: ["code", "artikel", "artikelnr", "artikelnummer", "art.nr", "artnr", "art nr"],
       oms: ["omschrijving", "artikelomschrijving", "naam", "product", "beschrijving", "titel"],
-      merk: ["merknaam", "merk", "brand"],
       inhoud: ["inhoud", "verpakking", "eenheid", "colli", "collo", "inh"],
       prijs: ["prijs", "price", "nettoprijs", "netto", "stukprijs", "prijs excl", "prijs excl."],
       ppe: ["ppe", "prijs per eenheid", "prijs/eenheid", "eenheidsprijs", "prijs p/e"],
@@ -2856,7 +2855,7 @@ function App() {
       if (vind(k, syn.oms) >= 0 && (vind(k, syn.prijs) >= 0 || vind(k, syn.ppe) >= 0)) { kopIdx = i; kop = k; break; }
     }
     if (kopIdx < 0) { alert("Geen kolomkoppen gevonden. Het bestand heeft minimaal een kolom Omschrijving/Naam en een kolom Prijs of PPE nodig."); return; }
-    const iCode = vind(kop, syn.code), iOms = vind(kop, syn.oms), iMerk = vind(kop, syn.merk), iInh = vind(kop, syn.inhoud), iPrijs = vind(kop, syn.prijs), iPpe = vind(kop, syn.ppe);
+    const iCode = vind(kop, syn.code), iOms = vind(kop, syn.oms), iInh = vind(kop, syn.inhoud), iPrijs = vind(kop, syn.prijs), iPpe = vind(kop, syn.ppe);
     const iCat = vind(kop, syn.cat), iLev = vind(kop, syn.lev);
     const levStandaard = String(leverancierNaam || "").trim() || "Onbekende leverancier";
     const num = (v) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? null : n; };
@@ -2867,7 +2866,7 @@ function App() {
       let code = iCode >= 0 ? String(r[iCode] || "").trim() : "";
       if (/^-+$/.test(code)) continue;
       if (!code) code = "n:" + oms.toLowerCase(); // leverancier zonder artikelcode
-      perCode[code] = { code, omschrijving: oms, merk: iMerk >= 0 ? String(r[iMerk] || "").trim() : "", inhoud: iInh >= 0 ? String(r[iInh] || "").trim() : "", prijs: iPrijs >= 0 ? num(r[iPrijs]) : null, ppe: iPpe >= 0 ? num(r[iPpe]) : null,
+      perCode[code] = { code, omschrijving: oms, inhoud: iInh >= 0 ? String(r[iInh] || "").trim() : "", prijs: iPrijs >= 0 ? num(r[iPrijs]) : null, ppe: iPpe >= 0 ? num(r[iPpe]) : null,
         leverancier: (iLev >= 0 ? String(r[iLev] || "").trim() : "") || levStandaard,
         categorie: (iCat >= 0 ? String(r[iCat] || "").trim() : "") || "Overig" };
     }
@@ -4505,7 +4504,7 @@ const artikelPerBasis = (a) => {
   return null;
 };
 const artikelScore = (iw, a) => {
-  const aw = prijsWoorden([a.omschrijving, a.merk].filter(Boolean).join(" "));
+  const aw = prijsWoorden(a.omschrijving);
   if (!iw.length || !aw.length) return 0;
   let punten = 0;
   for (const w of iw) {
@@ -4606,7 +4605,7 @@ function ArtikelRij({ a, onUpdate, onDelete }) {
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-sm ink font-medium truncate">{a.omschrijving}</div>
-          <div className="text-[12px] mute truncate">{[a.merk, a.inhoud, String(a.code).startsWith("n:") ? null : "art. " + a.code].filter(Boolean).join(" · ")}</div>
+          <div className="text-[12px] mute truncate">{a.inhoud ? "Inkoopeenheid: " + a.inhoud : ""}</div>
           {a.opmerking && !open && <div className="text-[12px] mt-0.5" style={{ color: "#6a5326" }}>{a.opmerking}</div>}
         </div>
         <div className="text-right shrink-0">
@@ -4649,7 +4648,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, on
   const [openCat, setOpenCat] = useState({});
   const [hernoem, setHernoem] = useState(null); // {soort, oud, leverancier}
   const hits = q.trim().length >= 2
-    ? bdArtikelen.filter((a) => strictMatchAny([a.omschrijving, a.merk, a.code], q)).slice(0, 30)
+    ? bdArtikelen.filter((a) => strictMatchAny([a.omschrijving], q)).slice(0, 30)
     : [];
   // Alles gegroepeerd per leverancier en daarbinnen per categorie.
   const perLev = {};
