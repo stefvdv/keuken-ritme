@@ -2789,6 +2789,56 @@ function App() {
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
     flash("Backup gedownload (" + recipes.length + " recepten · " + dishes.length + " gerechten · " + stock.length + " voorraaditems)");
   };
+  const maakWordBackup = async () => {
+    const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // JSZip on-demand laden (alleen voor deze knop nodig)
+    const laadJSZip = () => new Promise((res, rej) => {
+      if (window.JSZip) return res(window.JSZip);
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      sc.onload = () => res(window.JSZip); sc.onerror = () => rej(new Error("cdn"));
+      document.head.appendChild(sc);
+    });
+    let JSZip;
+    try { JSZip = await laadJSZip(); } catch (e) { alert("Kon de zip-bibliotheek niet laden — controleer de internetverbinding en probeer opnieuw."); return; }
+    const doc = (titel, body) => '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>' + esc(titel) + '</title><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt}h1{font-size:18pt;margin-bottom:2pt}h2{font-size:12pt;margin:12pt 0 4pt}p{margin:3pt 0}li{margin:2pt 0}.mut{color:#666}</style></head><body>' + body + "</body></html>";
+    const veiligeNaam = (n) => String(n || "naamloos").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim().slice(0, 80);
+    const zip = new JSZip();
+    const namen = {};
+    const uniek = (map, n) => { const k = map + "/" + n; namen[k] = (namen[k] || 0) + 1; return namen[k] > 1 ? n + " (" + namen[k] + ")" : n; };
+    for (const r of recipes) {
+      const regels = [];
+      regels.push("<h1>" + esc(r.name) + "</h1>");
+      regels.push('<p class="mut">' + esc([r.category, r.yield, (r.season || []).join(", "), r.diet].filter(Boolean).join(" · ")) + "</p>");
+      if (r.shelfDays) regels.push("<p>Houdbaar: " + esc(r.shelfDays) + " dagen" + (r.shelfStorage ? " (" + esc(r.shelfStorage) + ")" : "") + "</p>");
+      const alg = recipeAllergens(r);
+      if (alg.length) regels.push("<p><b>Allergenen:</b> " + esc(alg.join(", ")) + "</p>");
+      if (r.ferment) regels.push("<p><b>Fermentatie:</b> " + esc([r.fermentMethod, r.fermentDefaults && r.fermentDefaults.days ? r.fermentDefaults.days + " dagen" : null, r.fermentDefaults && r.fermentDefaults.ph ? "pH " + r.fermentDefaults.ph : null].filter(Boolean).join(" · ")) + "</p>");
+      if ((r.ingredients || []).length) regels.push("<h2>Ingrediënten</h2><ul>" + r.ingredients.map((i) => "<li>" + esc([i.amount, i.item].filter(Boolean).join(" ")) + "</li>").join("") + "</ul>");
+      if ((r.steps || []).length) regels.push("<h2>Bereiding</h2><ol>" + r.steps.map((st) => "<li>" + esc(st) + "</li>").join("") + "</ol>");
+      if (r.note) regels.push("<h2>Opmerkingen</h2><p>" + esc(r.note) + "</p>");
+      zip.file("recepten/" + uniek("r", veiligeNaam(r.name)) + ".doc", doc(r.name, regels.join("")));
+    }
+    for (const d of dishes) {
+      const regels = [];
+      regels.push("<h1>" + esc(d.name) + "</h1>");
+      regels.push('<p class="mut">' + esc([d.course, (d.season || []).join(", "), d.diet].filter(Boolean).join(" · ")) + "</p>");
+      if (d.description) regels.push("<p>" + esc(d.description) + "</p>");
+      const rn = (d.recipeIds || []).map((id) => { const r = recipes.find((x) => x.id === id); return r ? r.name : null; }).filter(Boolean);
+      if (rn.length) regels.push("<h2>Recepten</h2><ul>" + rn.map((n) => "<li>" + esc(n) + "</li>").join("") + "</ul>");
+      if (d.plating) regels.push("<h2>Opmaak</h2><p>" + esc(d.plating) + "</p>");
+      zip.file("gerechten/" + uniek("g", veiligeNaam(d.name)) + ".doc", doc(d.name, regels.join("")));
+    }
+    const vRegels = stock.map((v) => "<li><b>" + esc(v.product) + "</b> — " + esc([v.qty + " st.", v.unit, v.storage, v.productionDate ? "gemaakt " + fmtDMY(v.productionDate) : null, v.expiryDate ? "THT " + fmtDMY(v.expiryDate) : null, v.by].filter(Boolean).join(" · ")) + "</li>").join("");
+    zip.file("voorraad.doc", doc("Voorraad", "<h1>Voorraad — " + fmtDMY(localDate()) + "</h1><ul>" + vRegels + "</ul>"));
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "ritme-backup-word-" + localDate() + ".zip";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+    flash("Word-backup gedownload (" + recipes.length + " recepten · " + dishes.length + " gerechten · voorraadlijst)");
+  };
   const herstelBackup = async (file) => {
     let b;
     try { b = JSON.parse(await file.text()); } catch (e) { alert("Dit bestand is geen geldige Ritme-backup."); return; }
@@ -4008,7 +4058,7 @@ function App() {
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
         {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onRestore={herstelBackup} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
 
       {showFab && (
@@ -4220,7 +4270,7 @@ function Header({ user, onHome, onOpenSettings }) {
   );
 }
 
-function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onRestore }) {
+function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore }) {
   const herstelRef = React.useRef(null);
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const iOS = /iphone|ipad|ipod/i.test(ua);
@@ -4261,6 +4311,7 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, o
         <p className="text-sm mute mb-3">Download een reservekopie van de <span className="ink font-medium">voorraad, recepten (incl. fermentatie) en gerechten</span> als bestand, of zet een eerdere backup terug. Terugzetten overschrijft gelijknamige items; nieuwere items blijven staan.</p>
         <div className="flex flex-wrap gap-2">
           <button onClick={onBackup} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Download size={16} /> Backup downloaden</button>
+          <button onClick={onWordBackup} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><BookOpen size={16} /> Word-backup (per recept)</button>
           <button onClick={() => { if (herstelRef.current) { herstelRef.current.value = ""; herstelRef.current.click(); } }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Share size={16} /> Backup terugzetten</button>
           <input ref={herstelRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onRestore(f); }} />
         </div>
