@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-11a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-11b"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2773,6 +2773,57 @@ function App() {
   const [haccpRecords, setHaccpRecords] = useState([]);
   const [werkDocs, setWerkDocs] = useState([]); // aanpassingen/nieuwe werkwijze-documenten
   const [stock, setStock] = useState([]); // voorraad
+  const [catSettings, setCatSettings] = useState(() => {
+    // Start met de lokale cache; de gedeelde versie uit Supabase overschrijft dit bij het laden.
+    try { return { eigen: JSON.parse(localStorage.getItem("ritme:cats-eigen") || "[]") || [], verborgen: JSON.parse(localStorage.getItem("ritme:cats-verborgen") || "[]") || [] }; } catch (e) { return { eigen: [], verborgen: [] }; }
+  });
+  // ---- Backup & herstel: voorraad, recepten (incl. fermentatie) en gerechten ----
+  const maakBackup = () => {
+    const b = { app: "ritme", versie: RITME_VERSIE, datum: new Date().toISOString(),
+      recepten: recipes, gerechten: dishes, voorraad: stock };
+    const blob = new Blob([JSON.stringify(b, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "ritme-backup-" + localDate() + ".json";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+    flash("Backup gedownload (" + recipes.length + " recepten · " + dishes.length + " gerechten · " + stock.length + " voorraaditems)");
+  };
+  const herstelBackup = async (file) => {
+    let b;
+    try { b = JSON.parse(await file.text()); } catch (e) { alert("Dit bestand is geen geldige Ritme-backup."); return; }
+    if (!b || b.app !== "ritme" || !Array.isArray(b.recepten) || !Array.isArray(b.gerechten) || !Array.isArray(b.voorraad)) { alert("Dit bestand is geen geldige Ritme-backup."); return; }
+    const wanneer = b.datum ? new Date(b.datum).toLocaleString("nl-NL") : "onbekende datum";
+    if (!window.confirm("Backup van " + wanneer + " terugzetten?\n\n" + b.recepten.length + " recepten, " + b.gerechten.length + " gerechten en " + b.voorraad.length + " voorraaditems worden teruggezet. Gelijknamige items worden overschreven; items die ná de backup zijn gemaakt blijven staan.")) return;
+    const stempel = { updated_by: "backup-herstel", updated_at: new Date().toISOString() };
+    if (live) {
+      // Recepten: eigen recepten naar recipes_custom, bewerkte standaardrecepten naar recipe_overrides.
+      const eigen = b.recepten.filter((r) => r.custom).map((r) => ({ id: r.id, data: r, ...stempel }));
+      const seedIds = new Set(initialRecipes.map((r) => r.id));
+      const overrides = b.recepten.filter((r) => !r.custom && seedIds.has(r.id)).map((r) => ({ id: r.id, data: r, ...stempel }));
+      let fout = null;
+      for (let i = 0; i < eigen.length && !fout; i += 100) fout = (await supabase.from("recipes_custom").upsert(eigen.slice(i, i + 100))).error;
+      for (let i = 0; i < overrides.length && !fout; i += 100) fout = (await supabase.from("recipe_overrides").upsert(overrides.slice(i, i + 100))).error;
+      const dRows = b.gerechten.map((d) => ({ id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating, recipe_ids: d.recipeIds, season: d.season, diet: d.diet, ...stempel }));
+      for (let i = 0; i < dRows.length && !fout; i += 100) fout = (await supabase.from("dishes").upsert(dRows.slice(i, i + 100))).error;
+      const vRows = b.voorraad.map((v) => ({ id: v.id, product: v.product, qty: v.qty, initial_qty: v.initialQty, unit: v.unit, ingredients: v.ingredients, production_date: v.productionDate || null, expiry_date: v.expiryDate || null, made_by: v.by, recipe_id: v.recipeId || null, storage: v.storage || "" }));
+      for (let i = 0; i < vRows.length && !fout; i += 100) fout = (await supabase.from("voorraad").upsert(vRows.slice(i, i + 100))).error;
+      if (dbFail(fout)) return;
+    }
+    // Lokale staat: backup-items terugzetten, nieuwere items laten staan.
+    setRecipes((rs) => { const ids = new Set(b.recepten.map((r) => r.id)); return [...b.recepten, ...rs.filter((r) => !ids.has(r.id))]; });
+    setDishes((ds) => { const ids = new Set(b.gerechten.map((d) => d.id)); return [...b.gerechten, ...ds.filter((d) => !ids.has(d.id))]; });
+    setStock((vs2) => { const ids = new Set(b.voorraad.map((v) => v.id)); return [...b.voorraad, ...vs2.filter((v) => !ids.has(v.id))]; });
+    flash("Backup teruggezet" + (live ? " — zichtbaar voor het hele team" : " (demo: alleen dit apparaat)"));
+  };
+  const saveCatSettings = async (next) => {
+    setCatSettings(next);
+    try { localStorage.setItem("ritme:cats-eigen", JSON.stringify(next.eigen)); localStorage.setItem("ritme:cats-verborgen", JSON.stringify(next.verborgen)); } catch (e) {}
+    if (live) {
+      const { error } = await supabase.from("app_settings").upsert({ key: "recipe_categories", value: next, updated_at: new Date().toISOString() });
+      if (error) flash("Categorieën alleen lokaal bewaard — draai eerst de app_settings-SQL in Supabase");
+    }
+  };
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
 
@@ -2808,7 +2859,7 @@ function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
-    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -2825,6 +2876,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
+      supabase.from("app_settings").select("*").eq("key", "recipe_categories"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -2856,6 +2908,9 @@ function App() {
     setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: String(r.record_date || "").slice(0, 10), by: r.done_by, note: r.note || "", ...(r.data || {}) })));
     setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
     setStock((vs.data || []).map((r) => ({ id: r.id, product: r.product, qty: r.qty === null ? 0 : Number(r.qty), initialQty: r.initial_qty === null ? 0 : Number(r.initial_qty), unit: r.unit || "", ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], productionDate: String(r.production_date || "").slice(0, 10), expiryDate: String(r.expiry_date || "").slice(0, 10), by: r.made_by || "", recipeId: r.recipe_id || null, storage: r.storage || "" })));
+    // Gedeelde categorielijst; ontbreekt de tabel of rij nog, dan blijft de lokale cache gelden.
+    const csRow = (cs && cs.data && cs.data[0]) || null;
+    if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -3939,7 +3994,7 @@ function App() {
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
           onCancel={() => { setDishDraft(null); goBack(); }}
           onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onCancel={goBack}
+        {current.screen === "recipeForm" && <RecipeForm catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onCancel={goBack}
           onSave={async (d) => { const newId = await saveRecipe(d, current.editing);
             if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
             goBack(); }} />}
@@ -3953,7 +4008,7 @@ function App() {
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
         {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onRestore={herstelBackup} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
 
       {showFab && (
@@ -4165,7 +4220,8 @@ function Header({ user, onHome, onOpenSettings }) {
   );
 }
 
-function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut }) {
+function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onRestore }) {
+  const herstelRef = React.useRef(null);
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const iOS = /iphone|ipad|ipod/i.test(ua);
   return (
@@ -4199,6 +4255,16 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut })
         )}
       </div>
       <p className="text-xs mute mt-2 flex items-start gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /> Installeren werkt op jullie eigen webadres, nadat de app is gepubliceerd. In deze preview is de knop nog niet actief.</p>
+
+      <SectionTitle>Backup</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute mb-3">Download een reservekopie van de <span className="ink font-medium">voorraad, recepten (incl. fermentatie) en gerechten</span> als bestand, of zet een eerdere backup terug. Terugzetten overschrijft gelijknamige items; nieuwere items blijven staan.</p>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={onBackup} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Download size={16} /> Backup downloaden</button>
+          <button onClick={() => { if (herstelRef.current) { herstelRef.current.value = ""; herstelRef.current.click(); } }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Share size={16} /> Backup terugzetten</button>
+          <input ref={herstelRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onRestore(f); }} />
+        </div>
+      </div>
 
       <SectionTitle>Over</SectionTitle>
       <div className="card p-4 text-sm mute space-y-1">
@@ -7296,9 +7362,29 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onCancel, onSave }) {
+function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onCancel, onSave }) {
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
+  // Categorieën zijn beheerbaar en gedeeld met het hele team (app_settings in
+  // Supabase); recepten zelf bewaren gewoon hun categorietekst.
+  const eigenCats = (catSettings && catSettings.eigen) || [];
+  const wegCats = (catSettings && catSettings.verborgen) || [];
+  const alleCats = [...RECIPE_CATEGORIES.filter((c) => !wegCats.includes(c)), ...eigenCats.filter((c) => !RECIPE_CATEGORIES.includes(c))];
+  const [catBeheer, setCatBeheer] = useState(false);
+  const [nieuweCat, setNieuweCat] = useState("");
+  const voegCatToe = () => {
+    const n = nieuweCat.trim();
+    if (!n) return;
+    if (!alleCats.includes(n)) {
+      onSaveCats({ eigen: [...eigenCats.filter((x) => x !== n), n], verborgen: wegCats.filter((x) => x !== n) });
+    }
+    setCategory(n); setNieuweCat("");
+  };
+  const verwijderCat = (c) => {
+    if (RECIPE_CATEGORIES.includes(c)) onSaveCats({ eigen: eigenCats, verborgen: [...wegCats, c] });
+    else onSaveCats({ eigen: eigenCats.filter((x) => x !== c), verborgen: wegCats });
+    if (category === c) setCategory("");
+  };
   // Opbrengst in rijen: aantal / eenheid / verpakking (bv. 20 St. / 200 gr / kleine pot)
   const [yields, setYields] = useState(() => {
     if (recipe && Array.isArray(recipe.yields) && recipe.yields.length) return recipe.yields.map((y) => ({ ...y }));
@@ -7442,7 +7528,7 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
       {err && <p className="text-xs mb-3" style={{ color: "#a23b2c" }}>{err}</p>}
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Gefermenteerde rode biet" /></Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Categorie"><AppSelect className={inputCls} value={RECIPE_CATEGORIES.includes(category) ? category : (category ? "__custom" : "")} onChange={(v) => { if (v === "__custom") setCategory(category && !RECIPE_CATEGORIES.includes(category) ? category : "Zonder categorie"); else setCategory(v); }} placeholder="Kies een categorie…" options={[...RECIPE_CATEGORIES, { value: "__custom", label: "Anders…" }]} /></Field>
+        <Field label="Categorie"><AppSelect className={inputCls} value={alleCats.includes(category) ? category : (category ? "__custom" : "")} onChange={(v) => { if (v === "__beheer") setCatBeheer(true); else if (v === "__custom") setCategory(category && !alleCats.includes(category) ? category : "Zonder categorie"); else setCategory(v); }} placeholder="Kies een categorie…" options={[...alleCats, { value: "__custom", label: "Anders…" }, { value: "__beheer", label: "✎ Categorieën beheren…" }]} /></Field>
         <Field label="Soort recept"><AppSelect className={inputCls} value={recipeType} onChange={(v) => { setRecipeType(v); if (v === "basis") setBasePick(null); }} options={[{ value: "basis", label: "Basisrecept" }, { value: "variatie", label: "Variatie op een ander recept" }]} /></Field>
         {recipeType === "variatie" && (
           <div className="col-span-2 mb-3 -mt-1">
@@ -7476,7 +7562,29 @@ function RecipeForm({ recipe, fermentDefault, allRecipes, onSaveAllergenFix, onC
         ))}
       </div>
       <button onClick={() => setYields((ys) => [...ys, { count: "", size: "", pack: "" }])} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2 self-start"><Plus size={15} /> Opbrengst-rij toevoegen</button>
-      {category && !RECIPE_CATEGORIES.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
+      {category && !alleCats.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
+      {catBeheer && (
+        <div className="card p-3.5 mb-4">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm font-bold ink">Categorieën beheren</span>
+            <button onClick={() => setCatBeheer(false)} className="ff mute hover:opacity-60 p-1"><X size={16} /></button>
+          </div>
+          <div className="flex gap-2 mb-2.5">
+            <input className={inputCls + " flex-1"} value={nieuweCat} onChange={(e) => setNieuweCat(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); voegCatToe(); } }} placeholder="Nieuwe categorie" />
+            <button onClick={voegCatToe} className="btnp ff shrink-0 rounded-lg text-sm font-semibold px-3">Toevoegen</button>
+          </div>
+          <div className="max-h-56 overflow-y-auto space-y-1">
+            {alleCats.map((c) => (
+              <div key={c} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5" style={{ background: T.bg }}>
+                <span className="text-sm ink min-w-0 truncate">{c}</span>
+                <button onClick={() => verwijderCat(c)} className="ff shrink-0 mute hover:opacity-60" title="Uit de keuzelijst halen"><Trash2 size={15} /></button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11.5px] mute mt-2">Verwijderen haalt de categorie alleen uit deze keuzelijst — bestaande recepten houden hun categorie.</p>
+        </div>
+      )}
       <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = hele jaar)</span></div>
       <div className="flex flex-wrap gap-1.5 mb-4">
         {SEASONS.map((s) => (
