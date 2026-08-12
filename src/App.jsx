@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-12c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-12d"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2889,6 +2889,26 @@ function App() {
     }
     flash(arts.length + " artikelen ingelezen voor " + levStandaard + (live ? " — gedeeld met het team" : ""));
   };
+  // Leverancier of categorie een nettere naam geven — geldt voor het hele team.
+  const hernoemArtikelGroep = async (soort, oud, nieuw, leverancier) => {
+    const naam = String(nieuw || "").trim();
+    if (!naam) return;
+    const raakt = (a) => (soort === "lev"
+      ? (a.leverancier || "Onbekende leverancier") === oud
+      : (a.categorie || "Overig") === oud && (a.leverancier || "Onbekende leverancier") === leverancier);
+    const nieuwe = bdArtikelen.filter(raakt).map((a) => (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }));
+    if (!nieuwe.length) return;
+    setBdArtikelen((xs) => xs.map((a) => (raakt(a) ? (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }) : a)));
+    if (live) {
+      const uit = await upsertArtikelen(nieuwe.map((a) => ({ ...a, updated_at: new Date().toISOString() })));
+      if (uit !== "ok") { flash("Naam alleen lokaal gewijzigd — draai eerst de kolom-SQL in Supabase"); return; }
+    }
+    flash(nieuwe.length + " artikelen staan nu onder " + naam);
+  };
+  const deleteBdArtikel = async (code) => {
+    setBdArtikelen((xs) => xs.filter((a) => a.code !== code));
+    if (live) await supabase.from("bd_artikelen").delete().eq("code", code);
+  };
   const updateBdArtikel = async (art) => {
     setBdArtikelen((xs) => xs.map((a) => (a.code === art.code ? art : a)));
     if (live) {
@@ -4124,7 +4144,7 @@ function App() {
               onDelete={(id) => { if (window.confirm("Dit product verwijderen?")) deleteAssortimentItem(id); }}
               recipeById={recipeById}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
-              onUpdateArtikel={updateBdArtikel} />}
+              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               focusKey={techFocus} onFocusDone={() => setTechFocus(null)}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
@@ -4452,8 +4472,10 @@ const prijsWoorden = (s) => zonderAccent(s).toLowerCase().replace(/[^a-z0-9]+/g,
 const woordScore = (w, x) => {
   if (x === w) return 3;
   const lang = x.length > w.length ? x : w, kort = x.length > w.length ? w : x;
-  if (lang.indexOf(kort) !== 0) return 0;
-  return lang.length - kort.length <= 2 ? 2 : 1;
+  const waar = lang.indexOf(kort);
+  if (waar === 0) return lang.length - kort.length <= 2 ? 2 : 1; // meervoud of verkleining
+  if (waar > 0 && kort.length >= 4) return 1; // samengesteld woord
+  return 0;
 };
 const EENHEID_CODE = { kg: "kg", kilo: "kg", kilogram: "kg", g: "g", gr: "g", gram: "g", grammen: "g", l: "l", lt: "l", ltr: "l", liter: "l", liters: "l", ml: "ml", cl: "cl", dl: "dl", st: "st", stk: "st", stks: "st", stuk: "st", stuks: "st", pc: "st", pcs: "st" };
 const NAAR_BASIS = { kg: { b: "kg", f: 1 }, g: { b: "kg", f: 0.001 }, l: { b: "l", f: 1 }, dl: { b: "l", f: 0.1 }, cl: { b: "l", f: 0.01 }, ml: { b: "l", f: 0.001 }, st: { b: "st", f: 1 } };
@@ -4470,7 +4492,7 @@ const parseMaat = (txt) => {
   const code = eh ? EENHEID_CODE[eh] : "st";
   const conv = code ? NAAR_BASIS[code] : null;
   if (!conv) return null;
-  return { n: n * conv.f, b: conv.b };
+  return { n: n * conv.f, b: conv.b, vaag: !eh };
 };
 // Prijs van een inkoopartikel per kilo, liter of stuk.
 const artikelPerBasis = (a) => {
@@ -4512,8 +4534,14 @@ const ingKost = (ing) => {
   const art = ing.artikelCode ? (PRIJSLIJST.arts.find((a) => a.code === ing.artikelCode) || null) : zoekArtikel(ing.item);
   const pb = artikelPerBasis(art);
   const maat = parseMaat(ing.amount);
-  if (!art || !pb || !maat || maat.b !== pb.b) return { bedrag: null, auto: false, artikel: art };
-  return { bedrag: pb.prijs * maat.n, auto: true, artikel: art };
+  if (!art || !pb || !maat) return { bedrag: null, auto: false, artikel: art };
+  let hoeveel = maat.n;
+  if (maat.b !== pb.b) {
+    // "1000" zonder eenheid bij een artikel per kilo of liter: dat zijn grammen of milliliters.
+    if (!maat.vaag || (pb.b !== "kg" && pb.b !== "l") || maat.n < 20) return { bedrag: null, auto: false, artikel: art };
+    hoeveel = maat.n / 1000;
+  }
+  return { bedrag: pb.prijs * hoeveel, auto: true, artikel: art };
 };
 const ingKostBedrag = (ing) => ingKost(ing).bedrag;
 const receptIngTotaal = (recipe) => {
@@ -4566,22 +4594,12 @@ function printAssortimentProduct(p, recipeById) {
 }
 
 // Eén regel in de inkooplijst: prijs bekijken, aanpassen en er een opmerking bij zetten.
-function ArtikelRij({ a, onUpdate }) {
+function ArtikelRij({ a, onUpdate, onDelete }) {
   const [open, setOpen] = useState(false);
   const [prijs, setPrijs] = useState(a.prijs == null ? "" : String(a.prijs));
   const [ppe, setPpe] = useState(a.ppe == null ? "" : String(a.ppe));
-  const [pct, setPct] = useState("");
   const [opm, setOpm] = useState(a.opmerking || "");
   const pb = artikelPerBasis(a);
-  const pasPctToe = () => {
-    const p = eurNum(pct);
-    if (p === null) return;
-    const f = 1 + p / 100;
-    const np = eurNum(prijs), ne = eurNum(ppe);
-    if (np !== null) setPrijs((np * f).toFixed(2));
-    if (ne !== null) setPpe((ne * f).toFixed(2));
-    setPct("");
-  };
   const bewaar = () => { onUpdate({ ...a, prijs: eurNum(prijs), ppe: eurNum(ppe), opmerking: opm.trim() }); setOpen(false); };
   return (
     <div className="card px-3 py-2.5">
@@ -4596,6 +4614,7 @@ function ArtikelRij({ a, onUpdate }) {
           <div className="text-[12px] mute">{pb ? eur(pb.prijs) + " p/" + pb.b : a.ppe != null ? eur(a.ppe) + " p/e" : ""}</div>
         </div>
         <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Prijs en opmerking"><Pencil size={15} /></button>
+        <button onClick={() => { if (window.confirm('"' + a.omschrijving + '" uit de lijst verwijderen?')) onDelete(a.code); }} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={15} /></button>
       </div>
       {open && (
         <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid " + T.line }}>
@@ -4613,26 +4632,22 @@ function ArtikelRij({ a, onUpdate }) {
             <div className="text-[11.5px] font-bold ink mb-1">Opmerking</div>
             <textarea rows={2} className="input px-2.5 py-2 w-full text-sm" value={opm} onChange={(e) => setOpm(e.target.value)} placeholder="bv. alleen op bestelling, of komt uit eigen tuin" />
           </div>
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <div className="text-[11.5px] font-bold ink mb-1">% erbij (bv. tuinpercentage)</div>
-              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={pct} onChange={(e) => setPct(e.target.value.replace(/[^0-9.,-]/g, ""))} placeholder="bv. 30" />
-            </div>
-            <button onClick={pasPctToe} className="btno ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Pas % toe</button>
+          <div className="flex justify-end">
             <button onClick={bewaar} className="btnp ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Bewaren</button>
           </div>
-          <p className="text-[11px] mute mt-1.5">Het percentage rekent over beide prijzen; negatief kan ook. Bewaren deelt prijs en opmerking met het team.</p>
+          <p className="text-[11px] mute mt-1.5">Bewaren deelt prijs en opmerking met het team, en rekent meteen door in de recepten.</p>
         </div>
       )}
     </div>
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, onDelete, onImport, onUpdateArtikel }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const [openLev, setOpenLev] = useState({});
   const [openCat, setOpenCat] = useState({});
+  const [hernoem, setHernoem] = useState(null); // {soort, oud, leverancier}
   const hits = q.trim().length >= 2
     ? bdArtikelen.filter((a) => strictMatchAny([a.omschrijving, a.merk, a.code], q)).slice(0, 30)
     : [];
@@ -4692,8 +4707,15 @@ function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, on
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een inkoopartikel (bv. citroen)" className="input px-3 py-2.5 w-full text-sm pl-9" />
       </div>
       {q.trim().length >= 2 && hits.length === 0 && <div className="text-sm mute">Geen artikelen gevonden.</div>}
+      {hernoem && (
+        <PromptModal titel={hernoem.soort === "lev" ? "Leverancier hernoemen" : "Categorie hernoemen"}
+          label="Naam" waarde={hernoem.oud} placeholder="bv. De Waog" okLabel="Opslaan"
+          hint={hernoem.soort === "lev" ? "Alle artikelen van deze leverancier komen onder de nieuwe naam." : "Geldt voor deze categorie bij " + hernoem.leverancier + "."}
+          onCancel={() => setHernoem(null)}
+          onOk={(naam) => { onHernoem(hernoem.soort, hernoem.oud, naam, hernoem.leverancier); setHernoem(null); }} />
+      )}
       {q.trim().length >= 2 ? (
-        <div className="space-y-1.5">{hits.map((a) => <ArtikelRij key={a.code} a={a} onUpdate={onUpdateArtikel} />)}</div>
+        <div className="space-y-1.5">{hits.map((a) => <ArtikelRij key={a.code} a={a} onUpdate={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>
       ) : (
         <div className="space-y-2">
           {levs.map((lev) => {
@@ -4702,13 +4724,16 @@ function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, on
             const uit = !!openLev[lev];
             return (
               <div key={lev}>
-                <button onClick={() => setOpenLev((o) => ({ ...o, [lev]: !o[lev] }))} className="ff card cardh w-full text-left px-3.5 py-3 flex items-center gap-2">
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold ink truncate">{lev}</span>
-                    <span className="block text-[12px] mute">{aantal} artikelen · {cats.length} categorie{cats.length === 1 ? "" : "ën"}</span>
-                  </span>
-                  {uit ? <ChevronUp size={16} className="mute shrink-0" /> : <ChevronDown size={16} className="mute shrink-0" />}
-                </button>
+                <div className="card flex items-center gap-1 pr-2">
+                  <button onClick={() => setOpenLev((o) => ({ ...o, [lev]: !o[lev] }))} className="ff flex-1 min-w-0 text-left px-3.5 py-3 flex items-center gap-2">
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold ink truncate">{lev}</span>
+                      <span className="block text-[12px] mute">{aantal} artikelen · {cats.length} categorie{cats.length === 1 ? "" : "ën"}</span>
+                    </span>
+                    {uit ? <ChevronUp size={16} className="mute shrink-0" /> : <ChevronDown size={16} className="mute shrink-0" />}
+                  </button>
+                  <button onClick={() => setHernoem({ soort: "lev", oud: lev })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Leverancier hernoemen"><Pencil size={15} /></button>
+                </div>
                 {uit && (
                   <div className="mt-1.5 ml-2 space-y-1.5">
                     {cats.map((cat) => {
@@ -4717,12 +4742,15 @@ function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, on
                       const rij = [...perLev[lev][cat]].sort((x, y) => String(x.omschrijving).localeCompare(String(y.omschrijving), "nl"));
                       return (
                         <div key={sleutel}>
-                          <button onClick={() => setOpenCat((o) => ({ ...o, [sleutel]: !o[sleutel] }))} className="ff w-full text-left px-3 py-2 rounded-xl flex items-center gap-2" style={{ background: "#eef2e6", color: "#44502f" }}>
-                            <span className="flex-1 min-w-0 text-[13px] font-semibold truncate">{cat}</span>
-                            <span className="text-[12px] shrink-0" style={{ opacity: 0.7 }}>{rij.length}</span>
-                            {open ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
-                          </button>
-                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRij key={a.code} a={a} onUpdate={onUpdateArtikel} />)}</div>}
+                          <div className="flex items-center gap-1 rounded-xl pr-1.5" style={{ background: "#eef2e6", color: "#44502f" }}>
+                            <button onClick={() => setOpenCat((o) => ({ ...o, [sleutel]: !o[sleutel] }))} className="ff flex-1 min-w-0 text-left px-3 py-2 flex items-center gap-2">
+                              <span className="flex-1 min-w-0 text-[13px] font-semibold truncate">{cat}</span>
+                              <span className="text-[12px] shrink-0" style={{ opacity: 0.7 }}>{rij.length}</span>
+                              {open ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
+                            </button>
+                            <button onClick={() => setHernoem({ soort: "cat", oud: cat, leverancier: lev })} className="ff shrink-0 hover:opacity-60 p-1.5" title="Categorie hernoemen"><Pencil size={14} /></button>
+                          </div>
+                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRij key={a.code} a={a} onUpdate={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>}
                         </div>
                       );
                     })}
@@ -4748,7 +4776,6 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
   const [items, setItems] = useState(editing?.items && editing.items.length ? editing.items.map(normItem) : [normItem("")]);
   const [sugRow, setSugRow] = useState(-1); // rij met open receptsuggesties
   const [laad, setLaad] = useState("");
-  const [rekenN, setRekenN] = useState("");
   const setItem = (i, patch) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const addItemAt = (i) => {
     setItems((xs) => [...xs.slice(0, i + 1), normItem(""), ...xs.slice(i + 1)]);
@@ -4765,7 +4792,6 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
   const kHand = eurNum(cost);
   const k = kHand !== null ? kHand : kAuto, vP = eurNum(price);
   const effectief = k !== null && vP !== null && k > 0 ? Math.round(((vP - k) / k) * 100) : null;
-  const nn = parseInt(rekenN, 10);
   const laadProduct = (id) => {
     const p = producten.find((x) => x.id === id);
     if (!p) return;
@@ -4801,10 +4827,6 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
           <input type="text" inputMode="decimal" className={inputCls} value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 35" />
           {effectief !== null && <p className="text-[11.5px] mute mt-1">{effectief}% op de kostprijs.</p>}
         </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3 items-end">
-        <Field label="Reken met … personen"><input type="text" inputMode="numeric" className={inputCls} value={rekenN} onChange={(e) => setRekenN(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 40" /></Field>
-        <div className="pb-4 text-sm ink">{nn > 0 && k !== null ? <>Kost {eur(k * nn)}{vP !== null && <> · verkoop {eur(vP * nn)}</>}</> : <span className="mute">Totalen verschijnen hier</span>}</div>
       </div>
       <div className="flex items-center justify-between gap-2 mt-2 mb-1.5">
         <span className="text-sm font-medium ink">Items</span>
@@ -4850,7 +4872,6 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
           );
         })}
       </div>
-      {kAuto !== null && <div className="text-sm ink mt-2">Items samen: <span className="font-semibold">{eur(kAuto)}</span>{itemBedragen.length < items.filter((x) => x.text.trim()).length && <span className="mute"> · {items.filter((x) => x.text.trim()).length - itemBedragen.length} zonder prijs</span>}</div>}
       <AddRow onClick={() => setItems((xs) => [...xs, normItem("")])} label="Item toevoegen" />
       <div className="mt-5">
         <Field label="Opmerkingen"><textarea rows={3} className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="bv. inclusief koffie en thee, exclusief bediening" /></Field>
