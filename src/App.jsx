@@ -4,7 +4,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -3988,10 +3988,13 @@ function App() {
       {checkOpen && canEdit && (
         <CleaningCheckModal tasks={cleaningTasks} logs={cleaningLogs} user={user} canEdit={canEdit} forDate={checkForDate}
           onSign={(tid) => signCleaning(tid, false, checkForDate || undefined)} onDayDone={() => markDayDone(checkForDate || undefined)} onDayOff={() => markDayOff(checkForDate || undefined)} onClose={() => { setCheckOpen(false); setCheckForDate(null); }}
+          onUndo={(logId) => removeCleaningLog(logId)}
+          onFillTemp={() => { setCheckOpen(false); setCheckForDate(null); push({ screen: "haccpForm", editing: null }); }}
+          onFillRecord={(kind) => { setCheckOpen(false); setCheckForDate(null); push({ screen: "haccpRecordForm", recordKind: kind, editing: null }); }}
           onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
       )}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-2xl text-sm px-4 py-2.5 shadow-lg max-w-[92vw] w-max" style={{ background: T.ink, color: T.paper }}>
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl text-sm px-4 py-2.5 shadow-lg max-w-[92vw] w-max" style={{ background: T.ink, color: T.paper }}>
           <Check size={16} className="shrink-0" />
           <span className="min-w-0">{toast.msg}</span>
           {toast.undo && <button onClick={() => { const u = toast.undo; setToast(null); u(); }} className="ff font-semibold underline shrink-0 whitespace-nowrap">Ongedaan maken</button>}
@@ -4367,7 +4370,7 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen }) {
           <button key={d.id} onClick={() => onOpen(d.id)} className="card cardh ff w-full text-left p-4 flex items-start gap-3">
             <div className="flex-1 min-w-0">
               <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1">{d.course}</div>
-              <div className="serif ink text-xl leading-tight">{d.name}</div>
+              <div className="serif ink font-bold text-xl leading-tight">{d.name}</div>
               <div className="text-sm mute mt-1 line-clamp-2">{d.description}</div>
               <div className="mt-2.5 flex items-center gap-2 flex-wrap text-xs mute">
                 <span className="inline-flex items-center gap-1"><Layers size={13} className="acc" /> {d.recipeIds.length} recepten</span>
@@ -4458,7 +4461,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
           <button key={r.id} onClick={() => onOpen(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
+                <span className="serif ink font-bold text-lg leading-tight truncate">{r.name}</span>
                 {(r.isBase || varsOf(r.id).length > 0) && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
                 {r.ferment && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> ferment</span>}
               </div>
@@ -4615,7 +4618,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
           <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="serif ink text-lg leading-tight truncate">{r.name}</span>
+                <span className="serif ink font-bold text-lg leading-tight truncate">{r.name}</span>
                 {(r.isBase || varsOf(r.id).length > 0) && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}><GitBranch size={10} /> basis</span>}
                 {r.fermentMethod && <span className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: "#e6e9df", color: "#46603f" }}><FlaskConical size={10} /> {r.fermentMethod}</span>}
               </div>
@@ -4736,7 +4739,7 @@ function BatchCard({ b, canEdit, onToggleDone, onDelete, onEdit, onOpenLog, onAc
   return (
     <div className="card p-3 flex flex-col">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="serif ink text-[17px] leading-tight break-words min-w-0">{b.product}</span>
+        <span className={"serif ink text-[17px] leading-tight break-words min-w-0" + (b.done ? "" : " font-bold")}>{b.product}</span>
         {b.done
           ? <span className="shrink-0 text-[11.5px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>Klaar</span>
           : readyRaw
@@ -4863,7 +4866,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
         {shown.map((p) => (
           <div key={p.name} ref={(el) => { cardRefs.current[p.name] = el; }} className="card overflow-hidden">
             <button onClick={() => setOpen(open === p.name ? null : p.name)} className="ff w-full flex items-center justify-between px-4 py-3 text-left">
-              <span className="serif ink text-lg flex items-center gap-2 flex-wrap">{cap(p.name)} {(((p.season && p.season.length) ? p.season : (SEASON[p.name] || [])).filter((s) => s !== "Hele jaar")).map((s) => <SeasonPill key={s} s={s} />)}</span>
+              <span className="serif ink font-bold text-lg flex items-center gap-2 flex-wrap">{cap(p.name)} {(((p.season && p.season.length) ? p.season : (SEASON[p.name] || [])).filter((s) => s !== "Hele jaar")).map((s) => <SeasonPill key={s} s={s} />)}</span>
               <ChevronRight size={16} className={"transition-transform " + (open === p.name ? "rotate-90" : "")} style={{ color: "#c4c2b2" }} />
             </button>
             {open === p.name && editing !== p.name && (
@@ -5038,7 +5041,7 @@ function TechCard({ title, intro, open, onToggle, children }) {
     <div className="card overflow-hidden">
       <button onClick={onToggle} className="ff w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left">
         <span className="min-w-0">
-          <span className="serif ink text-lg block leading-tight">{title}</span>
+          <span className="serif ink font-bold text-lg block leading-tight">{title}</span>
           <span className="text-xs mute block mt-0.5">{intro}</span>
         </span>
         {open ? <ChevronUp size={18} className="shrink-0" style={{ color: "#c4c2b2" }} /> : <ChevronDown size={18} className="shrink-0" style={{ color: "#c4c2b2" }} />}
@@ -5468,6 +5471,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const today = localDate();
   const [name, setName] = useState("");
   const [picked, setPicked] = useState(false); // onderdrukt de suggestielijst na een keuze
+  const [gekozenRecept, setGekozenRecept] = useState(null); // voor ingrediënten bij Print + voorraad
   const [prod, setProd] = useState(today);
   const [tht, setTht] = useState("");
   const [ready, setReady] = useState("");
@@ -5497,7 +5501,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   // Recept overnemen: naam, THT, allergenen, opslag en (bij fermentatie) klaar-rond.
   const applyRecipe = (r, p) => {
     const basis = p || prod || today;
-    setName(r.name); setPicked(true);
+    setName(r.name); setPicked(true); setGekozenRecept(r);
     if (r.shelfDays) setTht(thtVan(basis, r.shelfDays));
     setAllergens(recipeAllergens(r));
     const fd = r.fermentDefaults;
@@ -5531,12 +5535,15 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, note, allergens })); } catch (e) {}
     printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), note, allergens });
     const dgn = (() => { if (!tht || !prod) return null; const a = new Date(prod + "T12:00:00"), b = new Date(tht + "T12:00:00"); return isNaN(a) || isNaN(b) ? null : Math.round((b - a) / 86400000); })();
-    onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: gram.trim() });
+    const rec = gekozenRecept && String(gekozenRecept.name || "").trim().toLowerCase() === name.trim().toLowerCase() ? gekozenRecept : null;
+    onAddStock({ product: name.trim(), productionDate: prod, shelfDays: dgn && dgn > 0 ? dgn : null, unit: gram.trim(),
+      ingredients: rec && Array.isArray(rec.ingredients) ? rec.ingredients.map((x) => ({ ...x })) : undefined,
+      recipeId: rec ? rec.id : undefined });
   };
   const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
   // Alles leegmaken voor een vers etiket; alleen de productiedatum blijft vandaag.
   const maakLeeg = () => {
-    setName(""); setPicked(false); setSuggIdx(-1);
+    setName(""); setPicked(false); setGekozenRecept(null); setSuggIdx(-1);
     setProd(today); setTht(""); setReady("");
     setGram(""); setNote(""); setAllergens([]); setAlgOpen(false);
     setTimeout(() => { try { if (naamRef.current) naamRef.current.focus(); } catch (e) {} }, 30);
@@ -5777,7 +5784,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
       <div key={g.key} className={"card overflow-hidden" + (isOpen ? " relative z-20" : "")} style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
         <div className="px-4 py-3">
           <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff w-full text-left">
-            <div className="serif ink text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{g.product}</div>
+            <div className="serif ink font-bold text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{g.product}</div>
           </button>
           <div className="flex items-end gap-2 mt-0.5">
             <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff flex-1 min-w-0 text-left">
@@ -6970,7 +6977,7 @@ function BatchMeasureModal({ batches, onAdd, onFinish, onClose }) {
 }
 
 // Dagelijkse controle om 16:45
-function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDayDone, onDayOff, onClose, onOpenSection }) {
+function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDayDone, onDayOff, onClose, onOpenSection, onUndo, onFillTemp, onFillRecord }) {
   const withStatus = tasks.map((t) => ({ t, st: taskStatus(t, logs) }));
   const open = forDate ? [] : withStatus.filter((x) => x.st.due);
   const doneToday = logs.filter((l) => l.taskId !== DAY_DONE_ID && l.doneDate === (forDate || localDate()));
@@ -6995,6 +7002,19 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
         <div className="mt-3 text-sm" style={{ color: "#3b3d33" }}>
           {forDate ? <>Teken hieronder de gedane taken af en rond de dag daarna opnieuw af. Kies je "Vrije dag", dan worden alle aftekeningen van deze dag verwijderd.</> : <>Vandaag afgetekend: <span className="font-medium ink">{doneToday.length}</span> · nog open: <span className="font-medium ink">{open.length}</span></>}
         </div>
+        {(() => {
+          // Terugdraaiknop tegen per-ongeluk-klikken: pakt de meest recente
+          // aftekening van deze dag (logs staan nieuwste-eerst in de lijst).
+          const laatste = logs.find((l) => l.taskId !== DAY_DONE_ID && l.taskId !== DAY_OFF_ID && l.doneDate === (forDate || localDate()));
+          if (!laatste || !canEdit || !onUndo) return null;
+          const taak = tasks.find((t) => t.id === laatste.taskId);
+          return (
+            <div className="flex items-center gap-2 mt-2 text-[12.5px] mute">
+              <span className="min-w-0 truncate">Laatst afgetekend: <span className="ink">{taak ? taak.name : laatste.taskId}</span> door {laatste.doneBy}</span>
+              <button onClick={() => onUndo(laatste.id)} className="ff shrink-0 inline-flex items-center gap-1 font-semibold acc hover:opacity-70"><RotateCcw size={12} /> Ongedaan</button>
+            </div>
+          );
+        })()}
         {open.length === 0
           ? <div className="mt-3 rounded-xl p-3.5 text-sm flex items-center gap-2" style={{ background: "#e8ebe0", color: T.green }}><Check size={16} /> Alles is afgetekend. Mooi werk.</div>
           : <div className="card overflow-hidden mt-3">
@@ -7004,7 +7024,11 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                     <div className="text-sm ink truncate">{x.t.name}</div>
                     <div className="text-[12.5px] mute">{x.t.area}{x.st.overdue && <span className="ml-1 font-semibold" style={{ color: "#8a4a3a" }}>over tijd</span>}</div>
                   </div>
-                  {canEdit && <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> Aftekenen</button>}
+                  {canEdit && (x.t.id === TEMP_TASK_ID
+                    ? <button onClick={onFillTemp} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Thermometer size={13} /> Invullen</button>
+                    : HACCP_TASK_KIND[x.t.id]
+                      ? <button onClick={() => onFillRecord(HACCP_TASK_KIND[x.t.id])} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Plus size={13} /> Invullen</button>
+                      : <button onClick={() => onSign(x.t.id)} className="btnp ff shrink-0 inline-flex items-center gap-1 rounded-lg text-xs font-semibold px-2 py-1.5"><Check size={13} /> Aftekenen</button>)}
                 </div>
               ))}
             </div>}
@@ -7035,7 +7059,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                         {canEdit && (vandaag
                           ? <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium" style={{ color: T.green }}><Check size={13} /> {dagLog.doneBy}</span>
                           : (x.t.id === TEMP_TASK_ID || HACCP_TASK_KIND[x.t.id])
-                            ? <button onClick={onOpenSection} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Registreren via de schoonmaaklijst"><Thermometer size={14} /></button>
+                            ? <button onClick={() => (x.t.id === TEMP_TASK_ID ? onFillTemp() : onFillRecord(HACCP_TASK_KIND[x.t.id]))} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Invullen"><Thermometer size={14} /></button>
                             : <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Aftekenen — de app vraagt wie"><Check size={15} /></button>)}
                       </div>
                     );
