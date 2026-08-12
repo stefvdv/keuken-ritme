@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-12f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-12h"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2916,7 +2916,7 @@ function App() {
     if (live) await supabase.from("bd_artikelen").delete().eq("code", code);
   };
   const updateBdArtikel = async (art) => {
-    setBdArtikelen((xs) => xs.map((a) => (a.code === art.code ? art : a)));
+    setBdArtikelen((xs) => (xs.some((a) => a.code === art.code) ? xs.map((a) => (a.code === art.code ? art : a)) : [...xs, art]));
     bewaarArtikelEigen([art]);
     if (live) {
       const uit = await upsertArtikelen([{ ...art, updated_at: new Date().toISOString() }]);
@@ -3759,7 +3759,10 @@ function App() {
     jam: tableRowsFor("__jam_rows", JAM_ROWS),
     ijs: tableRowsFor("__ice_rows", ICE_ROWS),
     roosteren: tableRowsFor("__roast_rows", ROAST_ROWS),
+    maten: tableRowsFor("__maat_rows", MAAT_ROWS),
   };
+  // De prijsmotor rekent lepels en stuks om met deze tabel.
+  React.useMemo(() => zetMaten(techTableRows.maten), [werkDocs]);
   const saveTechTable = async (tableKey, rows) => {
     const naam = await askName("groot", "Tabel opslaan");
     if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
@@ -4154,9 +4157,14 @@ function App() {
               onNew={() => push({ screen: "assortimentForm", editing: null })}
               onEdit={(id) => push({ screen: "assortimentForm", editing: id })}
               onDelete={(id) => { if (window.confirm("Dit product verwijderen?")) deleteAssortimentItem(id); }}
-              recipeById={recipeById}
+              recipeById={recipeById} recipes={recipes}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
-              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep} />}
+              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep}
+              onEigenArtikel={(d) => updateBdArtikel({
+                code: "eigen:" + zonderAccent(d.naam).toLowerCase().trim(),
+                omschrijving: d.naam, inhoud: d.inhoud, prijs: d.prijs, ppe: null,
+                leverancier: "Eigen prijzen", categorie: "Handmatig", opmerking: d.opmerking || "",
+              })} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               focusKey={techFocus} onFocusDone={() => setTechFocus(null)}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
@@ -4502,16 +4510,55 @@ const prijsWoorden = (s) => zonderAccent(s).toLowerCase().replace(/[^a-z0-9]+/g,
   .filter((w) => w.length > 1 && !/^\d+$/.test(w) && PRIJS_STOP.indexOf(w) < 0);
 // Twee woorden horen bij elkaar als ze gelijk zijn (3), als het ene het andere is
 // met een meervoudsstaart (citroen/citroenen, 2), of als deelwoord (1).
+const MEERVOUD = ["en", "s", "es", "eren", "ren", "je", "jes", "tje", "tjes", "ties"];
 const woordScore = (w, x) => {
   if (x === w) return 3;
   const lang = x.length > w.length ? x : w, kort = x.length > w.length ? w : x;
   const waar = lang.indexOf(kort);
-  if (waar === 0) return lang.length - kort.length <= 2 ? 2 : 1; // meervoud of verkleining
-  if (waar > 0 && kort.length >= 4) return 1; // samengesteld woord
-  return 0;
+  if (waar < 0) return 0;
+  if (waar === 0) {
+    const staart = lang.slice(kort.length);
+    // meervoud of verkleining: ui/uien, ei/eieren, stok/stokjes
+    if (staart.length <= 2 || MEERVOUD.indexOf(staart) >= 0) return 2;
+    return 1;
+  }
+  if (kort.length >= 5) return 2; // heel woord in een samenstelling: appelazijn, bietsuiker
+  return kort.length >= 4 ? 1 : 0;
 };
-const EENHEID_CODE = { kg: "kg", kilo: "kg", kilogram: "kg", g: "g", gr: "g", gram: "g", grammen: "g", l: "l", lt: "l", ltr: "l", liter: "l", liters: "l", ml: "ml", cl: "cl", dl: "dl", st: "st", stk: "st", stks: "st", stuk: "st", stuks: "st", pc: "st", pcs: "st" };
-const NAAR_BASIS = { kg: { b: "kg", f: 1 }, g: { b: "kg", f: 0.001 }, l: { b: "l", f: 1 }, dl: { b: "l", f: 0.1 }, cl: { b: "l", f: 0.01 }, ml: { b: "l", f: 0.001 }, st: { b: "st", f: 1 } };
+const EENHEID_CODE = { kg: "kg", kilo: "kg", kilogram: "kg", g: "g", gr: "g", gram: "g", grammen: "g", l: "l", lt: "l", ltr: "l", liter: "l", liters: "l", ml: "ml", cl: "cl", dl: "dl", st: "st", stk: "st", stks: "st", stuk: "st", stuks: "st", pc: "st", pcs: "st",
+  el: "el", eetlepel: "el", eetlepels: "el", eetl: "el", tl: "tl", theelepel: "tl", theelepels: "tl", theel: "tl", kop: "kop", koppen: "kop", cm: "cm", centimeter: "cm" };
+const NAAR_BASIS = { kg: { b: "kg", f: 1 }, g: { b: "kg", f: 0.001 }, l: { b: "l", f: 1 }, dl: { b: "l", f: 0.1 }, cl: { b: "l", f: 0.01 }, ml: { b: "l", f: 0.001 }, st: { b: "st", f: 1 },
+  el: { b: "el", f: 1 }, tl: { b: "tl", f: 1 }, kop: { b: "l", f: 0.24 }, cm: { b: "cm", f: 1 } };
+// Gewichtentabel uit Werkwijze: wat weegt een lepel, een stuk, een centimeter.
+let MATEN = { rijen: [], cache: new Map() };
+const zetMaten = (rijen) => { MATEN = { rijen: Array.isArray(rijen) ? rijen : [], cache: new Map() }; };
+const ML_PER_LEPEL = { el: 15, tl: 5 };
+// Een rij past bij een ingredient als elk woord uit de rijnaam erin voorkomt;
+// meer woorden is een betere treffer ("rode ui" wint van "ui").
+const maatVoor = (naam) => {
+  const sleutel = zonderAccent(naam).toLowerCase().trim();
+  if (!sleutel || !MATEN.rijen.length) return null;
+  if (MATEN.cache.has(sleutel)) return MATEN.cache.get(sleutel);
+  const iw = prijsWoorden(sleutel);
+  let best = null, beste = 0;
+  for (const r of MATEN.rijen) {
+    const rw = prijsWoorden(r.naam);
+    if (!rw.length) continue;
+    let punten = 0;
+    for (const w of rw) {
+      let b = 0;
+      for (const x of iw) { const p = woordScore(w, x); if (p > b) b = p; if (b === 3) break; }
+      if (!b) { punten = 0; break; }
+      punten += b;
+    }
+    // Bij gelijke stand wint de meest specifieke rij: kaneelstok boven kaneel.
+    const totaal = punten * 100 + rw.join("").length;
+    if (punten && totaal > beste) { beste = totaal; best = r; }
+  }
+  MATEN.cache.set(sleutel, best);
+  return best;
+};
+const maatGram = (rij, veld) => { const n = eurNum(rij && rij[veld]); return n !== null && n > 0 ? n : null; };
 // "500 g", "1,5 kg", "6 x 1 l", "2 stuks", "3" -> hoeveelheid in kilo, liter of stuks.
 // Eetlepels, snufjes en "naar smaak" leveren niets op: die reken je niet mee.
 const parseMaat = (txt) => {
@@ -4540,14 +4587,16 @@ const artikelPerBasis = (a) => {
 const artikelScore = (iw, a) => {
   const aw = prijsWoorden(a.omschrijving);
   if (!iw.length || !aw.length) return 0;
-  let punten = 0;
+  let punten = 0, sterk = 0, gemist = 0;
   for (const w of iw) {
     let beste = 0;
     for (const x of aw) { const p = woordScore(w, x); if (p > beste) beste = p; if (beste === 3) break; }
-    if (!beste) return 0; // elk woord uit het ingredient moet terugkomen
+    if (beste >= 2) sterk++;
+    if (!beste) gemist++;
     punten += beste;
   }
-  return punten * 100 - Math.abs(aw.length - iw.length); // kortste omschrijving wint
+  if (!sterk) return 0; // minstens een woord moet echt kloppen ("grove mosterd" ~ "Mosterd grof")
+  return punten * 100 - gemist * 40 - Math.abs(aw.length - iw.length); // meeste raak, kortste omschrijving
 };
 const zoekArtikel = (naam) => {
   const sleutel = zonderAccent(naam).toLowerCase().trim();
@@ -4568,11 +4617,29 @@ const ingKost = (ing) => {
   const pb = artikelPerBasis(art);
   const maat = parseMaat(ing.amount);
   if (!art || !pb || !maat) return { bedrag: null, auto: false, artikel: art };
+  const niks = { bedrag: null, auto: false, artikel: art };
   let hoeveel = maat.n;
   if (maat.b !== pb.b) {
-    // "1000" zonder eenheid bij een artikel per kilo of liter: dat zijn grammen of milliliters.
-    if (!maat.vaag || (pb.b !== "kg" && pb.b !== "l") || maat.n < 20) return { bedrag: null, auto: false, artikel: art };
-    hoeveel = maat.n / 1000;
+    const rij = maatVoor(ing.item);
+    if (maat.b === "el" || maat.b === "tl") {
+      // Lepels: bij een artikel per liter volstaat het volume, bij kilo's is het
+      // gewicht uit de tabel nodig (onbekend ingredient: 15 gram per eetlepel).
+      if (pb.b === "l") hoeveel = (maat.n * ML_PER_LEPEL[maat.b]) / 1000;
+      else if (pb.b === "kg") {
+        const gEl = maatGram(rij, "el") || 15;
+        hoeveel = (maat.n * (maat.b === "el" ? gEl : gEl / 3)) / 1000;
+      } else return niks;
+    } else if (maat.b === "cm") {
+      const gCm = maatGram(rij, "cm");
+      if (gCm === null || (pb.b !== "kg" && pb.b !== "l")) return niks;
+      hoeveel = (maat.n * gCm) / 1000;
+    } else if (maat.b === "st") {
+      const gSt = maatGram(rij, "stuk");
+      if (gSt !== null && (pb.b === "kg" || pb.b === "l")) hoeveel = (maat.n * gSt) / 1000;
+      // "1000" zonder eenheid bij een artikel per kilo of liter: dat zijn grammen of milliliters.
+      else if (maat.vaag && (pb.b === "kg" || pb.b === "l") && maat.n >= 20) hoeveel = maat.n / 1000;
+      else return niks;
+    } else return niks;
   }
   return { bedrag: pb.prijs * hoeveel, auto: true, artikel: art };
 };
@@ -4675,12 +4742,89 @@ function ArtikelRij({ a, onUpdate, onDelete }) {
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+// Een ingredient uit de recepten waar nog geen inkoopprijs bij hoort. Je geeft
+// een inkoopeenheid en een prijs; daarmee wordt het een eigen artikel dat
+// voortaan gewoon meerekent in alle recepten.
+function OntbrekendRij({ item, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [inh, setInh] = useState("1 kg");
+  const [prijs, setPrijs] = useState("");
+  const [opm, setOpm] = useState("");
+  const maat = parseMaat(inh);
+  const p = eurNum(prijs);
+  const perBasis = maat && maat.n > 0 && p !== null ? { prijs: p / maat.n, b: maat.b } : null;
+  const bewaar = () => {
+    if (p === null) { alert("Vul een prijs in."); return; }
+    if (!maat) { alert("Vul een inkoopeenheid in die de app kan lezen, bijvoorbeeld 1 kg, 5 l of 10 st."); return; }
+    onSave({ naam: item.naam, inhoud: inh.trim(), prijs: p, opmerking: opm.trim() });
+    setOpen(false);
+  };
+  return (
+    <div className="card px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm ink font-medium truncate">{item.naam}</div>
+          <div className="text-[12px] mute truncate">
+            {item.aantal}× in de recepten{item.voorbeeld ? " · bv. " + item.voorbeeld : ""}
+            {item.artikel ? " · eenheid niet om te rekenen" : " · geen artikel gevonden"}
+          </div>
+        </div>
+        <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Prijs invullen"><Pencil size={15} /></button>
+      </div>
+      {open && (
+        <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid " + T.line }}>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <div className="text-[11.5px] font-bold ink mb-1">Inkoopeenheid</div>
+              <input className="input px-2.5 py-2 w-full text-sm" value={inh} onChange={(e) => setInh(e.target.value)} placeholder="bv. 1 kg, 5 l, 10 st" />
+            </div>
+            <div>
+              <div className="text-[11.5px] font-bold ink mb-1">Prijs daarvoor (€)</div>
+              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={prijs} onChange={(e) => setPrijs(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 12,50" />
+            </div>
+          </div>
+          <div className="mb-2">
+            <div className="text-[11.5px] font-bold ink mb-1">Opmerking</div>
+            <textarea rows={2} className="input px-2.5 py-2 w-full text-sm" value={opm} onChange={(e) => setOpm(e.target.value)} placeholder="bv. uit eigen tuin, prijs geschat" />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12px] mute">{perBasis ? "Dat is " + eur(perBasis.prijs) + " per " + perBasis.b : "Vul eenheid en prijs in"}</span>
+            <button onClick={bewaar} className="btnp ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Bewaren</button>
+          </div>
+          <p className="text-[11px] mute mt-1.5">Komt onder "Eigen prijzen" in de lijst te staan en rekent meteen mee in elk recept met dit ingrediënt.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenArtikel, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const [openLev, setOpenLev] = useState({});
   const [openCat, setOpenCat] = useState({});
   const [hernoem, setHernoem] = useState(null); // {soort, oud, leverancier}
+  const [alleOntbrekend, setAlleOntbrekend] = useState(false);
+  const [qOntbreek, setQOntbreek] = useState("");
+  // Ingredienten uit de recepten waar geen prijs bij te vinden is.
+  const ontbrekend = React.useMemo(() => {
+    const map = {};
+    for (const r of recipes || []) {
+      for (const ing of r.ingredients || []) {
+        const naam = String(ing.item || "").trim();
+        if (!naam) continue;
+        const kk = ingKost(ing);
+        if (kk.bedrag !== null) continue;
+        const sleutel = naam.toLowerCase();
+        if (!map[sleutel]) map[sleutel] = { naam, aantal: 0, artikel: kk.artikel || null, voorbeeld: String(ing.amount || "").trim() };
+        map[sleutel].aantal++;
+        if (!map[sleutel].artikel && kk.artikel) map[sleutel].artikel = kk.artikel;
+      }
+    }
+    return Object.values(map).sort((a, b) => b.aantal - a.aantal || a.naam.localeCompare(b.naam, "nl"));
+  }, [recipes, bdArtikelen]);
+  const ontbreekHits = qOntbreek.trim().length >= 2 ? ontbrekend.filter((x) => softMatchAny([x.naam], qOntbreek)) : ontbrekend;
+  const ontbreekToon = alleOntbrekend ? ontbreekHits : ontbreekHits.slice(0, 25);
   const hits = q.trim().length >= 2
     ? bdArtikelen.filter((a) => strictMatchAny([a.omschrijving], q)).slice(0, 30)
     : [];
@@ -4793,6 +4937,29 @@ function AssortimentList({ producten, bdArtikelen, recipeById, onNew, onEdit, on
             );
           })}
         </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 mt-7 mb-1.5">
+        <span className="text-sm font-bold ink">Ingrediënten zonder prijs <span className="mute font-normal">· {ontbrekend.length}</span></span>
+      </div>
+      <p className="text-[12px] mute mb-2">Deze staan wel in de recepten, maar de app vindt er geen inkoopprijs bij. Vul een inkoopeenheid en prijs in — dan telt het ingrediënt vanaf dat moment overal mee. Staat er "eenheid niet om te rekenen", dan is het artikel wél gevonden maar weet de app niet wat een stuk weegt; dat vul je aan in de tabel onder Werkwijze, of je zet hier een eigen prijs per stuk.</p>
+      {ontbrekend.length === 0 ? (
+        <div className="card p-4 text-sm mute">Elk ingrediënt uit de recepten heeft een prijs.</div>
+      ) : (
+        <>
+          {ontbrekend.length > 8 && (
+            <div className="relative mb-2">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+              <input value={qOntbreek} onChange={(e) => setQOntbreek(e.target.value)} placeholder="Zoek een ingrediënt" className="input px-3 py-2.5 w-full text-sm pl-9" />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            {ontbreekToon.map((x) => <OntbrekendRij key={x.naam.toLowerCase()} item={x} onSave={onEigenArtikel} />)}
+          </div>
+          {ontbreekHits.length > ontbreekToon.length && (
+            <button onClick={() => setAlleOntbrekend(true)} className="ff mt-2 text-[13px] font-medium acc underline hover:opacity-70">Toon alle {ontbreekHits.length}</button>
+          )}
+        </>
       )}
     </div>
   );
@@ -5795,6 +5962,93 @@ const ROAST_ROWS = [
 ];
 
 // Werkwijzes onder de technieken-tabellen; koks kunnen deze aanpassen.
+// Wat een lepel, een stuk of een centimeter van iets weegt. Hiermee rekent de
+// app de kostprijs van "20 el mosterd" of "10 st kaneelstok" uit. Alles in
+// grammen; een theelepel telt als een derde eetlepel. Leeg = geen automatische
+// prijs, liever een gat dan een verzonnen bedrag.
+const MAAT_ROWS = [
+  { naam: "water", el: "15", stuk: "", cm: "" },
+  { naam: "azijn", el: "15", stuk: "", cm: "" },
+  { naam: "olie", el: "14", stuk: "", cm: "" },
+  { naam: "wijn", el: "15", stuk: "", cm: "" },
+  { naam: "melk", el: "15", stuk: "", cm: "" },
+  { naam: "room", el: "15", stuk: "", cm: "" },
+  { naam: "yoghurt", el: "15", stuk: "", cm: "" },
+  { naam: "crème fraîche", el: "15", stuk: "", cm: "" },
+  { naam: "mayonaise", el: "14", stuk: "", cm: "" },
+  { naam: "boter", el: "14", stuk: "", cm: "" },
+  { naam: "honing", el: "21", stuk: "", cm: "" },
+  { naam: "stroop", el: "21", stuk: "", cm: "" },
+  { naam: "mosterd", el: "16", stuk: "", cm: "" },
+  { naam: "sojasaus", el: "17", stuk: "", cm: "" },
+  { naam: "ketjap", el: "18", stuk: "", cm: "" },
+  { naam: "tomatenpuree", el: "16", stuk: "", cm: "" },
+  { naam: "suiker", el: "12,5", stuk: "", cm: "" },
+  { naam: "basterdsuiker", el: "12", stuk: "", cm: "" },
+  { naam: "poedersuiker", el: "8", stuk: "", cm: "" },
+  { naam: "zout", el: "18", stuk: "", cm: "" },
+  { naam: "zeezout grof", el: "15", stuk: "", cm: "" },
+  { naam: "bloem", el: "8", stuk: "", cm: "" },
+  { naam: "maizena", el: "8", stuk: "", cm: "" },
+  { naam: "griesmeel", el: "10", stuk: "", cm: "" },
+  { naam: "bakpoeder", el: "12", stuk: "", cm: "" },
+  { naam: "baksoda", el: "14", stuk: "", cm: "" },
+  { naam: "cacao", el: "6", stuk: "", cm: "" },
+  { naam: "gedroogde kruiden", el: "2", stuk: "", cm: "" },
+  { naam: "gemalen specerij", el: "7", stuk: "", cm: "" },
+  { naam: "peper", el: "7", stuk: "", cm: "" },
+  { naam: "paprikapoeder", el: "7", stuk: "", cm: "" },
+  { naam: "komijn", el: "6", stuk: "", cm: "" },
+  { naam: "koriander", el: "6", stuk: "", cm: "" },
+  { naam: "kurkuma", el: "8", stuk: "", cm: "6" },
+  { naam: "kaneel", el: "7", stuk: "", cm: "" },
+  { naam: "gemberpoeder", el: "6", stuk: "", cm: "" },
+  { naam: "mosterdzaad", el: "11", stuk: "", cm: "" },
+  { naam: "sesamzaad", el: "9", stuk: "", cm: "" },
+  { naam: "lijnzaad", el: "10", stuk: "", cm: "" },
+  { naam: "chiazaad", el: "12", stuk: "", cm: "" },
+  { naam: "rijst", el: "13", stuk: "", cm: "" },
+  { naam: "havermout", el: "5", stuk: "", cm: "" },
+  { naam: "paneermeel", el: "6", stuk: "", cm: "" },
+  { naam: "geraspte kaas", el: "6", stuk: "", cm: "" },
+  { naam: "noten gehakt", el: "8", stuk: "", cm: "" },
+  { naam: "rozijnen", el: "10", stuk: "", cm: "" },
+  { naam: "gelatinepoeder", el: "9", stuk: "", cm: "" },
+  { naam: "agar", el: "5", stuk: "", cm: "" },
+  { naam: "gelatineblaadje", el: "", stuk: "1,7", cm: "" },
+  { naam: "ui", el: "", stuk: "150", cm: "" },
+  { naam: "rode ui", el: "", stuk: "130", cm: "" },
+  { naam: "sjalot", el: "", stuk: "40", cm: "" },
+  { naam: "knoflook", el: "", stuk: "5", cm: "" },
+  { naam: "ei", el: "", stuk: "55", cm: "" },
+  { naam: "eidooier", el: "", stuk: "18", cm: "" },
+  { naam: "eiwit", el: "", stuk: "33", cm: "" },
+  { naam: "citroen", el: "", stuk: "100", cm: "" },
+  { naam: "limoen", el: "", stuk: "65", cm: "" },
+  { naam: "sinaasappel", el: "", stuk: "200", cm: "" },
+  { naam: "appel", el: "", stuk: "170", cm: "" },
+  { naam: "peer", el: "", stuk: "180", cm: "" },
+  { naam: "wortel", el: "", stuk: "90", cm: "" },
+  { naam: "aardappel", el: "", stuk: "150", cm: "" },
+  { naam: "tomaat", el: "", stuk: "120", cm: "" },
+  { naam: "paprika", el: "", stuk: "160", cm: "" },
+  { naam: "courgette", el: "", stuk: "250", cm: "" },
+  { naam: "komkommer", el: "", stuk: "400", cm: "" },
+  { naam: "prei", el: "", stuk: "250", cm: "" },
+  { naam: "venkel", el: "", stuk: "300", cm: "" },
+  { naam: "bleekselderij stengel", el: "", stuk: "60", cm: "" },
+  { naam: "laurierblad", el: "", stuk: "0,2", cm: "" },
+  { naam: "kaneelstok", el: "", stuk: "2,5", cm: "" },
+  { naam: "kruidnagel", el: "", stuk: "0,1", cm: "" },
+  { naam: "steranijs", el: "", stuk: "1", cm: "" },
+  { naam: "kardemompeul", el: "", stuk: "0,15", cm: "" },
+  { naam: "jeneverbes", el: "", stuk: "0,1", cm: "" },
+  { naam: "chilipeper", el: "", stuk: "8", cm: "" },
+  { naam: "gember", el: "", stuk: "", cm: "8" },
+  { naam: "mierikswortel", el: "", stuk: "", cm: "10" },
+  { naam: "citroengras", el: "", stuk: "20", cm: "3" },
+];
+
 const TECH_NOTES_SEED = {
   jam: [
     "Weeg het schoongemaakte fruit; reken 500 g geleisuiker 2:1 per kg.",
@@ -5810,6 +6064,12 @@ const TECH_NOTES_SEED = {
     "Glucosepoeder (DE 38–40) verlaagt de zoetkracht en houdt het ijs smeuïg. Ga niet boven ~25%, anders wordt het taai.",
     "Te weinig suiker geeft een harde, scherpe textuur; te veel suiker laat het ijs niet opstijven.",
     "Laat roomijsbasis 12 uur koud rijpen voor het draaien; draai af op −8 tot −10 °C.",
+  ],
+  maten: [
+    "Een theelepel telt als een derde eetlepel; een kop als 240 ml.",
+    "Staat een ingrediënt er niet bij, dan rekent de app een eetlepel als 15 gram — vul 'm hier aan als dat niet klopt.",
+    "Bij stuks en centimeters zonder gewicht rekent de app niets uit; die prijs vul je in het recept zelf in.",
+    "Weeg een keer na wat bij jullie in huis is: een ui van 150 gram is een aanname, geen wet.",
   ],
   roosteren: [
     "Gemeten bij 200 °C, licht geolied, in één laag, en per stap gewogen.",
@@ -6832,6 +7092,8 @@ const TECH_TABLE_CONFIGS = {
     fields: [{ key: "fruit", label: "Fruit" }, { key: "pectine", label: "Pectine" }, { key: "suiker", label: "Geleisuiker 2:1" }, { key: "pectineX", label: "Extra pectine" }, { key: "zuur", label: "Citroenzuur" }] },
   ijs: { docId: "__ice_rows", title: "Roomijs & sorbet bewerken", naamVeld: "soort",
     fields: [{ key: "soort", label: "Soort" }, { key: "suiker", label: "Totaal suiker" }, { key: "glucose", label: "Aandeel glucose" }, { key: "extra", label: "Aandachtspunt", lang: true }] },
+  maten: { docId: "__maat_rows", title: "Gewichten per lepel en stuk bewerken", naamVeld: "naam",
+    fields: [{ key: "naam", label: "Ingrediënt" }, { key: "el", label: "1 el (g)" }, { key: "stuk", label: "1 stuk (g)" }, { key: "cm", label: "1 cm (g)" }] },
   roosteren: { docId: "__roast_rows", title: "Roostertabel bewerken", naamVeld: "groente",
     fields: [{ key: "groente", label: "Groente" }, { key: "type", label: "Type" }, { key: "snij", label: "Snijverlies" }, { key: "verlies", label: "Vochtverlies" }, { key: "schoon", label: "Schoon voor 1 kg" }, { key: "onbewerkt", label: "Onbewerkt voor 1 kg" }] },
 };
@@ -6975,6 +7237,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   const jam = searching ? tableRows.jam.filter((r) => hit(r.fruit)) : tableRows.jam;
   const ice = searching ? tableRows.ijs.filter((r) => hit(r.soort)) : tableRows.ijs;
   const roast = searching ? tableRows.roosteren.filter((r) => hit(r.groente) || hit(r.type)) : tableRows.roosteren;
+  const maten = searching ? (tableRows.maten || []).filter((r) => hit(r.naam)) : (tableRows.maten || []);
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
   const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
   const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: !o[key] }));
@@ -6985,7 +7248,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
     if (onFocusDone) onFocusDone();
   }, [focusKey]);
   const n = (k) => (notes && notes[k]) || TECH_NOTES_SEED[k];
-  const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0;
+  const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0 && maten.length === 0;
   return (
     <div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
@@ -7010,6 +7273,13 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
           <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
             rows={roast.map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
           <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
+        </TechCard>
+
+        <TechCard title="Gewichten per lepel en stuk" intro="Waarmee de app lepels, stuks en centimeters omrekent" open={isOpen("maten", maten.length)} onToggle={() => toggle("maten")}>
+          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("maten")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
+          <TechTable head={["Ingrediënt", "1 el (g)", "1 stuk (g)", "1 cm (g)"]}
+            rows={maten.map((r) => [r.naam, r.el || "—", r.stuk || "—", r.cm || "—"])} />
+          <TechNotes label="Zo gebruik je de tabel" notes={n("maten")} canEdit={canEdit} onSave={(lines) => onSaveNotes("maten", lines)} />
         </TechCard>
 
         <TechCard title="Fermenteren" intro="Methodes, streefwaarden en aandachtspunten" open={isOpen("fermenteren", (softMatch("fermenteren", q) || softMatch("fermentatie", q)) ? 1 : fermentRows.filter((r) => hit(r.methode) || hit(r.let)).length)} onToggle={() => toggle("fermenteren")}>
