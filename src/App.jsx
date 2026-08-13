@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-13m"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14b"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -631,7 +631,7 @@ const GFLOWER = ["goudsbloem","korenbloem","dahlia","leeuwenbek","afrikaantjes",
 const GARDEN_ALL = [...ROOT,...BRASSICA,...LEAFY,...STALK,...BEAN,...GFRUIT,...GHERB,...GFLOWER];
 
 // oude (niet-tuin / voorraad) lijsten, blijven bruikbaar
-const FRUIT = ["mango","framboos","passievrucht","aardbei","braam","perzik","abrikoos","kers","bosbes","vijg","granaatappel","rabarber","appel","peer","ananas","mandarijn","bloedsinaasappel","citroen","limoen","yuzu","lychee","banaan","kokos","guave","papaja","meloen","druif","kiwi"];
+const FRUIT = ["framboos","passievrucht","aardbei","braam","perzik","abrikoos","kers","bosbes","vijg","granaatappel","rabarber","appel","peer","mandarijn","bloedsinaasappel","citroen","limoen","yuzu","banaan","kokos","druif","kiwi"];
 const VEG = ["knolselderij","wortel","doperwt","bloemkool","pastinaak","pompoen","aardappel","rode biet","zoete aardappel","mais","spinazie","aubergine","courgette","broccoli","venkel","prei","asperge","tomaat"];
 const HERB = ["basilicum","bieslook","peterselie","dille","koriander","dragon","munt","kervel","waterkers","zuring"];
 const NUT = ["hazelnoot","amandel","pistache","walnoot","pecan","pinda","cashew","macadamia","sesam","zonnebloempit"];
@@ -697,7 +697,7 @@ const BASES = [
     steps:["Smelt de suiker amberkleurig.","Blus met warme room.","Roer de boter erdoor."],
     variations:[{name:"Klassieke karamel"},{name:"Gezouten karamel",add:"Werk af met fleur de sel."},{name:"Miso-karamel",add:"Roer witte miso erdoor."},{name:"Butterscotch",add:"Bruine suiker en extra boter."}] },
   { id:"beurreblanc", baseName:"Beurre blanc", generic:"boter", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor", chefsPick:true, endorsements:["Michael"],
-    ingredients:[{item:"Sjalot",amount:"1 stuk"},{item:"Witte wijn",amount:"100 g"},{item:"Azijn",amount:"50 g"},{item:"Koude boter",amount:"200 g"}],
+    ingredients:[{item:"Ui",amount:"1 stuk"},{item:"Witte wijn",amount:"100 g"},{item:"Azijn",amount:"50 g"},{item:"Koude boter",amount:"200 g"}],
     steps:["Reduceer tot bijna droog.","Monteer koude boter buiten het vuur.","Passeer; niet koken."],
     variations:[{name:"Klassieke beurre blanc"},{name:"Dille-beurre blanc",add:"Roer dille erdoor."},{name:"Dragon-beurre blanc",add:"Roer dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Beurre rouge",add:"Rode wijn i.p.v. witte."},{name:"Mosterd-beurre blanc",add:"Lepel mosterd erdoor."}] },
   { id:"mayo", baseName:"Emulsie / mayonaise", generic:"emulsie", category:"Sauzen & emulsies", yield:"≈ 300 g", mode:"flavor", chefsPick:true,
@@ -707,10 +707,10 @@ const BASES = [
   { id:"vinaigrette", baseName:"Vinaigrette", generic:"vinaigrette", category:"Oliën & vinaigrettes", yield:"≈ 150 g", mode:"flavor",
     ingredients:[{item:"Azijn",amount:"30 g"},{item:"Olie",amount:"90 g"},{item:"Mosterd",amount:"5 g"}],
     steps:["Klop azijn met mosterd en zout.","Monteer met olie."],
-    variations:[{name:"Klassieke vinaigrette"},{name:"Sjalottenvinaigrette",add:"Fijne sjalot erdoor."},{name:"Honing-mosterdvinaigrette",add:"Honing toevoegen."},{name:"Dragonvinaigrette",add:"Dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Frambozenvinaigrette",add:"Frambozenazijn + wat puree.",season:["Zomer","Herfst"]}] },
+    variations:[{name:"Klassieke vinaigrette"},{name:"Uienvinaigrette",add:"Fijne ui erdoor."},{name:"Honing-mosterdvinaigrette",add:"Honing toevoegen."},{name:"Dragonvinaigrette",add:"Dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Frambozenvinaigrette",add:"Frambozenazijn + wat puree.",season:["Zomer","Herfst"]}] },
   { id:"jus", baseName:"Jus / reductie", generic:"jus", category:"Sauzen & emulsies", yield:"≈ 400 g", mode:"flavor", endorsements:["Michael","Stef"],
-    ingredients:[{item:"Fond",amount:"1 l"},{item:"Rode wijn",amount:"200 g"},{item:"Sjalot",amount:"2 stuks"},{item:"Boter",amount:"30 g"}],
-    steps:["Reduceer wijn met sjalot.","Voeg fond toe; reduceer napperend.","Monteer met boter; passeer."],
+    ingredients:[{item:"Fond",amount:"1 l"},{item:"Rode wijn",amount:"200 g"},{item:"Ui",amount:"2 stuks"},{item:"Boter",amount:"30 g"}],
+    steps:["Reduceer wijn met ui.","Voeg fond toe; reduceer napperend.","Monteer met boter; passeer."],
     variations:[{name:"Rodewijnjus"},{name:"Portjus",add:"Port toevoegen."},{name:"Tijm-knoflookjus",add:"Trek met tijm en knoflook."},{name:"Peperjus",add:"Gebroken peper."}] },
   { id:"tuile", baseName:"Tuile", generic:"tuile", category:"Krokant & garnituur", yield:"≈ 12 tuiles", mode:"flavor",
     ingredients:[{item:"Bloem",amount:"50 g"},{item:"Boter",amount:"50 g"},{item:"Suiker/Parmezaan",amount:"50 g"},{item:"Eiwit",amount:"50 g"}],
@@ -760,15 +760,15 @@ const BASES = [
     steps:["Rook de {x} koud of warm op de Black Bastard.","Laat rusten zodat de rook zich zet.","Bewaar afgedekt."] },
   { id:"gtartaar", baseName:"Groentetartaar", varTemplate:"Tartaar van {x}", generic:"tuingroente", category:"Groente · rauw", yield:"4 porties",
     mains:["rode biet","tomaat","courgette","koolrabi","radijs","chioggia biet"],
-    ingredients:[{item:"{X}, brunoise",amount:"300 g"},{item:"Sjalot",amount:"1 stuk"},{item:"Mosterd & olie",amount:"naar smaak"},{item:"Bieslook",amount:"1 el"}],
-    steps:["Snijd de {x} in fijne brunoise.","Meng met sjalot, mosterd, olie en bieslook.","Breng op smaak en dresseer met een ring."] },
+    ingredients:[{item:"{X}, brunoise",amount:"300 g"},{item:"Ui",amount:"1 stuk"},{item:"Mosterd & olie",amount:"naar smaak"},{item:"Bieslook",amount:"1 el"}],
+    steps:["Snijd de {x} in fijne brunoise.","Meng met ui, mosterd, olie en bieslook.","Breng op smaak en dresseer met een ring."] },
   { id:"gcarp", baseName:"Groentecarpaccio", varTemplate:"Carpaccio van {x}", generic:"tuingroente", category:"Groente · rauw", yield:"4 porties",
     mains:["rode biet","chioggia biet","gele biet","koolrabi","meiknol","pastinaak","courgette"],
-    ingredients:[{item:"{X}",amount:"300 g"},{item:"Olijfolie",amount:"2 el"},{item:"Zout & peper",amount:"naar smaak"}],
+    ingredients:[{item:"{X}",amount:"300 g"},{item:"Olijfolie",amount:"2 el"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Snijd de {x} flinterdun op de snijmachine.","Leg dakpansgewijs op het bord.","Maak af met olie, zout en kruiden."] },
   { id:"gbouillon", baseName:"Groentebouillon", noun:"Bouillon", generic:"tuingroente", category:"Fonds & bouillon", yield:"≈ 1 l",
     mains:ROOT.slice(0,10),
-    ingredients:[{item:"{X}",amount:"400 g"},{item:"Ui & prei",amount:"200 g"},{item:"Water",amount:"1,5 l"},{item:"Kruiden",amount:"bouquet"}],
+    ingredients:[{item:"{X}",amount:"400 g"},{item:"Ui",amount:"100 g"},{item:"Prei",amount:"100 g"},{item:"Water",amount:"1,5 l"},{item:"Kruiden",amount:"bouquet"}],
     steps:["Snijd de {x} grof.","Trek 45 min tegen de kook aan.","Zeef en breng op smaak."] },
 
   // ---- TUIN: kruiden & bloemen ----
@@ -798,7 +798,7 @@ const BASES = [
     steps:["Doe de {x} in de azijn.","Laat 2 weken op een donkere plek trekken.","Zeef en bottel."] },
   { id:"pflower", baseName:"Gepekelde bloemen", varTemplate:"Gepekelde {x}", generic:"bloem", category:"Pickles & zuur", yield:"≈ 150 g",
     mains:GFLOWER,
-    ingredients:[{item:"{X}",amount:"50 g"},{item:"Rijstazijn",amount:"100 g"},{item:"Suiker",amount:"30 g"},{item:"Zout",amount:"3 g"}],
+    ingredients:[{item:"{X}",amount:"50 g"},{item:"Naturel azijn",amount:"100 g"},{item:"Suiker",amount:"30 g"},{item:"Zout",amount:"3 g"}],
     steps:["Breng de pekel aan de kook en laat afkoelen.","Leg de {x} onder de pekel.","Laat minimaal 1 dag trekken."] },
   { id:"candyflower", baseName:"Gekonfijte bloemen", varTemplate:"Gekonfijte {x}", generic:"bloem", category:"Zoet & patisserie", yield:"naar behoefte", gear:"Droogoven",
     mains:GFLOWER.filter((f) => f !== "courgettebloem"),
@@ -870,7 +870,7 @@ const BASES = [
     steps:["Doe de {x} met het water en zout in een pot; alles onder het vocht.","Ferment 3–7 dagen op ±20°C; roer dagelijks even om.","Zeef, proef op zuurte en bottel; bewaar koud en ontlucht de flessen dagelijks."] },
   { id:"dongchimi", baseName:"Waterkimchi (dongchimi-stijl)", varTemplate:"Waterkimchi van {x}", generic:"knolgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:18,days:7}, gear:"Fermentatiemateriaal",
     mains:["meiknol","radijs","chinese kool","koolrabi"],
-    ingredients:[{item:"{X}, in parten",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"},{item:"Knoflook, gember, ui",amount:"naar smaak"}],
+    ingredients:[{item:"{X}, in parten",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"},{item:"Knoflook",amount:"naar smaak"},{item:"Gember",amount:"naar smaak"},{item:"Ui",amount:"naar smaak"}],
     steps:["Leg de {x} met de aromaten onder de pekel.","Ferment 5–10 dagen op ±18°C tot de pekel licht bruist.","Serveer de groente én de sprankelende pekel ijskoud."] },
   { id:"fstem", baseName:"Ferment stelen", varTemplate:"Ferment stelen van {x}", generic:"steelgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, gear:"Fermentatiemateriaal",
     mains:["snijbiet","bleekselderij","kardoen","paksoi"],
@@ -882,7 +882,7 @@ const BASES = [
     steps:["Hak de {x} fijn en kneed met 5% zout tot een natte pasta.","Druk luchtvrij aan in een klein potje.","Ferment 2 weken op ±20°C; daarna koel bewaren als smaakmaker."] },
   { id:"fvat", baseName:"Pekelgroenten uit het vat", varTemplate:"{X} uit het vat", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:18,days:10}, gear:"Fermentatiemateriaal",
     mains:["komkommer","courgette","meiknol","radijs"],
-    ingredients:[{item:"{X}, heel of in stukken",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (3,5% van het water)",amount:"35 g"},{item:"Dille, knoflook & een druivenblad",amount:"per pot"}],
+    ingredients:[{item:"{X}, heel of in stukken",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (3,5% van het water)",amount:"35 g"},{item:"Dille",amount:"per pot"},{item:"Knoflook",amount:"per pot"},{item:"Druivenblad",amount:"1 st"}],
     steps:["Leg de {x} met dille, knoflook en een druivenblad (voor de knapperigheid) in de pot.","Giet de 3,5% pekel erover; alles onder het vocht.","Ferment 7–14 dagen op ±18°C; koel bij de gewenste zuurte."] },
   { id:"fkosho", baseName:"Tuinkosho", varTemplate:"Kosho van {x}", generic:"citrus", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:7}, gear:"Fermentatiemateriaal",
     mains:["citroen","limoen","yuzu"],
@@ -915,8 +915,8 @@ const BASES = [
     steps:["Zoet de thee, laat afkoelen en voeg SCOBY en starterthee toe.","Ferment 7–14 dagen op ±23°C onder een doek; proef vanaf dag 7.","Bottel (eventueel met fruit of kruiden voor de tweede fermentatie); ontlucht dagelijks."],
     variations:[{name:"Klassieke kombucha"},{name:"Appelkombucha",add:"Appelsap of -stukjes in de tweede fermentatie.",season:["Herfst","Winter"]},{name:"Druivenkombucha",add:"Gekneusde druiven in de fles.",season:["Herfst"]},{name:"Kruidenkombucha",add:"Tweede fermentatie met tijm of salie."}] },
   { id:"tepache", baseName:"Schillenbrouwsel", varTemplate:"Schillenbrouwsel van {x}", generic:"fruit", category:"Fermentatie · dranken", yield:"≈ 2 l", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:22,days:3}, gear:"Fermentatiemateriaal",
-    mains:["appel","peer","kweepeer","ananas"],
-    ingredients:[{item:"Schillen en klokhuizen van {x}",amount:"400 g"},{item:"Suiker of rietsuiker",amount:"150 g"},{item:"Water",amount:"2 l"},{item:"Kaneel of specerijen",amount:"naar smaak"}],
+    mains:["appel","peer","kweepeer"],
+    ingredients:[{item:"Schillen en klokhuizen van {x}",amount:"400 g"},{item:"Suiker of rietsuiker",amount:"150 g"},{item:"Water",amount:"2 l"},{item:"Kaneelpoeder",amount:"naar smaak"}],
     steps:["Doe de schillen van {x} met suiker, water en specerijen in een pot; dek af met een doek.","Ferment 2–4 dagen op ±22°C tot het licht bruist (wilde gist van de schil).","Zeef, bottel en koel; ontlucht dagelijks. Mooi zero-waste uit de keuken."] },
   { id:"wildesoda", baseName:"Wilde bruislimonade", varTemplate:"Wilde bruis van {x}", generic:"bloem", category:"Fermentatie · dranken", yield:"≈ 2 l", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:22,days:3}, gear:"Fermentatiemateriaal",
     mains:["kamille","lavendel","citroenmelisse","munt","goudsbloem","korenbloem"],
@@ -1045,7 +1045,7 @@ const BASES = [
     steps:["Kruid het vlees ruim, bij voorkeur een dag vooraf.","Gaar langzaam in de iVario of op de Black Bastard tot zacht.","Laat rusten en maak af."],
     variations:[{name:"Gegaarde procureur"},{name:"Gelakte buik"},{name:"Pulled schouder"},{name:"Varkenswang in eigen jus"},{name:"Krokante krosse"}] },
   { id:"beef", baseName:"Rundvlees", generic:"rund", category:"Vlees", yield:"naar behoefte", mode:"flavor", diet:"Rundvlees", gear:"iVario",
-    ingredients:[{item:"Rundvlees",amount:"1 kg"},{item:"Zout",amount:"18 g/kg"},{item:"Wortel, ui, tijm",amount:"mirepoix"}],
+    ingredients:[{item:"Rundvlees",amount:"1 kg"},{item:"Zout",amount:"18 g/kg"},{item:"Wortel",amount:"200 g"},{item:"Ui",amount:"200 g"},{item:"Tijm",amount:"2 takjes"}],
     steps:["Kleur het vlees rondom.","Smoor langzaam met mirepoix tot zacht.","Reduceer het vocht tot jus."],
     variations:[{name:"Gesmoorde sukade"},{name:"Short rib van het bot"},{name:"Runderwang"}] },
 ];
@@ -1105,7 +1105,7 @@ function buildLibrary() {
 
 const CURATED = [
   { id:"c-tomato-mousse", name:"Hartige tomatenmousse", category:"Mousses", yield:"≈ 550 g",
-    ingredients:[{item:"Gezeefde tomaten (passata)",amount:"300 g"},{item:"Slagroom",amount:"200 g"},{item:"Gelatineblaadjes",amount:"3 blaadjes"},{item:"Basilicum, fijngesneden",amount:"enkele blaadjes"},{item:"Zout & peper",amount:"naar smaak"}],
+    ingredients:[{item:"Gezeefde tomaten (passata)",amount:"300 g"},{item:"Slagroom",amount:"200 g"},{item:"Gelatineblaadjes",amount:"3 blaadjes"},{item:"Basilicum, fijngesneden",amount:"enkele blaadjes"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Week de gelatine en los op in een derde van de warme passata.","Meng met de rest van de passata en breng stevig op smaak met zout en peper.","Koel tot lobbig en spatel de halfgeslagen room en de basilicum erdoor.","Laat minimaal 3 uur opstijven."],
     endorsements:["Michael"], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:true, diet:"Vegetarisch", ferment:false, gear:"Thermoblender", updatedBy:"Michael", updatedAt:"1 week geleden" },
   { id:"c-caprese-mozz", name:"Gerookte mozzarella", category:"Zuivel", yield:"4 porties",
@@ -1113,7 +1113,7 @@ const CURATED = [
     steps:["Laat de mozzarella uitlekken en dep droog.","Rook koud 8–10 min zonder hitte.","Trek in stukken en maak af."],
     endorsements:["Michael","Simon"], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Black Bastard", updatedBy:"Simon", updatedAt:"1 week geleden" },
   { id:"c-olive-crumble", name:"Olijvencrumble", category:"Crumbles & garnituur", yield:"≈ 200 g",
-    ingredients:[{item:"Zwarte olijven, ontpit",amount:"150 g"},{item:"Panko",amount:"60 g"},{item:"Olijfolie",amount:"20 g"}],
+    ingredients:[{item:"Zwarte olijven, ontpit",amount:"150 g"},{item:"Broodkruim",amount:"60 g"},{item:"Olijfolie",amount:"20 g"}],
     steps:["Droog de olijven en maal tot poeder.","Rooster de panko goudbruin.","Meng en bewaar krokant."],
     endorsements:["Kim","Michael"], chefsPick:true, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Droogoven", updatedBy:"Kim", updatedAt:"3 dagen geleden" },
   { id:"c-balsamic-pearls", name:"Balsamicoparels", category:"Garnituur", yield:"≈ 150 g",
@@ -1128,7 +1128,7 @@ const PATISSERIE = [
     steps:["Steek rondjes uit het bladerdeeg.","Prik in met een vork en smeer in met het suikerwater; laat 10 min intrekken en herhaal.","Bak tussen 2 matjes af op 185 °C.","Karamelliseer de suiker en voeg de boter toe.","Karamelliseer de banaan mee en maak af met nootmuskaat."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-vanillecreme", name:"Vanillecrème", category:"Zoet & patisserie", yield:"≈ 250 g",
-    ingredients:[{item:"Slagroom, ongezoet",amount:"250 g"},{item:"Vanillestokje",amount:"1 st"},{item:"Gelatine",amount:"2 g"}],
+    ingredients:[{item:"Slagroom, ongezoet",amount:"250 g"},{item:"Vanillesuiker",amount:"8 g"},{item:"Gelatine",amount:"2 g"}],
     steps:["Kook de slagroom met de vanille.","Haal van het vuur, dek af met zilverfolie en laat een half uur trekken.","Zeef de room en los de gelatine erin op.","Klop los wanneer opgesteven."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-kruidkoekkruimels", name:"Kruidkoekkruimels", category:"Fruit & garnituur", yield:"1 bak",
@@ -1156,8 +1156,8 @@ const PATISSERIE = [
     steps:["Meng bloem, suiker, bakpoeder en zout.","Klop de eieren los en roer glad met de droge stoffen.","Voeg roerend de melk toe met de boter.","Bak in een kleine pan, 1 cm dik."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-compote-banaan", name:"Compote van banaan", category:"Chutney & jam", yield:"≈ 1,2 kg",
-    ingredients:[{item:"Bananen",amount:"1 kg"},{item:"Water",amount:"1,5 dl"},{item:"Suiker",amount:"200 g"},{item:"Citroen",amount:"1 st"},{item:"Sinaasappel",amount:"1 st"},{item:"Vanillestokjes",amount:"2 st"}],
-    steps:["Kook water, suiker, vanillestokje en de rasp van de sinaasappel.","Koel af met citroensap, 2 el sinaasappelsap en brunoise van banaan.","Koel terug."],
+    ingredients:[{item:"Bananen",amount:"1 kg"},{item:"Water",amount:"1,5 dl"},{item:"Suiker",amount:"200 g"},{item:"Citroen",amount:"1 st"},{item:"Sinaasappel",amount:"1 st"},{item:"Vanillesuiker",amount:"16 g"}],
+    steps:["Kook water, suiker, vanillesuiker en de rasp van de sinaasappel.","Koel af met citroensap, 2 el sinaasappelsap en brunoise van banaan.","Koel terug."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-basis-spongecake", name:"Basis-spongecake (sifon)", category:"Zoet & patisserie", yield:"1 sifon",
     ingredients:[{item:"Eiwit",amount:"150 g"},{item:"Amandelpoeder",amount:"80 g"},{item:"Suiker",amount:"80 g"},{item:"Bloem",amount:"30 g"},{item:"Eidooier",amount:"60 g"}],
@@ -1179,10 +1179,6 @@ const PATISSERIE = [
     ingredients:[{item:"Boter",amount:"1350 g"},{item:"Bloem",amount:"1650 g"},{item:"Witte basterdsuiker",amount:"1175 g"},{item:"Eieren",amount:"3 st"},{item:"Sinaasappelrasp",amount:"van 3 st"},{item:"Vanillesuiker",amount:"3 el"},{item:"Rozijnen",amount:"200 g"}],
     steps:["Klop de boter wit met de suiker.","Voeg de eieren en rasp toe.","Meng de bloem erdoor (met vanillesuiker en rozijnen).","Bestrijk met ei voordat hij de oven ingaat.","Bak af in een voorverwarmde oven: 20–25 min op 170 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"pat-mango-bavarois", name:"Mango-bavarois", category:"Mousses", yield:"1 bak",
-    ingredients:[{item:"Mangocoulis",amount:"500 g"},{item:"Gelatine",amount:"14 g"},{item:"Kookschuim (70 eiwit / 130 suiker / 30 water)",amount:"200 g"},{item:"Slagroom, ongezoet",amount:"4 dl"}],
-    steps:["Verwarm 100 g coulis en los de gelatine erin op; voeg de rest van de coulis toe.","Klop de slagroom lobbig.","Meng de coulis met het kookschuim.","Spatel de slagroom erdoor en stort."],
-    endorsements:[], chefsPick:false, baseId:"pat-vruchtenbavarois", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-trekdropparels", name:"Trekdropparels", category:"Gels", yield:"1 pot",
     ingredients:[{item:"Water",amount:"500 g"},{item:"Trekdrop",amount:"300 g"},{item:"Agar",amount:"8 g"},{item:"Zonnebloemolie",amount:"5 dl"}],
     steps:["Zet de olie in de vriezer.","Gaar water en trekdrop sous-vide.","Voeg de agar toe en laat koken.","Koel terug tot 45 °C.","Doe in een spuitflesje en druppel in de olie.","Zeef de olie en spoel de parels af met water."],
@@ -1192,7 +1188,7 @@ const PATISSERIE = [
     steps:["Verwarm 1 dl slagroom en los de gelatine op.","Sla 4 dl slagroom lobbig; voeg poeder en monin toe, dan de lauwwarme room.","Sla het eiwit op met de suiker.","Meng alles."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-bokkenpootjes", name:"Bokkenpootjes", category:"Zoet & patisserie", yield:"1 plaat",
-    ingredients:[{item:"Amandelpoeder",amount:"350 g"},{item:"Poedersuiker",amount:"350 g"},{item:"Eiwit",amount:"400 g"},{item:"Witte basterdsuiker",amount:"400 g"},{item:"— Crème pât: slagroom, ongezoet",amount:"1 l"},{item:"Suiker",amount:"400 g"},{item:"Vanillestokje",amount:"1 st"},{item:"Custard",amount:"60 g"},{item:"Eidooier",amount:"120 g"},{item:"Cointreau",amount:"3 ml"}],
+    ingredients:[{item:"Amandelpoeder",amount:"350 g"},{item:"Poedersuiker",amount:"350 g"},{item:"Eiwit",amount:"400 g"},{item:"Witte basterdsuiker",amount:"400 g"},{item:"— Crème pât: slagroom, ongezoet",amount:"1 l"},{item:"Suiker",amount:"400 g"},{item:"Vanillesuiker",amount:"8 g"},{item:"Custard",amount:"60 g"},{item:"Eidooier",amount:"120 g"},{item:"Cointreau",amount:"3 ml"}],
     steps:["Koekjes: sla het eiwit op.","Meng de rest (gezeefd) met het eiwit.","Bak 10 min af op 175 °C.","Crème: laat slagroom, suiker, vanille en Cointreau 30 min trekken.","Meng de eidooiers met de custard.","Giet het kokende roommengsel op de dooiers en meng goed.","Verhit tot de juiste dikte, zeef, en haal met de staafmixer uit de schift."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-botercreme", name:"Botercrème", category:"Zoet & patisserie", yield:"≈ 1,5 kg",
@@ -1216,7 +1212,7 @@ const PATISSERIE = [
     steps:["Kook de coulis in tot 1,2 l.","Los de gelatine op in de coulis.","Verwarm de eidooiers au bain-marie met de suiker tot deze is opgelost en klop stijf.","Sla de room lobbig.","Meng de eidooiers (mits koud) met de coulis en voeg de room toe."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-advocaat", name:"Advocaat", category:"Zoet & patisserie", yield:"≈ 1 l",
-    ingredients:[{item:"Eigeel",amount:"8 st"},{item:"Vanillestokje",amount:"1 st"},{item:"Suiker",amount:"400 g"},{item:"Korenwijn",amount:"5 dl"}],
+    ingredients:[{item:"Eigeel",amount:"8 st"},{item:"Vanillesuiker",amount:"8 g"},{item:"Suiker",amount:"400 g"},{item:"Korenwijn",amount:"5 dl"}],
     steps:["Roer het eigeel los met vanille en suiker.","Verwarm au bain-marie en voeg langzaam de wijn toe, tot ongeveer 85 °C (gewenste dikte)."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-advocaatmousse", name:"Advocaatmousse", category:"Mousses", yield:"1 bak",
@@ -1259,10 +1255,6 @@ const PATISSERIE = [
     ingredients:[{item:"Slagroom",amount:"170 ml"},{item:"Espresso",amount:"20 ml"},{item:"Pure couverture",amount:"180 g"}],
     steps:["Verwarm de room met de espresso.","Los de chocolade erin op."],
     endorsements:[], chefsPick:false, baseId:"pat-ganache-choco-koffie", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"pat-ananassnoepjes", name:"Ananassnoepjes (pâte de fruit)", category:"Zoet & patisserie", yield:"1 slede",
-    ingredients:[{item:"Ananassap",amount:"1000 g"},{item:"Suiker",amount:"1000 g"},{item:"Glucose",amount:"150 g"},{item:"Suiker (voor de pectine)",amount:"100 g"},{item:"Pectine",amount:"30 g"},{item:"Citroenzuur",amount:"20 g"}],
-    steps:["Kook sap, suiker en glucose.","Voeg de pectine met 100 g suiker roerend toe en kook tot 107 °C.","Voeg het zuur toe en stort in een slede (afdekken met plastic)."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-langevingers", name:"Lange vingers", category:"Zoet & patisserie", yield:"1 plaat",
     ingredients:[{item:"Eiwit",amount:"180 g"},{item:"Suiker",amount:"140 g"},{item:"Bloem",amount:"80 g"},{item:"Aardappelzetmeel",amount:"80 g"},{item:"Dooier",amount:"120 g"},{item:"Suiker om te bestrooien",amount:"naar behoefte"}],
     steps:["Klop het eiwit op met de suiker; voeg de dooiers toe en spatel erdoor.","Voeg bloem en zetmeel toe.","Spuit op, bestrooi met suiker en bak 5–6 min op 210 °C."],
@@ -1280,7 +1272,7 @@ const PATISSERIE = [
     steps:["Kook melk, suiker en griesmeel met een mespuntje zout.","Voeg de gelatine toe en laat afkoelen.","Meng de lobbig geslagen slagroom erdoor."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-kersencompote", name:"Kersencompote", category:"Chutney & jam", yield:"1 bak",
-    ingredients:[{item:"Kersen (diepvries)",amount:"1 zak"},{item:"Rode port",amount:"150 g"},{item:"Kaneelstokje",amount:"1 st"},{item:"Steranijs",amount:"2 st"},{item:"Kersencoulis",amount:"400 g"},{item:"Geleisuiker",amount:"200 g"}],
+    ingredients:[{item:"Kersen (diepvries)",amount:"1 zak"},{item:"Rode port",amount:"150 g"},{item:"Kaneelstok",amount:"1 st"},{item:"Steranijs",amount:"2 st"},{item:"Kersencoulis",amount:"400 g"},{item:"Geleisuiker",amount:"200 g"}],
     steps:["Kook alles tot de gewenste structuur van de kersen.","Haal de droogwaren eruit."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-kruimeldeeg", name:"Kruimeldeeg", category:"Zoet & patisserie", yield:"3 baktrays",
@@ -1288,25 +1280,13 @@ const PATISSERIE = [
     steps:["Zeef de bloem en meng alles.","Bak af in 3 baktrays op 180 °C; roer elke 5 min met een garde erdoor tot de gewenste kleur en garing."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-creme-brulee", name:"Crème brûlée", category:"Zoet & patisserie", yield:"grote batch",
-    ingredients:[{item:"Volle melk",amount:"1 l"},{item:"Room, ongezoet",amount:"1,15 l"},{item:"Vanillestokje",amount:"1 st"},{item:"Steranijs",amount:"8 st"},{item:"Suiker",amount:"450 g"},{item:"Eidooier",amount:"650 g"}],
-    steps:["Kook 5 dl melk met de steranijs, het vanillestokje en de suiker.","Zeef de melk en voeg bij de room; voeg de eidooiers rustig toe en roer glad.","Stoom 45 min op 85 °C."],
+    ingredients:[{item:"Volle melk",amount:"1 l"},{item:"Room, ongezoet",amount:"1,15 l"},{item:"Vanillesuiker",amount:"8 g"},{item:"Steranijs",amount:"8 st"},{item:"Suiker",amount:"450 g"},{item:"Eidooier",amount:"650 g"}],
+    steps:["Kook 5 dl melk met de steranijs, het vanillesuiker en de suiker.","Zeef de melk en voeg bij de room; voeg de eidooiers rustig toe en roer glad.","Stoom 45 min op 85 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Stoomoven", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-karamelsaus", name:"Karamelsaus", category:"Sauzen & emulsies", yield:"≈ 1,5 kg",
     ingredients:[{item:"Witte basterdsuiker",amount:"600 g"},{item:"Glucose",amount:"100 g"},{item:"Water",amount:"0,5 dl"},{item:"Room",amount:"800 g"}],
     steps:["Karamelliseer suiker, glucose en water.","Maak de room lauwwarm en voeg rustig toe aan de karamel."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"pat-meloenganache", name:"Meloenganache", category:"Zoet & patisserie", yield:"≈ 500 g",
-    ingredients:[{item:"Witte chocolade",amount:"300 g"},{item:"Room, ongezoet",amount:"1 dl"},{item:"Suiker",amount:"50 g"},{item:"Meloensap",amount:"50 g"}],
-    steps:["Verwarm room, suiker en sap.","Voeg de chocolade toe en roer glad; laat opstijven."],
-    endorsements:[], chefsPick:false, baseId:"pat-ganache-choco-koffie", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"pat-watermeloen-wodkaparels", name:"Parels van watermeloen en wodka", category:"Fruit & garnituur", yield:"1 bak",
-    ingredients:[{item:"Rijpe meloen",amount:"1 st"},{item:"Suikerwater 1:1",amount:"500 g"},{item:"Wodka",amount:"2 dl"}],
-    steps:["Boor balletjes uit de meloen.","Trek vacuüm met de wodka en het suikerwater.","Vries in."],
-    endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Vacumeermachine", updatedBy:"Stef", updatedAt:"nieuw" },
-  { id:"pat-lychee-cremeux", name:"Lychee-cremeux", category:"Zoet & patisserie", yield:"≈ 1,2 kg",
-    ingredients:[{item:"Lycheecoulis",amount:"600 g"},{item:"Citroensap",amount:"30 g"},{item:"Water",amount:"30 g"},{item:"Suiker",amount:"220 g"},{item:"Dooier",amount:"220 g"},{item:"Gelatine",amount:"10 blaadjes"},{item:"Boter",amount:"170 g"}],
-    steps:["Verwarm coulis, sap, water, suiker en dooier.","Week de gelatine en los erin op.","Monteer met de boter."],
-    endorsements:[], chefsPick:false, baseId:"pat-vanille-cremeux", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"pat-vanille-cremeux", name:"Vanille-cremeux (crème brûlée)", category:"Zoet & patisserie", yield:"≈ 1,3 kg",
     ingredients:[{item:"Slagroom",amount:"875 g"},{item:"Honing",amount:"35 g"},{item:"Suiker",amount:"160 g"},{item:"Vanillesuiker",amount:"50 g"},{item:"Dooier",amount:"210 g"},{item:"Gelatine",amount:"5 blaadjes"}],
     steps:["Verwarm alles en los de gelatine erin op."],
@@ -1359,12 +1339,12 @@ const KEUKENMAP = [
     steps:["Snijd knolselderij en aardappel brunoise.","Stoof gaar met de gesnipperde ui in de boter en witte wijn.","Koel terug en maak aan met de mayonaise, peper, zout en groene kruiden."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-zilverui-compote", name:"Zilveruicompote", category:"Chutney & jam", yield:"1 pot",
-    ingredients:[{item:"Zilverui",amount:"100 g"},{item:"Rozijnen",amount:"50 g"},{item:"Paprikapoeder",amount:"1 tl"},{item:"Kaneelstokje",amount:"1 st"},{item:"Rode port",amount:"2 dl"},{item:"Bruine basterdsuiker",amount:"50 g"}],
+    ingredients:[{item:"Zilverui",amount:"100 g"},{item:"Rozijnen",amount:"50 g"},{item:"Paprikapoeder",amount:"1 tl"},{item:"Kaneelstok",amount:"1 st"},{item:"Rode port",amount:"2 dl"},{item:"Bruine basterdsuiker",amount:"50 g"}],
     steps:["Fruit de zilverui aan, paprikapoeder erbij en myoteren.","Voeg de rest toe en kook in tot de gewenste dikte."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-citrusolie", name:"Citrusolie", category:"Oliën & vinaigrettes", yield:"≈ 5 dl",
-    ingredients:[{item:"Knoflook",amount:"15 g"},{item:"Sjalot",amount:"40 g"},{item:"Rozemarijn",amount:"5 g"},{item:"Sinaasappelschil",amount:"20 g"},{item:"Olie",amount:"5 dl"}],
-    steps:["Fruit knoflook, sjalot en rozemarijn aan.","Voeg de olie en sinaasappelschil toe.","20 min op 58 °C in de roner."],
+    ingredients:[{item:"Knoflook",amount:"15 g"},{item:"Ui",amount:"40 g"},{item:"Rozemarijn",amount:"5 g"},{item:"Sinaasappelschil",amount:"20 g"},{item:"Olie",amount:"5 dl"}],
+    steps:["Fruit knoflook, ui en rozemarijn aan.","Voeg de olie en sinaasappelschil toe.","20 min op 58 °C in de roner."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Roner", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-venkel-sinaasappelsalade", name:"Venkel-sinaasappelsalade", category:"Groente · rauw", yield:"1 bak",
     ingredients:[{item:"Venkels",amount:"3 st"},{item:"Sinaasappelsap",amount:"van 2 st"},{item:"Sinaasappelrasp",amount:"van 1 st"},{item:"Olijfolie",amount:"scheut"},{item:"Zout",amount:"naar smaak"}],
@@ -1375,8 +1355,8 @@ const KEUKENMAP = [
     steps:["Snijd de knolselderij in kleine stukjes en gaar in de room.","Draai alles in de Magimix en zeef.","Meng met de mayonaise."],
     endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-rillette-heek", name:"Rillette van heek", category:"Vis", yield:"≈ 700 g",
-    ingredients:[{item:"Heek",amount:"500 g"},{item:"Knoflook",amount:"1 teen"},{item:"Sjalotten",amount:"2 st"},{item:"Witte wijn",amount:"1 dl"},{item:"Olijfolie",amount:"2 dl"}],
-    steps:["Zout de heekfilet en laat 1 uur intrekken.","Bak sjalot, knoflook en heek licht aan.","Voeg de wijn toe en kook het geheel gaar.","Draai fijn in de Magimix en monteer met de olijfolie."],
+    ingredients:[{item:"Heek",amount:"500 g"},{item:"Knoflook",amount:"1 teen"},{item:"Uien",amount:"2 st"},{item:"Witte wijn",amount:"1 dl"},{item:"Olijfolie",amount:"2 dl"}],
+    steps:["Zout de heekfilet en laat 1 uur intrekken.","Bak ui, knoflook en heek licht aan.","Voeg de wijn toe en kook het geheel gaar.","Draai fijn in de Magimix en monteer met de olijfolie."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vis", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-cacik", name:"Cacik", category:"Sauzen & emulsies", yield:"≈ 700 g",
     ingredients:[{item:"Komkommer",amount:"1 st"},{item:"Griekse yoghurt",amount:"500 g"},{item:"Knoflook",amount:"1 teen"},{item:"Dille, fijngehakt",amount:"1 el"},{item:"Munt, fijngehakt",amount:"1 el"}],
@@ -1391,11 +1371,11 @@ const KEUKENMAP = [
     steps:["Bruneer het sesamzaad en draai samen met de wasabinootjes fijn.","Hak de uitjes er grof doorheen."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-bitterbal-eidooier", name:"Bitterbal van eidooier", category:"Krokant & garnituur", yield:"per stuk",
-    ingredients:[{item:"Eieren",amount:"naar behoefte"},{item:"Panko",amount:"om te paneren"}],
+    ingredients:[{item:"Eieren",amount:"naar behoefte"},{item:"Broodkruim",amount:"om te paneren"}],
     steps:["Verwarm de roner op 63 °C en leg de eieren er 2 uur in.","Spoel 5 min koud.","Kraak de eieren en verwijder het eiwit; paneer de dooiers wanneer ze vochtig zijn.","Frituur op 180 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Roner / friteuse", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-krokante-kippendijen", name:"Krokante kippendijen", category:"Vlees", yield:"1 kg",
-    ingredients:[{item:"Kippendijen",amount:"1 kg"},{item:"Sojasaus",amount:"1 dl"},{item:"Sake",amount:"50 ml"},{item:"Knoflook",amount:"2 tenen"},{item:"Panko",amount:"100 g"},{item:"Bloem",amount:"100 g"}],
+    ingredients:[{item:"Kippendijen",amount:"1 kg"},{item:"Sojasaus",amount:"1 dl"},{item:"Sake",amount:"50 ml"},{item:"Knoflook",amount:"2 tenen"},{item:"Broodkruim",amount:"100 g"},{item:"Bloem",amount:"100 g"}],
     steps:["Maak de kippendijen schoon en snijd op de gewenste grootte.","Marineer in een vacumeerzak met de soja, sake en gehakte knoflook.","Gaar 30 min op 58 °C in de roner.","Draai de panko en bloem samen fijn en paneer het vlees.","Frituur goudbruin op 180 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Kip", ferment:false, gear:"Roner / friteuse", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-caesardressing", name:"Caesardressing", category:"Sauzen & emulsies", yield:"≈ 1 l",
@@ -1423,7 +1403,7 @@ const KEUKENMAP = [
     steps:["Maak de zijde zalm schoon.","Bestrooi een grote gastronoombak met alle ingrediënten en leg de zalm erbovenop.","Zet 24 uur onder druk weg."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vis", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-compote-radijs", name:"Compote van radijs", category:"Chutney & jam", yield:"1 bak",
-    ingredients:[{item:"Radijs",amount:"1 kg"},{item:"Rode ui, gesnipperd",amount:"250 g"},{item:"Sjalot, gesnipperd",amount:"250 g"},{item:"Rode pepers, fijngehakt",amount:"4 st"},{item:"Gembersiroop",amount:"1 dl"},{item:"Suiker",amount:"200 g"},{item:"Wittewijnazijn",amount:"2,5 dl"}],
+    ingredients:[{item:"Radijs",amount:"1 kg"},{item:"Rode ui, gesnipperd",amount:"250 g"},{item:"Ui, gesnipperd",amount:"250 g"},{item:"Rode pepers, fijngehakt",amount:"4 st"},{item:"Gembersiroop",amount:"1 dl"},{item:"Suiker",amount:"200 g"},{item:"Wittewijnazijn",amount:"2,5 dl"}],
     steps:["Kook alles behalve de radijs 10 min.","Voeg de radijs toe en gaar 10 min zachtjes."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Lente","Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-polentafriet", name:"Polentafriet", category:"Krokant & garnituur", yield:"1 gastronoombak",
@@ -1431,7 +1411,7 @@ const KEUKENMAP = [
     steps:["Breng het water met de rozemarijn aan de kook; verwijder de takken na 5 min koken.","Voeg de polenta toe en gaar tot een dikke pap.","Voeg als laatste de kaas en boter toe en laat goed smelten.","Stort in een gastronoombak en zet weg onder druk."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-tomatenvinaigrette", name:"Tomatenvinaigrette", category:"Oliën & vinaigrettes", yield:"≈ 5 dl",
-    ingredients:[{item:"Vocht van gepofte tomaatjes",amount:"4 dl"},{item:"Gepofte tomaatjes",amount:"10 st"},{item:"Sushi-azijn",amount:"50 g"}],
+    ingredients:[{item:"Vocht van gepofte tomaatjes",amount:"4 dl"},{item:"Gepofte tomaatjes",amount:"10 st"},{item:"Fruitazijn",amount:"50 g"}],
     steps:["Staafmix alles en zeef.","Schudden voor gebruik."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-dressing-bleu-de-gex", name:"Dressing bleu de Gex", category:"Oliën & vinaigrettes", yield:"≈ 5 dl",
@@ -1439,7 +1419,7 @@ const KEUKENMAP = [
     steps:["Draai alles glad in de blender (kaas rustig toevoegen) en zeef.","Schudden voor gebruik."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-basilicumkorst", name:"Basilicumkorst", category:"Krokant & garnituur", yield:"2 banen",
-    ingredients:[{item:"Boter",amount:"100 g"},{item:"Panko",amount:"200 g"},{item:"Parmezaanse kaas",amount:"100 g"},{item:"Basilicum, gehakt",amount:"100 g"},{item:"Sinaasappelsap",amount:"2 el"}],
+    ingredients:[{item:"Boter",amount:"100 g"},{item:"Broodkruim",amount:"200 g"},{item:"Parmezaanse kaas",amount:"100 g"},{item:"Basilicum, gehakt",amount:"100 g"},{item:"Sinaasappelsap",amount:"2 el"}],
     steps:["Blender alles fijn en draai tot een stevige massa.","Rol het mengsel uit tussen folie, snijd banen en bewaar in de vriezer."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-truffelmayonaise", name:"Truffelmayonaise", category:"Sauzen & emulsies", yield:"≈ 700 g",
@@ -1447,7 +1427,7 @@ const KEUKENMAP = [
     steps:["Draai alles behalve de olie glad in de Magimix.","Voeg de olie langzaam toe tot de gewenste dikte."],
     endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-notendressing", name:"Notendressing", category:"Oliën & vinaigrettes", yield:"≈ 1,7 l",
-    ingredients:[{item:"Fijne mosterd",amount:"8 g"},{item:"Water",amount:"1 dl"},{item:"Eidooier",amount:"75 g"},{item:"Zonnebloemolie",amount:"1,3 l"},{item:"Walnootolie",amount:"1,5 dl"},{item:"Wittewijnazijn",amount:"1,5 dl"},{item:"Poedersuiker",amount:"45 g"},{item:"Zout en peper",amount:"naar smaak"}],
+    ingredients:[{item:"Fijne mosterd",amount:"8 g"},{item:"Water",amount:"1 dl"},{item:"Eidooier",amount:"75 g"},{item:"Zonnebloemolie",amount:"1,3 l"},{item:"Walnootolie",amount:"1,5 dl"},{item:"Wittewijnazijn",amount:"1,5 dl"},{item:"Poedersuiker",amount:"45 g"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Draai alles op de olie na fijn in de Magimix.","Voeg de olie langzaam toe tot de gewenste dikte."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-creme-van-dadels", name:"Crème van dadels", category:"Sauzen & emulsies", yield:"≈ 900 g",
@@ -1455,11 +1435,11 @@ const KEUKENMAP = [
     steps:["Verhit de witte wijn met de suiker en giet op de dadels; laat koelen.","Haal de vellen van de dadels.","Draai met de overige ingrediënten glad in de Magimix en zeef."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Rundvlees", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-ingelegde-wintergroenten", name:"Ingelegde wintergroenten", category:"Pickles & zuur", yield:"3 soorten",
-    ingredients:[{item:"Knolselderij",amount:"350 g"},{item:"Pompoen",amount:"350 g"},{item:"Koolraap",amount:"350 g"},{item:"Sushi-azijn",amount:"4,5 dl"},{item:"Water",amount:"3 dl"},{item:"Suiker",amount:"200 g"},{item:"Korianderzaad",amount:"2,5 g"},{item:"Vanillestokje",amount:"1 st"},{item:"Kruidnagel",amount:"2 st"}],
+    ingredients:[{item:"Knolselderij",amount:"350 g"},{item:"Pompoen",amount:"350 g"},{item:"Koolraap",amount:"350 g"},{item:"Fruitazijn",amount:"4,5 dl"},{item:"Water",amount:"3 dl"},{item:"Suiker",amount:"200 g"},{item:"Korianderzaad",amount:"2,5 g"},{item:"Vanillesuiker",amount:"8 g"},{item:"Kruidnagel",amount:"2 st"}],
     steps:["Snijd de groenten brunoise en blancheer per soort beetgaar (bewaar apart).","Meng de overige ingrediënten en laat 30 min trekken op laag vuur.","Zeef de marinade en giet over de groenten.","Vacumeer per soort met de marinade."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Vacumeermachine", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-kikkomanmayonaise", name:"Kikkoman-mayonaise", category:"Sauzen & emulsies", yield:"≈ 800 g",
-    ingredients:[{item:"Kikkoman",amount:"2,5 dl"},{item:"Eidooier",amount:"250 g"},{item:"Sojaolie",amount:"375 g"},{item:"Mosterdpoeder",amount:"10 g"},{item:"Sushi-azijn",amount:"40 g"},{item:"Olijfolie",amount:"75 g"},{item:"Sesamolie",amount:"25 g"}],
+    ingredients:[{item:"Kikkoman",amount:"2,5 dl"},{item:"Eidooier",amount:"250 g"},{item:"Sojaolie",amount:"375 g"},{item:"Mosterdpoeder",amount:"10 g"},{item:"Fruitazijn",amount:"40 g"},{item:"Olijfolie",amount:"75 g"},{item:"Sesamolie",amount:"25 g"}],
     steps:["Kook de kikkoman in tot 1,2 dl en koel terug.","Maak van de overige ingrediënten mayonaise.","Voeg op het laatst de ingekookte kikkoman toe."],
     endorsements:[], chefsPick:false, baseId:"map-basismayonaise", isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-tofuwrap", name:"Tofuwrap", category:"Groente · rauw", yield:"± 12 st",
@@ -1467,7 +1447,7 @@ const KEUKENMAP = [
     steps:["Pureer de tofu, tahin en sojamelk.","Meng alles en bak in olie."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-jambon-persille", name:"Jambon persillé", category:"Vlees", yield:"1 vorm",
-    ingredients:[{item:"Gekookte ham",amount:"1 kg"},{item:"Slagroom",amount:"3 dl"},{item:"Gelatine",amount:"3 blaadjes"},{item:"Peterselie",amount:"royaal"},{item:"Peper en zout",amount:"naar smaak"}],
+    ingredients:[{item:"Gekookte ham",amount:"1 kg"},{item:"Slagroom",amount:"3 dl"},{item:"Gelatine",amount:"3 blaadjes"},{item:"Peterselie",amount:"royaal"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Pluk de ham en hak de peterselie.","Kook de slagroom en los de gelatine erin op.","Meng alles en breng op smaak.","Zet onder druk weg."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Varkensvlees", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-basisdressing", name:"Basisdressing", category:"Oliën & vinaigrettes", yield:"≈ 900 g",
@@ -1483,7 +1463,7 @@ const KEUKENMAP = [
     steps:["Los de gelatine op in de bouillon.","Roer de piccalilly erdoor.","Sla de room lobbig en meng."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-basilicumcreme", name:"Basilicumcrème", category:"Sauzen & emulsies", yield:"≈ 600 g",
-    ingredients:[{item:"Basilicumolie",amount:"0,5 l"},{item:"Eiwitten",amount:"3 st"},{item:"Sushi-azijn",amount:"2 el"},{item:"Yoghurt",amount:"50 g"}],
+    ingredients:[{item:"Basilicumolie",amount:"0,5 l"},{item:"Eiwitten",amount:"3 st"},{item:"Fruitazijn",amount:"2 el"},{item:"Yoghurt",amount:"50 g"}],
     steps:["Meng eiwitten, azijn en yoghurt.","Voeg de olie langzaam toe tot de gewenste dikte."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-venkelcremeux", name:"Venkelcremeux", category:"Zoet & patisserie", yield:"≈ 3 kg",
@@ -1495,7 +1475,7 @@ const KEUKENMAP = [
     steps:["Fruit de ui met de specerijen en gember aan.","Blus af met de witte wijn.","Voeg de zoete aardappel en het water toe en kook gaar; pureer glad.","Voeg als laatste nog 3 liter water toe en breng op smaak met het zout."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardpeerblini", name:"Aardpeerblini", category:"Deeg & brood", yield:"± 15 st",
-    ingredients:[{item:"Bloem",amount:"75 g"},{item:"Boekweitmeel",amount:"25 g"},{item:"Aardpeerpuree",amount:"50 g"},{item:"Ei (M)",amount:"1 st"},{item:"Melk",amount:"150 ml"},{item:"Ongezouten roomboter",amount:"25 g"},{item:"Zout en peper",amount:"naar smaak"}],
+    ingredients:[{item:"Bloem",amount:"75 g"},{item:"Boekweitmeel",amount:"25 g"},{item:"Aardpeerpuree",amount:"50 g"},{item:"Ei (M)",amount:"1 st"},{item:"Melk",amount:"150 ml"},{item:"Ongezouten roomboter",amount:"25 g"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Roer bloem en boekweitmeel door elkaar; splits het ei en vang het eiwit op.","Voeg de eidooier toe aan het bloemmengsel, dan de melk, boter en aardpeerpuree; mix tot een glad beslag en breng op smaak.","Klop het eiwit stijf en spatel het voorzichtig vouwend door het beslag om de luchtigheid te behouden."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardpeerlak", name:"Aardpeerlak", category:"Sauzen & emulsies", yield:"≈ 2 dl",
@@ -1507,11 +1487,11 @@ const KEUKENMAP = [
     steps:["Was de aardperen en kook ze in de schil in water met zout.","Halveer en schraap de binnenkant leeg (gebruik dit voor puree of sorbet).","Droog de leeggeschepte schillen 10 uur op 65 °C.","Frituur goudbruin en krokant in olie van 160 °C.","Bestrooi naar toepassing met zout of poedersuiker."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Droogoven / friteuse", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardpeercompote", name:"Aardpeercompote", category:"Chutney & jam", yield:"± 5 kg",
-    ingredients:[{item:"Aardpeer (topinamboer)",amount:"5 kg"},{item:"Wittewijnazijn",amount:"200 ml"},{item:"Mirin",amount:"450 ml"},{item:"Suiker",amount:"100 g"},{item:"Sushi-azijn",amount:"25 ml"},{item:"Zonnebloemolie",amount:"naar behoefte"},{item:"Zout",amount:"naar behoefte"}],
+    ingredients:[{item:"Aardpeer (topinamboer)",amount:"5 kg"},{item:"Wittewijnazijn",amount:"200 ml"},{item:"Mirin",amount:"450 ml"},{item:"Suiker",amount:"100 g"},{item:"Fruitazijn",amount:"25 ml"},{item:"Zonnebloemolie",amount:"naar behoefte"},{item:"Zout",amount:"naar behoefte"}],
     steps:["Schrob de aardperen goed schoon met een metalen pannenspons.","Snijd in de lengte doormidden en meng met zonnebloemolie en zout.","Rooster met het snijvlak naar beneden op 160 °C tot diep goudbruin.","Breng ondertussen de overige ingrediënten aan de kook voor het zoetzuur.","Blus de aardperen af met het zoetzuur en week ze los uit de braadslee.","Laat het zoetzuur 24 uur inwerken voor een grovere compote, of maal kort in de thermoblender voor een fijnere."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Thermoblender", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-vegan-brownie", name:"Vegan brownie", category:"Zoet & patisserie", yield:"1 bakplaat",
-    ingredients:[{item:"Bloem",amount:"1 kg"},{item:"Cacaopoeder",amount:"330 g"},{item:"Donkere basterdsuiker",amount:"800 g"},{item:"Kristalsuiker",amount:"800 g"},{item:"Bakpoeder",amount:"4 tl"},{item:"Zout",amount:"2 tl"},{item:"Instantkoffie",amount:"4 tl"},{item:"Haverdrink",amount:"960 ml"},{item:"Kokosolie",amount:"240 ml"},{item:"Vanillesuiker",amount:"4 el"},{item:"Pure chocolade",amount:"400 g"},{item:"Pure chocoladechips (mini)",amount:"200 g"}],
+    ingredients:[{item:"Bloem",amount:"1 kg"},{item:"Cacaopoeder",amount:"330 g"},{item:"Donkere basterdsuiker",amount:"800 g"},{item:"Bietsuiker",amount:"800 g"},{item:"Bakpoeder",amount:"4 tl"},{item:"Zout",amount:"2 tl"},{item:"Instantkoffie",amount:"4 tl"},{item:"Haverdrink",amount:"960 ml"},{item:"Kokosolie",amount:"240 ml"},{item:"Vanillesuiker",amount:"4 el"},{item:"Pure chocolade",amount:"400 g"},{item:"Pure chocoladechips (mini)",amount:"200 g"}],
     steps:["Meng alle droge ingrediënten (zonder chocolade) goed door.","Verwarm de kokosolie met de haverdrink tot de olie is gesmolten en giet op de 400 g pure chocolade.","Meng dit goed door de droge ingrediënten.","Voeg als laatste de chocoladechips toe.","Bak de plaat 40 min op 170 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-notenmelange", name:"Notenmelange", category:"Krokant & garnituur", yield:"≈ 2,2 kg",
@@ -1535,7 +1515,7 @@ const KEUKENMAP = [
     steps:["Draai het kruimeldeeg fijn in de Magimix en voeg de gesmolten boter toe.","Bekleed een vierkante bakvorm met bakpapier, verdeel de kruimels over de bodem en laat opstijven in de koeling.","Verwarm de pindakaas met de boter au bain-marie tot de boter is opgenomen.","Roer de poedersuiker en melk door het pindakaasmengsel; stort op de bodem en laat opstijven.","Kook de slagroom, giet op de chocolade, laat 1 min staan en roer tot een homogene massa.","Stort de chocolade op de pindakaaslaag en laat uitharden in de koeling."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-spruitenstamppot", name:"Spruitenstamppot", category:"Groente · geroosterd", yield:"grote batch",
-    ingredients:[{item:"— Mousseline: aardappels",amount:"4 kg"},{item:"Margarine",amount:"250 g"},{item:"Kokosmelk",amount:"800 ml"},{item:"Olijfolie",amount:"50 ml"},{item:"Peper en zout",amount:"naar smaak"},{item:"— Spruiten: spruiten",amount:"5 kg"},{item:"Zonnebloemolie",amount:"100 ml"},{item:"Sesamzaad",amount:"100 g"}],
+    ingredients:[{item:"— Mousseline: aardappels",amount:"4 kg"},{item:"Margarine",amount:"250 g"},{item:"Kokosmelk",amount:"800 ml"},{item:"Olijfolie",amount:"50 ml"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"},{item:"— Spruiten: spruiten",amount:"5 kg"},{item:"Zonnebloemolie",amount:"100 ml"},{item:"Sesamzaad",amount:"100 g"}],
     steps:["Schil de aardappels, kook gaar in gezouten water, giet af en laat uitdampen.","Verwarm de margarine met de kokosmelk; wrijf de aardappels door een bolzeef en meng; breng op smaak.","Maak de spruiten schoon, halveer de grote, besprenkel met olie, sesamzaad, peper en zout.","Rooster in de oven op 200 °C, 2× 6 min.","Draai 2 kg geroosterde spruiten kort door de Magimix (structuur behouden, geen puree) en meng door de mousseline; breng verder op smaak."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-pruimenjam-rozemarijn", name:"Pruimenjam met rozemarijn", category:"Chutney & jam", yield:"± 6 potten",
@@ -1547,8 +1527,8 @@ const KEUKENMAP = [
     steps:["Meng alles door elkaar met de deeghaak.","Maak bollen van 250 à 300 gram."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-spitskoolrendang", name:"Spitskoolrendang", category:"Groente · geroosterd", yield:"1 pan",
-    ingredients:[{item:"Grote (savooie) spitskool",amount:"1 st"},{item:"Zout",amount:"om te kneden"},{item:"— Boemboe: sjalotten",amount:"2 st"},{item:"Rode peper",amount:"1 st"},{item:"Citroengras",amount:"1 stengel"},{item:"Gember",amount:"± 1,5 cm"},{item:"Knoflook",amount:"3 teentjes"},{item:"Surinaamse masala",amount:"1 tl"},{item:"— Rendang: zonnebloemolie",amount:"scheutje"},{item:"Limoenblaadjes",amount:"3 st"},{item:"Kokosmelk",amount:"1 blik à 400 ml"},{item:"Ketjap manis",amount:"4 el"},{item:"Ketjap asin",amount:"2 el"},{item:"Sambal oelek",amount:"1 tl"}],
-    steps:["Snijd de koolbladeren in reepjes, kneed met zout tot de kool vochtig wordt en laat uitlekken onder een verzwaard bord.","Boemboe: snijd sjalot, knoflook, peper en gember grof en het witte deel van de sereh in ringetjes; pureer met de masala en wat kokosmelk.","Verhit olie in een wok en bak de koolreepjes lichtbruin.","Bak de boemboe enkele minuten mee tot hij gaar is en geurt.","Voeg limoenblaadjes, de rest van de kokosmelk, ketjap manis, ketjap asin en sambal toe; roer door.","Laat inkoken tot een mooie dikke saus."],
+    ingredients:[{item:"Grote (savooie) spitskool",amount:"1 st"},{item:"Zout",amount:"om te kneden"},{item:"— Boemboe: uien",amount:"2 st"},{item:"Rode peper",amount:"1 st"},{item:"Citroengras",amount:"1 stengel"},{item:"Gember",amount:"± 1,5 cm"},{item:"Knoflook",amount:"3 teentjes"},{item:"Surinaamse masala",amount:"1 tl"},{item:"— Rendang: zonnebloemolie",amount:"scheutje"},{item:"Limoenblaadjes",amount:"3 st"},{item:"Kokosmelk",amount:"1 blik à 400 ml"},{item:"Ketjap manis",amount:"4 el"},{item:"Ketjap asin",amount:"2 el"},{item:"Sambal oelek",amount:"1 tl"}],
+    steps:["Snijd de koolbladeren in reepjes, kneed met zout tot de kool vochtig wordt en laat uitlekken onder een verzwaard bord.","Boemboe: snijd ui, knoflook, peper en gember grof en het witte deel van de sereh in ringetjes; pureer met de masala en wat kokosmelk.","Verhit olie in een wok en bak de koolreepjes lichtbruin.","Bak de boemboe enkele minuten mee tot hij gaar is en geurt.","Voeg limoenblaadjes, de rest van de kokosmelk, ketjap manis, ketjap asin en sambal toe; roer door.","Laat inkoken tot een mooie dikke saus."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-vegan-haverkoek", name:"Vegan haverkoek", category:"Zoet & patisserie", yield:"1 bakplaat",
     ingredients:[{item:"Bloem",amount:"500 g"},{item:"Havermout (boekweitmeel voor glutenvrij)",amount:"375 g"},{item:"Bruine rietsuiker",amount:"400 g"},{item:"Bakpoeder",amount:"2 tl"},{item:"Zout",amount:"1,5 tl"},{item:"Vanillesuiker",amount:"3 tl"},{item:"Gemalen lijnzaad",amount:"1 tl"},{item:"Gemalen kokos",amount:"200 g"},{item:"Zonnebloempitten",amount:"200 g"},{item:"Sesamzaad",amount:"200 g"},{item:"Cranberry's",amount:"200 g"},{item:"Margarine",amount:"550 g"},{item:"Ahornsiroop",amount:"120 g"}],
@@ -1556,7 +1536,7 @@ const KEUKENMAP = [
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-pate-de-fruit-pruim", name:"Pâte de fruit van gefermenteerde pruim", category:"Zoet & patisserie", yield:"1 vorm",
     ingredients:[{item:"Suiker (voor de pectine)",amount:"75 g"},{item:"Pectine",amount:"28 g"},{item:"Gefermenteerde-pruimencoulis",amount:"700 g"},{item:"Suiker",amount:"750 g"},{item:"Glucose",amount:"150 g"},{item:"Citroenzuur",amount:"25 g"}],
-    steps:["Meng de 75 g suiker met de pectine.","Kook de pruimencoulis met de overige 750 g suiker en de glucose op.","Voeg zodra het kookt het suiker-pectinemengsel toe.","Kook door tot 106 °C.","Haal van het vuur en voeg het citroenzuur toe.","Stort in de gewenste vormen en laat opstijven.","Coat eventueel met kristalsuiker en een beetje citroenzuur."],
+    steps:["Meng de 75 g suiker met de pectine.","Kook de pruimencoulis met de overige 750 g suiker en de glucose op.","Voeg zodra het kookt het suiker-pectinemengsel toe.","Kook door tot 106 °C.","Haal van het vuur en voeg het citroenzuur toe.","Stort in de gewenste vormen en laat opstijven.","Coat eventueel met bietsuiker en een beetje citroenzuur."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-blondie", name:"Blondie", category:"Zoet & patisserie", yield:"1/1 gastronoombak",
     ingredients:[{item:"Witte chocoladedruppels",amount:"1200 g"},{item:"Boter",amount:"250 g"},{item:"Suiker",amount:"270 g"},{item:"Eieren",amount:"9 st"},{item:"Vanillesuiker",amount:"6 el"},{item:"Bakpoeder",amount:"1 el"},{item:"Poedersuiker",amount:"3 tl"},{item:"Bloem",amount:"600 g"}],
@@ -1571,8 +1551,8 @@ const KEUKENMAP = [
     steps:["Draai alles glad in de blender.","Zeef en giet in een halveliter-sifon; belucht met 3 patronen.","Stort in een kartonnen bekertje (vooraf inprikken), maximaal half vullen.","25 sec in de magnetron."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Sifon", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-chocoladetruffels", name:"Chocoladetruffels", category:"Zoet & patisserie", yield:"± 40 st",
-    ingredients:[{item:"Vanillestokje",amount:"1 st"},{item:"Slagroom",amount:"250 ml"},{item:"Boter",amount:"75 g"},{item:"Melkchocolade",amount:"500 g"},{item:"Cacaopoeder",amount:"200 g"}],
-    steps:["Kook de room met het vanillestokje en de boter.","Los de melkchocolade op in de hete room en laat opstijven.","Klop de massa luchtig in de mixer en draai balletjes.","Laat aanvriezen en dompel in het cacaopoeder."],
+    ingredients:[{item:"Vanillesuiker",amount:"8 g"},{item:"Slagroom",amount:"250 ml"},{item:"Boter",amount:"75 g"},{item:"Melkchocolade",amount:"500 g"},{item:"Cacaopoeder",amount:"200 g"}],
+    steps:["Kook de room met het vanillesuiker en de boter.","Los de melkchocolade op in de hete room en laat opstijven.","Klop de massa luchtig in de mixer en draai balletjes.","Laat aanvriezen en dompel in het cacaopoeder."],
     endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardbeientruffels", name:"Aardbeientruffels", category:"Zoet & patisserie", yield:"± 40 st",
     ingredients:[{item:"Aardbeiencoulis",amount:"250 g"},{item:"Citroensap",amount:"25 g"},{item:"Suiker",amount:"250 g"},{item:"Boter",amount:"250 g"},{item:"Getempereerde witte chocolade",amount:"om te doppen"},{item:"Roodgekleurde suiker",amount:"om af te werken"}],
@@ -1599,23 +1579,23 @@ const KEUKENMAP = [
     steps:["Blender alles en zeef.","Maak vlak voor het serveren luchtig met de staafmixer."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-pastinaakcake", name:"Pastinaakcake met peer en chai", category:"Zoet & patisserie", yield:"1 bakplaat",
-    ingredients:[{item:"Bloem",amount:"600 g"},{item:"Zout",amount:"2 tl"},{item:"Chaispecerijen",amount:"4 el"},{item:"Baking soda",amount:"4 tl"},{item:"Bakpoeder",amount:"1 tl"},{item:"Pastinaak, geraspt",amount:"280 g"},{item:"Peer, in julienne",amount:"280 g"},{item:"Eieren",amount:"8 st"},{item:"Suiker",amount:"200 g"},{item:"Bruine basterdsuiker",amount:"200 g"},{item:"Yoghurt",amount:"160 g"},{item:"Vanille-extract",amount:"4 tl"},{item:"Zonnebloemolie",amount:"480 g"}],
+    ingredients:[{item:"Bloem",amount:"600 g"},{item:"Zout",amount:"2 tl"},{item:"Chaispecerijen",amount:"4 el"},{item:"Baking soda",amount:"4 tl"},{item:"Bakpoeder",amount:"1 tl"},{item:"Pastinaak, geraspt",amount:"280 g"},{item:"Peer, in julienne",amount:"280 g"},{item:"Eieren",amount:"8 st"},{item:"Suiker",amount:"200 g"},{item:"Bruine basterdsuiker",amount:"200 g"},{item:"Yoghurt",amount:"160 g"},{item:"Vanillesuiker",amount:"32 g"},{item:"Zonnebloemolie",amount:"480 g"}],
     steps:["Verwarm de oven voor op 165 °C en bekleed een gastronormbak met bakpapier.","Meng bloem, zout, chaikruiden, baking soda en bakpoeder goed door.","Voeg de pastinaak en peer toe en meng door het bloemmengsel.","Klop de eieren met beide suikers luchtig en bleek met een garde.","Voeg de yoghurt en het vanille-extract toe.","Schenk de zonnebloemolie in een dunne straal al kloppend bij de eierbasis.","Meng het bloemmengsel met de eierbasis tot een egale massa en stort het beslag.","Bak 25–30 min in de voorverwarmde oven en laat afkoelen in het blik."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-pompoenflan", name:"Pompoenflan", category:"Groente · gestoomd", yield:"± 12 vormpjes",
-    ingredients:[{item:"Pompoen",amount:"1 st"},{item:"Eieren",amount:"3 st"},{item:"Bloem",amount:"3 el, eventueel meer"},{item:"Olijfolie",amount:"100 ml"},{item:"Vadouvan",amount:"1 el"},{item:"Knoflook",amount:"1/2 teen"},{item:"Peper en zout",amount:"naar smaak"}],
+    ingredients:[{item:"Pompoen",amount:"1 st"},{item:"Eieren",amount:"3 st"},{item:"Bloem",amount:"3 el, eventueel meer"},{item:"Olijfolie",amount:"100 ml"},{item:"Vadouvan",amount:"1 el"},{item:"Knoflook",amount:"1/2 teen"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Schil de pompoen, verwijder de zaadlijsten en snijd in stukken.","Kook de pompoen gaar in gezouten water; laat uitlekken en dep droog.","Pureer met knoflook, vadouvan, eieren, olijfolie en bloem tot een romige massa; voeg extra bloem toe als het te dun is.","Stort in vormpjes en dek af met een siliconen matje.","Stoom de flan in ongeveer 50 min op 85 °C gaar."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Stoomoven", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-pompoenhummus", name:"Pompoenhummus", category:"Purees", yield:"≈ 1,2 kg",
-    ingredients:[{item:"Flespompoen",amount:"500 g"},{item:"Kikkererwten (uit blik)",amount:"500 g"},{item:"Knoflook",amount:"3 tenen"},{item:"Citroensap",amount:"van 1,5 st"},{item:"Chili",amount:"mespuntje"},{item:"Tahini",amount:"8 el"},{item:"Komijn",amount:"1,5 tl"},{item:"Peterselie",amount:"takje"},{item:"Olijfolie",amount:"scheut"},{item:"Peper en zout",amount:"naar smaak"}],
+    ingredients:[{item:"Flespompoen",amount:"500 g"},{item:"Kikkererwten (uit blik)",amount:"500 g"},{item:"Knoflook",amount:"3 tenen"},{item:"Citroensap",amount:"van 1,5 st"},{item:"Chili",amount:"mespuntje"},{item:"Tahini",amount:"8 el"},{item:"Komijn",amount:"1,5 tl"},{item:"Peterselie",amount:"takje"},{item:"Olijfolie",amount:"scheut"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Verwarm de oven voor op 200 °C (hetelucht).","Snijd de pompoen brunoise en besprenkel met olijfolie, peper en zout.","Rooster de pompoen 20–30 min in de oven en laat afkoelen.","Pureer de pompoen met de kikkererwten, knoflook, citroensap, chili, tahini en komijn glad.","Garneer met verse peterselie en chili."],
     endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-lemon-curd", name:"Lemon curd", category:"Zoet & patisserie", yield:"≈ 500 g",
-    ingredients:[{item:"Citroenen (rasp en sap)",amount:"2 flinke, ± 130 ml sap"},{item:"Fijne kristalsuiker",amount:"200 g"},{item:"Ongezouten roomboter",amount:"125 g"},{item:"Eieren, geklutst",amount:"2 st"}],
+    ingredients:[{item:"Citroenen (rasp en sap)",amount:"2 flinke, ± 130 ml sap"},{item:"Bietsuiker",amount:"200 g"},{item:"Ongezouten roomboter",amount:"125 g"},{item:"Eieren, geklutst",amount:"2 st"}],
     steps:["Rasp de citroenen en pers ze uit; zeef het sap.","Verhit rasp, suiker en boter au bain-marie op middelhoog vuur en roer tot een gladde massa.","Voeg het citroensap toe en roer door; voeg daarna de eieren toe terwijl je blijft roeren.","Blijf rustig roeren tot de curd de dikte van yoghurt heeft (± 20 min).","Giet in een schaal om af te koelen; hij dikt dan nog verder in."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-peer-relish", name:"Peer-relish", category:"Chutney & jam", yield:"1 grote pan",
-    ingredients:[{item:"Peren",amount:"12 st"},{item:"Groene paprika",amount:"2 st"},{item:"Rode paprika",amount:"2 st"},{item:"Ui",amount:"2 st"},{item:"Wittewijnazijn",amount:"400 ml"},{item:"Suiker",amount:"400 g"},{item:"Kurkuma",amount:"20 g"},{item:"Kaneel",amount:"4 g"},{item:"Mosterdzaad",amount:"4 g"},{item:"Gedroogde gember",amount:"4 g"},{item:"Gedroogde rode chilipeper",amount:"4 g"}],
+    ingredients:[{item:"Peren",amount:"12 st"},{item:"Groene paprika",amount:"2 st"},{item:"Rode paprika",amount:"2 st"},{item:"Ui",amount:"2 st"},{item:"Wittewijnazijn",amount:"400 ml"},{item:"Suiker",amount:"400 g"},{item:"Kurkuma",amount:"20 g"},{item:"Kaneelpoeder",amount:"4 g"},{item:"Mosterdzaad",amount:"4 g"},{item:"Gemberpoeder",amount:"4 g"},{item:"Gedroogde rode chilipeper",amount:"4 g"}],
     steps:["Snijd de peer, ui en paprika in fijne brunoise.","Doe de suiker, wittewijnazijn en alle kruiden bij elkaar in een pan.","Laat 10 min trekken en voeg de groenten en het fruit toe.","Kook het geheel 5 min en laat afkoelen tot kamertemperatuur."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-icetea-japans-gember", name:"Japanse ijsthee met gember", category:"Dranken", yield:"± 10 l",
@@ -1631,7 +1611,7 @@ const KEUKENMAP = [
     steps:["Snijd het groen van de prei af en was het witte gedeelte.","Snijd de prei in gelijke stukken, leg in een gastronoombak met de tijm, peper en zout.","Dek af met aluminiumfolie en gaar 70 min in de oven op 160 °C.","Verwijder de folie, laat 5 min afkoelen en haal het buitenste (taaie) blad eraf.","Rol de stukken prei in de norivellen en snijd het uitstekende nori af.","Leg afdekfolie op de werkbank, leg de ingerolde prei erop en bestrooi met de zeste van de citroen.","Rol strak op en koel terug in de blastchiller.","Portioneer de goed afgekoelde rol met de folie eromheen."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Blastchiller", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-hoisinsaus", name:"Hoisinsaus", category:"Sauzen & emulsies", yield:"≈ 3,5 l",
-    ingredients:[{item:"Sesamolie",amount:"200 g"},{item:"Five spice",amount:"25 g"},{item:"Rijstazijn (of wittewijnazijn)",amount:"300 ml"},{item:"Honing",amount:"2000 ml"},{item:"Knoflook",amount:"40 tenen (4 bollen)"},{item:"Misopasta",amount:"500 g"},{item:"Sojasaus",amount:"600 ml"},{item:"Rode pepers",amount:"10 st"},{item:"Water (als laatste)",amount:"250 g"}],
+    ingredients:[{item:"Sesamolie",amount:"200 g"},{item:"Five spice",amount:"25 g"},{item:"Naturel azijn",amount:"300 ml"},{item:"Honing",amount:"2000 ml"},{item:"Knoflook",amount:"40 tenen (4 bollen)"},{item:"Misopasta",amount:"500 g"},{item:"Sojasaus",amount:"600 ml"},{item:"Rode pepers",amount:"10 st"},{item:"Water (als laatste)",amount:"250 g"}],
     steps:["Snijd de knoflook en rode peper fijn; weeg de rest af en zet klaar.","Fruit de knoflook op laag vuur; voeg de five spice toe en roer goed (laat de knoflook niet verbranden).","Voeg de rest van de ingrediënten toe en laat 5 min zachtjes pruttelen.","Voeg wat extra water toe als de saus te dik is."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-kletskoppen-glutenvrij", name:"Kletskoppen (glutenvrij)", category:"Zoet & patisserie", yield:"1 plaat",
@@ -1643,23 +1623,23 @@ const KEUKENMAP = [
     steps:["Week de gelatinebladen in koud water.","Verwarm kokosmelk, room en suiker samen tot het kookpunt.","Haal van het vuur en roer de gelatine erdoor.","Laat iets afkoelen en verdeel over glaasjes.","Laat opstijven."],
     endorsements:[], chefsPick:false, baseId:"pat-vruchten-pannacotta", isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-knolselderijsaus", name:"Knolselderijsaus met truffeljus", category:"Sauzen & emulsies", yield:"≈ 350 ml",
-    ingredients:[{item:"Knolselderij, brunoise",amount:"600 g"},{item:"Koolzaadolie",amount:"2 el"},{item:"Sjalot, in ringen",amount:"65 g"},{item:"Wortel, brunoise 5 mm",amount:"65 g"},{item:"Bleekselderij, brunoise 5 mm",amount:"75 g"},{item:"Tomatenpuree",amount:"1 el"},{item:"Rode wijn",amount:"160 ml"},{item:"Truffeljus",amount:"240 ml"},{item:"Zout",amount:"1,5 tl"},{item:"Sherryazijn",amount:"1 tl"},{item:"Xanthaangom",amount:"0,3 g"},{item:"Extra vierge olijfolie",amount:"1 el"}],
-    steps:["Verwarm de oven voor op 200 °C; meng 450 g knolselderij met 1 el koolzaadolie en rooster ± 30 min donkerbruin.","Doe de geroosterde knolselderij in een sauspan met 1,5 l water, breng aan de kook en haal direct van het vuur; laat 45 min afgedekt staan.","Laat uitlekken op een fijne zeef en bewaar de vloeistof.","Verhit de overige olie, voeg sjalot, wortel, bleekselderij en de resterende 150 g knolselderij toe en sauteer ± 10 min tot gekaramelliseerd.","Bak de tomatenpuree 5 min mee; blus af met de rode wijn en kook in tot bijna droog.","Voeg de knolselderijvloeistof en truffeljus toe en laat in ± 1 uur langzaam inkoken tot ± 350 ml.","Zeef de saus, breng op smaak met zout en sherryazijn en bind met de xanthaangom.","Monteer de saus met de olijfolie."],
+    ingredients:[{item:"Knolselderij, brunoise",amount:"600 g"},{item:"Koolzaadolie",amount:"2 el"},{item:"Ui, in ringen",amount:"65 g"},{item:"Wortel, brunoise 5 mm",amount:"65 g"},{item:"Bleekselderij, brunoise 5 mm",amount:"75 g"},{item:"Tomatenpuree",amount:"1 el"},{item:"Rode wijn",amount:"160 ml"},{item:"Truffeljus",amount:"240 ml"},{item:"Zout",amount:"1,5 tl"},{item:"Sherryazijn",amount:"1 tl"},{item:"Xanthaangom",amount:"0,3 g"},{item:"Extra vierge olijfolie",amount:"1 el"}],
+    steps:["Verwarm de oven voor op 200 °C; meng 450 g knolselderij met 1 el koolzaadolie en rooster ± 30 min donkerbruin.","Doe de geroosterde knolselderij in een sauspan met 1,5 l water, breng aan de kook en haal direct van het vuur; laat 45 min afgedekt staan.","Laat uitlekken op een fijne zeef en bewaar de vloeistof.","Verhit de overige olie, voeg ui, wortel, bleekselderij en de resterende 150 g knolselderij toe en sauteer ± 10 min tot gekaramelliseerd.","Bak de tomatenpuree 5 min mee; blus af met de rode wijn en kook in tot bijna droog.","Voeg de knolselderijvloeistof en truffeljus toe en laat in ± 1 uur langzaam inkoken tot ± 350 ml.","Zeef de saus, breng op smaak met zout en sherryazijn en bind met de xanthaangom.","Monteer de saus met de olijfolie."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-hummus-geroosterde-biet", name:"Hummus van geroosterde biet", category:"Purees", yield:"≈ 1 kg",
-    ingredients:[{item:"Rode bieten",amount:"3 st"},{item:"Ui",amount:"1 st"},{item:"Knoflook",amount:"2 tenen"},{item:"Kikkererwten uit blik, uitgelekt",amount:"415 g"},{item:"Peterselie",amount:"15 g"},{item:"Sesampasta",amount:"30 ml"},{item:"Olijfolie",amount:"60 ml"},{item:"Water",amount:"60 ml"},{item:"Citroensap",amount:"van 1 st"},{item:"Zout en peper",amount:"naar behoefte"}],
+    ingredients:[{item:"Rode bieten",amount:"3 st"},{item:"Ui",amount:"1 st"},{item:"Knoflook",amount:"2 tenen"},{item:"Kikkererwten uit blik, uitgelekt",amount:"415 g"},{item:"Peterselie",amount:"15 g"},{item:"Sesampasta",amount:"30 ml"},{item:"Olijfolie",amount:"60 ml"},{item:"Water",amount:"60 ml"},{item:"Citroensap",amount:"van 1 st"},{item:"Zout",amount:"naar behoefte"},{item:"Peper",amount:"naar behoefte"}],
     steps:["Verhit de barbecue tot 200 °C of pof in de oven.","Leg de bieten met de ui, knoflook, zout en peper in aluminium op de barbecue.","Rooster de bieten in 1 uur gaar; draai halverwege om.","Maal ondertussen de kikkererwten, peterselie, tahin, olijfolie, water en citroensap fijn.","Pel de geroosterde bieten, ui en knoflook, voeg toe en maal glad."],
     endorsements:[], chefsPick:false, baseId:"map-pompoenhummus", isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Black Bastard / oven", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-dukkah", name:"Dukkah", category:"Kruiden & zout", yield:"≈ 1,2 kg",
-    ingredients:[{item:"Notenmix",amount:"1 kg"},{item:"Gebakken uitjes",amount:"100 g"},{item:"Komijn",amount:"10 g"},{item:"Gemberpoeder",amount:"5 g"},{item:"Anijszaad",amount:"5 g"},{item:"Nootmuskaatpoeder",amount:"5 g"},{item:"Gerookt paprikapoeder",amount:"5 g"},{item:"Chilipoeder",amount:"2 g"},{item:"Za'atar",amount:"5 g"},{item:"Sesamzaad",amount:"20 g"},{item:"Limoenrasp",amount:"naar behoefte"},{item:"Citroenrasp",amount:"naar behoefte"},{item:"Maldonzout en peper",amount:"naar behoefte"}],
+    ingredients:[{item:"Notenmix",amount:"1 kg"},{item:"Gebakken uitjes",amount:"100 g"},{item:"Komijn",amount:"10 g"},{item:"Gemberpoeder",amount:"5 g"},{item:"Anijszaad",amount:"5 g"},{item:"Nootmuskaatpoeder",amount:"5 g"},{item:"Gerookt paprikapoeder",amount:"5 g"},{item:"Chilipoeder",amount:"2 g"},{item:"Za'atar",amount:"5 g"},{item:"Sesamzaad",amount:"20 g"},{item:"Limoenrasp",amount:"naar behoefte"},{item:"Citroenrasp",amount:"naar behoefte"},{item:"Zout",amount:"naar behoefte"},{item:"Peper",amount:"naar behoefte"}],
     steps:["Draai de notenmix met de gebakken uitjes tot een grof kruim.","Rooster het kruim met alle specerijen en het sesamzaad 15 min in de oven op 180 °C.","Laat afkoelen en breng op smaak met de rasp, het zout en de peper."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-geroosterde-spruiten", name:"Geroosterde spruiten", category:"Groente · geroosterd", yield:"5 kg",
-    ingredients:[{item:"Spruiten",amount:"5 kg"},{item:"Zonnebloemolie",amount:"100 ml"},{item:"Sesamzaad",amount:"100 g"},{item:"Peper en zout",amount:"naar smaak"}],
+    ingredients:[{item:"Spruiten",amount:"5 kg"},{item:"Zonnebloemolie",amount:"100 ml"},{item:"Sesamzaad",amount:"100 g"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Maak de spruiten schoon en halveer de grote.","Besprenkel met zonnebloemolie, sesamzaad, peper en zout.","Rooster in de oven op 200 °C, 2× 6 min."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-courgettejam", name:"Courgettejam", category:"Chutney & jam", yield:"± 5 potten",
-    ingredients:[{item:"Courgette",amount:"1 kg"},{item:"Geleisuiker",amount:"1 kg"},{item:"Citroenen",amount:"2 st"},{item:"Sinaasappel",amount:"1 st"},{item:"Oregano",amount:"0,2 g"},{item:"Verse basilicum",amount:"1 el"},{item:"Tijm",amount:"1 el"},{item:"Laurierblad",amount:"1 st"},{item:"Gemalen kaneel",amount:"2 tl"}],
+    ingredients:[{item:"Courgette",amount:"1 kg"},{item:"Geleisuiker",amount:"1 kg"},{item:"Citroenen",amount:"2 st"},{item:"Sinaasappel",amount:"1 st"},{item:"Oregano",amount:"0,2 g"},{item:"Verse basilicum",amount:"1 el"},{item:"Tijm",amount:"1 el"},{item:"Laurierblad",amount:"1 st"},{item:"Kaneelpoeder",amount:"2 tl"}],
     steps:["Ontdoe de courgette van zaadlijsten maar schil hem niet; pers de citroenen en rasp ze, pers ook de sinaasappel uit.","Rasp de courgette in de keukenmachine en meng het sinaasappelsap, citroensap, de rasp en de kruiden erdoor (kruiden eerst laten bevriezen in de diepvries en daarna fijnknijpen); voeg dan de kaneel toe.","Zet op het vuur, meng de geleisuiker erdoor en laat 4 minuten borrelen.","Doe het mengsel in schoongemaakte potjes."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-aardbeisambal", name:"Aardbeisambal", category:"Sauzen & emulsies", yield:"≈ 1 l",
@@ -1667,7 +1647,7 @@ const KEUKENMAP = [
     steps:["Was de aardbeien en maak ze schoon (kroontjes eraf).","Hak de ui, knoflook en pepers fijn in de mixer.","Verhit de olie en fruit het mengsel aan.","Voeg de suiker en het zout toe.","Plet of prak de aardbeien, voeg de puree toe en verwarm kort.","Proef en breng op smaak met limoen."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-appelcrumble", name:"Appelcrumble", category:"Zoet & patisserie", yield:"1 schaal",
-    ingredients:[{item:"Flinke appels",amount:"9 st"},{item:"Suiker (vulling)",amount:"150 g"},{item:"Kaneel",amount:"6 tl"},{item:"— Crumble: ongezouten roomboter",amount:"225 g"},{item:"Bloem",amount:"300 g"},{item:"Suiker",amount:"300 g"},{item:"Zout",amount:"snuf"}],
+    ingredients:[{item:"Flinke appels",amount:"9 st"},{item:"Suiker (vulling)",amount:"150 g"},{item:"Kaneelpoeder",amount:"6 tl"},{item:"— Crumble: ongezouten roomboter",amount:"225 g"},{item:"Bloem",amount:"300 g"},{item:"Suiker",amount:"300 g"},{item:"Zout",amount:"snuf"}],
     steps:["Meng de appels met de suiker en kaneel voor de vulling.","Doe alle crumble-ingrediënten in een kom; wrijf de boter met je vingers fijn en kneed tot een stevig maar kruimelig deeg.","Strooi het kruimeldeeg over het appelmengsel.","Bak de crumble in 30 min op 190 °C."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-bloemkool-oven", name:"Bloemkool uit de oven met bloemkoolcrème", category:"Groente · geroosterd", yield:"1 kool",
@@ -1679,11 +1659,11 @@ const KEUKENMAP = [
     steps:["Bruneer de botten 45 min in de oven op 250 °C; rooster de uien en knoflook ± 20 min mee op 250 °C.","Vul de Vario met het water en zet op het programma bouillon.","Doe de botten en uien met de overige ingrediënten in de Vario.","Laat de hele dag op het programma bouillon staan; zet 's nachts op sous-vide 94 °C.","Breng de volgende dag 1 uur goed aan de kook en haal alle botten en groenten eruit.","Breng op smaak met zout en peper en haal de bouillon door een koffiefilter.","Pasteuriseren: breng de bouillon terug aan de kook en stoom de lege potten met deksel 20 min op 100 °C.","Vul de potten met de hete bouillon, draai de deksels erop en pasteuriseer 50 min op 135 °C (combi)stomen.","Laat 30–45 min afkoelen in de oven op een kier, daarna 1 à 2 uur op kamertemperatuur, en zet koud."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Rundvlees", ferment:false, gear:"Vario / combisteamer", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-baba-ganoush", name:"Baba ganoush", category:"Purees", yield:"grote batch",
-    ingredients:[{item:"Aubergines",amount:"10 st"},{item:"Knoflook",amount:"10 teentjes"},{item:"Tahini",amount:"3 el"},{item:"Komijnpoeder",amount:"3 tl"},{item:"Citroenen",amount:"3 st"},{item:"Olijfolie",amount:"scheut"},{item:"Peper en zout",amount:"naar smaak"}],
+    ingredients:[{item:"Aubergines",amount:"10 st"},{item:"Knoflook",amount:"10 teentjes"},{item:"Tahini",amount:"3 el"},{item:"Komijnpoeder",amount:"3 tl"},{item:"Citroenen",amount:"3 st"},{item:"Olijfolie",amount:"scheut"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Verwarm de oven op 180 °C.","Halveer de aubergines in de lengte, kerf de snijkant ruitvormig in, besprenkel met olijfolie en bak ± 45 min met de snijkant naar boven tot het vruchtvlees zacht is.","Pof de knoflookteentjes in aluminiumfolie mee in de oven.","Schraap het vruchtvlees uit de schil en draai in de keukenmachine met de gepofte knoflook (zonder velletje), tahini, komijnpoeder en 2 el olijfolie tot een grove puree.","Breng op smaak met zest en sap van de citroen, peper en zout, en eventueel extra komijn of olijfolie."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Zomer","Herfst"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-champignonsaus", name:"Champignonsaus voor pasta", category:"Sauzen & emulsies", yield:"grote pan",
-    ingredients:[{item:"Gesnipperde uien",amount:"1500 g"},{item:"Kastanjechampignons in parten",amount:"4 kg"},{item:"Knoflook, fijn",amount:"32 tenen"},{item:"Slagroom",amount:"2000 ml"},{item:"Volle melk",amount:"2000 ml"},{item:"Tijm",amount:"16 takjes"},{item:"Oude kaas, geraspt",amount:"600 g"},{item:"Peper en zout",amount:"naar smaak"}],
+    ingredients:[{item:"Gesnipperde uien",amount:"1500 g"},{item:"Kastanjechampignons in parten",amount:"4 kg"},{item:"Knoflook, fijn",amount:"32 tenen"},{item:"Slagroom",amount:"2000 ml"},{item:"Volle melk",amount:"2000 ml"},{item:"Tijm",amount:"16 takjes"},{item:"Oude kaas, geraspt",amount:"600 g"},{item:"Zout",amount:"naar smaak"},{item:"Peper",amount:"naar smaak"}],
     steps:["Snijd alle groenten en rasp de kaas alvast.","Fruit de ui aan, voeg de knoflook toe en fruit even mee.","Doe de champignons erbij en bak even mee.","Giet de melk en room erop, voeg de tijm toe en laat 5–10 min koken.","Voeg de kaas toe en breng op smaak met peper en zout."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Herfst","Winter"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-basismayonaise", name:"Basismayonaise (63-gradeneieren)", category:"Sauzen & emulsies", yield:"≈ 4 l",
@@ -1691,7 +1671,7 @@ const KEUKENMAP = [
     steps:["Stoom de eieren 1,5 uur op 63 °C en koel terug.","Doe alles behalve de olie samen in de Magimix.","Draai fijn en voeg de olie druppelsgewijs toe."],
     endorsements:[], chefsPick:false, baseId:null, isBase:true, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:"Stoomoven", updatedBy:"Stef", updatedAt:"nieuw" },
   { id:"map-broodpudding", name:"Broodpudding", category:"Zoet & patisserie", yield:"1 bakblik",
-    ingredients:[{item:"Melk",amount:"2250 g"},{item:"Ei",amount:"720 g"},{item:"Suiker",amount:"900 g"},{item:"Rozijnen, geweld",amount:"225 g"},{item:"Brood",amount:"1350 g"},{item:"Kaneel / garam masala / five spice",amount:"naar keuze"},{item:"Citroenrasp",amount:"van 1 st"}],
+    ingredients:[{item:"Melk",amount:"2250 g"},{item:"Ei",amount:"720 g"},{item:"Suiker",amount:"900 g"},{item:"Rozijnen, geweld",amount:"225 g"},{item:"Brood",amount:"1350 g"},{item:"Kaneelpoeder",amount:"naar keuze"},{item:"Citroenrasp",amount:"van 1 st"}],
     steps:["Vermeng de melk met de eieren.","Voeg suiker, kaneelpoeder en de citrusrasp toe en roer goed door.","Snijd het brood in kleine stukken en laat weken in het melkmengsel.","Roer het brood door met een garde tot een soort beslag ontstaat.","Voeg tot slot de rozijnen toe.","Giet in een bakblik en gaar 60 min in een op 160 °C voorverwarmde oven."],
     endorsements:[], chefsPick:false, baseId:null, isBase:false, season:["Hele jaar"], garden:false, diet:"Vegetarisch", ferment:false, gear:null, updatedBy:"Stef", updatedAt:"nieuw" },
 ];
@@ -1995,8 +1975,8 @@ const seedDishes = [
     recipeIds:["roast-pastinaak","gpuree-pastinaak","gchip-pastinaak","honingknoflook-honing-knoflook-met-tijm","beurreblanc-klassieke-beurre-blanc"], updatedBy:"Simon", updatedAt:"zojuist" },
   { id:"d49", name:"Veldsla, biet & hazelnoot", course:"Wintervoorgerecht", season:["Winter"], diet:"Vegetarisch",
     description:"Winterse salade van veldsla met biet in twee bereidingen en gefermenteerde ui.",
-    plating:"Veldsla, carpaccio en geconfijte rode biet, gefermenteerde ui, sjalottenvinaigrette en crumble van hazelnoot.",
-    recipeIds:["gcarp-rode-biet","gconfit-rode-biet","lacto-ui","vinaigrette-sjalottenvinaigrette","crumble-hazelnoot"], updatedBy:"Isa", updatedAt:"zojuist" },
+    plating:"Veldsla, carpaccio en geconfijte rode biet, gefermenteerde ui, uienvinaigrette en crumble van hazelnoot.",
+    recipeIds:["gcarp-rode-biet","gconfit-rode-biet","lacto-ui","vinaigrette-uienvinaigrette","crumble-hazelnoot"], updatedBy:"Isa", updatedAt:"zojuist" },
   { id:"d50", name:"Knolselderij in het geheel", course:"Winterhoofdgerecht", season:["Winter"], diet:"Vegetarisch",
     description:"Vegetarisch winterhoofdgerecht: knolselderij geroosterd, gerookt en als kvass.",
     plating:"Geroosterde en gerookte knolselderij, lepel knolselderijkvass, mosterd-beurre blanc en zout van rozemarijn.",
@@ -2344,7 +2324,7 @@ const PAIRINGS = [
   { name:"knolselderij", pairs:["appel","mosterd","truffel","hazelnoot","tijm"], note:"Nootachtig en romig." },
   { name:"rabarber", pairs:["aardbei","gember","vanille","sinaasappel","room"], note:"Scherp zuur; zoet nodig." },
   { name:"braam", pairs:["appel","vanille","tijm","chocolade","laurier"], note:"Donker en zoetzuur." },
-  { name:"framboos", pairs:["chocolade","rozemarijn","lychee","room","amandel"], note:"Fris zuur; goed bij chocolade." },
+  { name:"framboos", pairs:["chocolade","rozemarijn","room","amandel"], note:"Fris zuur; goed bij chocolade." },
   { name:"pruim", pairs:["amandel","kaneel","laurier","rode wijn","salie"], note:"Zoet en warm." },
   { name:"druif", pairs:["walnoot","blauwe kaas","rozemarijn","varkensvlees"], note:"Zoet; goed bij kaas." },
   { name:"kweepeer", pairs:["appel","peer","vanille","laurier","varkensvlees"], note:"Parfumig; wil pocheren." },
@@ -2386,7 +2366,7 @@ const PAIRINGS = [
   { name:"courgettebloem", pairs:["ricotta","citroen","munt","parmezaan"], note:"Delicaat; vullen en frituren." },
   { name:"meiknol", pairs:["boter","dragon","citroen","ei"], note:"Jonge meiraap; fijn en zoet." },
   { name:"amaranth", pairs:["knoflook","citroen","tomaat","sesam"], note:"Blad als spinazie; zaad als graan." },
-  { name:"rode eikenbladsla", pairs:["walnoot","peer","blauwe kaas","sjalot"], note:"Zachte bittere sla; noot en fruit." },
+  { name:"rode eikenbladsla", pairs:["walnoot","peer","blauwe kaas","ui"], note:"Zachte bittere sla; noot en fruit." },
   { name:"paksoi", pairs:["knoflook","gember","sojasaus","sesam","chili"], note:"Knapperige steel; kort roerbakken." },
   { name:"goudsbloem", pairs:["rijst","wortel","ei","boter"], note:"Arme-mans-saffraan; kleur en mild." },
   { name:"korenbloem", pairs:["komkommer","kaas","citroen"], note:"Vooral kleur; mild zoetig." },
@@ -2395,13 +2375,13 @@ const PAIRINGS = [
   { name:"kamille", pairs:["appel","honing","room","peer","vanille"], note:"Bloemig-appelig; in zoet en thee." },
   { name:"lavendel", pairs:["honing","citroen","bosvruchten","chocolade"], note:"Sterk parfum; heel spaarzaam." },
   { name:"afrikaantjes", pairs:["citrus","wortel","tomaat"], note:"Citrus-anijs blad; als kruid en kleur." },
-  { name:"princessenbonen", pairs:["knoflook","boter","bonenkruid","amandel","sjalot"], note:"Fijne boon; kort garen." },
+  { name:"princessenbonen", pairs:["knoflook","boter","bonenkruid","amandel","ui"], note:"Fijne boon; kort garen." },
   { name:"snijbonen", pairs:["spek","ui","tomaat","bonenkruid"], note:"Stevig; goed in stoof." },
   { name:"pronkbonen", pairs:["tomaat","knoflook","spek","salie"], note:"Grote boon; hartige begeleiders." },
   { name:"peultjes", pairs:["munt","boter","citroen","sesam"], note:"Zoet en knapperig; kort." },
   { name:"kapucijners", pairs:["spek","ui","augurk","mosterd"], note:"Stevige peul; klassiek Hollands." },
   { name:"ijsbergsla", pairs:["tomaat","ui","yoghurt","citroen"], note:"Knapperig en neutraal; frisse dressing." },
-  { name:"veldsla", pairs:["walnoot","spek","ei","sjalot","biet"], note:"Zacht en nootachtig; wintersalade." },
+  { name:"veldsla", pairs:["walnoot","spek","ei","ui","biet"], note:"Zacht en nootachtig; wintersalade." },
   { name:"rode melde", pairs:["knoflook","citroen","ei"], note:"Als spinazie; kleurt mooi." },
   { name:"oregano", pairs:["tomaat","olijfolie","knoflook","courgette","kaas"], note:"Zuiders; gedroogd sterker." },
   { name:"reine claude", pairs:["amandel","vanille","honing","laurier"], note:"Zoete groene pruim; simpel houden." },
@@ -2455,7 +2435,6 @@ const PAIRINGS = [
   { name:"kruidnagel", pairs:["rode kool"], note:"Intens warm kruid; spaarzaam bij kool en fruit." },
   { name:"lam", pairs:["munt","rozemarijn"], note:"Uitgesproken vlees; houdt van munt en rozemarijn." },
   { name:"limoen", pairs:["koriander"], note:"Scherp fris zuur; bij koriander en chili." },
-  { name:"lychee", pairs:["framboos","rozenwater"], note:"Bloemig zoet; verrassend bij framboos." },
   { name:"melk", pairs:["laurier"], note:"Zacht en romig; trekt zachte kruiden." },
   { name:"mierikswortel", pairs:["koolrabi","rode biet","rundvlees"], note:"Scherp en heet; wakkert biet en rund aan." },
   { name:"mosterd", pairs:["andijvie","bindsla","dille","dragon","kapucijners","knolselderij","koolrabi","spitskool","varkensvlees"], note:"Scherp zuur; ruggengraat voor dressing." },
@@ -2478,7 +2457,7 @@ const PAIRINGS = [
   { name:"selderij", pairs:["lavas"], note:"Groen en zout-aards; bouillonmaat." },
   { name:"sesam", pairs:["amaranth","amsoi","paksoi","peultjes"], note:"Nootachtig geroosterd; bij Aziatisch blad." },
   { name:"sinaasappel", pairs:["chioggia biet","gele biet","groenlof","rabarber","rode biet","venkel","wortel"], note:"Zoet zuur; licht biet en venkel op.", season:["Winter"] },
-  { name:"sjalot", pairs:["princessenbonen","rode eikenbladsla","veldsla"], note:"Fijn ui-zoet; basis van vinaigrette." },
+  { name:"ui", pairs:["princessenbonen","rode eikenbladsla","veldsla"], note:"Fijn ui-zoet; basis van vinaigrette." },
   { name:"sojasaus", pairs:["amsoi","chinese kool","paksoi"], note:"Diep umami-zout; bij kool en paksoi." },
   { name:"spek", pairs:["aardpeer","andijvie","kapucijners","pronkbonen","savooikool","snijbonen","spitskool","veldsla"], note:"Rokerig vet; zoete maat van bonen en kool." },
   { name:"thee", pairs:["citroenmelisse","honing"], note:"Bitter-bloemig; trekt citroenmelisse aan." },
@@ -2495,7 +2474,7 @@ const PAIRINGS = [
   { name:"zure room", pairs:["bieslook"], note:"Fris en vol; drager van bieslook." },
   { name:"zwarte peper", pairs:["aardbei"], note:"Warme scherpte; wekt aardbei op." },
   { name:"burrata", pairs:["perzik","tomaat","basilicum","olijfolie"], note:"Romig hart; canvas voor rijp zomerfruit." },
-  { name:"rozenwater", pairs:["lychee","framboos","aardbei","honing"], note:"Bloemig parfum; spaarzaam bij rood fruit." },
+  { name:"rozenwater", pairs:["framboos","aardbei","honing"], note:"Bloemig parfum; spaarzaam bij rood fruit." },
   { name:"spruitjes", pairs:["kastanje","spek","hazelnoot","nootmuskaat"], note:"Bitterzoet wintergroen; houdt van rook en noot.", season:["Winter"] },
   { name:"zeezout", pairs:["karamel","chocolade","tomaat"], note:"Knapperige versterker; maakt zoet dieper." },
 ];
@@ -2900,8 +2879,13 @@ function App() {
   // Recepten, gerechten en items uit een bundel inlezen. Bedoeld voor de
   // voorbeeldcalculatie; alles krijgt een vaste id, dus opnieuw inlezen werkt bij.
   const importBundel = async (bundel) => {
+    try { await importBundelDoen(bundel); }
+    catch (e) { alert("Inlezen gestopt: " + (e && e.message ? e.message : String(e))); }
+  };
+  const importBundelDoen = async (bundel) => {
     const recIds = {}, gerIds = {}, itemIds = {};
     const stempel = new Date().toISOString();
+    const fouten = [];
     for (const r of bundel.recepten || []) {
       const id = "vb-r-" + zonderAccent(r.name).toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const rec = {
@@ -2914,7 +2898,7 @@ function App() {
         updatedBy: "Voorbeeld", updatedAt: "zojuist",
       };
       recIds[r.name] = id;
-      if (live) await supabase.from("recipes_custom").upsert({ id, data: rec, updated_by: "Voorbeeld", updated_at: stempel });
+      if (live) { const { error } = await supabase.from("recipes_custom").upsert({ id, data: rec, updated_by: "Voorbeeld", updated_at: stempel }); if (error) fouten.push("recept " + r.name + ": " + error.message); }
       setRecipes((rs) => (rs.some((x) => x.id === id) ? rs.map((x) => (x.id === id ? rec : x)) : [rec, ...rs]));
     }
     for (const d of bundel.gerechten || []) {
@@ -2932,7 +2916,7 @@ function App() {
           recipe_ids: ger.recipeIds, season: ger.season, diet: ger.diet, portions: ger.portions, voorbeeld: true,
           updated_by: "Voorbeeld", updated_at: stempel,
         });
-        if (error) { flash("Gerechten alleen lokaal — draai eerst de dishes-SQL in Supabase"); }
+        if (error) fouten.push("gerecht " + d.name + ": " + error.message);
       }
       setDishes((ds) => (ds.some((x) => x.id === id) ? ds.map((x) => (x.id === id ? ger : x)) : [ger, ...ds]));
     }
@@ -2946,7 +2930,7 @@ function App() {
       const item = normGedeeldItem({ id, name: it.name, regels, cost: "", notes: it.notes || "Voorbeeld t.b.v. calculaties" });
       itemIds[it.name] = id;
       setCalcItems((xs) => (xs.some((x) => x.id === id) ? xs.map((x) => (x.id === id ? item : x)) : [...xs, item]));
-      if (live) await supabase.from("calculatie_items").upsert({ id, data: item, updated_by: "Voorbeeld", updated_at: stempel });
+      if (live) { const { error } = await supabase.from("calculatie_items").upsert({ id, data: item, updated_by: "Voorbeeld", updated_at: stempel }); if (error) fouten.push("item " + it.name + ": " + error.message); }
     }
     // Producten koppelen aan de nieuwe items, op naam van de itemregel.
     let gekoppeld = 0;
@@ -2961,7 +2945,9 @@ function App() {
       });
       if (veranderd) await saveAssortimentItem({ ...p, items: nieuwe });
     }
-    flash((bundel.recepten || []).length + " recepten, " + (bundel.gerechten || []).length + " gerechten, " + (bundel.items || []).length + " items · " + gekoppeld + " productregels gekoppeld");
+    const melding = (bundel.recepten || []).length + " recepten, " + (bundel.gerechten || []).length + " gerechten, " + (bundel.items || []).length + " items · " + gekoppeld + " productregels gekoppeld";
+    if (fouten.length) alert(melding + "\n\nNiet alles kwam in de database:\n" + fouten.slice(0, 5).join("\n") + (fouten.length > 5 ? "\n+" + (fouten.length - 5) + " meer" : ""));
+    else flash(melding);
   };
   // Meerdere producten in een keer inlezen (.json) — bestaande namen worden bijgewerkt.
   const importAssortiment = async (file) => {
@@ -5111,6 +5097,40 @@ const enkelvoud = (naam) => {
 };
 // Sleutel waaronder varianten samenvallen.
 const naamSleutel = (naam) => zonderAccent(enkelvoud(naam)).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Vaste koppelingen: schrijfwijzen die in de keuken hetzelfde product zijn.
+// De tekst in de recepten blijft staan; de app rekent ze als één ingrediënt.
+const VASTE_ALIASSEN = {
+  "fijne suiker": "Suiker", "suiker (voor de pectine)": "Suiker", "suiker (vulling)": "Suiker",
+  "suiker om te bestrooien": "Suiker", "suiker of rietsuiker": "Suiker",
+  "zout (2,5%)": "Zout", "zout (2,5% van totaal)": "Zout", "zout (10%)": "Zout", "zout (3,5%)": "Zout",
+  "zout (5%)": "Zout", "zout (3,5% van het water)": "Zout", "zeezout": "Zout", "grof zeezout": "Zout",
+  "geklaarde boter": "Boter", "koude boter": "Boter", "zachte boter": "Boter", "gezouten boter, zacht": "Boter",
+  "boter (voor de bodem)": "Boter", "boter (voor de vulling)": "Boter", "gesmolten boter": "Boter",
+  "roomboter": "Boter", "ongezouten roomboter": "Boter", "margarine": "Boter",
+  "extra vierge olijfolie": "Olijfolie",
+  "knoflook, fijngehakt": "Knoflook", "knoflook, fijn": "Knoflook", "knoflooktenen, gepeld": "Knoflook",
+  "room": "Slagroom", "room, ongezoet": "Slagroom", "room, gezoet": "Slagroom", "slagroom, ongezoet": "Slagroom",
+  "koksroom": "Slagroom", "geslagen room": "Slagroom",
+  "eidooiers": "Eidooier", "dooier": "Eidooier", "eigeel": "Eidooier",
+  "olie": "Zonnebloemolie", "neutrale olie": "Zonnebloemolie", "ijskoude olie": "Zonnebloemolie",
+  "ei": "Eieren", "ei (m)": "Eieren", "eieren, geklutst": "Eieren", "eieren, 1,5 uur gestoomd op 63 °c": "Eieren",
+  "volle melk": "Melk",
+  "gember, geraspt": "Gember", "verse gember, geraspt": "Gember", "gember, geschild en fijngehakt": "Gember",
+  "rauwe honing": "Honing",
+  "rozijnen, geweld": "Rozijnen",
+  "rode peper": "Rode pepers", "rode pepers, fijngehakt": "Rode pepers", "chili": "Rode pepers",
+  "rode pepers (fijne brunoise, zonder zaadlijst)": "Rode pepers", "rode pepers met zaadjes, grof gehakt": "Rode pepers",
+  "uien": "Ui", "uien, grof gesneden": "Ui", "gesnipperde uien": "Ui", "gele ui, gesnipperd": "Ui",
+  "dille, fijngehakt": "Dille", "dille, gehakt": "Dille",
+  "basilicum, fijngesneden": "Basilicum", "basilicum, gehakt": "Basilicum", "verse basilicum": "Basilicum",
+  "citroenen": "Citroen", "citroenen (rasp en sap)": "Citroen",
+  "verse kruiden": "Kruiden", "verse groene kruiden": "Groene kruiden",
+  "levende azijn of azijnmoeder": "Azijnmoeder", "azijnmoeder of levende azijn": "Azijnmoeder",
+  "gedroogde kokos": "Kokos", "gemalen kokos": "Kokos",
+  "munt, fijngehakt": "Munt",
+  "oude kaas, geraspt": "Oude kaas",
+  "suikerwater 1:1": "Suikerwater", "suikerwater": "Suikerwater",
+};
 let NAMEN = { canoniek: {}, uitzondering: new Set(), alias: {} };
 const zetNamen = (recepten, uitzonderingen, aliassen) => {
   const tel = {};
@@ -5130,7 +5150,7 @@ const zetNamen = (recepten, uitzonderingen, aliassen) => {
     canoniek[sleutel] = vormen[0];
   }
   const alias = {};
-  for (const [van, naar] of Object.entries(aliassen || {})) {
+  for (const [van, naar] of Object.entries({ ...VASTE_ALIASSEN, ...(aliassen || {}) })) {
     const sleutel = naamSleutel(van);
     if (sleutel && naar) alias[sleutel] = naar;
   }
@@ -5426,7 +5446,7 @@ function ArtikelRegel({ a, nieuw, sub, gebruik, leveranciers, catsPerLev, onSave
 // Twee schrijfwijzen van hetzelfde ingredient onder een naam brengen.
 function SamenvoegKiezer({ van, opties, onKies, onSluit }) {
   const [q, setQ] = useState("");
-  const hits = (opties || []).filter((x) => x.toLowerCase() !== String(van).toLowerCase() && (!q.trim() || softMatchAny([x], q))).slice(0, 40);
+  const hits = (opties || []).filter((x) => x.naam.toLowerCase() !== String(van).toLowerCase() && (!q.trim() || softMatchAny([x.naam], q))).slice(0, 40);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-md rounded-2xl p-4 flex flex-col" style={{ background: T.paper, maxHeight: "80vh" }} onClick={(e) => e.stopPropagation()}>
@@ -5439,7 +5459,10 @@ function SamenvoegKiezer({ van, opties, onKies, onSluit }) {
         <div className="flex-1 overflow-y-auto space-y-1.5">
           {hits.length === 0 && <p className="text-[12.5px] mute">Niets gevonden.</p>}
           {hits.map((x) => (
-            <button key={x} type="button" onClick={() => onKies(x)} className="ff card cardh w-full text-left px-3 py-2 text-sm ink">{x}</button>
+            <button key={x.naam} type="button" onClick={() => onKies(x.naam)} className="ff card cardh w-full text-left px-3 py-2">
+              <div className="text-sm ink truncate">{x.naam}</div>
+              <div className="text-[12px] mute truncate">{x.prijs ? "inkoopartikel · " + x.prijs : "ingrediënt zonder prijs — dan blijft het zonder prijs"}</div>
+            </button>
           ))}
         </div>
         <div className="flex justify-end mt-3">
@@ -5702,7 +5725,12 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
       )}
       {samenvoegen && (
         <SamenvoegKiezer van={samenvoegen}
-          opties={[...new Set([...(bdArtikelen || []).map((a) => a.omschrijving), ...ontbrekend.map((x) => x.naam)])].sort((a, b) => String(a).localeCompare(String(b), "nl"))}
+          opties={(() => {
+            const uit = new Map();
+            for (const x of ontbrekend) uit.set(x.naam, { naam: x.naam, prijs: "" });
+            for (const a of bdArtikelen || []) { const pb = artikelPerBasis(a); uit.set(a.omschrijving, { naam: a.omschrijving, prijs: pb ? eur(pb.prijs) + " p/" + pb.b : "geen prijs" }); }
+            return [...uit.values()].sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
+          })()}
           onSluit={() => setSamenvoegen(null)}
           onKies={(naar) => { onSamenvoegen(samenvoegen, naar); setSamenvoegen(null); }} />
       )}
@@ -7137,7 +7165,7 @@ const MAAT_ROWS = [
   { naam: "gelatineblaadje", el: "", stuk: "1,7", cm: "" },
   { naam: "ui", el: "", stuk: "150", cm: "" },
   { naam: "rode ui", el: "", stuk: "130", cm: "" },
-  { naam: "sjalot", el: "", stuk: "40", cm: "" },
+  { naam: "ui", el: "", stuk: "40", cm: "" },
   { naam: "knoflook", el: "", stuk: "5", cm: "" },
   { naam: "ei", el: "", stuk: "55", cm: "" },
   { naam: "eidooier", el: "", stuk: "18", cm: "" },
@@ -7179,7 +7207,7 @@ const TECH_NOTES_SEED = {
   ],
   ijs: [
     "Percentages zijn van het totale mengsel; meet na met een refractometer (°Bx).",
-    "Het aandeel glucose is een deel van het suikergewicht: 28% suiker met 25% glucose = 210 g kristalsuiker + 70 g glucose per kg.",
+    "Het aandeel glucose is een deel van het suikergewicht: 28% suiker met 25% glucose = 210 g bietsuiker + 70 g glucose per kg.",
     "Glucosepoeder (DE 38–40) verlaagt de zoetkracht en houdt het ijs smeuïg. Ga niet boven ~25%, anders wordt het taai.",
     "Te weinig suiker geeft een harde, scherpe textuur; te veel suiker laat het ijs niet opstijven.",
     "Laat roomijsbasis 12 uur koud rijpen voor het draaien; draai af op −8 tot −10 °C.",
@@ -7293,14 +7321,14 @@ const CATERING_STANDARDS = [
     { kop: "Bitterballen (per portie)", regels: ["Rundvlees: 6 stuks + mosterdmayonaise","Oesterzwam: 6 stuks + sesammayonaise"] },
     { kop: "Charcuterie van de Buitengewone Varkens van de Beug (5 p per plank, 250 g ham totaal)", regels: ["Coppa 40 gram","Lomo 40 gram","Grillworst 100 gram","Droge worst 70 gram","Klein bakje olijfjes, ± 10 stuks"] },
     { kop: "Kaasplank met lokale kazen (5 p per plank, 300 g kaas totaal)", regels: ["Uut Hooi geit 75 gram","Uut Hooi koekaas 75 gram","Oudwijcker Fiore 75 gram","Oudwijcker 75 gram","Jam/confituur","Trosje druiven","Bolletje noot/rozijnen"] },
-    { kop: "Seizoenstapas uit de tuin van de Beug (5 borrelhapjes) — voorbeelden", regels: ["Gepofte biet | geitenkaas | dukkah | snijbiet","Gekonfijte wortel | zuurdesemkrokant | sjalotcrème","Tarte tatin van pompoen | honingkaramel","Gevulde champignon","Frittata of quiche"] },
-    { kop: "Seizoenstapas vegan (5 borrelhapjes) — voorbeelden", regels: ["Gepofte biet | dukkah","Gekonfijte wortel | zuurdesemkrokant | sjalotcrème","Tarte tatin van pompoen | honingkaramel","Gevulde champignon","Filodeegkrokant | baba ganoush | mosterdsla | zonnebloempit"] },
+    { kop: "Seizoenstapas uit de tuin van de Beug (5 borrelhapjes) — voorbeelden", regels: ["Gepofte biet | geitenkaas | dukkah | snijbiet","Gekonfijte wortel | zuurdesemkrokant | uicrème","Tarte tatin van pompoen | honingkaramel","Gevulde champignon","Frittata of quiche"] },
+    { kop: "Seizoenstapas vegan (5 borrelhapjes) — voorbeelden", regels: ["Gepofte biet | dukkah","Gekonfijte wortel | zuurdesemkrokant | uicrème","Tarte tatin van pompoen | honingkaramel","Gevulde champignon","Filodeegkrokant | baba ganoush | mosterdsla | zonnebloempit"] },
     { kop: "Supplementen vlees", regels: ["Gehaktballetjes in tomatensaus en lavaskruiden","Buikspek met sesamlak en zoete-aardappelcrème","Tessinger plaatham op crostini","Boerenpaté op briochebrood met relish van seizoensgroenten/fruit","1 spare rib"] },
   ]},
   { key: "std-diner", title: "Diner & walking diner", intro: "Gangen met gewichten per persoon", secties: [
     { kop: "Brood", regels: ["Zuurdesembrood of breekbrood met 3 verschillende spreads en dips (bv. groene-kruidenboter | hummus | tomatensalsa)"] },
     { kop: "4-gangen shared diner (vegetarisch) — smaken uit de tuin van de Beug", regels: ["Voorgerechten standaard met zuurdesembrood en 3 soorten dips","3 voorgerechten, totaal 120 g p.p. (40 g per item) — bv. tarte tatin van pompoen | ricotta · dun gesneden koolrabi | raapstelen | kappertjes · tartaar van biet | balsamicoglaze | geglaceerde champignons | geitenkaas | walnoten","Soep 200 ml — met een lekker garnituur en eventueel iets krokants","Hoofdgerechten op tafel, totaal 300 g p.p. — linzen met gekleurde wortels en raapstelen (80 g) · krielaardappels met knoflookscheuten en tijm (75 g) · hele bloemkool geroosterd, bloemkoolcrème, dukkah, chimichurri (80 g) · gebakken polenta | oude hooikaas | groene kruiden (50 g) · salade van veldsla, radijs, ingelegde groenten, pompoenpitten en worteldressing (25 g)","Dessertvariatie, totaal 150 g p.p. (50 g per item, 2 à 3 items p.p.) — chocolademousse · panna cotta · cheesecake"] },
-    { kop: "6-gangen walking diner (totaal max 500 g p.p.)", regels: ["Voorgerecht (50 g): mozaïek van prei | nori | sjalotcrème | cashewnoot","Voorgerecht 2 (50 g): tartaar van biet | geitenkaas | hazelnoten | groene olie","Soep (150 ml): knolselderijbouillon | knolselderijcompote | oesterzwam","Tussengerecht (90 g): bloemkoolsteak | bloemkoolcrème | peer-relish | dukkah","Hoofdgerecht (110 g): paddenstoelrisotto | oesterzwam | amandel | bieslookolie | oudekaaskrokant","Dessert (50 g): chocolademousse | peercompote | kruimeldeeg | kletskop | bol ijs"] },
+    { kop: "6-gangen walking diner (totaal max 500 g p.p.)", regels: ["Voorgerecht (50 g): mozaïek van prei | nori | uicrème | cashewnoot","Voorgerecht 2 (50 g): tartaar van biet | geitenkaas | hazelnoten | groene olie","Soep (150 ml): knolselderijbouillon | knolselderijcompote | oesterzwam","Tussengerecht (90 g): bloemkoolsteak | bloemkoolcrème | peer-relish | dukkah","Hoofdgerecht (110 g): paddenstoelrisotto | oesterzwam | amandel | bieslookolie | oudekaaskrokant","Dessert (50 g): chocolademousse | peercompote | kruimeldeeg | kletskop | bol ijs"] },
     { kop: "Overig", regels: ["3/4/5-gangen diner","Los hoofdgerecht"] },
   ]},
   { key: "std-dinercatering", title: "Diner catering & buffetten", intro: "Vergadermaaltijden, buffetten en open vuur", secties: [
