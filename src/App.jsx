@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-12h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-13a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4159,12 +4159,7 @@ function App() {
               onDelete={(id) => { if (window.confirm("Dit product verwijderen?")) deleteAssortimentItem(id); }}
               recipeById={recipeById} recipes={recipes}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
-              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep}
-              onEigenArtikel={(d) => updateBdArtikel({
-                code: "eigen:" + zonderAccent(d.naam).toLowerCase().trim(),
-                omschrijving: d.naam, inhoud: d.inhoud, prijs: d.prijs, ppe: null,
-                leverancier: "Eigen prijzen", categorie: "Handmatig", opmerking: d.opmerking || "",
-              })} />}
+              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               focusKey={techFocus} onFocusDone={() => setTechFocus(null)}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
@@ -4220,7 +4215,7 @@ function App() {
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "assortimentForm" && chefMode && <AssortimentForm
           editing={current.editing ? assortiment.find((x) => x.id === current.editing) : null}
-          producten={assortiment} recipes={recipes} recipeById={recipeById} onCancel={goBack}
+          producten={assortiment} recipes={recipes} recipeById={recipeById} bdArtikelen={bdArtikelen} onCancel={goBack}
           onSave={(item) => { saveAssortimentItem(item); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -4608,6 +4603,37 @@ const zoekArtikel = (naam) => {
   PRIJSLIJST.cache.set(sleutel, best);
   return best;
 };
+// Reken een hoeveelheid ("300 gr", "20 el", "2 st") om naar geld met een
+// prijs per kilo, liter of stuk. Lepels, stuks en centimeters lopen via de
+// gewichtentabel uit Werkwijze.
+const kostUitBasis = (pb, naam, hoeveelheid) => {
+  const maat = parseMaat(hoeveelheid);
+  if (!pb || !maat || !(pb.prijs >= 0)) return null;
+  let hoeveel = maat.n;
+  if (maat.b !== pb.b) {
+    const rij = maatVoor(naam);
+    if (maat.b === "el" || maat.b === "tl") {
+      // Bij een artikel per liter volstaat het volume; per kilo is het gewicht
+      // uit de tabel nodig (onbekend ingredient: 15 gram per eetlepel).
+      if (pb.b === "l") hoeveel = (maat.n * ML_PER_LEPEL[maat.b]) / 1000;
+      else if (pb.b === "kg") {
+        const gEl = maatGram(rij, "el") || 15;
+        hoeveel = (maat.n * (maat.b === "el" ? gEl : gEl / 3)) / 1000;
+      } else return null;
+    } else if (maat.b === "cm") {
+      const gCm = maatGram(rij, "cm");
+      if (gCm === null || (pb.b !== "kg" && pb.b !== "l")) return null;
+      hoeveel = (maat.n * gCm) / 1000;
+    } else if (maat.b === "st") {
+      const gSt = maatGram(rij, "stuk");
+      if (gSt !== null && (pb.b === "kg" || pb.b === "l")) hoeveel = (maat.n * gSt) / 1000;
+      // "1000" zonder eenheid bij een artikel per kilo of liter: dat zijn grammen of milliliters.
+      else if (maat.vaag && (pb.b === "kg" || pb.b === "l") && maat.n >= 20) hoeveel = maat.n / 1000;
+      else return null;
+    } else return null;
+  }
+  return pb.prijs * hoeveel;
+};
 // Kostprijs van een ingredient: handmatig ingevuld wint, anders uit de prijslijst.
 const ingKost = (ing) => {
   const hand = eurNum(ing && ing.cost);
@@ -4616,32 +4642,9 @@ const ingKost = (ing) => {
   const art = ing.artikelCode ? (PRIJSLIJST.arts.find((a) => a.code === ing.artikelCode) || null) : zoekArtikel(ing.item);
   const pb = artikelPerBasis(art);
   const maat = parseMaat(ing.amount);
-  if (!art || !pb || !maat) return { bedrag: null, auto: false, artikel: art };
-  const niks = { bedrag: null, auto: false, artikel: art };
-  let hoeveel = maat.n;
-  if (maat.b !== pb.b) {
-    const rij = maatVoor(ing.item);
-    if (maat.b === "el" || maat.b === "tl") {
-      // Lepels: bij een artikel per liter volstaat het volume, bij kilo's is het
-      // gewicht uit de tabel nodig (onbekend ingredient: 15 gram per eetlepel).
-      if (pb.b === "l") hoeveel = (maat.n * ML_PER_LEPEL[maat.b]) / 1000;
-      else if (pb.b === "kg") {
-        const gEl = maatGram(rij, "el") || 15;
-        hoeveel = (maat.n * (maat.b === "el" ? gEl : gEl / 3)) / 1000;
-      } else return niks;
-    } else if (maat.b === "cm") {
-      const gCm = maatGram(rij, "cm");
-      if (gCm === null || (pb.b !== "kg" && pb.b !== "l")) return niks;
-      hoeveel = (maat.n * gCm) / 1000;
-    } else if (maat.b === "st") {
-      const gSt = maatGram(rij, "stuk");
-      if (gSt !== null && (pb.b === "kg" || pb.b === "l")) hoeveel = (maat.n * gSt) / 1000;
-      // "1000" zonder eenheid bij een artikel per kilo of liter: dat zijn grammen of milliliters.
-      else if (maat.vaag && (pb.b === "kg" || pb.b === "l") && maat.n >= 20) hoeveel = maat.n / 1000;
-      else return niks;
-    } else return niks;
-  }
-  return { bedrag: pb.prijs * hoeveel, auto: true, artikel: art };
+  if (!art || !pb) return { bedrag: null, auto: false, artikel: art };
+  const bedrag = kostUitBasis(pb, ing.item, ing.amount);
+  return bedrag === null ? { bedrag: null, auto: false, artikel: art } : { bedrag, auto: true, artikel: art };
 };
 const ingKostBedrag = (ing) => ingKost(ing).bedrag;
 const receptIngTotaal = (recipe) => {
@@ -4657,9 +4660,22 @@ const receptKost = (recipe) => {
   return t.geprijsd ? t.som : null;
 };
 // Kostprijs van een assortimentsitem en van een heel product.
+// Een los ingredient onder een item: prijs per kilo/liter/stuk maal de hoeveelheid.
+const prodIngKost = (g) => {
+  const p = eurNum(g && g.perPrijs);
+  if (p === null) return null;
+  return kostUitBasis({ prijs: p, b: (g && g.perEenheid) || "kg" }, g && g.naam, g && g.hoeveel);
+};
+const itemIngTotaal = (it) => {
+  const b = ((it && it.ings) || []).map(prodIngKost).filter((x) => x !== null);
+  return b.length ? b.reduce((a, c) => a + c, 0) : null;
+};
+// Handmatig ingevuld wint, daarna de ingredienten van het item, dan het recept.
 const itemKostVan = (it, recipeById) => {
   const hand = eurNum(it && it.cost);
   if (hand !== null) return hand;
+  const uitIngs = itemIngTotaal(it);
+  if (uitIngs !== null) return uitIngs;
   if (it && it.recipeId && recipeById) { const r = recipeById(it.recipeId); return r ? receptKost(r) : null; }
   return null;
 };
@@ -4693,112 +4709,115 @@ function printAssortimentProduct(p, recipeById) {
     "</body></html>");
 }
 
-// Eén regel in de inkooplijst: prijs bekijken, aanpassen en er een opmerking bij zetten.
-function ArtikelRij({ a, onUpdate, onDelete }) {
-  const [open, setOpen] = useState(false);
+// Een artikel bewerken — hetzelfde formulier voor een ingelezen leveranciersartikel
+// en voor een ingrediënt uit de recepten waar nog geen prijs bij hoort.
+function ArtikelForm({ a, nieuw, leveranciers, catsPerLev, onSave, onSluit }) {
+  const [naam, setNaam] = useState(a.omschrijving || "");
+  const [lev, setLev] = useState(a.leverancier || leveranciers[0] || "Eigen prijzen");
+  const [levNieuw, setLevNieuw] = useState("");
+  const [cat, setCat] = useState(a.categorie || "Overig");
+  const [catNieuw, setCatNieuw] = useState("");
+  const [inhoud, setInhoud] = useState(a.inhoud || "1 kg");
   const [prijs, setPrijs] = useState(a.prijs == null ? "" : String(a.prijs));
-  const [ppe, setPpe] = useState(a.ppe == null ? "" : String(a.ppe));
+  const [per, setPer] = useState(() => { const pb = artikelPerBasis(a); return pb ? pb.prijs.toFixed(2) : ""; });
   const [opm, setOpm] = useState(a.opmerking || "");
+  const maat = parseMaat(inhoud);
+  const basis = maat ? maat.b : "kg";
+  const twee = (n) => (n === null || !isFinite(n) ? "" : n.toFixed(2));
+  // Prijs en prijs per kilo/liter/stuk houden elkaar bij.
+  const zetPrijs = (v) => { setPrijs(v); const p = eurNum(v); setPer(maat && maat.n > 0 && p !== null ? twee(p / maat.n) : ""); };
+  const zetPer = (v) => { setPer(v); const q = eurNum(v); setPrijs(maat && maat.n > 0 && q !== null ? twee(q * maat.n) : ""); };
+  const zetInhoud = (v) => { setInhoud(v); const m = parseMaat(v), p = eurNum(prijs); setPer(m && m.n > 0 && p !== null ? twee(p / m.n) : ""); };
+  const levKeuze = levNieuw.trim() || lev;
+  const cats = catsPerLev[levKeuze] || [];
+  const bewaar = () => {
+    if (!naam.trim()) { alert("Vul een naam in."); return; }
+    if (!maat) { alert("Vul een inkoopeenheid in die de app kan lezen, bijvoorbeeld 1 kg, 5 l of 10 st."); return; }
+    if (eurNum(prijs) === null) { alert("Vul een prijs in."); return; }
+    onSave({
+      ...a,
+      code: nieuw ? "eigen:" + zonderAccent(naam).toLowerCase().trim() : a.code,
+      omschrijving: naam.trim(), leverancier: levKeuze || "Eigen prijzen", categorie: catNieuw.trim() || cat || "Overig",
+      inhoud: inhoud.trim(), prijs: eurNum(prijs), ppe: eurNum(per), opmerking: opm.trim(),
+    });
+    onSluit();
+  };
+  const veld = "input px-2.5 py-2 w-full text-sm";
+  const kop = "text-[11.5px] font-bold ink mb-1";
+  return (
+    <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid " + T.line }}>
+      <div className="mb-2">
+        <div className={kop}>Naam</div>
+        <input className={veld} value={naam} onChange={(e) => setNaam(e.target.value)} placeholder="bv. Aardbeien" />
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div>
+          <div className={kop}>Leverancier</div>
+          <AppSelect value={levNieuw ? "__nieuw" : lev} onChange={(v) => { if (v === "__nieuw") setLevNieuw(" "); else { setLevNieuw(""); setLev(v); } }}
+            options={[...leveranciers.map((x) => ({ value: x, label: x })), { value: "__nieuw", label: "Nieuwe leverancier…" }]}
+            className={veld} placeholder="Kies" />
+          {levNieuw !== "" && <input className={veld + " mt-1"} value={levNieuw.trim()} onChange={(e) => setLevNieuw(e.target.value || " ")} placeholder="Naam leverancier" />}
+        </div>
+        <div>
+          <div className={kop}>Categorie</div>
+          <AppSelect value={catNieuw ? "__nieuw" : cat} onChange={(v) => { if (v === "__nieuw") setCatNieuw(" "); else { setCatNieuw(""); setCat(v); } }}
+            options={[...(cats.length ? cats : [cat || "Overig"]).map((x) => ({ value: x, label: x })), { value: "__nieuw", label: "Nieuwe categorie…" }]}
+            className={veld} placeholder="Kies" />
+          {catNieuw !== "" && <input className={veld + " mt-1"} value={catNieuw.trim()} onChange={(e) => setCatNieuw(e.target.value || " ")} placeholder="Naam categorie" />}
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        <div>
+          <div className={kop}>Inkoopeenheid</div>
+          <input className={veld} value={inhoud} onChange={(e) => zetInhoud(e.target.value)} placeholder="1 kg" />
+        </div>
+        <div>
+          <div className={kop}>Prijs (€)</div>
+          <input type="text" inputMode="decimal" className={veld} value={prijs} onChange={(e) => zetPrijs(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="12,50" />
+        </div>
+        <div>
+          <div className={kop}>Per {basis} (€)</div>
+          <input type="text" inputMode="decimal" className={veld} value={per} onChange={(e) => zetPer(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="—" />
+        </div>
+      </div>
+      <div className="mb-2">
+        <div className={kop}>Opmerking</div>
+        <textarea rows={2} className={veld} value={opm} onChange={(e) => setOpm(e.target.value)} placeholder="bv. alleen op bestelling, of komt uit eigen tuin" />
+      </div>
+      <div className="flex justify-end">
+        <button onClick={bewaar} className="btnp ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Bewaren</button>
+      </div>
+    </div>
+  );
+}
+
+// Eén regel in de lijst: een ingelezen artikel of een ingrediënt zonder prijs.
+function ArtikelRegel({ a, nieuw, sub, leveranciers, catsPerLev, onSave, onDelete }) {
+  const [open, setOpen] = useState(false);
   const pb = artikelPerBasis(a);
-  const bewaar = () => { onUpdate({ ...a, prijs: eurNum(prijs), ppe: eurNum(ppe), opmerking: opm.trim() }); setOpen(false); };
   return (
     <div className="card px-3 py-2.5">
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-sm ink font-medium truncate">{a.omschrijving}</div>
-          <div className="text-[12px] mute truncate">{a.inhoud ? "Inkoopeenheid: " + a.inhoud : ""}</div>
+          <div className="text-[12px] mute truncate">{sub || (a.inhoud ? "Inkoopeenheid: " + a.inhoud : "")}</div>
           {a.opmerking && !open && <div className="text-[12px] mt-0.5" style={{ color: "#6a5326" }}>{a.opmerking}</div>}
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-sm ink font-semibold">{eur(a.prijs)}</div>
-          <div className="text-[12px] mute">{pb ? eur(pb.prijs) + " p/" + pb.b : a.ppe != null ? eur(a.ppe) + " p/e" : ""}</div>
-        </div>
-        <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Prijs en opmerking"><Pencil size={15} /></button>
-        <button onClick={() => { if (window.confirm('"' + a.omschrijving + '" uit de lijst verwijderen?')) onDelete(a.code); }} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={15} /></button>
+        {!nieuw && (
+          <div className="text-right shrink-0">
+            <div className="text-sm ink font-semibold">{eur(a.prijs)}</div>
+            <div className="text-[12px] mute">{pb ? eur(pb.prijs) + " p/" + pb.b : ""}</div>
+          </div>
+        )}
+        <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title={nieuw ? "Prijs invullen" : "Bewerken"}><Pencil size={15} /></button>
+        {!nieuw && <button onClick={() => { if (window.confirm('"' + a.omschrijving + '" uit de lijst verwijderen?')) onDelete(a.code); }} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={15} /></button>}
       </div>
-      {open && (
-        <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid " + T.line }}>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <div>
-              <div className="text-[11.5px] font-bold ink mb-1">Prijs (€)</div>
-              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={prijs} onChange={(e) => setPrijs(e.target.value.replace(/[^0-9.,]/g, ""))} />
-            </div>
-            <div>
-              <div className="text-[11.5px] font-bold ink mb-1">Prijs per eenheid (€)</div>
-              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={ppe} onChange={(e) => setPpe(e.target.value.replace(/[^0-9.,]/g, ""))} />
-            </div>
-          </div>
-          <div className="mb-2">
-            <div className="text-[11.5px] font-bold ink mb-1">Opmerking</div>
-            <textarea rows={2} className="input px-2.5 py-2 w-full text-sm" value={opm} onChange={(e) => setOpm(e.target.value)} placeholder="bv. alleen op bestelling, of komt uit eigen tuin" />
-          </div>
-          <div className="flex justify-end">
-            <button onClick={bewaar} className="btnp ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Bewaren</button>
-          </div>
-          <p className="text-[11px] mute mt-1.5">Bewaren deelt prijs en opmerking met het team, en rekent meteen door in de recepten.</p>
-        </div>
-      )}
+      {open && <ArtikelForm a={a} nieuw={nieuw} leveranciers={leveranciers} catsPerLev={catsPerLev} onSave={onSave} onSluit={() => setOpen(false)} />}
     </div>
   );
 }
 
-// Een ingredient uit de recepten waar nog geen inkoopprijs bij hoort. Je geeft
-// een inkoopeenheid en een prijs; daarmee wordt het een eigen artikel dat
-// voortaan gewoon meerekent in alle recepten.
-function OntbrekendRij({ item, onSave }) {
-  const [open, setOpen] = useState(false);
-  const [inh, setInh] = useState("1 kg");
-  const [prijs, setPrijs] = useState("");
-  const [opm, setOpm] = useState("");
-  const maat = parseMaat(inh);
-  const p = eurNum(prijs);
-  const perBasis = maat && maat.n > 0 && p !== null ? { prijs: p / maat.n, b: maat.b } : null;
-  const bewaar = () => {
-    if (p === null) { alert("Vul een prijs in."); return; }
-    if (!maat) { alert("Vul een inkoopeenheid in die de app kan lezen, bijvoorbeeld 1 kg, 5 l of 10 st."); return; }
-    onSave({ naam: item.naam, inhoud: inh.trim(), prijs: p, opmerking: opm.trim() });
-    setOpen(false);
-  };
-  return (
-    <div className="card px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-sm ink font-medium truncate">{item.naam}</div>
-          <div className="text-[12px] mute truncate">
-            {item.aantal}× in de recepten{item.voorbeeld ? " · bv. " + item.voorbeeld : ""}
-            {item.artikel ? " · eenheid niet om te rekenen" : " · geen artikel gevonden"}
-          </div>
-        </div>
-        <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Prijs invullen"><Pencil size={15} /></button>
-      </div>
-      {open && (
-        <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid " + T.line }}>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <div>
-              <div className="text-[11.5px] font-bold ink mb-1">Inkoopeenheid</div>
-              <input className="input px-2.5 py-2 w-full text-sm" value={inh} onChange={(e) => setInh(e.target.value)} placeholder="bv. 1 kg, 5 l, 10 st" />
-            </div>
-            <div>
-              <div className="text-[11.5px] font-bold ink mb-1">Prijs daarvoor (€)</div>
-              <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={prijs} onChange={(e) => setPrijs(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 12,50" />
-            </div>
-          </div>
-          <div className="mb-2">
-            <div className="text-[11.5px] font-bold ink mb-1">Opmerking</div>
-            <textarea rows={2} className="input px-2.5 py-2 w-full text-sm" value={opm} onChange={(e) => setOpm(e.target.value)} placeholder="bv. uit eigen tuin, prijs geschat" />
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12px] mute">{perBasis ? "Dat is " + eur(perBasis.prijs) + " per " + perBasis.b : "Vul eenheid en prijs in"}</span>
-            <button onClick={bewaar} className="btnp ff shrink-0 rounded-lg text-xs font-semibold px-3 py-2.5">Bewaren</button>
-          </div>
-          <p className="text-[11px] mute mt-1.5">Komt onder "Eigen prijzen" in de lijst te staan en rekent meteen mee in elk recept met dit ingrediënt.</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenArtikel, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const [openLev, setOpenLev] = useState({});
@@ -4838,6 +4857,9 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenA
     perLev[lev][cat].push(a);
   }
   const levs = Object.keys(perLev).sort((x, y) => x.localeCompare(y, "nl"));
+  const levKeuzes = levs.length ? levs : ["Eigen prijzen"];
+  const catsPerLev = {};
+  for (const l of levs) catsPerLev[l] = Object.keys(perLev[l]).sort((x, y) => x.localeCompare(y, "nl"));
   return (
     <div>
       <div className="rounded-xl p-3 mb-4 text-[13px]" style={{ background: "#eef2e6", border: "1px solid #d5ddc6", color: "#44502f" }}>
@@ -4892,7 +4914,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenA
           onOk={(naam) => { onHernoem(hernoem.soort, hernoem.oud, naam, hernoem.leverancier); setHernoem(null); }} />
       )}
       {q.trim().length >= 2 ? (
-        <div className="space-y-1.5">{hits.map((a) => <ArtikelRij key={a.code} a={a} onUpdate={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>
+        <div className="space-y-1.5">{hits.map((a) => <ArtikelRegel key={a.code} a={a} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>
       ) : (
         <div className="space-y-2">
           {levs.map((lev) => {
@@ -4927,7 +4949,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenA
                             </button>
                             <button onClick={() => setHernoem({ soort: "cat", oud: cat, leverancier: lev })} className="ff shrink-0 hover:opacity-60 p-1.5" title="Categorie hernoemen"><Pencil size={14} /></button>
                           </div>
-                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRij key={a.code} a={a} onUpdate={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>}
+                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRegel key={a.code} a={a} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>}
                         </div>
                       );
                     })}
@@ -4942,7 +4964,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenA
       <div className="flex items-center justify-between gap-2 mt-7 mb-1.5">
         <span className="text-sm font-bold ink">Ingrediënten zonder prijs <span className="mute font-normal">· {ontbrekend.length}</span></span>
       </div>
-      <p className="text-[12px] mute mb-2">Deze staan wel in de recepten, maar de app vindt er geen inkoopprijs bij. Vul een inkoopeenheid en prijs in — dan telt het ingrediënt vanaf dat moment overal mee. Staat er "eenheid niet om te rekenen", dan is het artikel wél gevonden maar weet de app niet wat een stuk weegt; dat vul je aan in de tabel onder Werkwijze, of je zet hier een eigen prijs per stuk.</p>
+      <p className="text-[12px] mute mb-2">Deze staan wel in de recepten, maar er is geen inkoopprijs bij te vinden. Vul leverancier, eenheid en prijs in — dan telt het ingrediënt vanaf dat moment overal mee. Staat er "eenheid niet om te rekenen", dan is het artikel wél gevonden maar weet de app niet wat een stuk weegt; dat vul je aan in de tabel onder Werkwijze, of je zet hier een eigen prijs per stuk.</p>
       {ontbrekend.length === 0 ? (
         <div className="card p-4 text-sm mute">Elk ingrediënt uit de recepten heeft een prijs.</div>
       ) : (
@@ -4954,7 +4976,13 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenA
             </div>
           )}
           <div className="space-y-1.5">
-            {ontbreekToon.map((x) => <OntbrekendRij key={x.naam.toLowerCase()} item={x} onSave={onEigenArtikel} />)}
+            {ontbreekToon.map((x) => (
+              <ArtikelRegel key={x.naam.toLowerCase()} nieuw
+                a={{ code: "eigen:" + zonderAccent(x.naam).toLowerCase().trim(), omschrijving: x.naam, inhoud: "1 kg", prijs: null, ppe: null, leverancier: "Eigen prijzen", categorie: "Handmatig", opmerking: "" }}
+                sub={x.aantal + "× in de recepten" + (x.voorbeeld ? " · bv. " + x.voorbeeld : "") + (x.artikel ? " · eenheid niet om te rekenen" : " · geen artikel gevonden")}
+                leveranciers={[...levKeuzes.filter((l) => l !== "Eigen prijzen"), "Eigen prijzen"]} catsPerLev={catsPerLev}
+                onSave={onUpdateArtikel} onDelete={() => {}} />
+            ))}
           </div>
           {ontbreekHits.length > ontbreekToon.length && (
             <button onClick={() => setAlleOntbrekend(true)} className="ff mt-2 text-[13px] font-medium acc underline hover:opacity-70">Toon alle {ontbreekHits.length}</button>
@@ -4965,8 +4993,84 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onEigenA
   );
 }
 
-const normItem = (x) => (typeof x === "string" ? { text: x, recipeId: null, cost: "" } : { text: x.text || "", recipeId: x.recipeId || null, cost: x.cost != null ? String(x.cost) : "" });
-function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, onSave }) {
+const normProdIng = (x) => ({
+  naam: (x && x.naam) || "", artikelCode: (x && x.artikelCode) || null,
+  perPrijs: x && x.perPrijs != null ? String(x.perPrijs) : "",
+  perEenheid: (x && x.perEenheid) || "kg",
+  hoeveel: (x && x.hoeveel) != null ? String(x.hoeveel) : "",
+});
+const normItem = (x) => (typeof x === "string"
+  ? { text: x, recipeId: null, cost: "", ings: [] }
+  : { text: x.text || "", recipeId: x.recipeId || null, cost: x.cost != null ? String(x.cost) : "", ings: Array.isArray(x.ings) ? x.ings.map(normProdIng) : [] });
+// Ingrediënten onder een item van een product: kies een artikel uit de prijslijst
+// (of typ er zelf een), vul in hoeveel je nodig hebt en de app rekent het uit.
+function ItemIngredienten({ ings, bdArtikelen, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [sug, setSug] = useState(-1);
+  const zet = (i, patch) => onChange(ings.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  const bedragen = ings.map(prodIngKost);
+  const som = bedragen.filter((x) => x !== null).reduce((a, b) => a + b, 0);
+  const veld = "input px-2.5 py-2 text-sm";
+  const kies = (i, a) => {
+    const pb = artikelPerBasis(a);
+    zet(i, { naam: a.omschrijving, artikelCode: a.code, perPrijs: pb ? pb.prijs.toFixed(2) : "", perEenheid: pb ? pb.b : "kg" });
+    setSug(-1);
+  };
+  return (
+    <div className="mt-1 mb-1 ml-1">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium mute hover:opacity-70">
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />} Ingrediënten{ings.length ? " · " + ings.length : ""}{bedragen.some((x) => x !== null) ? " · " + eur(som) : ""}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {ings.map((g, i) => {
+            const hits = sug === i && String(g.naam || "").trim().length >= 2
+              ? bdArtikelen.filter((a) => strictMatchAny([a.omschrijving], g.naam)).slice(0, 6) : [];
+            const bedrag = bedragen[i];
+            return (
+              <div key={i} className="card p-2">
+                <div className="flex gap-2 items-center">
+                  <div className="relative flex-1 min-w-0">
+                    <input className={veld + " w-full"} value={g.naam} placeholder="bv. aardbeien"
+                      onChange={(e) => { zet(i, { naam: e.target.value, artikelCode: null }); setSug(i); }}
+                      onFocus={() => setSug(i)} onBlur={() => setTimeout(() => setSug((r) => (r === i ? -1 : r)), 120)} />
+                    {hits.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "13rem", overflowY: "auto" }}>
+                        {hits.map((a) => { const pb = artikelPerBasis(a); return (
+                          <button key={a.code} type="button" onMouseDown={(e) => { e.preventDefault(); kies(i, a); }} className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
+                            {a.omschrijving} <span className="mute">· {pb ? eur(pb.prijs) + " p/" + pb.b : "geen prijs"}</span>
+                          </button>
+                        ); })}
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => onChange(ings.filter((_, j) => j !== i))} className="ff shrink-0 mute hover:opacity-60 px-1"><Trash2 size={15} /></button>
+                </div>
+                <div className="flex gap-2 items-center mt-1.5">
+                  <div className="relative" style={{ width: "5.5rem" }}>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] mute">€</span>
+                    <input type="text" inputMode="decimal" className={veld + " w-full pl-5"} value={g.perPrijs} placeholder="0,00"
+                      onChange={(e) => zet(i, { perPrijs: e.target.value.replace(/[^0-9.,]/g, "") })} title="Prijs per kilo, liter of stuk" />
+                  </div>
+                  <AppSelect value={g.perEenheid || "kg"} onChange={(v) => zet(i, { perEenheid: v })}
+                    options={[{ value: "kg", label: "per kg" }, { value: "l", label: "per l" }, { value: "st", label: "per st" }]}
+                    className={veld} style={{ width: "5.5rem" }} />
+                  <input className={veld + " flex-1 min-w-0"} value={g.hoeveel} placeholder="nodig, bv. 300 gr"
+                    onChange={(e) => zet(i, { hoeveel: e.target.value })} />
+                  <span className="text-sm font-semibold shrink-0 text-right" style={{ width: "4.5rem", color: "#44502f" }}>{bedrag !== null ? eur(bedrag) : "—"}</span>
+                </div>
+              </div>
+            );
+          })}
+          <button type="button" onClick={() => onChange([...ings, normProdIng({})])} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Plus size={13} /> Ingrediënt toevoegen</button>
+          {bedragen.some((x) => x !== null) && <div className="text-[12.5px] ink">Samen: <span className="font-semibold">{eur(som)}</span>{bedragen.some((x) => x === null) ? <span className="mute"> · {bedragen.filter((x) => x === null).length} zonder prijs</span> : null}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen, onCancel, onSave }) {
   const [name, setName] = useState(editing?.name || "");
   const [fromP, setFromP] = useState(editing?.fromP || "");
   const [toP, setToP] = useState(editing?.toP || "");
@@ -5001,7 +5105,10 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
   };
   const doSave = () => {
     if (!name.trim()) { alert("Vul een naam in."); return; }
-    onSave({ id: editing?.id, name: name.trim(), fromP: fromP.trim(), toP: toP.trim(), cost: String(cost).trim(), price: String(price).trim(), notes: notes.trim(), items: items.map((x) => ({ text: x.text.trim(), recipeId: x.recipeId || null, cost: String(x.cost || "").trim() })).filter((x) => x.text) });
+    onSave({ id: editing?.id, name: name.trim(), fromP: fromP.trim(), toP: toP.trim(), cost: String(cost).trim(), price: String(price).trim(), notes: notes.trim(), items: items.map((x) => ({
+      text: x.text.trim(), recipeId: x.recipeId || null, cost: String(x.cost || "").trim(),
+      ings: (x.ings || []).filter((g) => String(g.naam || "").trim()).map((g) => ({ naam: g.naam.trim(), artikelCode: g.artikelCode || null, perPrijs: String(g.perPrijs || "").trim(), perEenheid: g.perEenheid || "kg", hoeveel: String(g.hoeveel || "").trim() })),
+    })).filter((x) => x.text) });
   };
   const inputCls = "input px-3.5 py-2.5 w-full text-[15px]";
   return (
@@ -5042,7 +5149,8 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
           const sug = sugRow === i && !it.recipeId && it.text.trim().length >= 2
             ? (recipes || []).filter((r) => softMatchAny([r.name], it.text)).slice(0, 5) : [];
           return (
-            <div key={i} className="flex gap-2 items-center">
+            <div key={i}>
+            <div className="flex gap-2 items-center">
               <div className="relative flex-1 min-w-0">
                 <input data-as-item={i} className={inputCls + " w-full"} value={it.text}
                   onChange={(e) => { setItem(i, { text: e.target.value, recipeId: null }); setSugRow(i); }}
@@ -5063,11 +5171,16 @@ function AssortimentForm({ editing, producten, recipes, recipeById, onCancel, on
                 )}
                 {it.recipeId && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: "#eef2e6", color: "#44502f" }}>recept</span>}
               </div>
-              <input type="text" inputMode="decimal" className={inputCls} style={{ width: "5.5rem", flex: "0 0 5.5rem" }} value={it.cost}
-                onChange={(e) => setItem(i, { cost: e.target.value.replace(/[^0-9.,]/g, "") })}
-                placeholder={(() => { const b = it.recipeId ? itemBedrag({ ...it, cost: "" }) : null; return b !== null ? b.toFixed(2).replace(".", ",") : "€"; })()}
-                title="Kostprijs van dit item — leeg laten neemt de prijs van het recept over" />
+              <div className="relative shrink-0" style={{ width: "6.25rem" }}>
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm mute">€</span>
+                <input type="text" inputMode="decimal" className={inputCls + " pl-6"} value={it.cost}
+                  onChange={(e) => setItem(i, { cost: e.target.value.replace(/[^0-9.,]/g, "") })}
+                  placeholder={(() => { const b = itemBedrag({ ...it, cost: "" }); return b !== null ? b.toFixed(2).replace(".", ",") : "0,00"; })()}
+                  title="Kostprijs van dit item — leeg laten rekent met de ingrediënten of het recept" />
+              </div>
               {items.length > 1 && <button onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>}
+            </div>
+            <ItemIngredienten ings={it.ings || []} bdArtikelen={bdArtikelen} onChange={(ings) => setItem(i, { ings })} />
             </div>
           );
         })}
