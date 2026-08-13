@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-13h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-13i"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2797,6 +2797,7 @@ function App() {
   // Chef-modus: alleen deze sessie (React-state, dus weg na verversen).
   const [chefMode, setChefMode] = useState(false);
   const [assortiment, setAssortiment] = useState([]);
+  const [calcItems, setCalcItems] = useState([]); // gedeelde items voor de calculaties
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
   // De prijsmotor leest de artikelen uit een module-variabele; hier bijgewerkt.
@@ -2826,6 +2827,24 @@ function App() {
       if (error) flash("Alleen lokaal bewaard — draai eerst de assortiment-SQL in Supabase");
     }
     return it.id;
+  };
+  const saveCalcItem = async (item) => {
+    const it = normGedeeldItem({ ...item, id: item.id || "it" + Date.now() });
+    setCalcItems((xs) => { const i = xs.findIndex((x) => x.id === it.id); return i >= 0 ? xs.map((x) => (x.id === it.id ? it : x)) : [...xs, it]; });
+    if (live) {
+      const { error } = await supabase.from("calculatie_items").upsert({ id: it.id, data: it, updated_by: user?.naam || "team", updated_at: new Date().toISOString() });
+      if (error) flash("Alleen lokaal bewaard — draai eerst de calculatie_items-SQL in Supabase");
+    }
+    return it.id;
+  };
+  const deleteCalcItem = async (id) => {
+    setCalcItems((xs) => xs.filter((x) => x.id !== id));
+    // Het item verdwijnt ook uit de producten waar het in zat.
+    for (const p of assortiment) {
+      if (!(p.items || []).some((x) => x && x.itemId === id)) continue;
+      await saveAssortimentItem({ ...p, items: (p.items || []).filter((x) => !(x && x.itemId === id)) });
+    }
+    if (live) await supabase.from("calculatie_items").delete().eq("id", id);
   };
   // Meerdere producten in een keer inlezen (.json) — bestaande namen worden bijgewerkt.
   const importAssortiment = async (file) => {
@@ -3092,7 +3111,7 @@ function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
-    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs, ass, bda] = await Promise.all([
+    const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs, ass, bda, cit] = await Promise.all([
       supabase.from("recipe_overrides").select("*"),
       supabase.from("recipes_custom").select("*"),
       supabase.from("recipe_endorsements").select("*"),
@@ -3112,6 +3131,7 @@ function App() {
       supabase.from("app_settings").select("*").eq("key", "recipe_categories"),
       supabase.from("assortiment").select("*"),
       supabase.from("bd_artikelen").select("*"),
+      supabase.from("calculatie_items").select("*"),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -3147,6 +3167,7 @@ function App() {
     const csRow = (cs && cs.data && cs.data[0]) || null;
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
+    if (cit && cit.data) setCalcItems(cit.data.map((r) => ({ ...(r.data || {}), id: r.id })));
     if (bda && bda.data) setBdArtikelen(pasOverlayToe(bda.data.map((r) => ({
       code: r.code, omschrijving: r.omschrijving || "", inhoud: r.inhoud || "",
       prijs: r.prijs === null || r.prijs === undefined ? null : Number(r.prijs),
@@ -3285,6 +3306,7 @@ function App() {
   const recipeById = (id) => recipes.find((r) => r.id === id);
   // Recepten die naar elkaar verwijzen (kruidenrub in buikspek) rekenen door.
   React.useMemo(() => zetRecepten(recipes), [recipes]);
+  React.useMemo(() => zetItems(calcItems), [calcItems]);
   const dishById = (id) => dishes.find((d) => d.id === id);
   const usageCount = (id) => dishes.filter((d) => d.recipeIds.includes(id)).length;
   const variationsOf = (id) => recipes.filter((r) => r.baseId === id);
@@ -4210,7 +4232,11 @@ function App() {
               recipeById={recipeById} recipes={recipes}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
               onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep}
-              onImportProducten={importAssortiment} />}
+              onImportProducten={importAssortiment}
+              calcItems={calcItems} dishes={dishes} dishById={dishById}
+              onNewItem={() => push({ screen: "calcItemForm", editing: null })}
+              onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
+              onDeleteItem={deleteCalcItem} />}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
               focusKey={techFocus} onFocusDone={() => setTechFocus(null)}
               werkDocs={mergedWerkDocs} fermentRows={fermentRows} tableRows={techTableRows}
@@ -4266,8 +4292,13 @@ function App() {
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "assortimentForm" && chefMode && <AssortimentForm
           editing={current.editing ? assortiment.find((x) => x.id === current.editing) : null}
-          producten={assortiment} recipes={recipes} recipeById={recipeById} bdArtikelen={bdArtikelen} onCancel={goBack}
+          producten={assortiment} recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById}
+          calcItems={calcItems} bdArtikelen={bdArtikelen} onCancel={goBack}
           onSave={(item) => { saveAssortimentItem(item); goBack(); }} />}
+        {current.screen === "calcItemForm" && chefMode && <CalcItemForm
+          editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
+          recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
+          onSave={(item) => { saveCalcItem(item); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
@@ -4464,6 +4495,58 @@ function ArtikelKiezer({ zoek, huidig, onKies, onSluit }) {
         </div>
         <div className="flex justify-between gap-2 mt-3">
           <button onClick={() => onKies(null)} className="ff rounded-lg px-3 py-2 text-sm font-medium acc hover:opacity-70" style={{ border: "1px solid " + T.line }}>Automatisch zoeken</button>
+          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Waar komt deze kostprijs vandaan? Toont de bron en de rekensom.
+function PrijsUitleg({ ing, onSluit }) {
+  const hand = eurNum(ing && ing.cost);
+  const kk = ingKost(ing);
+  const sub = subRecept(ing);
+  const art = kk.artikel;
+  const pb = artikelPerBasis(art);
+  const maat = parseMaat(ing && ing.amount);
+  const regels = [];
+  if (hand !== null) {
+    regels.push(["Handmatig ingevuld", eur(hand)]);
+    regels.push(["Leeg laten", "dan rekent de app zelf"]);
+  } else if (sub) {
+    const batch = receptKost(sub), porties = receptPorties(sub), opb = receptOpbrengst(sub);
+    regels.push(["Uit recept", sub.name]);
+    regels.push(["Batch", batch === null ? "geen prijs" : eur(batch)]);
+    regels.push(["Opbrengst", opb ? opb.n + " " + opb.b : "onbekend"]);
+    if (porties) regels.push(["Porties", porties + " · " + eur(batch === null ? null : batch / porties) + " per portie"]);
+    regels.push(["Nodig", String(ing.amount || "hele batch")]);
+  } else if (art) {
+    regels.push(["Artikel", art.omschrijving]);
+    if (art.leverancier) regels.push(["Leverancier", art.leverancier]);
+    regels.push(["Inkoop", [art.inhoud, eur(art.prijs)].filter(Boolean).join(" · ")]);
+    regels.push(["Per eenheid", pb ? eur(pb.prijs) + " per " + pb.b : "niet te bepalen"]);
+    regels.push(["Nodig", String(ing.amount || "—") + (maat && pb && maat.b !== pb.b ? " · omgerekend via de gewichtentabel" : "")]);
+  } else {
+    regels.push(["Geen artikel gevonden", "koppel er zelf een, of vul de prijs handmatig in"]);
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight">{ing && ing.item ? ing.item : "Kostprijs"}</div>
+        <div className="mt-3 space-y-1.5">
+          {regels.map(([k, v], i) => (
+            <div key={i} className="flex items-start justify-between gap-3 text-[13px]">
+              <span className="mute shrink-0">{k}</span>
+              <span className="ink text-right">{v}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-3 mt-3 pt-3" style={{ borderTop: "1px solid " + T.line }}>
+          <span className="text-sm font-semibold ink">Kostprijs</span>
+          <span className="text-sm font-bold" style={{ color: "#44502f" }}>{kk.bedrag !== null ? eur(kk.bedrag) : "—"}</span>
+        </div>
+        <div className="flex justify-end mt-4">
           <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
         </div>
       </div>
@@ -4801,7 +4884,9 @@ const ingKost = (ing, diepte) => {
     const bedrag = kostUitBasis({ prijs: batch / opb.n, b: opb.b }, ing.item, ing.amount);
     return bedrag === null ? leeg : { bedrag, auto: true, artikel: null, recept: sub };
   }
-  const art = ing.artikelCode ? (PRIJSLIJST.arts.find((a) => a.code === ing.artikelCode) || null) : zoekArtikel(ing.item);
+  // Een vastgepind artikel wint; is dat verwijderd, dan zoekt de app weer zelf,
+  // zodat een later ingelezen artikel het ingredient alsnog oppikt.
+  const art = (ing.artikelCode ? PRIJSLIJST.arts.find((a) => a.code === ing.artikelCode) : null) || zoekArtikel(ing.item);
   const pb = artikelPerBasis(art);
   const maat = parseMaat(ing.amount);
   if (!art || !pb) return { bedrag: null, auto: false, artikel: art };
@@ -4822,6 +4907,108 @@ const receptKost = (recipe, diepte) => {
   const t = receptIngTotaal(recipe, diepte || 0);
   return t.geprijsd ? t.som : null;
 };
+// ---- Porties ----
+// Een recept levert een batch; porties zeggen voor hoeveel personen dat is.
+// Staat het niet ingevuld, dan leidt de app het af uit de opbrengst en de soort.
+const PORTIE_GRAM = [
+  { woorden: ["soep", "bouillon", "consomme"], n: 0.25, b: "l" },
+  { woorden: ["sap", "smoothie", "drank", "limonade", "shot"], n: 0.2, b: "l" },
+  { woorden: ["saus", "dressing", "spread", "tapenade", "mayonaise", "pesto", "chutney", "jam", "confituur", "vinaigrette", "olie"], n: 0.04, b: "kg" },
+  { woorden: ["creme", "ijs", "sorbet", "mousse", "dessert", "kwark", "yoghurt"], n: 0.05, b: "kg" },
+  { woorden: ["ferment", "zuur", "pickle", "kimchi", "zuurkool", "garnituur", "kruidenrub", "rub", "poeder", "zout"], n: 0.05, b: "kg" },
+  { woorden: ["vlees", "vis", "gehakt", "worst", "kip", "rund", "varken", "zalm", "eiwit"], n: 0.1, b: "kg" },
+  { woorden: ["hoofdgerecht", "stoof", "curry", "pasta", "rijst", "risotto", "lasagne", "ovenschotel"], n: 0.2, b: "kg" },
+];
+const PORTIE_STANDAARD = { n: 0.15, b: "kg" }; // groente en bijgerechten
+const portieMaat = (r) => {
+  const tekst = zonderAccent([r && r.name, r && r.baseName, r && r.category].filter(Boolean).join(" ")).toLowerCase();
+  for (const regel of PORTIE_GRAM) if (regel.woorden.some((w) => tekst.indexOf(w) >= 0)) return regel;
+  return PORTIE_STANDAARD;
+};
+const receptPorties = (r) => {
+  if (!r) return null;
+  const eigen = parseFloat(String(r.portions == null ? "" : r.portions).replace(",", "."));
+  if (!isNaN(eigen) && eigen > 0) return eigen;
+  // "4 porties" staat vaak letterlijk in de opbrengst
+  const tekst = zonderAccent((r.yield || "") + " " + (r.yieldUnit || "")).toLowerCase();
+  const mPort = tekst.match(/(\d+(?:[.,]\d+)?)\s*porti/);
+  if (mPort) { const n = parseFloat(mPort[1].replace(",", ".")); if (n > 0) return n; }
+  const opb = receptOpbrengst(r);
+  if (!opb) return null;
+  if (opb.b === "st") return opb.n > 0 ? opb.n : null; // stuks: een stuk is een portie
+  const maat = portieMaat(r);
+  if (maat.b !== opb.b) return null;
+  const n = opb.n / maat.n;
+  return n > 0 ? Math.max(1, Math.round(n)) : null;
+};
+// Kostprijs van een portie: batchprijs gedeeld door het aantal porties.
+const receptPortieKost = (r, diepte) => {
+  const batch = receptKost(r, diepte);
+  const porties = receptPorties(r);
+  return batch === null || !porties ? null : batch / porties;
+};
+// Een gerecht is een setje recepten met een eigen portie-aantal.
+const gerechtBatch = (d, recipeById) => {
+  const bedragen = ((d && d.recipeIds) || []).map((id) => { const r = recipeById ? recipeById(id) : receptById(id); return r ? receptKost(r) : null; }).filter((x) => x !== null);
+  return bedragen.length ? bedragen.reduce((a, b) => a + b, 0) : null;
+};
+const gerechtPorties = (d, recipeById) => {
+  const eigen = parseFloat(String((d && d.portions) == null ? "" : d.portions).replace(",", "."));
+  if (!isNaN(eigen) && eigen > 0) return eigen;
+  // Zonder eigen aantal: het krappste recept bepaalt hoe ver het gerecht reikt.
+  const ns = ((d && d.recipeIds) || []).map((id) => receptPorties(recipeById ? recipeById(id) : receptById(id))).filter((x) => x);
+  return ns.length ? Math.min(...ns) : null;
+};
+const gerechtPortieKost = (d, recipeById) => {
+  const batch = gerechtBatch(d, recipeById);
+  const porties = gerechtPorties(d, recipeById);
+  return batch === null || !porties ? null : batch / porties;
+};
+
+// ---- Items ----
+// Een item (Sandwich, Soepje) is opgebouwd uit recepten, gerechten en losse
+// ingredienten, en kost een bedrag per persoon. Items zijn herbruikbaar over
+// producten heen; ze staan in een module-variabele zodat elk scherm ze kan lezen.
+let ITEMS = { perId: {} };
+const zetItems = (xs) => { const m = {}; for (const x of xs || []) if (x && x.id) m[x.id] = x; ITEMS = { perId: m }; };
+const itemById = (id) => (id && ITEMS.perId[id]) || null;
+const normRegel = (x) => ({
+  soort: (x && x.soort) || "ingredient", refId: (x && x.refId) || null, naam: (x && x.naam) || "",
+  aantal: x && x.aantal != null && String(x.aantal).trim() !== "" ? String(x.aantal) : "1",
+  perPrijs: x && x.perPrijs != null ? String(x.perPrijs) : "", perEenheid: (x && x.perEenheid) || "kg",
+  hoeveel: x && x.hoeveel != null ? String(x.hoeveel) : "", artikelCode: (x && x.artikelCode) || null,
+});
+const normGedeeldItem = (x) => ({
+  id: (x && x.id) || null, name: (x && x.name) || "",
+  regels: Array.isArray(x && x.regels) ? x.regels.map(normRegel) : [],
+  cost: x && x.cost != null ? String(x.cost) : "", notes: (x && x.notes) || "",
+});
+// Wat een regel per persoon kost.
+const regelKost = (g, recipeById, dishById) => {
+  const aantal = eurNum(g && g.aantal);
+  const maal = aantal === null || aantal <= 0 ? 1 : aantal;
+  if (!g) return null;
+  if (g.soort === "recept") {
+    const r = recipeById ? recipeById(g.refId) : receptById(g.refId);
+    const p = r ? receptPortieKost(r) : null;
+    return p === null ? null : p * maal;
+  }
+  if (g.soort === "gerecht") {
+    const d = dishById ? dishById(g.refId) : null;
+    const p = d ? gerechtPortieKost(d, recipeById) : null;
+    return p === null ? null : p * maal;
+  }
+  const bedrag = prodIngKost(g);
+  return bedrag === null ? null : bedrag * maal;
+};
+// Kostprijs per persoon van een gedeeld item: handmatig wint, anders de regels.
+const gedeeldItemKost = (it, recipeById, dishById) => {
+  const hand = eurNum(it && it.cost);
+  if (hand !== null) return hand;
+  const b = ((it && it.regels) || []).map((g) => regelKost(g, recipeById, dishById)).filter((x) => x !== null);
+  return b.length ? b.reduce((a, c) => a + c, 0) : null;
+};
+
 // Kostprijs van een assortimentsitem en van een heel product.
 // Een los ingredient onder een item: prijs per kilo/liter/stuk maal de hoeveelheid.
 const prodIngKost = (g) => {
@@ -4833,22 +5020,25 @@ const itemIngTotaal = (it) => {
   const b = ((it && it.ings) || []).map(prodIngKost).filter((x) => x !== null);
   return b.length ? b.reduce((a, c) => a + c, 0) : null;
 };
-// Handmatig ingevuld wint, anders de ingredienten onder het item.
-const itemKostVan = (it) => {
+// Handmatig ingevuld wint, dan een gedeeld item, dan de losse ingredienten.
+const itemKostVan = (it, recipeById, dishById) => {
   const hand = eurNum(it && it.cost);
-  return hand !== null ? hand : itemIngTotaal(it);
+  if (hand !== null) return hand;
+  const gedeeld = it && it.itemId ? itemById(it.itemId) : null;
+  if (gedeeld) return gedeeldItemKost(gedeeld, recipeById, dishById);
+  return itemIngTotaal(it);
 };
-const productKost = (p, recipeById) => {
+const productKost = (p, recipeById, dishById) => {
   const hand = eurNum(p && p.cost);
   if (hand !== null) return hand;
-  const bedragen = ((p && p.items) || []).map((x) => itemKostVan(normItem(x))).filter((x) => x !== null);
+  const bedragen = ((p && p.items) || []).map((x) => itemKostVan(normItem(x), recipeById, dishById)).filter((x) => x !== null);
   return bedragen.length ? bedragen.reduce((a, b) => a + b, 0) : null;
 };
 
 function printAssortimentProduct(p, recipeById) {
   const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const k = productKost(p, recipeById), v = eurNum(p.price);
-  const items = (p.items || []).map(normItem).filter((x) => String(x.text).trim()).map((x) => ({ ...x, bedrag: itemKostVan(x) }));
+  const items = (p.items || []).map(normItem).filter((x) => String(x.text).trim()).map((x) => ({ ...x, bedrag: itemKostVan(x, recipeById) }));
   printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.name) + '</title><style>' +
     "@page{size:A4;margin:18mm}body{font-family:Georgia,serif;color:#2c2e24}" +
     "h1{font-size:26pt;margin:0 0 2mm}.sub{color:#6b6d5f;font-size:11pt;margin-bottom:8mm}" +
@@ -4982,7 +5172,7 @@ function ArtikelRegel({ a, nieuw, sub, gebruik, leveranciers, catsPerLev, onSave
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const prodRef = React.useRef(null);
@@ -4990,6 +5180,8 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onImport
   const [openCat, setOpenCat] = useState({});
   const [hernoem, setHernoem] = useState(null); // {soort, oud, leverancier}
   const [openDoel, setOpenDoel] = useState({});
+  const [itemWeg, setItemWeg] = useState(null);
+  const [nieuwArtikel, setNieuwArtikel] = useState(false);
   const [openCat2, setOpenCat2] = useState({});
   const [alleOntbrekend, setAlleOntbrekend] = useState(false);
   const [qOntbreek, setQOntbreek] = useState("");
@@ -5135,8 +5327,41 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onImport
         );
       })()}
 
+      <div className="flex items-center justify-between gap-2 mt-7 mb-1.5">
+        <span className="text-sm font-bold ink">Items <span className="mute font-normal">· {(calcItems || []).length}</span></span>
+        <button onClick={onNewItem} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-1.5"><Plus size={13} /> Nieuw item</button>
+      </div>
+      <p className="text-[12px] mute mb-2">Bouwstenen die je in meerdere producten gebruikt — een sandwich, een soepje. Ze rekenen per persoon met de porties van hun recepten en gerechten.</p>
+      {(calcItems || []).length === 0 ? (
+        <div className="card p-4 text-sm mute">Nog geen items.</div>
+      ) : (
+        <div className="space-y-1.5">
+          {[...calcItems].sort((a, b) => String(a.name).localeCompare(String(b.name), "nl")).map((it) => {
+            const k = gedeeldItemKost(it, recipeById, dishById);
+            const inProducten = producten.filter((p) => (p.items || []).some((x) => x && x.itemId === it.id)).length;
+            return (
+              <div key={it.id} className="card px-3 py-2.5 flex items-center gap-2">
+                <button onClick={() => onEditItem(it.id)} className="ff text-left min-w-0 flex-1">
+                  <div className="text-sm ink font-medium truncate">{it.name}</div>
+                  <div className="text-[12px] mute truncate">{(it.regels || []).length} onderdel{(it.regels || []).length === 1 ? "" : "en"}{inProducten ? " · in " + inProducten + " product" + (inProducten === 1 ? "" : "en") : ""}</div>
+                </button>
+                <span className="text-sm font-semibold shrink-0" style={{ color: "#44502f" }}>{eur(k)}</span>
+                <button onClick={() => onEditItem(it.id)} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={15} /></button>
+                <button onClick={() => setItemWeg({ id: it.id, naam: it.name, aantal: inProducten })} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={15} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {itemWeg && (
+        <BevestigModal titel="Item verwijderen" knop="Verwijderen"
+          tekst={'"' + itemWeg.naam + '" verdwijnt voor het hele team.' + (itemWeg.aantal ? " Het zit in " + itemWeg.aantal + " product" + (itemWeg.aantal === 1 ? "" : "en") + " en wordt daar ook weggehaald." : "")}
+          onCancel={() => setItemWeg(null)} onOk={() => { onDeleteItem(itemWeg.id); setItemWeg(null); }} />
+      )}
+
       <div className="flex items-center justify-between gap-2 mt-7 mb-2">
         <span className="text-sm font-bold ink">Inkoopartikelen <span className="mute font-normal">· {bdArtikelen.length}</span></span>
+        <button onClick={() => setNieuwArtikel(true)} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-1.5"><Plus size={13} /> Artikel</button>
         <button onClick={() => { if (importRef.current) { importRef.current.value = ""; importRef.current.click(); } }} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-1.5"><Download size={13} /> Prijslijst inlezen</button>
         <input ref={importRef} type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImport(f); }} />
       </div>
@@ -5146,6 +5371,14 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onImport
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een inkoopartikel (bv. citroen)" className="input px-3 py-2.5 w-full text-sm pl-9" />
       </div>
       {q.trim().length >= 2 && hits.length === 0 && <div className="text-sm mute">Geen artikelen gevonden.</div>}
+      {nieuwArtikel && (
+        <div className="card p-3 mb-2">
+          <div className="text-sm font-bold ink mb-1">Nieuw artikel</div>
+          <ArtikelForm nieuw a={{ code: "", omschrijving: "", inhoud: "1 kg", prijs: null, ppe: null, leverancier: levKeuzes[0] || "Eigen prijzen", categorie: "Handmatig", opmerking: "" }}
+            leveranciers={levKeuzes} catsPerLev={catsPerLev}
+            onSave={(art) => { onUpdateArtikel(art); setNieuwArtikel(false); }} onSluit={() => setNieuwArtikel(false)} />
+        </div>
+      )}
       {hernoem && (
         <PromptModal titel={hernoem.soort === "lev" ? "Leverancier hernoemen" : "Categorie hernoemen"}
           label="Naam" waarde={hernoem.oud} placeholder="bv. De Waog" okLabel="Opslaan"
@@ -5240,8 +5473,8 @@ const normProdIng = (x) => ({
   hoeveel: (x && x.hoeveel) != null ? String(x.hoeveel) : "",
 });
 const normItem = (x) => (typeof x === "string"
-  ? { text: x, cost: "", ings: [] }
-  : { text: x.text || "", cost: x.cost != null ? String(x.cost) : "", ings: Array.isArray(x.ings) ? x.ings.map(normProdIng) : [] });
+  ? { text: x, itemId: null, cost: "", ings: [] }
+  : { text: x.text || "", itemId: x.itemId || null, cost: x.cost != null ? String(x.cost) : "", ings: Array.isArray(x.ings) ? x.ings.map(normProdIng) : [] });
 // Waar een assortimentsproduct voor is; zelf typen kan ook.
 const DOELEN = ["Catering", "Landgoed", "Metaal Kathedraal"];
 // Productcategorieen binnen zo'n bestemming; zelf typen kan ook.
@@ -5317,7 +5550,179 @@ function ItemIngredienten({ ings, bdArtikelen, onChange }) {
   );
 }
 
-function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen, onCancel, onSave }) {
+// Zoeken in recepten, gerechten en de inkooplijst tegelijk — voor de regels van een item.
+function BronKiezer({ zoek, recipes, dishes, recipeById, onKies, onSluit }) {
+  const [q, setQ] = useState(zoek || "");
+  const t = q.trim();
+  const recs = t.length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name, r.category], t)).slice(0, 12) : [];
+  const ger = t.length >= 2 ? (dishes || []).filter((d) => softMatchAny([d.name], t)).slice(0, 8) : [];
+  const arts = t.length >= 2 ? (PRIJSLIJST.arts || []).filter((a) => strictMatchAny([a.omschrijving], t)).slice(0, 12) : [];
+  const regel = (sleutel, titel, onder, klik) => (
+    <button key={sleutel} type="button" onClick={klik} className="ff card cardh w-full text-left px-3 py-2">
+      <div className="text-sm ink font-medium truncate">{titel}</div>
+      <div className="text-[12px] mute truncate">{onder}</div>
+    </button>
+  );
+  const kop = (tekst) => <div className="text-[11px] font-semibold uppercase tracking-widest acc mt-2 mb-1">{tekst}</div>;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-md rounded-2xl p-4 flex flex-col" style={{ background: T.paper, maxHeight: "82vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight mb-2">Toevoegen aan dit item</div>
+        <div className="relative mb-2">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een recept, gerecht of inkoopartikel" className="input px-3 py-2.5 w-full text-sm pl-9" />
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-1.5">
+          {t.length < 2 && <p className="text-[12.5px] mute">Typ minstens twee letters. Vind je niets, dan kun je onderaan een eigen regel toevoegen.</p>}
+          {recs.length > 0 && kop("Recepten")}
+          {recs.map((r) => { const p = receptPortieKost(r); const n = receptPorties(r);
+            return regel("r" + r.id, r.name, [r.category, n ? n + " porties" : "porties niet ingevuld", p !== null ? eur(p) + " per portie" : "geen prijs"].filter(Boolean).join(" · "),
+              () => onKies({ soort: "recept", refId: r.id, naam: r.name })); })}
+          {ger.length > 0 && kop("Gerechten")}
+          {ger.map((d) => { const p = gerechtPortieKost(d, recipeById); const n = gerechtPorties(d, recipeById);
+            return regel("d" + d.id, d.name, [(d.recipeIds || []).length + " recepten", n ? n + " porties" : "porties niet ingevuld", p !== null ? eur(p) + " per portie" : "geen prijs"].filter(Boolean).join(" · "),
+              () => onKies({ soort: "gerecht", refId: d.id, naam: d.name })); })}
+          {arts.length > 0 && kop("Inkoop")}
+          {arts.map((a) => { const pb = artikelPerBasis(a);
+            return regel("a" + a.code, a.omschrijving, [a.leverancier, pb ? eur(pb.prijs) + " p/" + pb.b : "geen prijs"].filter(Boolean).join(" · "),
+              () => onKies({ soort: "ingredient", naam: a.omschrijving, artikelCode: a.code, perPrijs: pb ? pb.prijs.toFixed(2) : "", perEenheid: pb ? pb.b : "kg" })); })}
+        </div>
+        <div className="flex justify-between gap-2 mt-3">
+          <button onClick={() => onKies({ soort: "ingredient", naam: t })} className="ff rounded-lg px-3 py-2 text-sm font-medium acc hover:opacity-70" style={{ border: "1px solid " + T.line }}>Eigen regel</button>
+          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Een bestaand gedeeld item aan een productregel hangen.
+function ItemKiezer({ zoek, items, recipeById, dishById, onKies, onSluit }) {
+  const [q, setQ] = useState(zoek || "");
+  const hits = (items || []).filter((x) => !q.trim() || softMatchAny([x.name], q)).slice(0, 40);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-md rounded-2xl p-4 flex flex-col" style={{ background: T.paper, maxHeight: "80vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight">Gedeeld item kiezen</div>
+        <p className="text-[12px] mute mt-1 mb-2">De prijs per persoon komt dan uit dat item, en verandert mee als je het item aanpast.</p>
+        <div className="relative mb-2">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek een item" className="input px-3 py-2.5 w-full text-sm pl-9" />
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-1.5">
+          {hits.length === 0 && <p className="text-[12.5px] mute">Geen item gevonden. Maak er een aan op de calculatiepagina.</p>}
+          {hits.map((x) => { const k = gedeeldItemKost(x, recipeById, dishById); return (
+            <button key={x.id} type="button" onClick={() => onKies(x)} className="ff card cardh w-full text-left px-3 py-2">
+              <div className="text-sm ink font-medium truncate">{x.name}</div>
+              <div className="text-[12px] mute truncate">{(x.regels || []).length} onderdelen · {k !== null ? eur(k) + " p.p." : "geen prijs"}</div>
+            </button>
+          ); })}
+        </div>
+        <div className="flex justify-end mt-3">
+          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalcItemForm({ editing, recipes, dishes, recipeById, dishById, onCancel, onSave }) {
+  const [name, setName] = useState(editing?.name || "");
+  const [regels, setRegels] = useState(() => (editing?.regels || []).map(normRegel));
+  const [cost, setCost] = useState(editing?.cost || "");
+  const [notes, setNotes] = useState(editing?.notes || "");
+  const [kiezer, setKiezer] = useState(false);
+  const inputCls = "input px-3 py-2.5 w-full text-[15px]";
+  const zet = (i, patch) => setRegels((xs) => xs.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  const bedragen = regels.map((g) => regelKost(g, recipeById, dishById));
+  const kAuto = bedragen.some((x) => x !== null) ? bedragen.filter((x) => x !== null).reduce((a, b) => a + b, 0) : null;
+  const kHand = eurNum(cost);
+  const bewaar = () => {
+    if (!name.trim()) { alert("Geef het item een naam."); return; }
+    onSave({ id: editing?.id, name: name.trim(), cost: String(cost).trim(), notes: notes.trim(),
+      regels: regels.filter((g) => String(g.naam || "").trim()) });
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <button onClick={onCancel} className="ff inline-flex items-center gap-1.5 text-sm mute hover:opacity-70"><X size={16} /> Annuleren</button>
+        <span className="serif ink text-lg">{editing ? "item bewerken" : "nieuw item"}</span>
+        <button onClick={bewaar} className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold"><Check size={16} /> Opslaan</button>
+      </div>
+      <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Sandwich" /></Field>
+      <div className="text-sm font-medium ink mt-4 mb-1">Onderdelen</div>
+      <p className="text-[11.5px] mute mb-2">Per persoon. Een recept of gerecht rekent met zijn prijs per portie; een los ingrediënt met de hoeveelheid die je invult.</p>
+      <div className="space-y-1.5">
+        {regels.map((g, i) => {
+          const bedrag = bedragen[i];
+          const bron = g.soort === "recept" ? recipeById(g.refId) : g.soort === "gerecht" ? dishById(g.refId) : null;
+          return (
+            <div key={i} className="card p-2.5">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <input className="input px-2.5 py-2 w-full text-sm" value={g.naam} onChange={(e) => zet(i, { naam: e.target.value })} placeholder="naam" />
+                  <div className="text-[11.5px] mute mt-0.5 truncate">
+                    {g.soort === "recept" ? (bron ? "Recept · " + (receptPorties(bron) || "?") + " porties · " + eur(receptPortieKost(bron)) + " per portie" : "Recept is verwijderd")
+                      : g.soort === "gerecht" ? (bron ? "Gerecht · " + (gerechtPorties(bron, recipeById) || "?") + " porties · " + eur(gerechtPortieKost(bron, recipeById)) + " per portie" : "Gerecht is verwijderd")
+                      : "Los ingrediënt"}
+                  </div>
+                </div>
+                <span className="text-sm font-semibold shrink-0 text-right" style={{ width: "4.5rem", color: "#44502f" }}>{bedrag !== null ? eur(bedrag) : "—"}</span>
+                <button type="button" onClick={() => setRegels((xs) => xs.filter((_, j) => j !== i))} className="ff shrink-0 mute hover:opacity-60 px-1"><Trash2 size={15} /></button>
+              </div>
+              {g.soort === "ingredient" ? (
+                <div className="flex gap-2 items-center mt-1.5">
+                  <div className="relative" style={{ width: "5.5rem" }}>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] mute">€</span>
+                    <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm pl-5" value={g.perPrijs} placeholder="0,00"
+                      onChange={(e) => zet(i, { perPrijs: e.target.value.replace(/[^0-9.,]/g, "") })} />
+                  </div>
+                  <AppSelect value={g.perEenheid || "kg"} onChange={(v) => zet(i, { perEenheid: v })}
+                    options={[{ value: "kg", label: "per kg" }, { value: "l", label: "per l" }, { value: "st", label: "per st" }]}
+                    className="input px-2.5 py-2 text-sm" style={{ width: "5.75rem" }} />
+                  <input className="input px-2.5 py-2 text-sm flex-1 min-w-0" value={g.hoeveel} placeholder="hoeveel nodig, bv. 60 g"
+                    onChange={(e) => zet(i, { hoeveel: e.target.value })} />
+                </div>
+              ) : (
+                <div className="flex gap-2 items-center mt-1.5">
+                  <span className="text-[12.5px] mute">Porties per persoon</span>
+                  <input type="text" inputMode="decimal" className="input px-2.5 py-2 text-sm" style={{ width: "5rem" }} value={g.aantal}
+                    onChange={(e) => zet(i, { aantal: e.target.value.replace(/[^0-9.,]/g, "") })} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button type="button" onClick={() => setKiezer(true)} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc hover:opacity-70 mt-2"><Plus size={14} /> Onderdeel toevoegen</button>
+      {koppelRij !== null && (
+        <ItemKiezer zoek={String((items[koppelRij] || {}).text || "")} items={calcItems || []} recipeById={recipeById} dishById={dishById}
+          onSluit={() => setKoppelRij(null)}
+          onKies={(gekozen) => {
+            setItems((xs) => xs.map((x, j) => (j === koppelRij ? { ...x, itemId: gekozen.id, text: String(x.text || "").trim() ? x.text : gekozen.name } : x)));
+            setKoppelRij(null);
+          }} />
+      )}
+      {kAuto !== null && <div className="text-sm ink mt-2">Samen: <span className="font-semibold">{eur(kAuto)}</span> per persoon{bedragen.some((x) => x === null) ? <span className="mute"> · {bedragen.filter((x) => x === null).length} zonder prijs</span> : null}</div>}
+      <div className="mt-4">
+        <Field label="Kostprijs per persoon (€)">
+          <input type="text" inputMode="decimal" className={inputCls} value={cost} onChange={(e) => setCost(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder={kAuto !== null ? kAuto.toFixed(2).replace(".", ",") : "bv. 1,25"} />
+          {kAuto !== null && (kHand === null
+            ? <p className="text-[11.5px] mute mt-1">Uit de onderdelen samen.</p>
+            : <p className="text-[11.5px] mute mt-1">Handmatig · <button type="button" onClick={() => setCost("")} className="ff underline font-medium acc hover:opacity-70">terug naar {eur(kAuto)}</button></p>)}
+        </Field>
+      </div>
+      <Field label="Opmerkingen"><textarea rows={2} className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="bv. altijd met desembrood van Menno" /></Field>
+      {kiezer && (
+        <BronKiezer recipes={recipes} dishes={dishes} recipeById={recipeById}
+          onSluit={() => setKiezer(false)}
+          onKies={(g) => { setRegels((xs) => [...xs, normRegel(g)]); setKiezer(false); }} />
+      )}
+    </div>
+  );
+}
+
+function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dishById, calcItems, bdArtikelen, onCancel, onSave }) {
   const [name, setName] = useState(editing?.name || "");
   const [fromP, setFromP] = useState(editing?.fromP || "");
   const [toP, setToP] = useState(editing?.toP || "");
@@ -5330,6 +5735,7 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
   const [catVrij, setCatVrij] = useState(PRODUCT_CATS.indexOf(editing?.cat || "Lunch") < 0 ? editing?.cat || "" : "");
   const [items, setItems] = useState(editing?.items && editing.items.length ? editing.items.map(normItem) : [normItem("")]);
   const [laad, setLaad] = useState("");
+  const [koppelRij, setKoppelRij] = useState(null); // itemregel waarvoor een gedeeld item gekozen wordt
   const setItem = (i, patch) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const addItemAt = (i) => {
     setItems((xs) => [...xs.slice(0, i + 1), normItem(""), ...xs.slice(i + 1)]);
@@ -5340,7 +5746,7 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
     setTimeout(() => { const el = document.querySelector('[data-as-item="' + (i - 1) + '"]'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} } }, 0);
   };
   // Kostprijs is standaard de som van de items; handmatig invullen overrulet dat.
-  const itemBedrag = (it) => itemKostVan(it);
+  const itemBedrag = (it) => itemKostVan(it, recipeById, dishById);
   const itemBedragen = items.map(itemBedrag).filter((x) => x !== null);
   const kAuto = itemBedragen.length ? itemBedragen.reduce((a, b) => a + b, 0) : null;
   const kHand = eurNum(cost);
@@ -5356,7 +5762,7 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
   const doSave = () => {
     if (!name.trim()) { alert("Vul een naam in."); return; }
     onSave({ id: editing?.id, name: name.trim(), doel: (doelVrij.trim() || doel || "").trim(), cat: (catVrij.trim() || cat || "").trim(), fromP: fromP.trim(), toP: toP.trim(), cost: String(cost).trim(), price: String(price).trim(), notes: notes.trim(), items: items.map((x) => ({
-      text: x.text.trim(), cost: String(x.cost || "").trim(),
+      text: x.text.trim(), itemId: x.itemId || null, cost: String(x.cost || "").trim(),
       ings: (x.ings || []).filter((g) => String(g.naam || "").trim()).map((g) => ({ naam: g.naam.trim(), artikelCode: g.artikelCode || null, perPrijs: String(g.perPrijs || "").trim(), perEenheid: g.perEenheid || "kg", hoeveel: String(g.hoeveel || "").trim() })),
     })).filter((x) => x.text) });
   };
@@ -5430,7 +5836,22 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
               </div>
               {items.length > 1 && <button onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>}
             </div>
-            <ItemIngredienten ings={it.ings || []} bdArtikelen={bdArtikelen} onChange={(ings) => setItem(i, { ings })} />
+            <div className="flex items-center gap-2 mt-0.5 ml-1">
+              {(() => {
+                const gedeeld = it.itemId ? (calcItems || []).find((x) => x.id === it.itemId) : null;
+                if (gedeeld) {
+                  const k = gedeeldItemKost(gedeeld, recipeById, dishById);
+                  return (
+                    <>
+                      <button type="button" onClick={() => setKoppelRij(i)} className="ff text-[11px] font-medium hover:opacity-70" style={{ color: "#44502f" }}>Gedeeld item: {gedeeld.name}{k !== null ? " · " + eur(k) + " p.p." : ""}</button>
+                      <button type="button" onClick={() => setItem(i, { itemId: null })} className="ff text-[11px] mute hover:opacity-70 underline">losmaken</button>
+                    </>
+                  );
+                }
+                return <button type="button" onClick={() => setKoppelRij(i)} className="ff text-[11px] mute hover:opacity-70">+ Gedeeld item koppelen</button>;
+              })()}
+            </div>
+            {!it.itemId && <ItemIngredienten ings={it.ings || []} bdArtikelen={bdArtikelen} onChange={(ings) => setItem(i, { ings })} />}
             </div>
           );
         })}
@@ -8571,6 +8992,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   // Hoeveelheid als breuk (teller/noemer): ÷2, ÷10 en ×2 stapelen exact.
   const [frac, setFrac] = useState({ n: 1, d: 1 });
   const [inGram, setInGram] = useState(false); // lepels en stuks omgerekend tonen
+  const [uitleg, setUitleg] = useState(null); // ingredient waarvan de prijs uitgelegd wordt
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
   const factor = frac.n / frac.d;
   const setReset = () => setFrac({ n: 1, d: 1 });
@@ -8676,10 +9098,13 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
               {(() => { const g = inGram ? naarGram(ing.item, ing.amount, factor) : null; return (
                 <span className={"font-medium " + (g ? "acc" : factor !== 1 ? "acc" : "mute")} title={g ? "Genoteerd als " + ing.amount : ""}>{g || scaleAmount(ing.amount, factor)}</span>
               ); })()}
-              {chefMode && <span className="w-16 text-right text-[12.5px] font-medium" style={{ color: "#44502f", opacity: kk.auto ? 0.75 : 1 }} title={kk.auto && kk.artikel ? "Uit de prijslijst: " + kk.artikel.omschrijving : kp !== null ? "Handmatig ingevuld" : ""}>{kp !== null ? eur(kp * factor) : ""}</span>}
+              {chefMode && (
+                <button onClick={() => setUitleg(ing)} className="ff w-16 text-right text-[12.5px] font-medium hover:opacity-70" style={{ color: kp !== null ? "#44502f" : "#a5a394", opacity: kk.auto ? 0.85 : 1 }} title="Waar komt deze prijs vandaan?">{kp !== null ? eur(kp * factor) : "?"}</button>
+              )}
             </span>
           </div>
         ); })}
+        {uitleg && <PrijsUitleg ing={uitleg} onSluit={() => setUitleg(null)} />}
         {chefMode && (() => {
           const t = receptIngTotaal(recipe);
           if (!t.geprijsd) return null;
@@ -8852,6 +9277,8 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
   const [algOpen, setAlgOpen] = useState(null);
   const [kiesRij, setKiesRij] = useState(null); // ingredientrij waarvoor een artikel gekozen wordt
   const [receptRij, setReceptRij] = useState(null); // ingredientrij waarvoor een recept gekozen wordt
+  const [ingSug, setIngSug] = useState(null); // rij met open zoeksuggesties
+  const [uitleg, setUitleg] = useState(null); // ingredient waarvan de prijs uitgelegd wordt
   const [gramVraag, setGramVraag] = useState(false); // omrekenen naar gram bevestigen
   const toggleAlg = (i, label) => setIngredients((a) => a.map((x, idx) => {
     if (idx !== i) return x;
@@ -9035,7 +9462,40 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
       <div className="space-y-2 mb-2">{ingredients.map((ing, i) => { const alg = ingRegelAllergenen(ing); const manual = hasAllergenOverride(ing); const sub = subRecept(ing); return (
         <div key={i}>
           <div className="flex gap-2">
-            <input data-rf-item={i} className={inputCls + " flex-1 min-w-0"} style={{ width: "auto" }} value={ing.item} onChange={(e) => setIng(i, "item", e.target.value)} onKeyDown={(e) => { if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Ingrediënt" />
+            <div className="relative flex-1 min-w-0">
+              <input data-rf-item={i} className={inputCls + " w-full"} value={ing.item}
+                onChange={(e) => { setIng(i, "item", e.target.value); setIngSug(i); }}
+                onFocus={() => setIngSug(i)}
+                onBlur={() => setTimeout(() => setIngSug((r) => (r === i ? null : r)), 140)}
+                onKeyDown={(e) => {
+                  if (e.key === "Tab" || e.key === "Escape") setIngSug(null);
+                  else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); }
+                }} placeholder="Ingrediënt of recept" />
+              {ingSug === i && String(ing.item || "").trim().length >= 2 && (() => {
+                const t = String(ing.item).trim();
+                const arts = (PRIJSLIJST.arts || []).filter((a) => strictMatchAny([a.omschrijving], t)).slice(0, 6);
+                const recs = (allRecipes || []).filter((r) => r.id !== (recipe && recipe.id) && softMatchAny([r.name], t)).slice(0, 4);
+                if (!arts.length && !recs.length) return null;
+                return (
+                  <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "15rem", overflowY: "auto" }}>
+                    {arts.length > 0 && <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">Inkoop</div>}
+                    {arts.map((a) => { const pb = artikelPerBasis(a); return (
+                      <button key={a.code} type="button" onMouseDown={(ev) => { ev.preventDefault(); setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: a.omschrijving, artikelCode: a.code, recipeRef: null } : x))); setIngSug(null); }}
+                        className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
+                        {a.omschrijving} <span className="mute">· {[a.leverancier, pb ? eur(pb.prijs) + " p/" + pb.b : null].filter(Boolean).join(" · ")}</span>
+                      </button>
+                    ); })}
+                    {recs.length > 0 && <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">Recepten</div>}
+                    {recs.map((r) => { const pp = receptPortieKost(r); return (
+                      <button key={r.id} type="button" onMouseDown={(ev) => { ev.preventDefault(); setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: r.name, recipeRef: r.id, artikelCode: null } : x))); setIngSug(null); }}
+                        className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
+                        {r.name} <span className="mute">· recept{pp !== null ? " · " + eur(pp) + " per portie" : ""}</span>
+                      </button>
+                    ); })}
+                  </div>
+                );
+              })()}
+            </div>
             <input data-rf-amt={i} className={inputCls} style={{ width: chefMode ? "5.5rem" : "7rem", flex: chefMode ? "0 0 5.5rem" : "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
             {chefMode && (() => { const kk = ingKost({ ...ing, cost: "" }); return (
               <input type="text" inputMode="decimal" className={inputCls} style={{ width: "4.5rem", flex: "0 0 4.5rem" }} value={ing.cost != null ? ing.cost : ""}
@@ -9046,29 +9506,28 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
             <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
-          <div className="flex items-center gap-2 mt-0.5 ml-1">
-            {sub ? (
-              <>
-                <button type="button" onClick={() => setReceptRij(i)} className="ff text-[11px] font-medium hover:opacity-70" style={{ color: "#44502f" }}>
-                  Recept: {sub.name}{receptOpbrengst(sub) ? "" : " · opbrengst onbekend"}
-                </button>
-                <button type="button" onClick={() => setIng(i, "recipeRef", null)} className="ff text-[11px] mute hover:opacity-70 underline">losmaken</button>
-              </>
-            ) : (
-              <button type="button" onClick={() => setReceptRij(i)} className="ff text-[11px] mute hover:opacity-70">+ Recept invoegen</button>
-            )}
-          </div>
+          {sub && (
+            <div className="flex items-center gap-2 mt-0.5 ml-1">
+              <button type="button" onClick={() => setReceptRij(i)} className="ff text-[11px] font-medium hover:opacity-70" style={{ color: "#44502f" }}>
+                Recept: {sub.name}{receptPorties(sub) ? " · " + receptPorties(sub) + " porties" : " · porties niet ingevuld"}
+              </button>
+              <button type="button" onClick={() => setIng(i, "recipeRef", null)} className="ff text-[11px] mute hover:opacity-70 underline">losmaken</button>
+            </div>
+          )}
           {chefMode && !sub && (() => {
             const kk = ingKost({ ...ing, cost: "" });
             const hand = eurNum(ing.cost) !== null;
             const art = kk.artikel;
             const pb = artikelPerBasis(art);
             return (
-              <button type="button" onClick={() => setKiesRij(i)} className="ff block text-left text-[11px] mt-0.5 ml-1 hover:opacity-70" style={{ color: art ? "#44502f" : "#a5a394" }}>
-                {art
-                  ? <>{ing.artikelCode ? "Vast gekoppeld: " : "Gekozen: "}{art.omschrijving}{pb ? " · " + eur(pb.prijs) + " p/" + pb.b : ""}{kk.bedrag === null ? " · eenheid niet om te rekenen" : ""}{hand ? " · prijs handmatig" : ""}</>
-                  : <>Geen artikel gevonden — tik om te kiezen</>}
-              </button>
+              <div className="flex items-center gap-2 mt-0.5 ml-1">
+                <button type="button" onClick={() => setKiesRij(i)} className="ff text-left text-[11px] hover:opacity-70" style={{ color: art ? "#44502f" : "#a5a394" }}>
+                  {art
+                    ? <>{ing.artikelCode ? "Vast gekoppeld: " : "Gekozen: "}{art.omschrijving}{pb ? " · " + eur(pb.prijs) + " p/" + pb.b : ""}{kk.bedrag === null ? " · eenheid niet om te rekenen" : ""}{hand ? " · prijs handmatig" : ""}</>
+                    : <>Geen artikel gevonden — tik om te kiezen</>}
+                </button>
+                <button type="button" onClick={() => setUitleg(ing)} className="ff text-[11px] mute hover:opacity-70 underline">uitleg</button>
+              </div>
             );
           })()}
           {algOpen !== i && alg.length > 0 && <div className="text-[11px] font-medium mt-0.5 ml-1" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />Allergeen: {alg.join(" · ")}{manual ? <span className="mute font-normal"> · dit recept</span> : globalAllergenFixFor(ing.item) ? <span className="mute font-normal"> · app-breed</span> : null}</div>}
@@ -9105,6 +9564,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
         );
       })()}
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
+      {uitleg && <PrijsUitleg ing={uitleg} onSluit={() => setUitleg(null)} />}
       {receptRij !== null && (
         <ReceptKiezer zoek={String((ingredients[receptRij] || {}).item || "")} recepten={allRecipes || []} verboden={recipe ? recipe.id : null}
           onSluit={() => setReceptRij(null)}
@@ -9146,6 +9606,7 @@ function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNew
   const [recipeIds, setRecipeIds] = useState(init?.recipeIds || []);
   const [seasons, setSeasons] = useState((init?.season || []).filter((s) => s !== "Hele jaar"));
   const [diet, setDiet] = useState(init?.diet || "Vegetarisch");
+  const [portions, setPortions] = useState(init && init.portions != null ? String(init.portions) : "");
   const [pick, setPick] = useState("");
   const [limit, setLimit] = useState(40);
   const toggle = (id) => setRecipeIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
@@ -9154,7 +9615,7 @@ function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNew
   const q = pick.trim().toLowerCase();
   const found = q ? allRecipes.filter((r) => softMatchAny([r.name, r.category], q)) : allRecipes;
   const matches = found.slice(0, limit);
-  const currentState = () => ({ name, course, description, plating, recipeIds, season: SEASONS.filter((s) => seasons.includes(s)), diet });
+  const currentState = () => ({ name, course, description, plating, recipeIds, portions: eurNum(portions), season: SEASONS.filter((s) => seasons.includes(s)), diet });
   const submit = () => { if (!name.trim()) return; onSave({ ...currentState(), name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim() }); };
   return (
     <div>
@@ -9173,6 +9634,11 @@ function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNew
         ))}
       </div>
       <Field label="Dieet"><AppSelect className={inputCls} value={diet} onChange={setDiet} options={["Vegetarisch","Varkensvlees","Rundvlees"]} /></Field>
+      <Field label="Porties">
+        <input type="text" inputMode="decimal" className={inputCls} value={portions} onChange={(e) => setPortions(e.target.value.replace(/[^0-9.,]/g, ""))}
+          placeholder={(() => { const n = gerechtPorties({ recipeIds }, recipeById); return n ? String(n) : "bv. 20"; })()} />
+        <p className="text-[11.5px] mute mt-1">Voor hoeveel personen is dit gerecht in één keer? Leeg laten rekent met het krapste recept.</p>
+      </Field>
       <Field label="Omschrijving"><textarea rows={2} className={inputCls + " resize-none"} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Korte regel over het gerecht" /></Field>
       <div className="text-sm font-medium ink mb-1.5 mt-1">Recepten in dit gerecht <span className="mute font-normal">({recipeIds.length})</span></div>
       {recipeIds.length > 0 && <div className="flex flex-wrap gap-1.5 mb-2">{recipeIds.map((id, i) => { const r = recipeById(id); if (!r) return null; return <span key={id} className="inline-flex items-center gap-1 rounded-full text-xs font-medium px-2 py-1" style={{ background: "#e8ebe0", color: T.green }}>#{i + 1} {r.name}<button onClick={() => toggle(id)}><X size={12} /></button></span>; })}</div>}
