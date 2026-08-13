@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2879,6 +2879,18 @@ function App() {
   // Recepten, gerechten en items uit een bundel inlezen. Bedoeld voor de
   // voorbeeldcalculatie; alles krijgt een vaste id, dus opnieuw inlezen werkt bij.
   const importBundel = async (bundel) => {
+    // Eerst kijken of de database er klaar voor is; anders verdwijnt alles bij de
+    // eerste refresh en snapt niemand waarom.
+    if (live) {
+      const problemen = [];
+      const t1 = await supabase.from("calculatie_items").select("id").limit(1);
+      if (t1.error) problemen.push("tabel calculatie_items ontbreekt — draai calculatie_items.sql");
+      const t2 = await supabase.from("dishes").select("portions,voorbeeld").limit(1);
+      if (t2.error) problemen.push("kolommen portions/voorbeeld ontbreken bij dishes — draai gerechten_porties.sql");
+      const t3 = await supabase.from("recipes_custom").select("id").limit(1);
+      if (t3.error) problemen.push("tabel recipes_custom is niet bereikbaar");
+      if (problemen.length) { alert("Inlezen kan nog niet:\n\n· " + problemen.join("\n· ")); return; }
+    } else if (!window.confirm("Je bent niet ingelogd op de database. Het voorbeeld komt dan alleen op dit apparaat en verdwijnt bij verversen. Toch doorgaan?")) return;
     try { await importBundelDoen(bundel); }
     catch (e) { alert("Inlezen gestopt: " + (e && e.message ? e.message : String(e))); }
   };
@@ -2947,7 +2959,7 @@ function App() {
     }
     const melding = (bundel.recepten || []).length + " recepten, " + (bundel.gerechten || []).length + " gerechten, " + (bundel.items || []).length + " items · " + gekoppeld + " productregels gekoppeld";
     if (fouten.length) alert(melding + "\n\nNiet alles kwam in de database:\n" + fouten.slice(0, 5).join("\n") + (fouten.length > 5 ? "\n+" + (fouten.length - 5) + " meer" : ""));
-    else flash(melding);
+    else alert("Klaar: " + melding + ".\n\nDe items staan onder Calculaties, de gerechten onder Gerechten.");
   };
   // Meerdere producten in een keer inlezen (.json) — bestaande namen worden bijgewerkt.
   const importAssortiment = async (file) => {
