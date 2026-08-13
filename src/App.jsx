@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4358,7 +4358,7 @@ function App() {
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
               onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep}
               onImportProducten={importAssortiment}
-              calcItems={calcItems} dishes={dishes} dishById={dishById} negeer={negeerIng} onNegeer={negeerIngredient} onSamenvoegen={voegNamenSamen}
+              calcItems={calcItems} dishes={dishes} dishById={dishById} negeer={negeerIng} onNegeer={negeerIngredient} onSamenvoegen={voegNamenSamen} aliassen={naamAlias}
               onNewItem={() => push({ screen: "calcItemForm", editing: null })}
               onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
               onDeleteItem={deleteCalcItem} />}
@@ -5518,7 +5518,7 @@ function CalcUitleg({ onSluit }) {
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onSamenvoegen, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onSamenvoegen, aliassen, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const prodRef = React.useRef(null);
@@ -5557,7 +5557,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
       }
     }
     return Object.values(map).sort((a, b) => b.aantal - a.aantal || a.naam.localeCompare(b.naam, "nl"));
-  }, [recipes, bdArtikelen, negeer]);
+  }, [recipes, bdArtikelen, negeer, aliassen]);
   // Hoe vaak hangt een artikel aan een recept — voor de waarschuwing bij verwijderen.
   const gebruikPerArtikel = React.useMemo(() => {
     const t = {};
@@ -5569,7 +5569,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
       }
     }
     return t;
-  }, [recipes, bdArtikelen]);
+  }, [recipes, bdArtikelen, aliassen]);
   const ontbreekHits = qOntbreek.trim().length >= 2 ? ontbrekend.filter((x) => softMatchAny([x.naam], qOntbreek)) : ontbrekend;
   const ontbreekToon = alleOntbrekend ? ontbreekHits : ontbreekHits.slice(0, 25);
   const hits = q.trim().length >= 2
