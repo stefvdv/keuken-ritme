@@ -511,7 +511,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-13a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-13b"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2866,6 +2866,9 @@ function App() {
       let code = iCode >= 0 ? String(r[iCode] || "").trim() : "";
       if (/^-+$/.test(code)) continue;
       if (!code) code = "n:" + oms.toLowerCase(); // leverancier zonder artikelcode
+      // De code krijgt de leverancier ervoor, anders overschrijft artikel 10102
+      // van de ene leverancier dat van de andere.
+      code = zonderAccent(levStandaard).toLowerCase().trim() + "::" + code;
       perCode[code] = { code, omschrijving: oms, inhoud: iInh >= 0 ? String(r[iInh] || "").trim() : "", prijs: iPrijs >= 0 ? num(r[iPrijs]) : null, ppe: iPpe >= 0 ? num(r[iPpe]) : null,
         leverancier: (iLev >= 0 ? String(r[iLev] || "").trim() : "") || levStandaard,
         categorie: (iCat >= 0 ? String(r[iCat] || "").trim() : "") || "Overig" };
@@ -4356,6 +4359,54 @@ function Wordmark({ size = "small", onHome }) {
 // Wie doet dit? Eén tik op een naam bevestigt direct; eigen naam typen kan ook.
 // Bewust niet te sluiten zonder keuze: de actie is al gestart en er is altijd
 // iemand die hem doet. De laatst gekozen naam op dit apparaat staat bovenaan.
+// Zoeken in alle ingelezen artikelen om er zelf een aan een ingrediënt te hangen.
+function ArtikelKiezer({ zoek, huidig, onKies, onSluit }) {
+  const [q, setQ] = useState(zoek || "");
+  const arts = PRIJSLIJST.arts || [];
+  const hits = q.trim().length >= 2 ? arts.filter((a) => strictMatchAny([a.omschrijving], q)).slice(0, 40) : [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-md rounded-2xl p-4 flex flex-col" style={{ background: T.paper, maxHeight: "80vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight mb-2">Artikel kiezen</div>
+        <div className="relative mb-2">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek in de prijslijsten" className="input px-3 py-2.5 w-full text-sm pl-9" />
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-1.5">
+          {q.trim().length < 2 && <p className="text-[12.5px] mute">Typ minstens twee letters.</p>}
+          {q.trim().length >= 2 && hits.length === 0 && <p className="text-[12.5px] mute">Geen artikel gevonden. Voeg 'm toe onder Assortiment, bij de ingrediënten zonder prijs.</p>}
+          {hits.map((a) => { const pb = artikelPerBasis(a); return (
+            <button key={a.code} type="button" onClick={() => onKies(a)} className="ff card cardh w-full text-left px-3 py-2">
+              <div className="text-sm ink font-medium truncate">{a.omschrijving}{huidig === a.code ? <span className="mute font-normal"> · nu gekozen</span> : null}</div>
+              <div className="text-[12px] mute truncate">{[a.leverancier, a.inhoud, pb ? eur(pb.prijs) + " p/" + pb.b : null].filter(Boolean).join(" · ")}</div>
+            </button>
+          ); })}
+        </div>
+        <div className="flex justify-between gap-2 mt-3">
+          <button onClick={() => onKies(null)} className="ff rounded-lg px-3 py-2 text-sm font-medium acc hover:opacity-70" style={{ border: "1px solid " + T.line }}>Automatisch zoeken</button>
+          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Melding met doorgaan of annuleren, in appstijl.
+function BevestigModal({ titel, tekst, knop, onCancel, onOk }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight">{titel}</div>
+        <p className="text-[13px] mute mt-1.5 leading-relaxed">{tekst}</p>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onCancel} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+          <button onClick={onOk} className="ff rounded-lg px-4 py-2 text-sm font-semibold" style={{ background: "#8a4a3a", color: "#fbf9f2" }}>{knop || "Doorgaan"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Klein appvenster voor een enkele invoer — vervangt window.prompt.
 function PromptModal({ titel, label, hint, waarde, placeholder, wachtwoord, okLabel, fout, onCancel, onOk }) {
   const [v, setV] = useState(waarde || "");
@@ -4670,26 +4721,22 @@ const itemIngTotaal = (it) => {
   const b = ((it && it.ings) || []).map(prodIngKost).filter((x) => x !== null);
   return b.length ? b.reduce((a, c) => a + c, 0) : null;
 };
-// Handmatig ingevuld wint, daarna de ingredienten van het item, dan het recept.
-const itemKostVan = (it, recipeById) => {
+// Handmatig ingevuld wint, anders de ingredienten onder het item.
+const itemKostVan = (it) => {
   const hand = eurNum(it && it.cost);
-  if (hand !== null) return hand;
-  const uitIngs = itemIngTotaal(it);
-  if (uitIngs !== null) return uitIngs;
-  if (it && it.recipeId && recipeById) { const r = recipeById(it.recipeId); return r ? receptKost(r) : null; }
-  return null;
+  return hand !== null ? hand : itemIngTotaal(it);
 };
 const productKost = (p, recipeById) => {
   const hand = eurNum(p && p.cost);
   if (hand !== null) return hand;
-  const bedragen = ((p && p.items) || []).map((x) => itemKostVan(normItem(x), recipeById)).filter((x) => x !== null);
+  const bedragen = ((p && p.items) || []).map((x) => itemKostVan(normItem(x))).filter((x) => x !== null);
   return bedragen.length ? bedragen.reduce((a, b) => a + b, 0) : null;
 };
 
 function printAssortimentProduct(p, recipeById) {
   const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const k = productKost(p, recipeById), v = eurNum(p.price);
-  const items = (p.items || []).map(normItem).filter((x) => String(x.text).trim()).map((x) => ({ ...x, bedrag: itemKostVan(x, recipeById) }));
+  const items = (p.items || []).map(normItem).filter((x) => String(x.text).trim()).map((x) => ({ ...x, bedrag: itemKostVan(x) }));
   printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.name) + '</title><style>' +
     "@page{size:A4;margin:18mm}body{font-family:Georgia,serif;color:#2c2e24}" +
     "h1{font-size:26pt;margin:0 0 2mm}.sub{color:#6b6d5f;font-size:11pt;margin-bottom:8mm}" +
@@ -4792,8 +4839,9 @@ function ArtikelForm({ a, nieuw, leveranciers, catsPerLev, onSave, onSluit }) {
 }
 
 // Eén regel in de lijst: een ingelezen artikel of een ingrediënt zonder prijs.
-function ArtikelRegel({ a, nieuw, sub, leveranciers, catsPerLev, onSave, onDelete }) {
+function ArtikelRegel({ a, nieuw, sub, gebruik, leveranciers, catsPerLev, onSave, onDelete }) {
   const [open, setOpen] = useState(false);
+  const [weg, setWeg] = useState(false);
   const pb = artikelPerBasis(a);
   return (
     <div className="card px-3 py-2.5">
@@ -4810,9 +4858,14 @@ function ArtikelRegel({ a, nieuw, sub, leveranciers, catsPerLev, onSave, onDelet
           </div>
         )}
         <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title={nieuw ? "Prijs invullen" : "Bewerken"}><Pencil size={15} /></button>
-        {!nieuw && <button onClick={() => { if (window.confirm('"' + a.omschrijving + '" uit de lijst verwijderen?')) onDelete(a.code); }} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={15} /></button>}
+        {!nieuw && <button onClick={() => setWeg(true)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={15} /></button>}
       </div>
       {open && <ArtikelForm a={a} nieuw={nieuw} leveranciers={leveranciers} catsPerLev={catsPerLev} onSave={onSave} onSluit={() => setOpen(false)} />}
+      {weg && (
+        <BevestigModal titel="Artikel verwijderen" knop="Verwijderen"
+          tekst={'"' + a.omschrijving + '" verdwijnt uit de lijst voor het hele team.' + (gebruik ? " Het staat nu in " + gebruik + " recept" + (gebruik === 1 ? "" : "en") + "; daar valt de kostprijs weg." : "")}
+          onCancel={() => setWeg(false)} onOk={() => { setWeg(false); onDelete(a.code); }} />
+      )}
     </div>
   );
 }
@@ -4841,6 +4894,18 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onNew, o
       }
     }
     return Object.values(map).sort((a, b) => b.aantal - a.aantal || a.naam.localeCompare(b.naam, "nl"));
+  }, [recipes, bdArtikelen]);
+  // Hoe vaak hangt een artikel aan een recept — voor de waarschuwing bij verwijderen.
+  const gebruikPerArtikel = React.useMemo(() => {
+    const t = {};
+    for (const r of recipes || []) {
+      const gezien = {};
+      for (const ing of r.ingredients || []) {
+        const art = ingKost(ing).artikel || (String(ing.item || "").trim() ? zoekArtikel(ing.item) : null);
+        if (art && !gezien[art.code]) { gezien[art.code] = 1; t[art.code] = (t[art.code] || 0) + 1; }
+      }
+    }
+    return t;
   }, [recipes, bdArtikelen]);
   const ontbreekHits = qOntbreek.trim().length >= 2 ? ontbrekend.filter((x) => softMatchAny([x.naam], qOntbreek)) : ontbrekend;
   const ontbreekToon = alleOntbrekend ? ontbreekHits : ontbreekHits.slice(0, 25);
@@ -4914,7 +4979,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onNew, o
           onOk={(naam) => { onHernoem(hernoem.soort, hernoem.oud, naam, hernoem.leverancier); setHernoem(null); }} />
       )}
       {q.trim().length >= 2 ? (
-        <div className="space-y-1.5">{hits.map((a) => <ArtikelRegel key={a.code} a={a} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>
+        <div className="space-y-1.5">{hits.map((a) => <ArtikelRegel key={a.code} a={a} gebruik={gebruikPerArtikel[a.code] || 0} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>
       ) : (
         <div className="space-y-2">
           {levs.map((lev) => {
@@ -4949,7 +5014,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onNew, o
                             </button>
                             <button onClick={() => setHernoem({ soort: "cat", oud: cat, leverancier: lev })} className="ff shrink-0 hover:opacity-60 p-1.5" title="Categorie hernoemen"><Pencil size={14} /></button>
                           </div>
-                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRegel key={a.code} a={a} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>}
+                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRegel key={a.code} a={a} gebruik={gebruikPerArtikel[a.code] || 0} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>}
                         </div>
                       );
                     })}
@@ -5000,8 +5065,8 @@ const normProdIng = (x) => ({
   hoeveel: (x && x.hoeveel) != null ? String(x.hoeveel) : "",
 });
 const normItem = (x) => (typeof x === "string"
-  ? { text: x, recipeId: null, cost: "", ings: [] }
-  : { text: x.text || "", recipeId: x.recipeId || null, cost: x.cost != null ? String(x.cost) : "", ings: Array.isArray(x.ings) ? x.ings.map(normProdIng) : [] });
+  ? { text: x, cost: "", ings: [] }
+  : { text: x.text || "", cost: x.cost != null ? String(x.cost) : "", ings: Array.isArray(x.ings) ? x.ings.map(normProdIng) : [] });
 // Ingrediënten onder een item van een product: kies een artikel uit de prijslijst
 // (of typ er zelf een), vul in hoeveel je nodig hebt en de app rekent het uit.
 function ItemIngredienten({ ings, bdArtikelen, onChange }) {
@@ -5047,17 +5112,19 @@ function ItemIngredienten({ ings, bdArtikelen, onChange }) {
                   <button type="button" onClick={() => onChange(ings.filter((_, j) => j !== i))} className="ff shrink-0 mute hover:opacity-60 px-1"><Trash2 size={15} /></button>
                 </div>
                 <div className="flex gap-2 items-center mt-1.5">
-                  <div className="relative" style={{ width: "5.5rem" }}>
+                  <div className="relative flex-1 min-w-0">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] mute">€</span>
                     <input type="text" inputMode="decimal" className={veld + " w-full pl-5"} value={g.perPrijs} placeholder="0,00"
                       onChange={(e) => zet(i, { perPrijs: e.target.value.replace(/[^0-9.,]/g, "") })} title="Prijs per kilo, liter of stuk" />
                   </div>
                   <AppSelect value={g.perEenheid || "kg"} onChange={(v) => zet(i, { perEenheid: v })}
                     options={[{ value: "kg", label: "per kg" }, { value: "l", label: "per l" }, { value: "st", label: "per st" }]}
-                    className={veld} style={{ width: "5.5rem" }} />
-                  <input className={veld + " flex-1 min-w-0"} value={g.hoeveel} placeholder="nodig, bv. 300 gr"
+                    className={veld} style={{ width: "5.75rem" }} />
+                </div>
+                <div className="flex gap-2 items-center mt-1.5">
+                  <input className={veld + " flex-1 min-w-0"} value={g.hoeveel} placeholder="hoeveel nodig, bv. 300 gr"
                     onChange={(e) => zet(i, { hoeveel: e.target.value })} />
-                  <span className="text-sm font-semibold shrink-0 text-right" style={{ width: "4.5rem", color: "#44502f" }}>{bedrag !== null ? eur(bedrag) : "—"}</span>
+                  <span className="text-sm font-semibold shrink-0 text-right" style={{ width: "5rem", color: "#44502f" }}>{bedrag !== null ? eur(bedrag) : "—"}</span>
                 </div>
               </div>
             );
@@ -5078,7 +5145,6 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
   const [price, setPrice] = useState(editing?.price || "");
   const [notes, setNotes] = useState(editing?.notes || "");
   const [items, setItems] = useState(editing?.items && editing.items.length ? editing.items.map(normItem) : [normItem("")]);
-  const [sugRow, setSugRow] = useState(-1); // rij met open receptsuggesties
   const [laad, setLaad] = useState("");
   const setItem = (i, patch) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const addItemAt = (i) => {
@@ -5090,7 +5156,7 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
     setTimeout(() => { const el = document.querySelector('[data-as-item="' + (i - 1) + '"]'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} } }, 0);
   };
   // Kostprijs is standaard de som van de items; handmatig invullen overrulet dat.
-  const itemBedrag = (it) => itemKostVan(it, recipeById);
+  const itemBedrag = (it) => itemKostVan(it);
   const itemBedragen = items.map(itemBedrag).filter((x) => x !== null);
   const kAuto = itemBedragen.length ? itemBedragen.reduce((a, b) => a + b, 0) : null;
   const kHand = eurNum(cost);
@@ -5106,7 +5172,7 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
   const doSave = () => {
     if (!name.trim()) { alert("Vul een naam in."); return; }
     onSave({ id: editing?.id, name: name.trim(), fromP: fromP.trim(), toP: toP.trim(), cost: String(cost).trim(), price: String(price).trim(), notes: notes.trim(), items: items.map((x) => ({
-      text: x.text.trim(), recipeId: x.recipeId || null, cost: String(x.cost || "").trim(),
+      text: x.text.trim(), cost: String(x.cost || "").trim(),
       ings: (x.ings || []).filter((g) => String(g.naam || "").trim()).map((g) => ({ naam: g.naam.trim(), artikelCode: g.artikelCode || null, perPrijs: String(g.perPrijs || "").trim(), perEenheid: g.perEenheid || "kg", hoeveel: String(g.hoeveel || "").trim() })),
     })).filter((x) => x.text) });
   };
@@ -5143,33 +5209,19 @@ function AssortimentForm({ editing, producten, recipes, recipeById, bdArtikelen,
             className="input px-2.5 py-1.5 text-xs" style={{ width: "12rem" }} />
         )}
       </div>
-      <p className="text-[11.5px] mute mb-2">Typ vrij, of kies uit de suggesties een recept — dan komt de batchkostprijs van dat recept mee (aanpasbaar).</p>
+      <p className="text-[11.5px] mute mb-2">Typ het item; de prijs komt uit de ingrediënten eronder, of vul 'm zelf in.</p>
       <div className="space-y-2">
         {items.map((it, i) => {
-          const sug = sugRow === i && !it.recipeId && it.text.trim().length >= 2
-            ? (recipes || []).filter((r) => softMatchAny([r.name], it.text)).slice(0, 5) : [];
           return (
             <div key={i}>
             <div className="flex gap-2 items-center">
               <div className="relative flex-1 min-w-0">
                 <input data-as-item={i} className={inputCls + " w-full"} value={it.text}
-                  onChange={(e) => { setItem(i, { text: e.target.value, recipeId: null }); setSugRow(i); }}
-                  onFocus={() => setSugRow(i)}
-                  onBlur={() => setTimeout(() => setSugRow((r) => (r === i ? -1 : r)), 120)}
+                  onChange={(e) => setItem(i, { text: e.target.value })}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); setSugRow(-1); addItemAt(i); }
+                    if (e.key === "Enter") { e.preventDefault(); addItemAt(i); }
                     else if (e.key === "Backspace" && i > 0 && !it.text.trim()) { e.preventDefault(); backItem(i); }
                   }} placeholder="bv. quiche mini" />
-                {sug.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "13rem", overflowY: "auto" }}>
-                    {sug.map((r) => (
-                      <button key={r.id} type="button" onMouseDown={(e) => { e.preventDefault(); setItem(i, { text: r.name, recipeId: r.id, cost: r.costPrice != null && String(r.costPrice) !== "" ? String(r.costPrice) : it.cost }); setSugRow(-1); }} className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
-                        {r.name} <span className="mute">· {r.costPrice != null && String(r.costPrice) !== "" ? eur(r.costPrice) : "geen kostprijs"}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {it.recipeId && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: "#eef2e6", color: "#44502f" }}>recept</span>}
               </div>
               <div className="relative shrink-0" style={{ width: "6.25rem" }}>
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm mute">€</span>
@@ -8589,6 +8641,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
   };
   // Handmatige allergenen per ingrediënt: open paneel + aan/uit per allergeen.
   const [algOpen, setAlgOpen] = useState(null);
+  const [kiesRij, setKiesRij] = useState(null); // ingredientrij waarvoor een artikel gekozen wordt
   const toggleAlg = (i, label) => setIngredients((a) => a.map((x, idx) => {
     if (idx !== i) return x;
     const eff = ingredientAllergens(x);
@@ -8765,6 +8818,19 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
             <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
+          {chefMode && (() => {
+            const kk = ingKost({ ...ing, cost: "" });
+            const hand = eurNum(ing.cost) !== null;
+            const art = kk.artikel;
+            const pb = artikelPerBasis(art);
+            return (
+              <button type="button" onClick={() => setKiesRij(i)} className="ff block text-left text-[11px] mt-0.5 ml-1 hover:opacity-70" style={{ color: art ? "#44502f" : "#a5a394" }}>
+                {art
+                  ? <>{ing.artikelCode ? "Vast gekoppeld: " : "Gekozen: "}{art.omschrijving}{pb ? " · " + eur(pb.prijs) + " p/" + pb.b : ""}{kk.bedrag === null ? " · eenheid niet om te rekenen" : ""}{hand ? " · prijs handmatig" : ""}</>
+                  : <>Geen artikel gevonden — tik om te kiezen</>}
+              </button>
+            );
+          })()}
           {algOpen !== i && alg.length > 0 && <div className="text-[11px] font-medium mt-0.5 ml-1" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />Allergeen: {alg.join(" · ")}{manual ? <span className="mute font-normal"> · dit recept</span> : globalAllergenFixFor(ing.item) ? <span className="mute font-normal"> · app-breed</span> : null}</div>}
           {algOpen === i && (() => { const gfix = globalAllergenFixFor(ing.item); return (
             <div className="mt-1.5 rounded-xl p-3" style={{ background: "#f7f2e6", border: "1px solid #e4d6b8" }}>
@@ -8799,6 +8865,11 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
         );
       })()}
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
+      {kiesRij !== null && (
+        <ArtikelKiezer zoek={String((ingredients[kiesRij] || {}).item || "")} huidig={(ingredients[kiesRij] || {}).artikelCode || (ingKost({ ...(ingredients[kiesRij] || {}), cost: "" }).artikel || {}).code}
+          onSluit={() => setKiesRij(null)}
+          onKies={(a) => { setIng(kiesRij, "artikelCode", a ? a.code : null); setKiesRij(null); }} />
+      )}
       <div className="flex items-center justify-between gap-2 mt-5 mb-1.5">
         <span className="text-sm font-medium ink">Bereiding</span>
       </div>
