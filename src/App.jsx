@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14g"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5170,10 +5170,26 @@ const zetNamen = (recepten, uitzonderingen, aliassen) => {
 };
 // De naam waaronder dit ingredient meetelt: eerst een samenvoeging van het team,
 // dan de schrijfwijze die in de recepten het meest gangbaar is, anders enkelvoud.
-const canoniekeNaam = (naam) => {
+// Bewerkingen die voor de calculatie niets uitmaken: sap van asperge komt van
+// asperge, dunne plakjes druif van druif. Het gaat om hetzelfde inkoopartikel.
+const PREP_VOOR = /^(dunne plakjes|plakjes|puree|sap of aftreksel|aftreksel|sap|coulis|schillen en klokhuizen|schilrasp en sap|stelen|knoppen|rasp)\s+(van\s+)?/i;
+const PREP_BIJV = /^(geroosterde|gegrilde|gepofte|gestoomde|verse)\s+/i;
+const kaalIngredient = (naam) => {
+  let t = String(naam || "").trim(), vorig = "";
+  while (t !== vorig) { vorig = t; t = t.replace(PREP_VOOR, "").replace(PREP_BIJV, "").trim(); }
+  return t;
+};
+const canoniekeNaam = (naam, diepte) => {
   const sleutel = naamSleutel(naam);
   if (!sleutel) return String(naam || "").trim();
-  return NAMEN.alias[sleutel] || NAMEN.canoniek[sleutel] || enkelvoud(naam);
+  if (NAMEN.alias[sleutel]) return NAMEN.alias[sleutel];
+  // Eerst de bewerking eraf: "sap van asperge" telt mee als asperge.
+  const kaal = kaalIngredient(naam);
+  if (kaal && kaal.toLowerCase() !== String(naam).trim().toLowerCase() && (diepte || 0) < 3) {
+    const uit = canoniekeNaam(kaal, (diepte || 0) + 1);
+    if (uit) return uit.charAt(0).toUpperCase() + uit.slice(1);
+  }
+  return NAMEN.canoniek[sleutel] || enkelvoud(naam);
 };
 // Het schrijfwijze-voorstel voor een naam; null als er niets te corrigeren valt.
 const naamVoorstel = (naam) => {
