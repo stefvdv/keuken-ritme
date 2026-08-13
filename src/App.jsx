@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5523,10 +5523,10 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
   const importRef = React.useRef(null);
   const prodRef = React.useRef(null);
   const [openLev, setOpenLev] = useState({});
-  const [openCat, setOpenCat] = useState({});
   const [hernoem, setHernoem] = useState(null); // {soort, oud, leverancier}
   const [openDoel, setOpenDoel] = useState({});
   const [itemWeg, setItemWeg] = useState(null);
+  const [itemsOpen, setItemsOpen] = useState(false);
   const [nieuwArtikel, setNieuwArtikel] = useState(false);
   const [help, setHelp] = useState(false);
   const [samenvoegen, setSamenvoegen] = useState(null);
@@ -5686,11 +5686,14 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
       })()}
 
       <div className="flex items-center justify-between gap-2 mt-7 mb-1.5">
-        <span className="text-sm font-bold ink">Items <span className="mute font-normal">· {(calcItems || []).length}</span></span>
+        <button onClick={() => setItemsOpen((o) => !o)} className="ff inline-flex items-center gap-1.5 text-sm font-bold ink hover:opacity-70">
+          {itemsOpen ? <ChevronUp size={15} className="mute" /> : <ChevronDown size={15} className="mute" />}
+          Items <span className="mute font-normal">· {(calcItems || []).length}</span>
+        </button>
         <button onClick={onNewItem} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold px-2.5 py-1.5"><Plus size={13} /> Nieuw item</button>
       </div>
-      <p className="text-[12px] mute mb-2">Bouwstenen die je in meerdere producten gebruikt — een sandwich, een soepje. Ze rekenen per persoon met de porties van hun recepten en gerechten.</p>
-      {(calcItems || []).length === 0 ? (
+      {itemsOpen && <p className="text-[12px] mute mb-2">Bouwstenen die je in meerdere producten gebruikt — een sandwich, een soepje. Ze rekenen per persoon met de porties van hun recepten en gerechten.</p>}
+      {!itemsOpen ? null : (calcItems || []).length === 0 ? (
         <div className="card p-4 text-sm mute">Nog geen items.</div>
       ) : (
         <div className="space-y-1.5">
@@ -5770,38 +5773,16 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
                   <button onClick={() => setOpenLev((o) => ({ ...o, [lev]: !o[lev] }))} className="ff flex-1 min-w-0 text-left px-3.5 py-3 flex items-center gap-2">
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm font-semibold ink truncate">{lev}</span>
-                      <span className="block text-[12px] mute">{aantal} artikelen · {cats.length} categorie{cats.length === 1 ? "" : "ën"}</span>
+                      <span className="block text-[12px] mute">{aantal} artikelen</span>
                     </span>
                     {uit ? <ChevronUp size={16} className="mute shrink-0" /> : <ChevronDown size={16} className="mute shrink-0" />}
                   </button>
                   <button onClick={() => setHernoem({ soort: "lev", oud: lev })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Leverancier hernoemen"><Pencil size={15} /></button>
                 </div>
-                {uit && cats.length === 1 && (
+                {uit && (
                   <div className="mt-1.5 ml-2 space-y-1.5">
-                    {[...perLev[lev][cats[0]]].sort((x, y) => String(x.omschrijving).localeCompare(String(y.omschrijving), "nl"))
+                    {[...cats.flatMap((c) => perLev[lev][c])].sort((x, y) => String(x.omschrijving).localeCompare(String(y.omschrijving), "nl"))
                       .map((a) => <ArtikelRegel key={a.code} a={a} gebruik={gebruikPerArtikel[a.code] || 0} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}
-                  </div>
-                )}
-                {uit && cats.length > 1 && (
-                  <div className="mt-1.5 ml-2 space-y-1.5">
-                    {cats.map((cat) => {
-                      const sleutel = lev + "|" + cat;
-                      const open = !!openCat[sleutel];
-                      const rij = [...perLev[lev][cat]].sort((x, y) => String(x.omschrijving).localeCompare(String(y.omschrijving), "nl"));
-                      return (
-                        <div key={sleutel}>
-                          <div className="flex items-center gap-1 rounded-xl pr-1.5" style={{ background: "#eef2e6", color: "#44502f" }}>
-                            <button onClick={() => setOpenCat((o) => ({ ...o, [sleutel]: !o[sleutel] }))} className="ff flex-1 min-w-0 text-left px-3 py-2 flex items-center gap-2">
-                              <span className="flex-1 min-w-0 text-[13px] font-semibold truncate">{cat}</span>
-                              <span className="text-[12px] shrink-0" style={{ opacity: 0.7 }}>{rij.length}</span>
-                              {open ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
-                            </button>
-                            <button onClick={() => setHernoem({ soort: "cat", oud: cat, leverancier: lev })} className="ff shrink-0 hover:opacity-60 p-1.5" title="Categorie hernoemen"><Pencil size={14} /></button>
-                          </div>
-                          {open && <div className="space-y-1.5 mt-1.5 ml-2">{rij.map((a) => <ArtikelRegel key={a.code} a={a} gebruik={gebruikPerArtikel[a.code] || 0} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}</div>}
-                        </div>
-                      );
-                    })}
                   </div>
                 )}
               </div>
