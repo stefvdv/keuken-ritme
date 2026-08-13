@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-13f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-13g"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2837,10 +2837,13 @@ function App() {
     for (const p of lijst) {
       const naam = String((p && p.name) || "").trim();
       if (!naam) continue;
-      const bestaand = assortiment.find((x) => String(x.name || "").toLowerCase() === naam.toLowerCase());
+      // Naam plus doel is de sleutel: "Lichte lunch" bestaat zowel voor catering
+      // als voor het landgoed en die mogen elkaar niet overschrijven.
+      const doel = String((p && p.doel) || "").trim();
+      const bestaand = assortiment.find((x) => String(x.name || "").toLowerCase() === naam.toLowerCase() && String(x.doel || "").toLowerCase() === doel.toLowerCase());
       await saveAssortimentItem({
         id: bestaand ? bestaand.id : undefined,
-        name: naam, doel: String(p.doel || "").trim(), fromP: String(p.fromP || "").trim(), toP: String(p.toP || "").trim(),
+        name: naam, doel, fromP: String(p.fromP || "").trim(), toP: String(p.toP || "").trim(),
         cost: String(p.cost || "").trim(), price: String(p.price || "").trim(), notes: String(p.notes || "").trim(),
         items: (Array.isArray(p.items) ? p.items : []).map(normItem).filter((x) => x.text.trim()),
       });
@@ -4451,7 +4454,7 @@ function ArtikelKiezer({ zoek, huidig, onKies, onSluit }) {
         </div>
         <div className="flex-1 overflow-y-auto space-y-1.5">
           {q.trim().length < 2 && <p className="text-[12.5px] mute">Typ minstens twee letters.</p>}
-          {q.trim().length >= 2 && hits.length === 0 && <p className="text-[12.5px] mute">Geen artikel gevonden. Voeg 'm toe onder Assortiment, bij de ingrediënten zonder prijs.</p>}
+          {q.trim().length >= 2 && hits.length === 0 && <p className="text-[12.5px] mute">Geen artikel gevonden. Voeg 'm toe onder Calculaties, bij de ingrediënten zonder prijs.</p>}
           {hits.map((a) => { const pb = artikelPerBasis(a); return (
             <button key={a.code} type="button" onClick={() => onKies(a)} className="ff card cardh w-full text-left px-3 py-2">
               <div className="text-sm ink font-medium truncate">{a.omschrijving}{huidig === a.code ? <span className="mute font-normal"> · nu gekozen</span> : null}</div>
@@ -4997,7 +5000,10 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, onImport
         const naam = String(ing.item || "").trim();
         if (!naam) continue;
         const kk = ingKost(ing);
-        if (kk.bedrag !== null) continue;
+        // Zodra er een artikel met een prijs aan hangt, hoort het ingredient bij
+        // die leverancier en niet meer in deze lijst — ook als de eenheid nog
+        // niet om te rekenen is; dat zie je dan in het recept zelf.
+        if (kk.bedrag !== null || (kk.artikel && artikelPerBasis(kk.artikel))) continue;
         const sleutel = naam.toLowerCase();
         if (!map[sleutel]) map[sleutel] = { naam, aantal: 0, artikel: kk.artikel || null, voorbeeld: String(ing.amount || "").trim() };
         map[sleutel].aantal++;
@@ -5425,7 +5431,7 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, o
 
       <SectionTitle>Chef</SectionTitle>
       <div className="card p-4">
-        <p className="text-sm mute mb-3">De chef-versie toont het Assortiment (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
+        <p className="text-sm mute mb-3">De chef-versie toont Calculaties (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
         <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
         {chefOpen && (
           <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefFout}
@@ -5501,7 +5507,7 @@ function useSwipeSections(section, setSection) {
 
 function SectionNav({ section, setSection, chef }) {
   // section is null op detailpagina’s: geen knop actief, tik navigeert terug naar de lijst.
-  const items = chef ? [...SECTIONS, { id: "assortiment", label: "Assortiment", icon: <Receipt size={24} /> }] : SECTIONS;
+  const items = chef ? [...SECTIONS, { id: "assortiment", label: "Calculaties", icon: <Receipt size={24} /> }] : SECTIONS;
   const scroller = React.useRef(null);
   const btns = React.useRef({});
   // De actieve knop netjes in het midden schuiven, ook na een swipe.
