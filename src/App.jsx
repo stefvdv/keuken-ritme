@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14d"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5547,8 +5547,10 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
         // die leverancier en niet meer in deze lijst — ook als de eenheid nog
         // niet om te rekenen is; dat zie je dan in het recept zelf.
         if (kk.bedrag !== null || (kk.artikel && artikelPerBasis(kk.artikel))) continue;
-        const sleutel = naamSleutel(naam) || naam.toLowerCase();
-        const toon = NAMEN.canoniek[sleutel] || enkelvoud(naam);
+        // Groeperen op de naam waaronder het meetelt, dus na samenvoegen:
+        // alle zoutpercentages vallen samen onder "Zout".
+        const toon = canoniekeNaam(naam);
+        const sleutel = naamSleutel(toon) || String(toon).toLowerCase();
         if (!map[sleutel]) map[sleutel] = { naam: toon, aantal: 0, artikel: kk.artikel || null, voorbeeld: String(ing.amount || "").trim() };
         map[sleutel].aantal++;
         if (!map[sleutel].artikel && kk.artikel) map[sleutel].artikel = kk.artikel;
@@ -5740,6 +5742,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
           opties={(() => {
             const uit = new Map();
             for (const x of ontbrekend) uit.set(x.naam, { naam: x.naam, prijs: "" });
+            for (const r of recipes || []) for (const ing of r.ingredients || []) { const n = canoniekeNaam(ing.item); if (n && !uit.has(n)) uit.set(n, { naam: n, prijs: "" }); }
             for (const a of bdArtikelen || []) { const pb = artikelPerBasis(a); uit.set(a.omschrijving, { naam: a.omschrijving, prijs: pb ? eur(pb.prijs) + " p/" + pb.b : "geen prijs" }); }
             return [...uit.values()].sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
           })()}
