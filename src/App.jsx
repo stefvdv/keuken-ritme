@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-13l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-13m"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2897,10 +2897,77 @@ function App() {
     }
     if (live) await supabase.from("calculatie_items").delete().eq("id", id);
   };
+  // Recepten, gerechten en items uit een bundel inlezen. Bedoeld voor de
+  // voorbeeldcalculatie; alles krijgt een vaste id, dus opnieuw inlezen werkt bij.
+  const importBundel = async (bundel) => {
+    const recIds = {}, gerIds = {}, itemIds = {};
+    const stempel = new Date().toISOString();
+    for (const r of bundel.recepten || []) {
+      const id = "vb-r-" + zonderAccent(r.name).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const rec = {
+        id, name: r.name, category: r.category || "Overig", custom: true, voorbeeld: true,
+        description: r.description || "", ingredients: (r.ingredients || []).map((x) => ({ item: x.item, amount: x.amount || "" })),
+        steps: r.steps || [], yields: r.yields || [], portions: r.portions || null,
+        yieldAmount: null, yieldUnit: "", yield: (r.yields || []).map((y) => (y.count ? y.count + "× " : "") + [y.size, y.pack].filter(Boolean).join(" ")).join(" + ") || "—",
+        season: ["Hele jaar"], diet: r.diet || "Vegetarisch", garden: false, ferment: false,
+        endorsements: [], chefsPick: false, baseId: null, isBase: false,
+        updatedBy: "Voorbeeld", updatedAt: "zojuist",
+      };
+      recIds[r.name] = id;
+      if (live) await supabase.from("recipes_custom").upsert({ id, data: rec, updated_by: "Voorbeeld", updated_at: stempel });
+      setRecipes((rs) => (rs.some((x) => x.id === id) ? rs.map((x) => (x.id === id ? rec : x)) : [rec, ...rs]));
+    }
+    for (const d of bundel.gerechten || []) {
+      const id = "vb-d-" + zonderAccent(d.name).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const ger = {
+        id, name: d.name, course: d.course || "Gerecht", description: d.description || "",
+        plating: "", recipeIds: (d.recepten || []).map((n) => recIds[n]).filter(Boolean),
+        season: ["Hele jaar"], diet: d.diet || "Vegetarisch", portions: d.portions || null, voorbeeld: true,
+        updatedBy: "Voorbeeld", updatedAt: "zojuist",
+      };
+      gerIds[d.name] = id;
+      if (live) {
+        const { error } = await supabase.from("dishes").upsert({
+          id, name: ger.name, course: ger.course, description: ger.description, plating: "",
+          recipe_ids: ger.recipeIds, season: ger.season, diet: ger.diet, portions: ger.portions, voorbeeld: true,
+          updated_by: "Voorbeeld", updated_at: stempel,
+        });
+        if (error) { flash("Gerechten alleen lokaal — draai eerst de dishes-SQL in Supabase"); }
+      }
+      setDishes((ds) => (ds.some((x) => x.id === id) ? ds.map((x) => (x.id === id ? ger : x)) : [ger, ...ds]));
+    }
+    for (const it of bundel.items || []) {
+      const id = "vb-i-" + zonderAccent(it.name).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const regels = (it.regels || []).map((g) => normRegel({
+        soort: g.soort, naam: g.naam, aantal: g.aantal || "1",
+        refId: g.soort === "gerecht" ? gerIds[g.naam] : g.soort === "recept" ? recIds[g.naam] : null,
+        perPrijs: g.perPrijs || "", perEenheid: g.perEenheid || "kg", hoeveel: g.hoeveel || "",
+      }));
+      const item = normGedeeldItem({ id, name: it.name, regels, cost: "", notes: it.notes || "Voorbeeld t.b.v. calculaties" });
+      itemIds[it.name] = id;
+      setCalcItems((xs) => (xs.some((x) => x.id === id) ? xs.map((x) => (x.id === id ? item : x)) : [...xs, item]));
+      if (live) await supabase.from("calculatie_items").upsert({ id, data: item, updated_by: "Voorbeeld", updated_at: stempel });
+    }
+    // Producten koppelen aan de nieuwe items, op naam van de itemregel.
+    let gekoppeld = 0;
+    for (const p of assortiment) {
+      const items = (p.items || []).map(normItem);
+      let veranderd = false;
+      const nieuwe = items.map((x) => {
+        const doel = itemIds[x.text] || itemIds[String(x.text).trim()];
+        if (!doel || x.itemId === doel) return x;
+        veranderd = true; gekoppeld++;
+        return { ...x, itemId: doel };
+      });
+      if (veranderd) await saveAssortimentItem({ ...p, items: nieuwe });
+    }
+    flash((bundel.recepten || []).length + " recepten, " + (bundel.gerechten || []).length + " gerechten, " + (bundel.items || []).length + " items · " + gekoppeld + " productregels gekoppeld");
+  };
   // Meerdere producten in een keer inlezen (.json) — bestaande namen worden bijgewerkt.
   const importAssortiment = async (file) => {
     let lijst;
     try { lijst = JSON.parse(await file.text()); } catch (e) { alert("Dit bestand is geen geldige JSON."); return; }
+    if (lijst && !Array.isArray(lijst) && (lijst.recepten || lijst.gerechten || lijst.items)) { await importBundel(lijst); return; }
     if (!Array.isArray(lijst)) lijst = lijst && Array.isArray(lijst.producten) ? lijst.producten : null;
     if (!lijst || !lijst.length) { alert("Geen producten gevonden in dit bestand."); return; }
     let nieuw = 0, bij = 0;
@@ -3238,6 +3305,7 @@ function App() {
     const dbDishes = (di.data || []).map((d) => ({
       id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating,
       recipeIds: d.recipe_ids || [], season: d.season || [], diet: d.diet || "Vegetarisch",
+      portions: d.portions == null ? null : Number(d.portions), voorbeeld: !!d.voorbeeld,
       updatedBy: d.updated_by || "—", updatedAt: "opgeslagen",
     }));
     // Samenvoegen: nieuwe gerechten uit de database bovenaan, de startgerechten
@@ -3496,7 +3564,8 @@ function App() {
       const { error } = await supabase.from("dishes").upsert({
         id, name: stamped.name, course: stamped.course, description: stamped.description,
         plating: stamped.plating, recipe_ids: stamped.recipeIds, season: stamped.season,
-        diet: stamped.diet, updated_by: naam, updated_at: new Date().toISOString(),
+        diet: stamped.diet, portions: stamped.portions == null ? null : stamped.portions, voorbeeld: !!stamped.voorbeeld,
+        updated_by: naam, updated_at: new Date().toISOString(),
       });
       if (dbFail(error)) return;
     }
@@ -4809,11 +4878,19 @@ const prijsWoorden = (s) => zonderAccent(s).toLowerCase().replace(/[^a-z0-9]+/g,
 // Twee woorden horen bij elkaar als ze gelijk zijn (3), als het ene het andere is
 // met een meervoudsstaart (citroen/citroenen, 2), of als deelwoord (1).
 const MEERVOUD = ["en", "s", "es", "eren", "ren", "je", "jes", "tje", "tjes", "ties"];
+// Nederlandse meervouden veranderen de klinkers: tomaat/tomaten, kaas/kazen.
+// De kern van een woord vergelijkt daaroverheen.
+const kernWoord = (w) => {
+  let t = String(w || "").toLowerCase();
+  // Eerst de meervoudsstaart eraf (alleen bij langere woorden: "kaas" is geen meervoud)
+  if (t.length >= 5) { const kort = t.replace(/(eren|en|s|e)$/, ""); if (kort.length >= 3) t = kort; }
+  return t.replace(/(aa|ee|oo|uu)/g, (m) => m[0]).replace(/z/g, "s").replace(/v/g, "f");
+};
 const woordScore = (w, x) => {
   if (x === w) return 3;
   const lang = x.length > w.length ? x : w, kort = x.length > w.length ? w : x;
   const waar = lang.indexOf(kort);
-  if (waar < 0) return 0;
+  if (waar < 0) { const k = kernWoord(w); return k.length >= 3 && k === kernWoord(x) ? 2 : 0; }
   if (waar === 0) {
     const staart = lang.slice(kort.length);
     // meervoud of verkleining: ui/uien, ei/eieren, stok/stokjes
@@ -4821,7 +4898,8 @@ const woordScore = (w, x) => {
     return 1;
   }
   if (kort.length >= 5) return 2; // heel woord in een samenstelling: appelazijn, bietsuiker
-  return kort.length >= 4 ? 1 : 0;
+  if (kort.length >= 4) return 1;
+  return 0;
 };
 const EENHEID_CODE = { kg: "kg", kilo: "kg", kilogram: "kg", g: "g", gr: "g", gram: "g", grammen: "g", l: "l", lt: "l", ltr: "l", liter: "l", liters: "l", ml: "ml", cl: "cl", dl: "dl", st: "st", stk: "st", stks: "st", stuk: "st", stuks: "st", pc: "st", pcs: "st",
   el: "el", eetlepel: "el", eetlepels: "el", eetl: "el", tl: "tl", theelepel: "tl", theelepels: "tl", theel: "tl", kop: "kop", koppen: "kop", cm: "cm", centimeter: "cm" };
@@ -9225,6 +9303,17 @@ function DishDetail({ dish, recipeById, canEdit, onBack, onEdit, onOpenRecipe, o
         <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">{dish.course}</span>
       </div>
       <div className="flex flex-wrap gap-2 mt-2.5">{dish.season && dish.season.map((s) => <SeasonPill key={s} s={s} />)}{dish.diet && dish.diet !== "Vegetarisch" && <MeatPill diet={dish.diet} />}<AllergenPills list={dishAllergens(dish, recipeById)} /></div>
+      {dish.voorbeeld && (
+        <div className="rounded-xl p-3 mt-2.5 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+          <b>Voorbeeld t.b.v. calculaties.</b> Dit gerecht is automatisch aangemaakt zodat de items en producten een kostprijs hebben. Vervang het door het echte gerecht zodra de calculatie klopt.
+        </div>
+      )}
+      {chefMode && (() => {
+        const pp = gerechtPortieKost(dish, recipeById);
+        const n = gerechtPorties(dish, recipeById);
+        if (pp === null) return null;
+        return <div className="text-sm mt-2" style={{ color: "#44502f" }}>Kostprijs per portie: <span className="font-semibold">{eur(pp)}</span> <span className="mute">({n} porties)</span></div>;
+      })()}
       <p className="mute mt-2 leading-relaxed">{dish.description}</p>
       <SectionTitle>Onderdelen</SectionTitle>
       <div className="space-y-2">
@@ -9275,6 +9364,11 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
+        {recipe.voorbeeld && (
+          <div className="rounded-xl p-3 mt-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
+            <b>Voorbeeld t.b.v. calculaties.</b> Dit recept is automatisch aangemaakt om de kostprijzen te laten rekenen. Hoeveelheden en werkwijze zijn een aanname — pas ze aan zodra de chef de echte calculatie maakt.
+          </div>
+        )}
         {chefMode && (() => {
           const kp = receptKost(recipe);
           if (kp === null) return null;
