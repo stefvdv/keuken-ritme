@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-13i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-13j"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2798,6 +2798,7 @@ function App() {
   const [chefMode, setChefMode] = useState(false);
   const [assortiment, setAssortiment] = useState([]);
   const [calcItems, setCalcItems] = useState([]); // gedeelde items voor de calculaties
+  const [negeerIng, setNegeerIng] = useState([]); // ingredienten die niet in de prijslijst horen
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
   // De prijsmotor leest de artikelen uit een module-variabele; hier bijgewerkt.
@@ -2827,6 +2828,15 @@ function App() {
       if (error) flash("Alleen lokaal bewaard — draai eerst de assortiment-SQL in Supabase");
     }
     return it.id;
+  };
+  // Een ingredient dat geen inkoopartikel is (kopregel, toelichting) uit de lijst halen.
+  const negeerIngredient = async (naam) => {
+    const volgende = [...new Set([...negeerIng, String(naam).toLowerCase()])];
+    setNegeerIng(volgende);
+    if (live) {
+      const { error } = await supabase.from("app_settings").upsert({ key: "calc_negeer", value: { namen: volgende }, updated_at: new Date().toISOString() });
+      if (error) flash("Alleen lokaal weggehaald — draai eerst de app_settings-SQL in Supabase");
+    }
   };
   const saveCalcItem = async (item) => {
     const it = normGedeeldItem({ ...item, id: item.id || "it" + Date.now() });
@@ -3128,7 +3138,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").eq("key", "recipe_categories"),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer"]),
       supabase.from("assortiment").select("*"),
       supabase.from("bd_artikelen").select("*"),
       supabase.from("calculatie_items").select("*"),
@@ -3164,7 +3174,9 @@ function App() {
     setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
     setStock((vs.data || []).map((r) => ({ id: r.id, product: r.product, qty: r.qty === null ? 0 : Number(r.qty), initialQty: r.initial_qty === null ? 0 : Number(r.initial_qty), unit: r.unit || "", ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], productionDate: String(r.production_date || "").slice(0, 10), expiryDate: String(r.expiry_date || "").slice(0, 10), by: r.made_by || "", recipeId: r.recipe_id || null, storage: r.storage || "" })));
     // Gedeelde categorielijst; ontbreekt de tabel of rij nog, dan blijft de lokale cache gelden.
-    const csRow = (cs && cs.data && cs.data[0]) || null;
+    const csRow = (cs && cs.data && cs.data.find((r) => r.key === "recipe_categories")) || null;
+    const negRow = (cs && cs.data && cs.data.find((r) => r.key === "calc_negeer")) || null;
+    if (negRow && negRow.value && Array.isArray(negRow.value.namen)) setNegeerIng(negRow.value.namen);
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
     if (cit && cit.data) setCalcItems(cit.data.map((r) => ({ ...(r.data || {}), id: r.id })));
@@ -4233,7 +4245,7 @@ function App() {
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
               onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep}
               onImportProducten={importAssortiment}
-              calcItems={calcItems} dishes={dishes} dishById={dishById}
+              calcItems={calcItems} dishes={dishes} dishById={dishById} negeer={negeerIng} onNegeer={negeerIngredient}
               onNewItem={() => push({ screen: "calcItemForm", editing: null })}
               onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
               onDeleteItem={deleteCalcItem} />}
@@ -4276,7 +4288,7 @@ function App() {
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
           onCancel={() => { setDishDraft(null); goBack(); }}
           onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm chefMode={chefMode} catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onCancel={goBack}
+        {current.screen === "recipeForm" && <RecipeForm chefMode={chefMode} catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onSaveArtikel={updateBdArtikel} onCancel={goBack}
           onSave={async (d) => { const newId = await saveRecipe(d, current.editing);
             if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
             goBack(); }} />}
@@ -4503,7 +4515,9 @@ function ArtikelKiezer({ zoek, huidig, onKies, onSluit }) {
 }
 
 // Waar komt deze kostprijs vandaan? Toont de bron en de rekensom.
-function PrijsUitleg({ ing, onSluit }) {
+function PrijsUitleg({ ing, onSluit, onKiesArtikel, onNieuwArtikel, leveranciers }) {
+  const [kiezer, setKiezer] = useState(false);
+  const [maken, setMaken] = useState(false);
   const hand = eurNum(ing && ing.cost);
   const kk = ingKost(ing);
   const sub = subRecept(ing);
@@ -4511,6 +4525,7 @@ function PrijsUitleg({ ing, onSluit }) {
   const pb = artikelPerBasis(art);
   const maat = parseMaat(ing && ing.amount);
   const regels = [];
+  let som = "";
   if (hand !== null) {
     regels.push(["Handmatig ingevuld", eur(hand)]);
     regels.push(["Leeg laten", "dan rekent de app zelf"]);
@@ -4521,12 +4536,19 @@ function PrijsUitleg({ ing, onSluit }) {
     regels.push(["Opbrengst", opb ? opb.n + " " + opb.b : "onbekend"]);
     if (porties) regels.push(["Porties", porties + " · " + eur(batch === null ? null : batch / porties) + " per portie"]);
     regels.push(["Nodig", String(ing.amount || "hele batch")]);
+    if (batch !== null && opb && String(ing.amount || "").trim()) som = eur(batch) + " ÷ " + opb.n + " " + opb.b + " × " + String(ing.amount).trim();
+    else if (batch !== null) som = "hele batch";
   } else if (art) {
     regels.push(["Artikel", art.omschrijving]);
     if (art.leverancier) regels.push(["Leverancier", art.leverancier]);
     regels.push(["Inkoop", [art.inhoud, eur(art.prijs)].filter(Boolean).join(" · ")]);
     regels.push(["Per eenheid", pb ? eur(pb.prijs) + " per " + pb.b : "niet te bepalen"]);
     regels.push(["Nodig", String(ing.amount || "—") + (maat && pb && maat.b !== pb.b ? " · omgerekend via de gewichtentabel" : "")]);
+    if (pb && kk.bedrag !== null) {
+      const hoev = pb.prijs > 0 ? kk.bedrag / pb.prijs : null;
+      const nette = hoev === null ? String(ing.amount || "") : (hoev < 1 ? String(Math.round(hoev * 1000)) + (pb.b === "kg" ? " g" : pb.b === "l" ? " ml" : " st") : String(Math.round(hoev * 100) / 100).replace(".", ",") + " " + pb.b);
+      som = nette + " × " + eur(pb.prijs) + " per " + pb.b;
+    }
   } else {
     regels.push(["Geen artikel gevonden", "koppel er zelf een, of vul de prijs handmatig in"]);
   }
@@ -4544,11 +4566,32 @@ function PrijsUitleg({ ing, onSluit }) {
         </div>
         <div className="flex items-center justify-between gap-3 mt-3 pt-3" style={{ borderTop: "1px solid " + T.line }}>
           <span className="text-sm font-semibold ink">Kostprijs</span>
+          {som && <span className="text-[12px] mute text-center flex-1">{som}</span>}
           <span className="text-sm font-bold" style={{ color: "#44502f" }}>{kk.bedrag !== null ? eur(kk.bedrag) : "—"}</span>
         </div>
+        {onKiesArtikel && !sub && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            <button onClick={() => setKiezer(true)} className="btno ff rounded-lg px-3 py-2 text-xs font-semibold">Ander artikel kiezen</button>
+            <button onClick={() => setMaken(true)} className="btno ff rounded-lg px-3 py-2 text-xs font-semibold">Zelf artikel maken</button>
+            {ing && ing.artikelCode && <button onClick={() => { onKiesArtikel(null); onSluit(); }} className="ff rounded-lg px-3 py-2 text-xs font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Automatisch zoeken</button>}
+          </div>
+        )}
+        {maken && (
+          <div className="mt-3 pt-3" style={{ borderTop: "1px solid " + T.line }}>
+            <div className="text-sm font-bold ink mb-1">Nieuw artikel</div>
+            <ArtikelForm nieuw a={{ code: "", omschrijving: (ing && ing.item) || "", inhoud: "1 kg", prijs: null, ppe: null, leverancier: (leveranciers && leveranciers[0]) || "Eigen bodem", categorie: "Overig", opmerking: "" }}
+              leveranciers={leveranciers && leveranciers.length ? leveranciers : ["Eigen bodem", "Eigen prijzen"]} catsPerLev={{}}
+              onSave={(art) => { onNieuwArtikel(art); onKiesArtikel(art.code); setMaken(false); onSluit(); }} onSluit={() => setMaken(false)} />
+          </div>
+        )}
         <div className="flex justify-end mt-4">
           <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
         </div>
+        {kiezer && (
+          <ArtikelKiezer zoek={(ing && ing.item) || ""} huidig={art ? art.code : null}
+            onSluit={() => setKiezer(false)}
+            onKies={(a) => { onKiesArtikel(a ? a.code : null); setKiezer(false); onSluit(); }} />
+        )}
       </div>
     </div>
   );
@@ -5078,7 +5121,6 @@ function ArtikelForm({ a, nieuw, leveranciers, catsPerLev, onSave, onSluit }) {
   const zetPer = (v) => { setPer(v); const q = eurNum(v); setPrijs(maat && maat.n > 0 && q !== null ? twee(q * maat.n) : ""); };
   const zetInhoud = (v) => { setInhoud(v); const m = parseMaat(v), p = eurNum(prijs); setPer(m && m.n > 0 && p !== null ? twee(p / m.n) : ""); };
   const levKeuze = levNieuw.trim() || lev;
-  const cats = catsPerLev[levKeuze] || [];
   const bewaar = () => {
     if (!naam.trim()) { alert("Vul een naam in."); return; }
     if (!maat) { alert("Vul een inkoopeenheid in die de app kan lezen, bijvoorbeeld 1 kg, 5 l of 10 st."); return; }
@@ -5099,20 +5141,13 @@ function ArtikelForm({ a, nieuw, leveranciers, catsPerLev, onSave, onSluit }) {
         <div className={kop}>Naam</div>
         <input className={veld} value={naam} onChange={(e) => setNaam(e.target.value)} placeholder="bv. Aardbeien" />
       </div>
-      <div className="grid grid-cols-2 gap-2 mb-2">
+      <div className="mb-2">
         <div>
           <div className={kop}>Leverancier</div>
           <AppSelect value={levNieuw ? "__nieuw" : lev} onChange={(v) => { if (v === "__nieuw") setLevNieuw(" "); else { setLevNieuw(""); setLev(v); } }}
             options={[...leveranciers.map((x) => ({ value: x, label: x })), { value: "__nieuw", label: "Nieuwe leverancier…" }]}
             className={veld} placeholder="Kies" />
           {levNieuw !== "" && <input className={veld + " mt-1"} value={levNieuw.trim()} onChange={(e) => setLevNieuw(e.target.value || " ")} placeholder="Naam leverancier" />}
-        </div>
-        <div>
-          <div className={kop}>Categorie</div>
-          <AppSelect value={catNieuw ? "__nieuw" : cat} onChange={(v) => { if (v === "__nieuw") setCatNieuw(" "); else { setCatNieuw(""); setCat(v); } }}
-            options={[...(cats.length ? cats : [cat || "Overig"]).map((x) => ({ value: x, label: x })), { value: "__nieuw", label: "Nieuwe categorie…" }]}
-            className={veld} placeholder="Kies" />
-          {catNieuw !== "" && <input className={veld + " mt-1"} value={catNieuw.trim()} onChange={(e) => setCatNieuw(e.target.value || " ")} placeholder="Naam categorie" />}
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2 mb-2">
@@ -5141,7 +5176,7 @@ function ArtikelForm({ a, nieuw, leveranciers, catsPerLev, onSave, onSluit }) {
 }
 
 // Eén regel in de lijst: een ingelezen artikel of een ingrediënt zonder prijs.
-function ArtikelRegel({ a, nieuw, sub, gebruik, leveranciers, catsPerLev, onSave, onDelete }) {
+function ArtikelRegel({ a, nieuw, sub, gebruik, leveranciers, catsPerLev, onSave, onDelete, onNegeer }) {
   const [open, setOpen] = useState(false);
   const [weg, setWeg] = useState(false);
   const pb = artikelPerBasis(a);
@@ -5161,18 +5196,21 @@ function ArtikelRegel({ a, nieuw, sub, gebruik, leveranciers, catsPerLev, onSave
         )}
         <button onClick={() => setOpen((o) => !o)} className="ff shrink-0 mute hover:opacity-60 p-1" title={nieuw ? "Prijs invullen" : "Bewerken"}><Pencil size={15} /></button>
         {!nieuw && <button onClick={() => setWeg(true)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={15} /></button>}
+        {nieuw && onNegeer && <button onClick={() => setWeg(true)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Uit deze lijst halen"><Trash2 size={15} /></button>}
       </div>
       {open && <ArtikelForm a={a} nieuw={nieuw} leveranciers={leveranciers} catsPerLev={catsPerLev} onSave={onSave} onSluit={() => setOpen(false)} />}
       {weg && (
-        <BevestigModal titel="Artikel verwijderen" knop="Verwijderen"
-          tekst={'"' + a.omschrijving + '" verdwijnt uit de lijst voor het hele team.' + (gebruik ? " Het staat nu in " + gebruik + " recept" + (gebruik === 1 ? "" : "en") + "; daar valt de kostprijs weg." : "")}
-          onCancel={() => setWeg(false)} onOk={() => { setWeg(false); onDelete(a.code); }} />
+        <BevestigModal titel={nieuw ? "Uit de lijst halen" : "Artikel verwijderen"} knop={nieuw ? "Weghalen" : "Verwijderen"}
+          tekst={nieuw
+            ? '"' + a.omschrijving + '" verdwijnt uit deze lijst. In de recepten verandert er niets; het krijgt alleen geen inkoopprijs.'
+            : '"' + a.omschrijving + '" verdwijnt uit de lijst voor het hele team.' + (gebruik ? " Het staat nu in " + gebruik + " recept" + (gebruik === 1 ? "" : "en") + "; daar valt de kostprijs weg." : "")}
+          onCancel={() => setWeg(false)} onOk={() => { setWeg(false); if (nieuw && onNegeer) onNegeer(); else onDelete(a.code); }} />
       )}
     </div>
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const prodRef = React.useRef(null);
@@ -5186,12 +5224,14 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
   const [alleOntbrekend, setAlleOntbrekend] = useState(false);
   const [qOntbreek, setQOntbreek] = useState("");
   // Ingredienten uit de recepten waar geen prijs bij te vinden is.
+  const negeerSet = new Set((negeer || []).map((x) => String(x).toLowerCase()));
   const ontbrekend = React.useMemo(() => {
     const map = {};
     for (const r of recipes || []) {
       for (const ing of r.ingredients || []) {
         const naam = String(ing.item || "").trim();
         if (!naam) continue;
+        if (negeerSet.has(naam.toLowerCase())) continue;
         const kk = ingKost(ing);
         // Zodra er een artikel met een prijs aan hangt, hoort het ingredient bij
         // die leverancier en niet meer in deze lijst — ook als de eenheid nog
@@ -5204,7 +5244,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
       }
     }
     return Object.values(map).sort((a, b) => b.aantal - a.aantal || a.naam.localeCompare(b.naam, "nl"));
-  }, [recipes, bdArtikelen]);
+  }, [recipes, bdArtikelen, negeer]);
   // Hoe vaak hangt een artikel aan een recept — voor de waarschuwing bij verwijderen.
   const gebruikPerArtikel = React.useMemo(() => {
     const t = {};
@@ -5232,7 +5272,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
     perLev[lev][cat].push(a);
   }
   const levs = Object.keys(perLev).sort((x, y) => x.localeCompare(y, "nl"));
-  const levKeuzes = levs.length ? levs : ["Eigen prijzen"];
+  const levKeuzes = [...new Set([...levs, ...VASTE_LEVERANCIERS, "Eigen prijzen"])];
   const catsPerLev = {};
   for (const l of levs) catsPerLev[l] = Object.keys(perLev[l]).sort((x, y) => x.localeCompare(y, "nl"));
   return (
@@ -5245,6 +5285,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
         <button onClick={() => { if (prodRef.current) { prodRef.current.value = ""; prodRef.current.click(); } }} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70"><Download size={13} /> Producten inlezen (.json)</button>
         <input ref={prodRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportProducten(f); }} />
       </div>
+      <div className="text-sm font-bold ink mb-2">Producten <span className="mute font-normal">· {producten.length}</span></div>
       {(() => {
         // Producten in twee lagen: waarvoor (catering, landgoed, MK) en daarbinnen
         // de productcategorie (lunch, borrel, diner, losse items).
@@ -5406,7 +5447,13 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
                   </button>
                   <button onClick={() => setHernoem({ soort: "lev", oud: lev })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Leverancier hernoemen"><Pencil size={15} /></button>
                 </div>
-                {uit && (
+                {uit && cats.length === 1 && (
+                  <div className="mt-1.5 ml-2 space-y-1.5">
+                    {[...perLev[lev][cats[0]]].sort((x, y) => String(x.omschrijving).localeCompare(String(y.omschrijving), "nl"))
+                      .map((a) => <ArtikelRegel key={a.code} a={a} gebruik={gebruikPerArtikel[a.code] || 0} leveranciers={levKeuzes} catsPerLev={catsPerLev} onSave={onUpdateArtikel} onDelete={onDeleteArtikel} />)}
+                  </div>
+                )}
+                {uit && cats.length > 1 && (
                   <div className="mt-1.5 ml-2 space-y-1.5">
                     {cats.map((cat) => {
                       const sleutel = lev + "|" + cat;
@@ -5450,7 +5497,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
           )}
           <div className="space-y-1.5">
             {ontbreekToon.map((x) => (
-              <ArtikelRegel key={x.naam.toLowerCase()} nieuw
+              <ArtikelRegel key={x.naam.toLowerCase()} nieuw onNegeer={() => onNegeer(x.naam)}
                 a={{ code: "eigen:" + zonderAccent(x.naam).toLowerCase().trim(), omschrijving: x.naam, inhoud: "1 kg", prijs: null, ppe: null, leverancier: "Eigen prijzen", categorie: "Handmatig", opmerking: "" }}
                 sub={x.aantal + "× in de recepten" + (x.voorbeeld ? " · bv. " + x.voorbeeld : "") + (x.artikel ? " · eenheid niet om te rekenen" : " · geen artikel gevonden")}
                 leveranciers={[...levKeuzes.filter((l) => l !== "Eigen prijzen"), "Eigen prijzen"]} catsPerLev={catsPerLev}
@@ -5477,6 +5524,8 @@ const normItem = (x) => (typeof x === "string"
   : { text: x.text || "", itemId: x.itemId || null, cost: x.cost != null ? String(x.cost) : "", ings: Array.isArray(x.ings) ? x.ings.map(normProdIng) : [] });
 // Waar een assortimentsproduct voor is; zelf typen kan ook.
 const DOELEN = ["Catering", "Landgoed", "Metaal Kathedraal"];
+// Leveranciers die er altijd zijn, ook als er nog niets van ingelezen is.
+const VASTE_LEVERANCIERS = ["Eigen bodem"];
 // Productcategorieen binnen zo'n bestemming; zelf typen kan ook.
 const PRODUCT_CATS = ["Lunch", "Borrel", "Diner", "Buffet", "Extra losse items"];
 
@@ -5695,14 +5744,6 @@ function CalcItemForm({ editing, recipes, dishes, recipeById, dishById, onCancel
         })}
       </div>
       <button type="button" onClick={() => setKiezer(true)} className="ff inline-flex items-center gap-1 text-[13px] font-medium acc hover:opacity-70 mt-2"><Plus size={14} /> Onderdeel toevoegen</button>
-      {koppelRij !== null && (
-        <ItemKiezer zoek={String((items[koppelRij] || {}).text || "")} items={calcItems || []} recipeById={recipeById} dishById={dishById}
-          onSluit={() => setKoppelRij(null)}
-          onKies={(gekozen) => {
-            setItems((xs) => xs.map((x, j) => (j === koppelRij ? { ...x, itemId: gekozen.id, text: String(x.text || "").trim() ? x.text : gekozen.name } : x)));
-            setKoppelRij(null);
-          }} />
-      )}
       {kAuto !== null && <div className="text-sm ink mt-2">Samen: <span className="font-semibold">{eur(kAuto)}</span> per persoon{bedragen.some((x) => x === null) ? <span className="mute"> · {bedragen.filter((x) => x === null).length} zonder prijs</span> : null}</div>}
       <div className="mt-4">
         <Field label="Kostprijs per persoon (€)">
@@ -5857,6 +5898,14 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
         })}
       </div>
       <AddRow onClick={() => setItems((xs) => [...xs, normItem("")])} label="Item toevoegen" />
+      {koppelRij !== null && (
+        <ItemKiezer zoek={String((items[koppelRij] || {}).text || "")} items={calcItems || []} recipeById={recipeById} dishById={dishById}
+          onSluit={() => setKoppelRij(null)}
+          onKies={(gekozen) => {
+            setItems((xs) => xs.map((x, j) => (j === koppelRij ? { ...x, itemId: gekozen.id, text: String(x.text || "").trim() ? x.text : gekozen.name } : x)));
+            setKoppelRij(null);
+          }} />
+      )}
       <div className="mt-5">
         <Field label="Opmerkingen"><textarea rows={3} className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="bv. inclusief koffie en thee, exclusief bediening" /></Field>
       </div>
@@ -9022,7 +9071,12 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           const kp = receptKost(recipe);
           if (kp === null) return null;
           const auto = eurNum(recipe.costPrice) === null;
-          return <div className="text-sm mt-1" style={{ color: "#44502f" }}>Kostprijs batch: <span className="font-semibold">{eur(kp)}</span>{recipe.yieldAmount > 0 && <> · {eur(kp / recipe.yieldAmount)} per {recipe.yieldUnit || "stuk"}</>} <span className="mute">({auto ? "uit de prijslijst" : "chef"})</span></div>;
+          const porties = receptPorties(recipe);
+          return <div className="text-sm mt-1" style={{ color: "#44502f" }}>
+            {porties ? <>Kostprijs per portie: <span className="font-semibold">{eur(kp / porties)}</span> <span className="mute">({porties} porties · batch {eur(kp)})</span></>
+              : <>Kostprijs batch: <span className="font-semibold">{eur(kp)}</span> <span className="mute">(porties niet ingevuld)</span></>}
+            {" "}<span className="mute">({auto ? "uit de prijslijst" : "chef"})</span>
+          </div>;
         })()}
         <Chip>{recipe.category}</Chip>
       </div>
@@ -9169,7 +9223,8 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onCancel, onSave, chefMode }) {
+function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onSaveArtikel, onCancel, onSave, chefMode }) {
+  const leveranciersLijst = [...new Set([...(PRIJSLIJST.arts || []).map((a) => a.leverancier).filter(Boolean), ...VASTE_LEVERANCIERS, "Eigen prijzen"])];
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
   const [costPrice, setCostPrice] = useState(recipe?.costPrice != null ? String(recipe.costPrice) : "");
@@ -9200,6 +9255,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
     return [{ count: "", size: "", pack: "" }];
   });
   const setYieldRow = (i, veld, w) => setYields((ys) => ys.map((y, j) => (j === i ? { ...y, [veld]: w } : y)));
+  const [portions, setPortions] = useState(recipe && recipe.portions != null ? String(recipe.portions) : "");
   const [recipeType, setRecipeType] = useState(recipe && recipe.baseId ? "variatie" : "basis");
   const [basePick, setBasePick] = useState(recipe && recipe.baseId ? { id: recipe.baseId, name: recipe.baseName || "" } : null);
   const [baseQ, setBaseQ] = useState("");
@@ -9328,6 +9384,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
       const composed = rows.map((y) => (y.count ? y.count + "× " : "") + [y.size, y.pack].filter(Boolean).join(" ")).join(" + ");
       return {
         yields: rows,
+        portions: eurNum(portions),
         yieldAmount: first && !isNaN(num) && num > 0 ? num : null,
         yieldUnit: first ? [first.size, first.pack].filter(Boolean).join(" ") : "",
         yield: composed || (recipe ? recipe.yield : "") || "—",
@@ -9375,7 +9432,12 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           </div>
         ))}
       </div>
-      <button onClick={() => setYields((ys) => [...ys, { count: "", size: "", pack: "" }])} className="btno ff w-full mb-4 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2 self-start"><Plus size={15} /> Opbrengst-rij toevoegen</button>
+      <button onClick={() => setYields((ys) => [...ys, { count: "", size: "", pack: "" }])} className="btno ff w-full mb-3 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium px-3 py-2 self-start"><Plus size={15} /> Opbrengst-rij toevoegen</button>
+      <Field label="Porties">
+        <input type="text" inputMode="decimal" className={inputCls} value={portions} onChange={(e) => setPortions(e.target.value.replace(/[^0-9.,]/g, ""))}
+          placeholder={(() => { const n = receptPorties({ name, category, yield: yields.map((y) => [y.count, y.size, y.pack].filter(Boolean).join(" ")).filter(Boolean).join(" + ") }); return n ? String(n) : "bv. 20"; })()} />
+        <p className="text-[11.5px] mute mt-1">Voor hoeveel personen is deze batch? Hiermee rekent de app de prijs per portie voor items en producten. Leeg laten schat de app zelf uit de opbrengst.</p>
+      </Field>
       {category && !alleCats.includes(category) && <Field label="Eigen categorie"><input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Typ een categorie" /></Field>}
       {catBeheer && (
         <div className="card p-3.5 mb-4">
@@ -9497,13 +9559,28 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
               })()}
             </div>
             <input data-rf-amt={i} className={inputCls} style={{ width: chefMode ? "5.5rem" : "7rem", flex: chefMode ? "0 0 5.5rem" : "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
-            {chefMode && (() => { const kk = ingKost({ ...ing, cost: "" }); return (
-              <input type="text" inputMode="decimal" className={inputCls} style={{ width: "4.5rem", flex: "0 0 4.5rem" }} value={ing.cost != null ? ing.cost : ""}
-                onChange={(e) => setIng(i, "cost", e.target.value.replace(/[^0-9.,]/g, ""))}
-                placeholder={kk.bedrag !== null ? kk.bedrag.toFixed(2).replace(".", ",") : "€"}
-                title={kk.bedrag !== null && kk.artikel ? "Uit de prijslijst: " + kk.artikel.omschrijving + " — leeg laten houdt 'm automatisch" : "Kostprijs van dit ingrediënt"} />
-            ); })()}
-            <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1" title="Allergenen aanpassen" style={{ color: alg.length || manual ? "#8a5f2a" : "#a5a394" }}><AlertTriangle size={16} /></button>
+            {chefMode && (() => {
+              const kk = ingKost({ ...ing, cost: "" });
+              const art = kk.artikel;
+              const pb = artikelPerBasis(art);
+              const titel = sub ? "Uit recept: " + sub.name
+                : art ? (ing.artikelCode ? "Vast gekoppeld: " : "Gekozen: ") + art.omschrijving + (pb ? " · " + eur(pb.prijs) + " p/" + pb.b : "") + (kk.bedrag === null ? " · eenheid niet om te rekenen" : "")
+                : "Geen artikel gevonden — tik op het euroteken";
+              return (
+                <div className="relative shrink-0" style={{ width: "5.25rem" }}>
+                  <button type="button" onClick={() => setUitleg(i)} title={titel}
+                    className="ff absolute left-2 top-1/2 -translate-y-1/2 text-sm font-semibold hover:opacity-60"
+                    style={{ color: art || sub ? "#44502f" : "#a5a394" }}>€</button>
+                  <input type="text" inputMode="decimal" className={inputCls + " w-full pl-6"} value={ing.cost != null ? ing.cost : ""}
+                    onChange={(e) => setIng(i, "cost", e.target.value.replace(/[^0-9.,]/g, ""))}
+                    placeholder={kk.bedrag !== null ? kk.bedrag.toFixed(2).replace(".", ",") : ""} title={titel} />
+                </div>
+              );
+            })()}
+
+            <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1"
+              title={alg.length ? "Allergeen: " + alg.join(", ") + " — tik om aan te passen" : "Geen allergeen — tik om aan te passen"}
+              style={{ color: alg.length ? "#b3261e" : "#a5a394" }}><AlertTriangle size={alg.length ? 20 : 16} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
           {sub && (
@@ -9514,23 +9591,6 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
               <button type="button" onClick={() => setIng(i, "recipeRef", null)} className="ff text-[11px] mute hover:opacity-70 underline">losmaken</button>
             </div>
           )}
-          {chefMode && !sub && (() => {
-            const kk = ingKost({ ...ing, cost: "" });
-            const hand = eurNum(ing.cost) !== null;
-            const art = kk.artikel;
-            const pb = artikelPerBasis(art);
-            return (
-              <div className="flex items-center gap-2 mt-0.5 ml-1">
-                <button type="button" onClick={() => setKiesRij(i)} className="ff text-left text-[11px] hover:opacity-70" style={{ color: art ? "#44502f" : "#a5a394" }}>
-                  {art
-                    ? <>{ing.artikelCode ? "Vast gekoppeld: " : "Gekozen: "}{art.omschrijving}{pb ? " · " + eur(pb.prijs) + " p/" + pb.b : ""}{kk.bedrag === null ? " · eenheid niet om te rekenen" : ""}{hand ? " · prijs handmatig" : ""}</>
-                    : <>Geen artikel gevonden — tik om te kiezen</>}
-                </button>
-                <button type="button" onClick={() => setUitleg(ing)} className="ff text-[11px] mute hover:opacity-70 underline">uitleg</button>
-              </div>
-            );
-          })()}
-          {algOpen !== i && alg.length > 0 && <div className="text-[11px] font-medium mt-0.5 ml-1" style={{ color: "#8a5f2a" }}><AlertTriangle size={10} className="inline mr-1 align-[-1px]" />Allergeen: {alg.join(" · ")}{manual ? <span className="mute font-normal"> · dit recept</span> : globalAllergenFixFor(ing.item) ? <span className="mute font-normal"> · app-breed</span> : null}</div>}
           {algOpen === i && (() => { const gfix = globalAllergenFixFor(ing.item); return (
             <div className="mt-1.5 rounded-xl p-3" style={{ background: "#f7f2e6", border: "1px solid #e4d6b8" }}>
               <div className="flex items-center justify-between gap-2 mb-2">
@@ -9564,7 +9624,12 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
         );
       })()}
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
-      {uitleg && <PrijsUitleg ing={uitleg} onSluit={() => setUitleg(null)} />}
+      {uitleg !== null && ingredients[uitleg] && (
+        <PrijsUitleg ing={ingredients[uitleg]} leveranciers={leveranciersLijst}
+          onKiesArtikel={(code) => setIng(uitleg, "artikelCode", code)}
+          onNieuwArtikel={(art) => { if (onSaveArtikel) onSaveArtikel(art); }}
+          onSluit={() => setUitleg(null)} />
+      )}
       {receptRij !== null && (
         <ReceptKiezer zoek={String((ingredients[receptRij] || {}).item || "")} recepten={allRecipes || []} verboden={recipe ? recipe.id : null}
           onSluit={() => setReceptRij(null)}
