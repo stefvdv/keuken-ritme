@@ -1,6 +1,6 @@
 # In het ritme van het land
 
-Digitaal receptenboek van de moestuinkeuken — Wilde Wortels, Landgoed de Beug (Odijk).
+Digitaal receptenboek van de moestuinkeuken — Wilde Wortels, Landgoed de Beug (Odijk).  
 
 Dit is een kant-en-klaar project. Het **draait meteen** met voorbeelddata in het geheugen; Supabase (live team-database) koppel je er later bij.
 
