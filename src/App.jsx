@@ -48,7 +48,7 @@ const SEASONS = ["Lente", "Zomer", "Herfst", "Winter"];
 
 // Receptcategorieën voor het keuzemenu bij een nieuw recept
 const RECIPE_CATEGORIES = [
-  "Fermentatie","Fermentatie · dranken","Fermentatie · azijn","Fermentatie · zuivel",
+  "Fermentatie groenten","Fermentatie fruit","Fermentatie · dranken","Fermentatie · azijn","Fermentatie · zuivel",
   "Pickles & zuur","Chutney & jam","Kruiden & zout","Oliën & vinaigrettes",
   "Sauzen & emulsies","Gels","Purees","Schuim & espuma","Mousses",
   "Sorbet & ijs","Zoet & patisserie","Fruit & garnituur",
@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-14i"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -842,23 +842,23 @@ const BASES = [
     steps:["Blancheer de {x} kort.","Blister heet in de iVario met olie.","Maak af met zout en kruiden."] },
 
   // ---- FERMENTATIE ----
-  { id:"lacto", baseName:"Melkzuurgefermenteerde groente", varTemplate:"Ferment {x}", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, chefsPick:true, endorsements:["Simon","Stef"], gear:"Fermentatiemateriaal",
+  { id:"lacto", baseName:"Melkzuurgefermenteerde groente", varTemplate:"Ferment {x}", generic:"tuingroente", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, chefsPick:true, endorsements:["Simon","Stef"], gear:"Fermentatiemateriaal",
     mains:[...ROOT,...BRASSICA,...STALK],
     ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout (2,5%)",amount:"25 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
     steps:["Weeg de {x} en 2,5% zout af.","Kneus of meng tot vocht vrijkomt; pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; proef en koel bij de gewenste zuurte."] },
-  { id:"kraut", baseName:"Zuurkoolstijl", varTemplate:"Zuurkool van {x}", generic:"kool", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:21}, gear:"Fermentatiemateriaal",
+  { id:"kraut", baseName:"Zuurkoolstijl", varTemplate:"Zuurkool van {x}", generic:"kool", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:21}, gear:"Fermentatiemateriaal",
     mains:BRASSICA,
     ingredients:[{item:"{X}, gesneden",amount:"1 kg"},{item:"Zout (2,5%)",amount:"25 g"}],
     steps:["Snijd de {x} fijn en meng met 2,5% zout.","Kneed tot er pekel vrijkomt en stamp aan onder het vocht.","Ferment 2–4 weken op ±20°C; koel bij gewenste zuurte."] },
-  { id:"kimchi", baseName:"Kimchi-stijl", varTemplate:"Kimchi van {x}", generic:"kool", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
+  { id:"kimchi", baseName:"Kimchi-stijl", varTemplate:"Kimchi van {x}", generic:"kool", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
     mains:["chinese kool","paksoi","amsoi","rode kool","koolrabi","radijs"],
     ingredients:[{item:"{X}",amount:"1 kg"},{item:"Zout",amount:"25 g"},{item:"Kimchipasta (ui, knoflook, gember, chili)",amount:"200 g"}],
     steps:["Zout de {x} en laat 2 uur wellen; spoel en dep.","Meng met de pasta.","Ferment 3–7 dagen op ±20°C; daarna koelen."] },
-  { id:"fhot", baseName:"Ferment hotsauce", varTemplate:"Hotsauce van {x}", generic:"groente", category:"Fermentatie", yield:"≈ 500 g", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:22,days:14}, gear:"Fermentatiemateriaal",
+  { id:"fhot", baseName:"Ferment hotsauce", varTemplate:"Hotsauce van {x}", generic:"groente", category:"Fermentatie groenten", yield:"≈ 500 g", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:22,days:14}, gear:"Fermentatiemateriaal",
     mains:["tomaat","radijs","ui","knoflook","rode biet"],
     ingredients:[{item:"{X} + chili",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"}],
     steps:["Mix de {x} met chili en zout.","Ferment 1–2 weken onder pekel op ±22°C.","Mix glad, passeer en bottel; koel."] },
-  { id:"fcaper", baseName:"Ferment bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
+  { id:"fcaper", baseName:"Ferment bloemknoppen", varTemplate:"Kappertjes van {x}", generic:"bloem", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:20,days:7}, gear:"Fermentatiemateriaal",
     mains:["oost-indische kers","madelief","goudsbloem"],
     ingredients:[{item:"Knoppen van {x}",amount:"200 g"},{item:"Zout (3,5%)",amount:"7 g"},{item:"Water",amount:"200 g"}],
     steps:["Leg de knoppen onder een 3,5% pekel.","Ferment 1–2 weken op ±20°C.","Bewaar in de pekel; gebruik als kappertjes."] },
@@ -868,31 +868,31 @@ const BASES = [
     mains:["rode biet","gele biet","chioggia biet","wortel","knolselderij"],
     ingredients:[{item:"{X}, grof gesneden",amount:"500 g"},{item:"Water",amount:"1,5 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"}],
     steps:["Doe de {x} met het water en zout in een pot; alles onder het vocht.","Ferment 3–7 dagen op ±20°C; roer dagelijks even om.","Zeef, proef op zuurte en bottel; bewaar koud en ontlucht de flessen dagelijks."] },
-  { id:"dongchimi", baseName:"Waterkimchi (dongchimi-stijl)", varTemplate:"Waterkimchi van {x}", generic:"knolgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:18,days:7}, gear:"Fermentatiemateriaal",
+  { id:"dongchimi", baseName:"Waterkimchi (dongchimi-stijl)", varTemplate:"Waterkimchi van {x}", generic:"knolgroente", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:18,days:7}, gear:"Fermentatiemateriaal",
     mains:["meiknol","radijs","chinese kool","koolrabi"],
     ingredients:[{item:"{X}, in parten",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (2,5% van totaal)",amount:"50 g"},{item:"Knoflook",amount:"naar smaak"},{item:"Gember",amount:"naar smaak"},{item:"Ui",amount:"naar smaak"}],
     steps:["Leg de {x} met de aromaten onder de pekel.","Ferment 5–10 dagen op ±18°C tot de pekel licht bruist.","Serveer de groente én de sprankelende pekel ijskoud."] },
-  { id:"fstem", baseName:"Ferment stelen", varTemplate:"Ferment stelen van {x}", generic:"steelgroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, gear:"Fermentatiemateriaal",
+  { id:"fstem", baseName:"Ferment stelen", varTemplate:"Ferment stelen van {x}", generic:"steelgroente", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:10}, gear:"Fermentatiemateriaal",
     mains:["snijbiet","bleekselderij","kardoen","paksoi"],
     ingredients:[{item:"Stelen van {x}, in stukken",amount:"500 g"},{item:"Zout (2,5%)",amount:"13 g"},{item:"Water (indien nodig)",amount:"naar behoefte"}],
     steps:["Snijd de stelen van de {x} op maat en weeg 2,5% zout af.","Pak strak in onder de pekel.","Ferment 7–14 dagen op ±20°C; de stelen blijven knapperig."] },
-  { id:"fherbpaste", baseName:"Ferment kruidenpasta", varTemplate:"Kruidenpasta van {x}", generic:"kruid", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:5,tempC:20,days:14}, gear:"Fermentatiemateriaal",
+  { id:"fherbpaste", baseName:"Ferment kruidenpasta", varTemplate:"Kruidenpasta van {x}", generic:"kruid", category:"Fermentatie groenten", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:5,tempC:20,days:14}, gear:"Fermentatiemateriaal",
     mains:["lavas","dragon","koriander","peterselie","bieslook","tuinzuring"],
     ingredients:[{item:"{X}, fijngehakt",amount:"200 g"},{item:"Zout (5%)",amount:"10 g"}],
     steps:["Hak de {x} fijn en kneed met 5% zout tot een natte pasta.","Druk luchtvrij aan in een klein potje.","Ferment 2 weken op ±20°C; daarna koel bewaren als smaakmaker."] },
-  { id:"fvat", baseName:"Pekelgroenten uit het vat", varTemplate:"{X} uit het vat", generic:"tuingroente", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:18,days:10}, gear:"Fermentatiemateriaal",
+  { id:"fvat", baseName:"Pekelgroenten uit het vat", varTemplate:"{X} uit het vat", generic:"tuingroente", category:"Fermentatie groenten", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:3.5,tempC:18,days:10}, gear:"Fermentatiemateriaal",
     mains:["komkommer","courgette","meiknol","radijs"],
     ingredients:[{item:"{X}, heel of in stukken",amount:"1 kg"},{item:"Water",amount:"1 l"},{item:"Zout (3,5% van het water)",amount:"35 g"},{item:"Dille",amount:"per pot"},{item:"Knoflook",amount:"per pot"},{item:"Druivenblad",amount:"1 st"}],
     steps:["Leg de {x} met dille, knoflook en een druivenblad (voor de knapperigheid) in de pot.","Giet de 3,5% pekel erover; alles onder het vocht.","Ferment 7–14 dagen op ±18°C; koel bij de gewenste zuurte."] },
-  { id:"fkosho", baseName:"Tuinkosho", varTemplate:"Kosho van {x}", generic:"citrus", category:"Fermentatie", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:7}, gear:"Fermentatiemateriaal",
+  { id:"fkosho", baseName:"Tuinkosho", varTemplate:"Kosho van {x}", generic:"citrus", category:"Fermentatie groenten", yield:"1 potje", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:7}, gear:"Fermentatiemateriaal",
     mains:["citroen","limoen","yuzu"],
     ingredients:[{item:"Schilrasp en sap van {x}",amount:"100 g"},{item:"Oost-Indische kers (blad en bloem), fijngehakt",amount:"50 g"},{item:"Zout (10%)",amount:"15 g"}],
     steps:["Meng rasp en sap van {x} met de fijngehakte Oost-Indische kers en 10% zout.","Ferment 1 week op ±20°C in een klein potje.","Rijp daarna koel; gebruik met mate als scherpe condiment."] },
-  { id:"zoutpruim", baseName:"Zoutpruimen (umeboshi-stijl)", varTemplate:"Zoutpruimen van {x}", generic:"steenfruit", category:"Fermentatie", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:30}, gear:"Fermentatiemateriaal / droogoven",
+  { id:"zoutpruim", baseName:"Zoutpruimen (umeboshi-stijl)", varTemplate:"Zoutpruimen van {x}", generic:"steenfruit", category:"Fermentatie fruit", yield:"1 pot", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:10,tempC:20,days:30}, gear:"Fermentatiemateriaal / droogoven",
     mains:["pruim","reine claude"],
     ingredients:[{item:"{X}, net niet rijp",amount:"1 kg"},{item:"Zout (10%)",amount:"100 g"},{item:"Rode melde (als shiso-alternatief)",amount:"een handvol"}],
     steps:["Wrijf de {x} in met het zout en verzwaar zodat er pekel vrijkomt.","Ferment 4 weken op ±20°C met de rode melde erbij voor kleur en aroma.","Droog de vruchten daarna kort na in de droogoven en bewaar in de eigen pekel."] },
-  { id:"fmustard", baseName:"Ferment mosterd", generic:"mosterd", category:"Fermentatie", yield:"≈ 300 g", mode:"flavor", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
+  { id:"fmustard", baseName:"Ferment mosterd", generic:"mosterd", category:"Fermentatie groenten", yield:"≈ 300 g", mode:"flavor", ferment:true, fermentMethod:"Melkzuur", fermentDefaults:{saltPct:2.5,tempC:20,days:5}, gear:"Fermentatiemateriaal",
     ingredients:[{item:"Geel en bruin mosterdzaad",amount:"150 g"},{item:"Zuurkoolpekel (levend)",amount:"150 g"},{item:"Zout (2,5%)",amount:"8 g"}],
     steps:["Week het mosterdzaad in de levende zuurkoolpekel met het zout.","Ferment 3–5 dagen op ±20°C; roer dagelijks.","Maal grof of glad en rijp koel — de scherpte verzacht met de tijd."],
     variations:[{name:"Klassieke gefermenteerde mosterd"},{name:"Honingmosterd",add:"Roer na fermentatie honing erdoor."},{name:"Dragonmosterd",add:"Meng fijngehakte dragon erdoor.",season:["Lente","Zomer","Herfst"]},{name:"Bietenmosterd",add:"Vervang een deel pekel door bietensap."}] },
@@ -930,7 +930,7 @@ const BASES = [
     mains:["appel","peer","kweepeer"],
     ingredients:[{item:"Sap van {x} (sapcentrifuge)",amount:"5 l"},{item:"Cidergist (of wild)",amount:"1 zakje"}],
     steps:["Pers het sap van {x} en doe het met de gist in een mandfles met waterslot.","Ferment 2–3 weken op ±18°C tot droog.","Hevel over, laat klaren en bottel; kort nagisten op fles voor bubbels (ontlucht bij twijfel)."] },
-  { id:"honingknoflook", baseName:"Honing-knoflook", generic:"knoflook", category:"Fermentatie", yield:"1 pot", mode:"flavor", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:20,days:30}, gear:"Fermentatiemateriaal",
+  { id:"honingknoflook", baseName:"Honing-knoflook", generic:"knoflook", category:"Fermentatie groenten", yield:"1 pot", mode:"flavor", ferment:true, fermentMethod:"Suikerfermentatie", fermentDefaults:{saltPct:0,tempC:20,days:30}, gear:"Fermentatiemateriaal",
     ingredients:[{item:"Knoflooktenen, gepeld",amount:"250 g"},{item:"Rauwe honing",amount:"om onder te dompelen"}],
     steps:["Dompel de gepelde tenen volledig onder in rauwe honing.","Keer de pot de eerste 2 weken dagelijks; ontlucht het deksel regelmatig.","Na ±1 maand zacht en rond van smaak; wordt maandenlang beter."],
     variations:[{name:"Klassieke honing-knoflook",season:["Zomer","Herfst"]},{name:"Honing-knoflook met chili",add:"Voeg gedroogde chili toe.",season:["Zomer","Herfst"]},{name:"Honing-knoflook met tijm",add:"Takjes tijm mee in de pot.",season:["Zomer","Herfst"]}] },
@@ -3037,7 +3037,23 @@ function App() {
     if (kopIdx < 0) { alert("Geen kolomkoppen gevonden. Het bestand heeft minimaal een kolom Omschrijving/Naam en een kolom Prijs of PPE nodig."); return; }
     const iCode = vind(kop, syn.code), iOms = vind(kop, syn.oms), iInh = vind(kop, syn.inhoud), iPrijs = vind(kop, syn.prijs), iPpe = vind(kop, syn.ppe);
     const iCat = vind(kop, syn.cat), iLev = vind(kop, syn.lev);
-    const levStandaard = String(leverancierNaam || "").trim() || "Onbekende leverancier";
+    // Herkennen om welke leverancier het gaat: "BD Totaal" en "BD-Totaal" zijn
+    // dezelfde. Dan blijft het één lijst in plaats van twee.
+    const levSleutel = (x) => zonderAccent(x).toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const getypt = String(leverancierNaam || "").trim() || "Onbekende leverancier";
+    const bekend = [...new Set(bdArtikelen.map((a) => a.leverancier).filter(Boolean))];
+    const levStandaard = bekend.find((n) => levSleutel(n) === levSleutel(getypt)) || getypt;
+    const zelfdeLev = (a) => levSleutel(a.leverancier || "") === levSleutel(levStandaard);
+    // Wat er al van deze leverancier in staat, op omschrijving en op artikelcode.
+    const opOms = {}, opCode = {};
+    for (const a of bdArtikelen) {
+      if (!zelfdeLev(a)) continue;
+      const sleutel = zonderAccent(a.omschrijving).toLowerCase().replace(/\s+/g, " ").trim();
+      if (sleutel && !opOms[sleutel]) opOms[sleutel] = a;
+      const rauw = String(a.code).split("::").pop();
+      if (rauw && !opCode[rauw]) opCode[rauw] = a;
+    }
+    const vervangen = new Set(); // oude codes die opgaan in een nieuwe regel
     const num = (v) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? null : n; };
     const perCode = {};
     for (const r of rows.slice(kopIdx + 1)) {
@@ -3046,9 +3062,16 @@ function App() {
       let code = iCode >= 0 ? String(r[iCode] || "").trim() : "";
       if (/^-+$/.test(code)) continue;
       if (!code) code = "n:" + oms.toLowerCase(); // leverancier zonder artikelcode
+      const rauweCode = code;
       // De code krijgt de leverancier ervoor, anders overschrijft artikel 10102
       // van de ene leverancier dat van de andere.
       code = zonderAccent(levStandaard).toLowerCase().trim() + "::" + code;
+      // Stond dit artikel er al onder een andere schrijfwijze van dezelfde
+      // leverancier? Dan die regel bijwerken in plaats van er een tweede maken.
+      const omsSleutel = zonderAccent(oms).toLowerCase().replace(/\s+/g, " ").trim();
+      const bestaand = opCode[rauweCode] || opOms[omsSleutel];
+      if (bestaand && bestaand.code !== code) { vervangen.add(bestaand.code); }
+      if (bestaand) code = bestaand.code;
       perCode[code] = { code, omschrijving: oms, inhoud: iInh >= 0 ? String(r[iInh] || "").trim() : "", prijs: iPrijs >= 0 ? num(r[iPrijs]) : null, ppe: iPpe >= 0 ? num(r[iPpe]) : null,
         leverancier: (iLev >= 0 ? String(r[iLev] || "").trim() : "") || levStandaard,
         categorie: (iCat >= 0 ? String(r[iCat] || "").trim() : "") || "Overig" };
@@ -3059,6 +3082,7 @@ function App() {
     setBdArtikelen((xs) => {
       const map = {};
       for (const a of xs) map[a.code] = a;
+      for (const c of vervangen) delete map[c];
       // Opmerkingen van het team blijven staan als dezelfde artikelcode opnieuw binnenkomt.
       for (const a of arts) {
         const oud = map[a.code];
@@ -3074,8 +3098,13 @@ function App() {
       const uit = await upsertArtikelen(arts.map((a) => ({ ...a, updated_at: stempel })));
       if (uit === "fout") { flash("Artikelen alleen lokaal — draai eerst de bd_artikelen-SQL in Supabase"); return; }
       if (uit === "kaal") { flash(arts.length + " artikelen gedeeld, maar zonder leverancier/categorie — voeg die kolommen toe in Supabase"); return; }
+      for (const c of vervangen) await supabase.from("bd_artikelen").delete().eq("code", c);
     }
-    flash(arts.length + " artikelen ingelezen voor " + levStandaard + (live ? " — gedeeld met het team" : ""));
+    const nieuweCodes = new Set(arts.map((a) => a.code));
+    const bestondAl = bdArtikelen.filter((a) => nieuweCodes.has(a.code)).length;
+    alert("Ingelezen voor " + levStandaard + ":\n\n· " + (arts.length - bestondAl) + " nieuwe artikelen\n· " + bestondAl + " bestaande artikelen bijgewerkt met de nieuwe prijs"
+      + (getypt !== levStandaard ? "\n· herkend als bestaande leverancier \"" + levStandaard + "\" (je typte \"" + getypt + "\")" : "")
+      + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
   };
   // Leverancier of categorie een nettere naam geven — geldt voor het hele team.
   const hernoemArtikelGroep = async (soort, oud, nieuw, leverancier) => {
@@ -3086,13 +3115,33 @@ function App() {
       : (a.categorie || "Overig") === oud && (a.leverancier || "Onbekende leverancier") === leverancier);
     const nieuwe = bdArtikelen.filter(raakt).map((a) => (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }));
     if (!nieuwe.length) return;
-    setBdArtikelen((xs) => xs.map((a) => (raakt(a) ? (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }) : a)));
+    // Hernoemen naar een bestaande leverancier voegt de twee lijsten samen.
+    // Artikelen met dezelfde omschrijving smelten dan tot één regel; de nieuwste
+    // gegevens winnen.
+    let weg = [];
+    if (soort === "lev") {
+      const samen = [...bdArtikelen.filter((a) => !raakt(a) && (a.leverancier || "Onbekende leverancier") === naam), ...nieuwe];
+      const perOms = {};
+      for (const a of samen) {
+        const sleutel = zonderAccent(a.omschrijving).toLowerCase().replace(/\s+/g, " ").trim();
+        if (!sleutel) continue;
+        const zit = perOms[sleutel];
+        if (!zit) { perOms[sleutel] = a; continue; }
+        const nieuwer = String(a.updated_at || "") >= String(zit.updated_at || "") ? a : zit;
+        const ouder = nieuwer === a ? zit : a;
+        perOms[sleutel] = nieuwer;
+        weg.push(ouder.code);
+      }
+    }
+    const wegSet = new Set(weg);
+    setBdArtikelen((xs) => xs.filter((a) => !wegSet.has(a.code)).map((a) => (raakt(a) ? (soort === "lev" ? { ...a, leverancier: naam } : { ...a, categorie: naam }) : a)));
     bewaarArtikelEigen(nieuwe);
+    if (live) for (const c of weg) await supabase.from("bd_artikelen").delete().eq("code", c);
     if (live) {
       const uit = await upsertArtikelen(nieuwe.map((a) => ({ ...a, updated_at: new Date().toISOString() })));
       if (uit !== "ok") { flash("Naam staat op dit toestel; voor het hele team eerst de kolom-SQL in Supabase draaien"); return; }
     }
-    flash(nieuwe.length + " artikelen staan nu onder " + naam);
+    flash(nieuwe.length + " artikelen staan nu onder " + naam + (weg.length ? " · " + weg.length + " dubbele regels samengevoegd" : ""));
   };
   const deleteBdArtikel = async (code) => {
     setBdArtikelen((xs) => xs.filter((a) => a.code !== code));
@@ -4029,37 +4078,66 @@ function App() {
       const d = Math.round((new Date(v.expiryDate + "T12:00:00") - new Date(v.productionDate + "T12:00:00")) / 86400000);
       return isNaN(d) ? "" : String(d);
     };
-    const MAANDEN = ["Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli", "Augustus", "September", "Oktober", "November", "December"];
-    const rows = [["Product", "Gemaakt in " + jaar, "Verpakkingseenheid", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Totaal stuks", "Totaal gewicht (g)"]];
-    const unitSize = unitSizeG; // gedeelde gram-parser, zelfde als het meeschalen van ingrediënten
+    const rows = [["Product", "Categorie", "Gemaakt in " + jaar, "Verpakkingshoeveelheid", "Verpakkingsvorm", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Totaal stuks", "Totaal gewicht (g)"]];
     const num = (x) => { const n = Number(String(x ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
     const fmtN = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
-    // Gegroepeerd per productiemaand, chronologisch; zonder datum achteraan.
-    const maandVan = (v) => { const m = Number(String(v.productionDate || "").slice(5, 7)); return m >= 1 && m <= 12 ? m : 13; };
-    const maanden = [...new Set(items.map(maandVan))].sort((a, b) => a - b);
-    maanden.forEach((m) => {
-      rows.push([]);
-      rows.push([m === 13 ? "ZONDER PRODUCTIEDATUM" : MAANDEN[m - 1].toUpperCase() + " " + jaar]);
-      // Per product bij elkaar (dan op datum); het producttotaal (stuks en gewicht
-      // in gram) staat in de achterste kolommen op de eerste regel van dat product.
-      const lijst = items
-        .filter((v) => maandVan(v) === m)
-        .sort((a, b) => a.product.localeCompare(b.product, "nl") || ((a.productionDate || "") < (b.productionDate || "") ? -1 : (a.productionDate || "") > (b.productionDate || "") ? 1 : 0));
-      let mStuks = 0, mG = 0;
-      let i = 0;
-      while (i < lijst.length) {
-        const prod = lijst[i].product;
-        const groep = [];
-        while (i < lijst.length && lijst[i].product === prod) { groep.push(lijst[i]); i++; }
-        let pStuks = 0, pG = 0;
-        groep.forEach((v) => { const q = num(v.initialQty); const g = unitSize(v.unit); pStuks += q; if (g != null) pG += q * g; });
-        groep.forEach((v, j) => {
-          rows.push([v.product, String(v.initialQty).replace(".", ","), v.unit, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || "", j === 0 ? fmtN(pStuks) : "", j === 0 ? fmtN(pG) : ""]);
-        });
-        mStuks += pStuks; mG += pG;
+    // "550 gram pot" wordt 550 g + glazen pot; "1 L beugelfles" wordt 1 l + beugelfles.
+    const VORMEN = [
+      [/vac(uu?m)?\s*(zak|meerzak)|vacumeerzak/i, "vacuümzak"],
+      [/beugelfles/i, "beugelfles"], [/fles/i, "fles"],
+      [/pot/i, "glazen pot"], [/bak(ken)?/i, "bak"], [/emmer/i, "emmer"],
+      [/zak(ken)?/i, "zak"], [/blik/i, "blik"], [/doos|doosje/i, "doos"], [/vat/i, "vat"],
+    ];
+    const EENHEID_KOP = { g: "g", gr: "g", gram: "g", kg: "kg", l: "l", lt: "l", ltr: "l", liter: "l", ml: "ml", cl: "cl", dl: "dl", st: "stuks", stuk: "stuks", stuks: "stuks" };
+    const splitsVerpakking = (tekst) => {
+      const t = String(tekst || "").trim();
+      if (!t) return ["", ""];
+      const m = t.match(/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?/);
+      let hoeveel = "", rest = t;
+      if (m) {
+        const eh = EENHEID_KOP[String(m[2] || "").toLowerCase()] || "g"; // zonder eenheid: grammen
+        hoeveel = String(m[1]).replace(".", ",") + " " + eh;
+        rest = t.slice(m[0].length);
+        if (m[2] && !EENHEID_KOP[m[2].toLowerCase()]) rest = m[2] + rest; // "500gram" of "500pot"
       }
-      rows.push(["TOTAAL " + (m === 13 ? "ZONDER DATUM" : MAANDEN[m - 1].toUpperCase()), "", "", "", "", "", "", "", fmtN(mStuks), fmtN(mG)]);
-    });
+      let vorm = "";
+      for (const [re, naam] of VORMEN) if (re.test(rest) || (!rest.trim() && re.test(t))) { vorm = naam; break; }
+      if (!vorm) vorm = rest.trim();
+      return [hoeveel, vorm];
+    };
+    // Categorie: uit het recept met dezelfde naam, anders uit de productnaam afgeleid.
+    const CAT_WOORDEN = [
+      [/jam|chutney|confituur|marmelade/i, "Chutney & jam"],
+      [/azijn/i, "Fermentatie · azijn"],
+      [/bier|limonade|kombucha|kefir|sap|drank|shot/i, "Fermentatie · dranken"],
+      [/kimchi|ferment|zuurkool|pekel|kosho|miso|umeboshi/i, "Fermentatie groenten"],
+      [/soep|bouillon/i, "Sauzen & emulsies"],
+      [/coulis|puree/i, "Purees"],
+      [/saus|mayo|dressing|vinaigrette/i, "Sauzen & emulsies"],
+      [/gedroogd|krokant|poeder/i, "Krokant & garnituur"],
+    ];
+    const catVan = (naam) => {
+      const sleutel = String(naam || "").trim().toLowerCase();
+      const r = recipes.find((x) => String(x.name || "").trim().toLowerCase() === sleutel);
+      if (r && r.category) return r.category;
+      for (const [re, cat] of CAT_WOORDEN) if (re.test(sleutel)) return cat;
+      return "";
+    };
+    // Eén doorlopende lijst: per product bij elkaar, daarbinnen op productiedatum.
+    const lijst = [...items].sort((a, b) => a.product.localeCompare(b.product, "nl") || ((a.productionDate || "") < (b.productionDate || "") ? -1 : (a.productionDate || "") > (b.productionDate || "") ? 1 : 0));
+    let i = 0;
+    while (i < lijst.length) {
+      const prod = lijst[i].product;
+      const groep = [];
+      while (i < lijst.length && lijst[i].product === prod) { groep.push(lijst[i]); i++; }
+      let pStuks = 0, pG = 0;
+      groep.forEach((v) => { const q = num(v.initialQty); const g = unitSizeG(v.unit); pStuks += q; if (g != null) pG += q * g; });
+      const cat = catVan(prod);
+      groep.forEach((v, j) => {
+        const [hoeveel, vorm] = splitsVerpakking(v.unit);
+        rows.push([v.product, cat, String(v.initialQty).replace(".", ","), hoeveel, vorm, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || "", j === 0 ? fmtN(pStuks) : "", j === 0 ? fmtN(pG) : ""]);
+      });
+    }
     const csv = "\uFEFF" + "sep=;\n" + rows.map((r) => r.map(esc).join(";")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -9568,7 +9646,7 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
 function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onSaveArtikel, onCancel, onSave, chefMode }) {
   const leveranciersLijst = [...new Set([...(PRIJSLIJST.arts || []).map((a) => a.leverancier).filter(Boolean), ...VASTE_LEVERANCIERS, "Eigen prijzen"])];
   const [name, setName] = useState(recipe?.name || "");
-  const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie" : ""));
+  const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie groenten" : ""));
   const [costPrice, setCostPrice] = useState(recipe?.costPrice != null ? String(recipe.costPrice) : "");
   // Categorieën zijn beheerbaar en gedeeld met het hele team (app_settings in
   // Supabase); recepten zelf bewaren gewoon hun categorietekst.
