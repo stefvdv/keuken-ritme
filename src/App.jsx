@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-14i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-31a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4078,7 +4078,7 @@ function App() {
       const d = Math.round((new Date(v.expiryDate + "T12:00:00") - new Date(v.productionDate + "T12:00:00")) / 86400000);
       return isNaN(d) ? "" : String(d);
     };
-    const rows = [["Product", "Categorie", "Gemaakt in " + jaar, "Verpakkingshoeveelheid", "Verpakkingsvorm", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Totaal stuks", "Totaal gewicht (g)"]];
+    const rows = [["Product", "Categorie", "Totaal stuks", "Verpakkingshoeveelheid", "Verpakkingsvorm", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Totaal gewicht (g)"]];
     const num = (x) => { const n = Number(String(x ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
     const fmtN = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
     // "550 gram pot" wordt 550 g + glazen pot; "1 L beugelfles" wordt 1 l + beugelfles.
@@ -4135,10 +4135,12 @@ function App() {
       const cat = catVan(prod);
       groep.forEach((v, j) => {
         const [hoeveel, vorm] = splitsVerpakking(v.unit);
-        rows.push([v.product, cat, String(v.initialQty).replace(".", ","), hoeveel, vorm, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || "", j === 0 ? fmtN(pStuks) : "", j === 0 ? fmtN(pG) : ""]);
+        rows.push([v.product, cat, String(v.initialQty).replace(".", ","), hoeveel, vorm, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || "", j === 0 ? fmtN(pG) : ""]);
       });
     }
-    const csv = "\uFEFF" + "sep=;\n" + rows.map((r) => r.map(esc).join(";")).join("\n");
+    // Geen "sep=;"-regel: die laat Excel de UTF-8-markering negeren, waardoor
+    // ü en · als rare tekens binnenkwamen. Met alleen de BOM leest Excel goed.
+    const csv = "\uFEFF" + rows.map((r) => r.map(esc).join(";")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -8187,7 +8189,19 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const initRef = prefill ? parseYieldRef(prefill.yieldAmount, prefill.unit || prefill.yieldUnit, prefill.yieldText) : { refYield: null, refUnitNum: null };
   const [qty, setQty] = useState(editing ? String(editing.qty) : (initRef.refYield ? String(initRef.refYield) : ""));
   const [initialQty, setInitialQty] = useState(editing ? String(editing.initialQty) : "");
-  const [unit, setUnit] = useState(src.unit || (prefill && prefill.yieldUnit) || "");
+  // De verpakking staat als één tekst in de voorraad ("200 g pot"); in het
+  // formulier vullen we hoeveelheid en vorm apart in en plakken ze weer samen.
+  const splitsUnit = (tekst) => {
+    const t = String(tekst || "").trim();
+    if (!t) return ["", ""];
+    const m = t.match(/^\s*(\d+(?:[.,]\d+)?\s*[a-zA-Z]*)\s*(.*)$/);
+    if (!m) return ["", t];
+    return [m[1].trim(), (m[2] || "").trim()];
+  };
+  const [unitHoeveel, setUnitHoeveel] = useState(() => splitsUnit(src.unit || (prefill && prefill.yieldUnit) || "")[0]);
+  const [unitVorm, setUnitVorm] = useState(() => splitsUnit(src.unit || (prefill && prefill.yieldUnit) || "")[1]);
+  const unit = [unitHoeveel.trim(), unitVorm.trim()].filter(Boolean).join(" ");
+  const setUnit = (t) => { const [h, v] = splitsUnit(t); setUnitHoeveel(h); setUnitVorm(v); };
   const [productionDate, setProductionDate] = useState(src.productionDate || localDate());
   const [days, setDays] = useState(prefill && prefill.shelfDays ? String(prefill.shelfDays) : "");
   const [expiryDate, setExpiryDate] = useState(editing ? (editing.expiryDate || "") : "");
@@ -8255,11 +8269,15 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const pickMatches = !picked && product.trim().length >= 2 ? (allRecipes || []).filter((r) => softMatchAny([r.name, r.category, r.fermentMethod], product)).slice(0, 6) : [];
   const nm = (x) => { const v = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(v) ? v : null; };
   const submit = () => {
-    if (!product.trim()) { alert("Vul de productnaam in."); return; }
+    const ontbreekt = [];
+    if (!product.trim()) ontbreekt.push("productnaam");
+    if (nm(qty) === null) ontbreekt.push("aantal");
+    if (!unitHoeveel.trim()) ontbreekt.push("verpakkingshoeveelheid");
+    if (!unitVorm.trim()) ontbreekt.push("verpakkingsvorm");
+    if (!productionDate) ontbreekt.push("productiedatum");
+    if (editing ? !expiryDate : !(Number(days) > 0)) ontbreekt.push(editing ? "houdbaar tot" : "dagen houdbaar");
+    if (ontbreekt.length) { alert("Nog invullen voordat dit opgeslagen kan worden:\n\n· " + ontbreekt.join("\n· ")); return; }
     const q1 = nm(qty);
-    if (q1 === null) { alert("Vul het aantal in."); return; }
-    if (!productionDate) { alert("Vul de productiedatum in."); return; }
-    if (editing ? !expiryDate : !(Number(days) > 0)) { alert("Vul de houdbaarheid in (dagen of T.H.T.)."); return; }
     const q0 = editing ? (nm(initialQty) ?? q1) : q1;
     onSave({
       product: product.trim(), qty: q1, initialQty: q0, unit: unit.trim(),
@@ -8292,13 +8310,12 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
         </div>
         {!editing && <p className="text-[11.5px] mute mt-1">Een recept kiezen vult naam, ingrediënten en houdbaarheid in.</p>}
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
-        {editing
-          ? <Field label="Ooit gemaakt (totaal)"><input type="text" inputMode="decimal" className={inputCls} value={initialQty} onChange={(e) => setInitialQty(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
-          : <Field label="Hoeveelheid / verpakkingswijze"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 200 g pot" /></Field>}
+        <Field label="Verpakkingshoeveelheid"><input className={inputCls} value={unitHoeveel} onChange={(e) => setUnitHoeveel(e.target.value)} placeholder="bv. 200 g" /></Field>
+        <Field label="Verpakkingsvorm"><input className={inputCls} value={unitVorm} onChange={(e) => setUnitVorm(e.target.value)} placeholder="bv. glazen pot" /></Field>
       </div>
-      {editing && <Field label="Hoeveelheid / verpakkingswijze"><input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bv. 1 l vacumeerzak" /></Field>}
+      {editing && <Field label="Ooit gemaakt (totaal)"><input type="text" inputMode="decimal" className={inputCls} value={initialQty} onChange={(e) => setInitialQty(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Productiedatum"><input type="date" className={inputCls} value={productionDate} onChange={(e) => setProductionDate(e.target.value)} /></Field>
         {editing
