@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-31c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-31e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2332,7 +2332,7 @@ const PAIRINGS = [
   { name:"sperziebonen", pairs:["knoflook","tomaat","bonenkruid","amandel"], note:"Knapperig en groen." },
   { name:"radijs", pairs:["boter","zout","citroen","dille"], note:"Peperig; boter en zuur." },
   { name:"komkommer", pairs:["dille","munt","yoghurt","citroen"], note:"Fris en waterig." },
-  { name:"ui", pairs:["tijm","laurier","azijn","kaas"], note:"Zoet bij karamelliseren." },
+  { name:"ui", pairs:["tijm","laurier","azijn","kaas","princessenbonen","rode eikenbladsla","veldsla"], note:"Zoet bij karamelliseren; fijn ui-zoet als basis van vinaigrette." },
   { name:"knoflook", pairs:["tijm","olijfolie","peterselie","citroen"], note:"Basis; zacht confijten." },
   { name:"munt", pairs:["erwten","aardbei","komkommer","chocolade","lam"], note:"Fris; zoet en groen." },
   { name:"dille", pairs:["rode biet","komkommer","mosterd","citroen"], note:"Anijsachtig; bij biet en zuur." },
@@ -2457,7 +2457,6 @@ const PAIRINGS = [
   { name:"selderij", pairs:["lavas"], note:"Groen en zout-aards; bouillonmaat." },
   { name:"sesam", pairs:["amaranth","amsoi","paksoi","peultjes"], note:"Nootachtig geroosterd; bij Aziatisch blad." },
   { name:"sinaasappel", pairs:["chioggia biet","gele biet","groenlof","rabarber","rode biet","venkel","wortel"], note:"Zoet zuur; licht biet en venkel op.", season:["Winter"] },
-  { name:"ui", pairs:["princessenbonen","rode eikenbladsla","veldsla"], note:"Fijn ui-zoet; basis van vinaigrette." },
   { name:"sojasaus", pairs:["amsoi","chinese kool","paksoi"], note:"Diep umami-zout; bij kool en paksoi." },
   { name:"spek", pairs:["aardpeer","andijvie","kapucijners","pronkbonen","savooikool","snijbonen","spitskool","veldsla"], note:"Rokerig vet; zoete maat van bonen en kool." },
   { name:"thee", pairs:["citroenmelisse","honing"], note:"Bitter-bloemig; trekt citroenmelisse aan." },
@@ -2780,6 +2779,16 @@ function App() {
   const [negeerIng, setNegeerIng] = useState([]); // ingredienten die niet in de prijslijst horen
   const [spellingUit, setSpellingUit] = useState([]); // namen die bewust afwijken en niet gecorrigeerd worden
   const [naamAlias, setNaamAlias] = useState({}); // zelf samengevoegde namen: variant -> hoofdnaam
+  const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
+  React.useMemo(() => zetVormen(eigenVormen), [eigenVormen]);
+  const saveVormen = async (lijst) => {
+    const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))];
+    setEigenVormen(uit);
+    if (live) {
+      const { error } = await supabase.from("app_settings").upsert({ key: "verpakkingsvormen", value: { namen: uit }, updated_at: new Date().toISOString() });
+      if (error) flash("Vorm alleen op dit apparaat bewaard");
+    }
+  };
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
   // De prijsmotor leest de artikelen uit een module-variabele; hier bijgewerkt.
@@ -3293,7 +3302,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias"]),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen"]),
       supabase.from("assortiment").select("*"),
       supabase.from("bd_artikelen").select("*"),
       supabase.from("calculatie_items").select("*"),
@@ -3314,7 +3323,19 @@ function App() {
     setPairings([
       ...PAIRINGS.map((p) => fpMap.has(p.name) ? { name: p.name, pairs: fpMap.get(p.name).pairs || [], note: fpMap.get(p.name).note || "", season: fpMap.get(p.name).season || [], addedAt: fpMap.get(p.name).added_at || 0 } : p),
       ...fpRows.filter((x) => !PAIRINGS.some((p) => p.name === x.name)).map((x) => ({ name: x.name, pairs: x.pairs || [], note: x.note || "", season: x.season || [], addedAt: x.added_at || Date.now() })),
-    ]);
+    // Namen kunnen na een hernoeming samenvallen ("sjalot" werd "ui"); dan
+    // horen ze één regel te zijn met alle combinaties bij elkaar.
+    ].reduce((uit, p) => {
+      const sleutel = String(p.name || "").trim().toLowerCase();
+      const zit = uit.find((x) => String(x.name || "").trim().toLowerCase() === sleutel);
+      if (!zit) { uit.push({ ...p }); return uit; }
+      zit.pairs = [...new Set([...(zit.pairs || []), ...(p.pairs || [])])];
+      zit.season = [...new Set([...(zit.season || []), ...(p.season || [])])];
+      if (!zit.note && p.note) zit.note = p.note;
+      else if (p.note && zit.note !== p.note) zit.note = zit.note + " " + p.note;
+      zit.addedAt = Math.max(zit.addedAt || 0, p.addedAt || 0);
+      return uit;
+    }, []));
     // Schoonmaak: databasetaken overschrijven of vullen de standaardlijst aan.
     const ctRows = ct.data || [];
     const ctMap = new Map(ctRows.map((r) => [r.id, r]));
@@ -3336,6 +3357,8 @@ function App() {
     if (spRow && spRow.value && Array.isArray(spRow.value.namen)) setSpellingUit(spRow.value.namen);
     const alRow = (cs && cs.data && cs.data.find((r) => r.key === "calc_alias")) || null;
     if (alRow && alRow.value && alRow.value.paren) setNaamAlias(alRow.value.paren);
+    const vmRow = (cs && cs.data && cs.data.find((r) => r.key === "verpakkingsvormen")) || null;
+    if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
     if (cit && cit.data) setCalcItems(cit.data.map((r) => ({ ...(r.data || {}), id: r.id })));
@@ -4481,7 +4504,7 @@ function App() {
           onNewRecipe={(st) => { setDishDraft(st); push({ screen: "recipeForm", editing: null, fromDish: true }); }}
           onCancel={() => { setDishDraft(null); goBack(); }}
           onSave={(d) => { setDishDraft(null); saveDish(d, current.editing); goBack(); }} />}
-        {current.screen === "recipeForm" && <RecipeForm chefMode={chefMode} catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onSaveArtikel={updateBdArtikel} onCancel={goBack}
+        {current.screen === "recipeForm" && <RecipeForm chefMode={chefMode} catSettings={catSettings} onSaveCats={saveCatSettings} recipe={current.editing ? recipeById(current.editing) : null} fermentDefault={!!current.fermentDefault} allRecipes={recipes} onSaveAllergenFix={saveAllergenFix} onSaveArtikel={updateBdArtikel} eigenVormen={eigenVormen} onEigenVormen={saveVormen} onCancel={goBack}
           onSave={async (d) => { const newId = await saveRecipe(corrigeerNamen(d, current.editing ? recipeById(current.editing) : null), current.editing);
             if (current.fromDish && newId) setDishDraft((dr) => (dr ? { ...dr, recipeIds: [...(dr.recipeIds || []), newId] } : dr));
             goBack(); }} />}
@@ -4493,7 +4516,7 @@ function App() {
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
         {current.screen === "fermentGuideForm" && <FermentGuideForm rows={fermentRows} onCancel={goBack} onSave={(rows) => { saveFermentGuide(rows); goBack(); }} />}
         {current.screen === "techTableForm" && <TechTableForm config={TECH_TABLE_CONFIGS[current.table]} rows={techTableRows[current.table]} onCancel={goBack} onSave={(rows) => { saveTechTable(current.table, rows); goBack(); }} />}
-        {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
+        {current.screen === "voorraadForm" && <VoorraadForm editing={current.editing ? stock.find((v) => v.id === current.editing) : null} prefill={current.prefill || null} allRecipes={recipes} eigenVormen={eigenVormen} onEigenVormen={saveVormen} onCancel={goBack} onSave={(d) => { saveStock(d, current.editing); goBack(); }} />}
         {current.screen === "cleaningForm" && <CleaningTaskForm task={current.editing ? cleaningTasks.find((t) => t.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveCleaningTask(d, current.editing); goBack(); }} />}
         {current.screen === "assortimentForm" && chefMode && <AssortimentForm
           editing={current.editing ? assortiment.find((x) => x.id === current.editing) : null}
@@ -8026,6 +8049,57 @@ const splitsVerpakkingTekst = (tekst) => {
   return [hoeveel, vorm];
 };
 
+// Verpakkingsvormen: een vaste basis plus wat het team er zelf bij zet.
+const STANDAARD_VORMEN = ["weckpot", "smoothiefles", "beugelfles", "glazen pot", "plastic bak", "vacumeerzak"];
+let EIGEN_VORMEN = [];
+const zetVormen = (xs) => { EIGEN_VORMEN = Array.isArray(xs) ? xs : []; };
+const alleVormen = () => [...new Set([...STANDAARD_VORMEN, ...EIGEN_VORMEN])];
+
+// Keuzemenu voor de verpakkingsvorm, met de mogelijkheid er zelf een toe te
+// voegen of een eigen vorm weer weg te halen.
+function VormKiezer({ waarde, onChange, className, eigen, onEigen }) {
+  const [nieuw, setNieuw] = useState(false);
+  const [beheer, setBeheer] = useState(false);
+  const lijst = [...new Set([...STANDAARD_VORMEN, ...(eigen || [])])];
+  const opties = [
+    ...lijst.map((x) => ({ value: x, label: x })),
+    { value: "__nieuw", label: "Nieuwe vorm…" },
+    ...((eigen || []).length ? [{ value: "__beheer", label: "Eigen vormen beheren…" }] : []),
+  ];
+  const kies = (v) => { if (v === "__nieuw") setNieuw(true); else if (v === "__beheer") setBeheer(true); else onChange(v); };
+  return (
+    <>
+      <AppSelect value={lijst.indexOf(waarde) >= 0 ? waarde : ""} onChange={kies} options={opties} className={className} placeholder="Kies een vorm" />
+      {waarde && lijst.indexOf(waarde) < 0 && <p className="text-[11.5px] mute mt-1">Nu ingevuld: {waarde}</p>}
+      {nieuw && (
+        <PromptModal titel="Nieuwe verpakkingsvorm" label="Naam" placeholder="bv. kleine weckpot" okLabel="Toevoegen"
+          hint="De vorm komt in de lijst te staan, ook bij recepten en bij de rest van het team."
+          onCancel={() => setNieuw(false)}
+          onOk={(v) => { const naam = v.trim(); if (naam) { if (lijst.indexOf(naam) < 0 && onEigen) onEigen([...(eigen || []), naam]); onChange(naam); } setNieuw(false); }} />
+      )}
+      {beheer && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={() => setBeheer(false)}>
+          <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
+            <div className="serif ink text-xl leading-tight">Eigen vormen</div>
+            <p className="text-[12px] mute mt-1 mb-2">De zes standaardvormen blijven altijd staan.</p>
+            <div className="space-y-1.5">
+              {(eigen || []).map((x) => (
+                <div key={x} className="card px-3 py-2 flex items-center gap-2">
+                  <span className="flex-1 min-w-0 text-sm ink truncate">{x}</span>
+                  <button onClick={() => onEigen((eigen || []).filter((y) => y !== x))} className="ff mute hover:opacity-60 p-1"><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end mt-4">
+              <button onClick={() => setBeheer(false)} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Klaar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Verplichte velden van een voorraadregel; ouder werk mist ze soms nog.
 const voorraadMist = (v) => {
   const mist = [];
@@ -8229,7 +8303,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
   );
 }
 
-function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
+function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen, onCancel, onSave }) {
   const src = editing || prefill || {};
   const [product, setProduct] = useState(src.product || "");
   // Opbrengstreferentie: nodig om ingrediënten mee te schalen als de kok
@@ -8355,17 +8429,17 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
       <div className="grid grid-cols-3 gap-3">
         <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
         <Field label="Verpakkingshoeveelheid"><input className={inputCls} value={unitHoeveel} onChange={(e) => setUnitHoeveel(e.target.value)} placeholder="bv. 200 g" /></Field>
-        <Field label="Verpakkingsvorm"><input className={inputCls} value={unitVorm} onChange={(e) => setUnitVorm(e.target.value)} placeholder="bv. glazen pot" /></Field>
+        <Field label="Verpakkingsvorm"><VormKiezer waarde={unitVorm} onChange={setUnitVorm} className={inputCls} eigen={eigenVormen} onEigen={onEigenVormen} /></Field>
       </div>
       {editing && <Field label="Ooit gemaakt (totaal)"><input type="text" inputMode="decimal" className={inputCls} value={initialQty} onChange={(e) => setInitialQty(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Field label="Productiedatum"><input type="date" className={inputCls} value={productionDate} onChange={(e) => setProductionDate(e.target.value)} /></Field>
         {editing
           ? <Field label="Houdbaar tot"><input type="date" className={inputCls} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} /></Field>
           : <Field label="Dagen houdbaar"><input type="text" inputMode="numeric" className={inputCls} value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ""))} placeholder="bv. 6" /></Field>}
+        <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={(v) => { setStorage(v); if (v === "ingevroren") setDays("365"); else if (days === "365") setDays(""); }} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
       </div>
       {!editing && computedExpiry && <p className="text-[13px] -mt-2 mb-4" style={{ color: T.green }}>Houdbaar tot <span className="font-semibold">{fmtDMY(computedExpiry)}</span> — later nog aan te passen via Bewerken.</p>}
-      <Field label="Opslaglocatie"><AppSelect className={inputCls} value={storage} onChange={(v) => { setStorage(v); if (v === "ingevroren") setDays("365"); else if (days === "365") setDays(""); }} options={["ongekoeld", "gekoeld", "ingevroren"]} /></Field>
       <div className="mb-1 text-[12.5px] font-semibold uppercase tracking-widest acc">Ingrediënten</div>
       <div className="space-y-2 mb-2">
         {ings.map((i, idx) => (
@@ -9702,7 +9776,7 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   );
 }
 
-function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onSaveArtikel, onCancel, onSave, chefMode }) {
+function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipes, onSaveAllergenFix, onSaveArtikel, eigenVormen, onEigenVormen, onCancel, onSave, chefMode }) {
   const leveranciersLijst = [...new Set([...(PRIJSLIJST.arts || []).map((a) => a.leverancier).filter(Boolean), ...VASTE_LEVERANCIERS, "Eigen prijzen"])];
   const [name, setName] = useState(recipe?.name || "");
   const [category, setCategory] = useState(recipe?.category || (fermentDefault ? "Fermentatie groenten" : ""));
@@ -9913,7 +9987,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 items-center">
             <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={y.count} onChange={(e) => setYieldRow(i, "count", e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="20 St." />
             <input className="input px-2.5 py-2 w-full text-sm" value={y.size} onChange={(e) => setYieldRow(i, "size", e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
-            <input className="input px-2.5 py-2 w-full text-sm" value={y.pack} onChange={(e) => setYieldRow(i, "pack", e.target.value)} placeholder="kleine pot" />
+            <VormKiezer waarde={y.pack} onChange={(v) => setYieldRow(i, "pack", v)} className="input px-2.5 py-2 w-full text-sm" eigen={eigenVormen} onEigen={onEigenVormen} />
             {i === 0
               ? <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={portions} onChange={(e) => setPortions(e.target.value.replace(/[^0-9.,]/g, ""))}
                   placeholder={(() => { const n = receptPorties({ name, category, portionSize, yields }); return n ? String(n) : "porties"; })()} />
