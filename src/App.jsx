@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-31e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-31g"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3348,7 +3348,7 @@ function App() {
     setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: String(r.check_date || "").slice(0, 10), doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
     setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: String(r.record_date || "").slice(0, 10), by: r.done_by, note: r.note || "", ...(r.data || {}) })));
     setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
-    setStock((vs.data || []).map((r) => ({ id: r.id, product: r.product, qty: r.qty === null ? 0 : Number(r.qty), initialQty: r.initial_qty === null ? 0 : Number(r.initial_qty), unit: r.unit || "", ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], productionDate: String(r.production_date || "").slice(0, 10), expiryDate: String(r.expiry_date || "").slice(0, 10), by: r.made_by || "", recipeId: r.recipe_id || null, storage: r.storage || "" })));
+    setStock((vs.data || []).map((r) => ({ id: r.id, product: r.product, qty: r.qty === null ? 0 : Number(r.qty), initialQty: r.initial_qty === null ? 0 : Number(r.initial_qty), unit: r.unit || "", ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], productionDate: String(r.production_date || "").slice(0, 10), expiryDate: String(r.expiry_date || "").slice(0, 10), by: r.made_by || "", recipeId: r.recipe_id || null, storage: r.storage || "", categorie: r.categorie || "" })));
     // Gedeelde categorielijst; ontbreekt de tabel of rij nog, dan blijft de lokale cache gelden.
     const csRow = (cs && cs.data && cs.data.find((r) => r.key === "recipe_categories")) || null;
     const negRow = (cs && cs.data && cs.data.find((r) => r.key === "calc_negeer")) || null;
@@ -4047,8 +4047,17 @@ function App() {
   // ---- Voorraad ----
   const persistStock = async (v, isNew) => {
     if (!live) return true;
-    const row = { id: v.id, product: v.product, qty: v.qty, initial_qty: v.initialQty, unit: v.unit, ingredients: v.ingredients, production_date: v.productionDate || null, expiry_date: v.expiryDate || null, made_by: v.by, recipe_id: v.recipeId || null, storage: v.storage || "" };
-    const { error } = isNew ? await supabase.from("voorraad").insert(row) : await supabase.from("voorraad").update(row).eq("id", v.id);
+    const row = { id: v.id, product: v.product, qty: v.qty, initial_qty: v.initialQty, unit: v.unit, ingredients: v.ingredients, production_date: v.productionDate || null, expiry_date: v.expiryDate || null, made_by: v.by, recipe_id: v.recipeId || null, storage: v.storage || "", categorie: v.categorie || "" };
+    const zet = async (r) => (isNew ? supabase.from("voorraad").insert(r) : supabase.from("voorraad").update(r).eq("id", v.id));
+    let { error } = await zet(row);
+    if (error && /column|kolom|schema/i.test(String(error.message || ""))) {
+      // De kolom categorie bestaat nog niet in Supabase: dan zonder, en de
+      // categorie blijft op dit apparaat staan.
+      const kaal = { ...row }; delete kaal.categorie;
+      const uit = await zet(kaal);
+      error = uit.error;
+      if (!error) flash("Categorie alleen lokaal — voeg de kolom categorie toe aan voorraad");
+    }
     return !dbFail(error);
   };
   const saveStock = async (data, editingId) => {
@@ -4101,7 +4110,7 @@ function App() {
       const d = Math.round((new Date(v.expiryDate + "T12:00:00") - new Date(v.productionDate + "T12:00:00")) / 86400000);
       return isNaN(d) ? "" : String(d);
     };
-    const rows = [["Product", "Categorie", "Totaal stuks", "Verpakkingshoeveelheid", "Verpakkingsvorm", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Totaal gewicht (g)"]];
+    const rows = [["Product", "Categorie", "Totaal stuks", "Verpakkingshoeveelheid", "Verpakkingsvorm", "Productiedatum", "Houdbaar tot", "Dagen houdbaar", "Opslaglocatie", "Ingevoerd door", "Gewicht (g)"]];
     const num = (x) => { const n = Number(String(x ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
     const fmtN = (n) => String(Math.round(n * 100) / 100).replace(".", ",");
     // "550 gram pot" wordt 550 g + glazen pot; "1 L beugelfles" wordt 1 l + beugelfles.
@@ -4139,7 +4148,8 @@ function App() {
       [/saus|mayo|dressing|vinaigrette/i, "Sauzen & emulsies"],
       [/gedroogd|krokant|poeder/i, "Krokant & garnituur"],
     ];
-    const catVan = (naam) => {
+    const catVan = (naam, eigen) => {
+      if (String(eigen || "").trim()) return String(eigen).trim();
       const sleutel = String(naam || "").trim().toLowerCase();
       const r = recipes.find((x) => String(x.name || "").trim().toLowerCase() === sleutel);
       if (r && r.category) return r.category;
@@ -4153,12 +4163,15 @@ function App() {
       const prod = lijst[i].product;
       const groep = [];
       while (i < lijst.length && lijst[i].product === prod) { groep.push(lijst[i]); i++; }
-      let pStuks = 0, pG = 0;
-      groep.forEach((v) => { const q = num(v.initialQty); const g = unitSizeG(v.unit); pStuks += q; if (g != null) pG += q * g; });
-      const cat = catVan(prod);
-      groep.forEach((v, j) => {
+      const cat = catVan(prod, (groep.find((x) => String(x.categorie || "").trim()) || {}).categorie);
+      // Elke regel rekent zijn eigen gewicht uit: aantal x verpakkingshoeveelheid.
+      // Zo staat er overal een getal, ook bij de tweede verpakking van hetzelfde
+      // product.
+      groep.forEach((v) => {
         const [hoeveel, vorm] = splitsVerpakking(v.unit);
-        rows.push([v.product, cat, String(v.initialQty).replace(".", ","), hoeveel, vorm, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || "", j === 0 ? fmtN(pG) : ""]);
+        const q = num(v.initialQty);
+        const g = unitSizeG(v.unit);
+        rows.push([v.product, cat, String(v.initialQty).replace(".", ","), hoeveel, vorm, v.productionDate ? fmtDMY(v.productionDate) : "", v.expiryDate ? fmtDMY(v.expiryDate) : "", dagen(v), v.storage || "", v.by || "", g != null ? fmtN(q * g) : ""]);
       });
     }
     // Geen "sep=;"-regel: die laat Excel de UTF-8-markering negeren, waardoor
@@ -8314,6 +8327,7 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
   // De verpakking staat als één tekst in de voorraad ("200 g pot"); in het
   // formulier vullen we hoeveelheid en vorm apart in en plakken ze weer samen.
   const splitsUnit = splitsVerpakkingTekst;
+  const [categorie, setCategorie] = useState(src.categorie || (prefill && prefill.category) || "");
   const [unitHoeveel, setUnitHoeveel] = useState(() => splitsUnit(src.unit || (prefill && prefill.yieldUnit) || "")[0]);
   const [unitVorm, setUnitVorm] = useState(() => splitsUnit(src.unit || (prefill && prefill.yieldUnit) || "")[1]);
   const unit = [unitHoeveel.trim(), unitVorm.trim()].filter(Boolean).join(" ");
@@ -8356,6 +8370,7 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
     setProduct(r.name); setPicked(true);
     setRecipeId(r.id);
     setIngs((r.ingredients && r.ingredients.length ? r.ingredients : [{ item: "", amount: "" }]).map((i) => ({ ...i })));
+    if (r.category) setCategorie(r.category);
     if (r.shelfDays) setDays(String(r.shelfDays));
     if (r.shelfStorage) setStorage(mapStorage(r.shelfStorage));
     // Opbrengst van het recept → aantal + eenheid (handmatig aan te passen).
@@ -8387,6 +8402,7 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
   const submit = () => {
     const ontbreekt = [];
     if (!product.trim()) ontbreekt.push("productnaam");
+    if (!String(categorie || "").trim()) ontbreekt.push("categorie");
     if (nm(qty) === null) ontbreekt.push("aantal");
     if (!unitHoeveel.trim()) ontbreekt.push("verpakkingshoeveelheid");
     if (!unitVorm.trim()) ontbreekt.push("verpakkingsvorm");
@@ -8396,7 +8412,7 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
     const q1 = nm(qty);
     const q0 = editing ? (nm(initialQty) ?? q1) : q1;
     onSave({
-      product: product.trim(), qty: q1, initialQty: q0, unit: unit.trim(),
+      product: product.trim(), categorie: String(categorie || "").trim(), qty: q1, initialQty: q0, unit: unit.trim(),
       productionDate,
       expiryDate: editing ? expiryDate : computedExpiry,
       ingredients: ings.map((i) => ({ item: (i.item || "").trim(), amount: (i.amount || "").trim() })).filter((i) => i.item),
@@ -8407,6 +8423,7 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
   return (
     <div>
       <FormBar title={editing ? "Voorraad bewerken" : "Toevoegen aan de voorraad"} onCancel={onCancel} onSave={submit} saveLabel="Opslaan" />
+      <div className="grid grid-cols-[2fr_1fr] gap-3">
       <Field label={editing ? "Product" : "Product / recept"}>
         <div className="relative">
           <input className={inputCls} value={product}
@@ -8426,6 +8443,12 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
         </div>
         {!editing && <p className="text-[11.5px] mute mt-1">Een recept kiezen vult naam, ingrediënten en houdbaarheid in.</p>}
       </Field>
+        <Field label="Categorie">
+          <AppSelect className={inputCls} value={categorie} onChange={setCategorie}
+            options={[...new Set([...(categorie ? [categorie] : []), ...RECIPE_CATEGORIES])].map((x) => ({ value: x, label: x }))}
+            placeholder="Kies een categorie" />
+        </Field>
+      </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label={editing ? "Huidige voorraad" : "Aantal"}><input type="text" inputMode="decimal" className={inputCls} value={qty} onChange={(e) => setQty(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 20" /></Field>
         <Field label="Verpakkingshoeveelheid"><input className={inputCls} value={unitHoeveel} onChange={(e) => setUnitHoeveel(e.target.value)} placeholder="bv. 200 g" /></Field>
