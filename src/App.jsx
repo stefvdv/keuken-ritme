@@ -532,7 +532,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-31a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-31c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -7048,7 +7048,9 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
   const inSeason = (p) => { const ss = (p.season && p.season.length) ? p.season : seasonOf(p.name); return ss.includes(seasonF) || ss.includes("Hele jaar"); };
   const seasonsOf = (p) => (p.season && p.season.length) ? p.season : seasonOf(p.name);
   const shown = pairings
-    .filter((p) => softMatchAny([p.name, p.pairs.join(" "), p.note], q))
+    // Zoeken gaat op de productnaam zelf; niet op de combinaties of de notitie,
+    // anders krijg je bij "appel" ook alles wat lekker is mét appel.
+    .filter((p) => softMatchAny([p.name], q))
     .filter((p) => seasonF === "Alle" || inSeason(p))
     .sort((a, b) =>
       sortMode === "nieuw" ? ((b.addedAt || 0) - (a.addedAt || 0) || a.name.localeCompare(b.name, "nl"))
@@ -8008,6 +8010,35 @@ function unitGroupsOf(entries) {
     .sort((a, b) => { const sa = unitSizeG(a.unit) ?? 1e12, sb = unitSizeG(b.unit) ?? 1e12; return sa - sb || a.unit.localeCompare(b.unit, "nl"); });
 }
 
+// "200 g pot" of "200 pot" uit elkaar halen: getal met eventuele eenheid als
+// hoeveelheid, de rest als verpakkingsvorm. Alleen echte eenheden tellen als
+// eenheid — "pot" hoort bij de vorm.
+const VERPAK_EENHEDEN = ["g", "gr", "gram", "kg", "l", "lt", "ltr", "liter", "ml", "cl", "dl", "st", "stuk", "stuks"];
+const splitsVerpakkingTekst = (tekst) => {
+  const t = String(tekst || "").trim();
+  if (!t) return ["", ""];
+  const m = t.match(/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s*(.*)$/);
+  if (!m) return ["", t];
+  const eh = String(m[2] || "").toLowerCase();
+  const isEenheid = VERPAK_EENHEDEN.indexOf(eh) >= 0;
+  const hoeveel = (m[1] + (isEenheid ? " " + m[2] : "")).trim();
+  const vorm = ((isEenheid ? "" : m[2] || "") + " " + (m[3] || "")).trim();
+  return [hoeveel, vorm];
+};
+
+// Verplichte velden van een voorraadregel; ouder werk mist ze soms nog.
+const voorraadMist = (v) => {
+  const mist = [];
+  const getal = (x) => { const n = Number(String(x ?? "").replace(",", ".")); return String(x ?? "").trim() !== "" && !isNaN(n); };
+  if (!getal(v && v.initialQty) && !getal(v && v.qty)) mist.push("aantal");
+  const [hoeveel, vorm] = splitsVerpakkingTekst((v && v.unit) || "");
+  if (!hoeveel) mist.push("verpakkingshoeveelheid");
+  if (!vorm) mist.push("verpakkingsvorm");
+  if (!(v && v.productionDate)) mist.push("productiedatum");
+  if (!(v && v.expiryDate)) mist.push("houdbaar tot");
+  return mist;
+};
+
 function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice, chefMode, recipeById }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
@@ -8054,6 +8085,16 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
               {isOud && !leeg && <span className="text-[10.5px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#e8ebe0", color: T.green }}>oudste — eerst gebruiken</span>}
             </div>
           )}
+          {(() => {
+            const mist = voorraadMist(v);
+            if (!mist.length) return null;
+            return (
+              <div className="rounded-lg px-2.5 py-1.5 mb-2 text-[12px] font-medium flex items-start gap-1.5" style={{ background: "#fbeceb", color: "#8a2f28" }}>
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <span>Nog invullen: {mist.join(", ")}{canEdit ? " — via Bewerken" : ""}</span>
+              </div>
+            );
+          })()}
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px]">
             <div className="flex justify-between gap-2"><span className="mute">Op voorraad</span><span className="ink font-medium">{fmtQty(v.qty, v.unit)}</span></div>
             <div className="flex justify-between gap-2"><span className="mute">Gemaakt in {stockYear(v)}</span><span className="ink font-medium">{fmtQty(v.initialQty, v.unit)}</span></div>
@@ -8086,7 +8127,14 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
       <div key={g.key} className={"card overflow-hidden" + (isOpen ? " relative z-20" : "")} style={verlopen ? { borderColor: "#c08a7a" } : undefined}>
         <div className="px-4 py-3">
           <button onClick={() => setOpen(isOpen ? null : g.key)} className="ff w-full text-left">
-            <div className="serif ink font-bold text-lg leading-tight" style={op ? { opacity: 0.5 } : undefined}>{g.product}</div>
+            <div className="serif ink font-bold text-lg leading-tight flex items-center gap-1.5" style={op ? { opacity: 0.5 } : undefined}>
+              {g.product}
+              {(() => {
+                const mist = [...new Set(g.entries.flatMap(voorraadMist))];
+                if (!mist.length) return null;
+                return <span title={"Nog invullen: " + mist.join(", ")} style={{ color: "#d32f2f" }}><AlertTriangle size={18} /></span>;
+              })()}
+            </div>
             {chefMode && (() => { const r = g.recipeId && recipeById ? recipeById(g.recipeId) : null; const kp = r ? receptKost(r) : null; if (kp === null) return null; return <div className="text-[12.5px]" style={{ color: "#44502f" }}>Kostprijs batch {eur(kp)} <span className="mute">(chef)</span></div>; })()}
           </button>
           <div className="flex items-end gap-2 mt-0.5">
@@ -8191,13 +8239,7 @@ function VoorraadForm({ editing, prefill, allRecipes, onCancel, onSave }) {
   const [initialQty, setInitialQty] = useState(editing ? String(editing.initialQty) : "");
   // De verpakking staat als één tekst in de voorraad ("200 g pot"); in het
   // formulier vullen we hoeveelheid en vorm apart in en plakken ze weer samen.
-  const splitsUnit = (tekst) => {
-    const t = String(tekst || "").trim();
-    if (!t) return ["", ""];
-    const m = t.match(/^\s*(\d+(?:[.,]\d+)?\s*[a-zA-Z]*)\s*(.*)$/);
-    if (!m) return ["", t];
-    return [m[1].trim(), (m[2] || "").trim()];
-  };
+  const splitsUnit = splitsVerpakkingTekst;
   const [unitHoeveel, setUnitHoeveel] = useState(() => splitsUnit(src.unit || (prefill && prefill.yieldUnit) || "")[0]);
   const [unitVorm, setUnitVorm] = useState(() => splitsUnit(src.unit || (prefill && prefill.yieldUnit) || "")[1]);
   const unit = [unitHoeveel.trim(), unitVorm.trim()].filter(Boolean).join(" ");
