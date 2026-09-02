@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02i"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2839,13 +2839,12 @@ function App() {
   const [samenvoegVraag, setSamenvoegVraag] = useState(null); // {lev, paren} — na het inlezen laten kiezen
   // Gekozen artikelen verhuizen naar de bestaande (oudere) lijst; het nieuwe
   // exemplaar verdwijnt, zodat er nergens dubbelen ontstaan.
-  // In de popup een van de twee versies weggooien. Blijft de nieuwe over, dan
-  // verhuist die naar de lijst van de weggegooide (de oudste map).
-  const kiesUitPaar = async (nieuw, oud, welke) => {
-    if (welke === "nieuw") { await deleteBdArtikel(nieuw.code); flash('"' + nieuw.omschrijving + '" uit de nieuwe lijst verwijderd'); return; }
-    await deleteBdArtikel(oud.code);
-    await updateBdArtikel({ ...nieuw, leverancier: oud.leverancier || nieuw.leverancier, categorie: oud.categorie || nieuw.categorie, opmerking: nieuw.opmerking || oud.opmerking || "" });
-    flash('"' + nieuw.omschrijving + '" staat nu onder ' + (oud.leverancier || "de bestaande lijst"));
+  // In de popup versies weggooien. Zolang er meer dan één overblijft gebeurt er
+  // verder niets; blijft de nieuwe als enige over, dan verhuist die naar de
+  // bestaande (oudste) lijst.
+  const verhuisNaarLijst = async (artikel, doel) => {
+    await updateBdArtikel({ ...artikel, leverancier: (doel && doel.leverancier) || artikel.leverancier, categorie: (doel && doel.categorie) || artikel.categorie });
+    flash('"' + artikel.omschrijving + '" staat nu onder ' + ((doel && doel.leverancier) || "de bestaande lijst"));
   };
   const voegArtikelenSamen = async (paren, automatisch) => {
     if (!paren.length) return;
@@ -4704,7 +4703,8 @@ function App() {
         <SamenvoegLijstModal vraag={samenvoegVraag}
           onSluit={() => setSamenvoegVraag(null)}
           onMerge={(paar) => voegArtikelenSamen(paar)}
-          onWeg={(nieuw, oud, welke) => kiesUitPaar(nieuw, oud, welke)} />
+          onWegArtikel={(code) => deleteBdArtikel(code)}
+          onVerhuis={(artikel, doel) => verhuisNaarLijst(artikel, doel)} />
       )}
       {importVraag && (
         <PromptModal titel="Van welke leverancier?" label="Leveranciersnaam" waarde={importVraag.naam} placeholder="bv. BD Totaal"
@@ -4973,60 +4973,75 @@ function PrijsUitleg({ ing, onSluit, onKiesArtikel, onNieuwArtikel, leveranciers
 
 // Na het inlezen: welke artikelen bestaan al onder een andere leverancier?
 // Eén voor één afwerken: vinkje voegt samen, kruisje slaat over.
-function SamenvoegLijstModal({ vraag, onMerge, onWeg, onSluit }) {
-  const [open, setOpen] = useState(() => vraag.paren.map((p, i) => ({ ...p, keuze: 0, i })));
+function SamenvoegLijstModal({ vraag, onMerge, onWegArtikel, onVerhuis, onSluit }) {
+  const [open, setOpen] = useState(() => vraag.paren.map((p, i) => ({ nieuw: p.nieuw, rest: p.kandidaten, doel: p.kandidaten[0], nieuwWeg: false, keuze: 0, i })));
   const [gedaan, setGedaan] = useState(0);
   const sluitAls = (rest) => { setOpen(rest); if (!rest.length) onSluit(); };
+  const klaar = (i) => sluitAls(open.filter((x) => x.i !== i));
   const regel = (a) => [a.inhoud || "—", eur(a.prijs), a.leverancier || "onbekend"].filter(Boolean).join(" · ");
+  // Een versie weggooien. Pas als er één overblijft is de regel klaar: staat de
+  // nieuwe er dan nog, dan verhuist die naar de lijst waar de rest in stond.
+  const gooiWeg = (p, wat) => {
+    onWegArtikel(wat === "nieuw" ? p.nieuw.code : wat.code);
+    const rest = wat === "nieuw" ? p.rest : p.rest.filter((k) => k.code !== wat.code);
+    const nieuwWeg = wat === "nieuw" ? true : p.nieuwWeg;
+    const over = (nieuwWeg ? 0 : 1) + rest.length;
+    if (over <= 1) {
+      if (!nieuwWeg && rest.length === 0) onVerhuis(p.nieuw, p.doel);
+      setGedaan((n) => n + 1);
+      klaar(p.i);
+      return;
+    }
+    setOpen((xs) => xs.map((x) => (x.i === p.i ? { ...x, rest, nieuwWeg, keuze: 0 } : x)));
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-lg rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="serif ink text-xl leading-tight">Artikelen samenvoegen?</div>
         <p className="text-[12.5px] mute mt-1.5 leading-relaxed">
           {vraag.vanzelf ? vraag.vanzelf + " artikelen zijn al vanzelf samengevoegd (zelfde verpakking of goedkoper per eenheid). " : ""}
-          Deze zijn niet te vergelijken — kies zelf. Het vinkje zet de nieuwe gegevens op de bestaande regel en haalt het exemplaar uit de nieuwe lijst; het kruisje laat beide staan.
+          Deze zijn niet te vergelijken — kies zelf. Het vinkje zet de nieuwe gegevens op de bestaande regel; met een prullenbak gooi je een versie weg. Blijft er één over, dan komt die in de bestaande lijst.
         </p>
         <div className="flex-1 overflow-y-auto space-y-2 mt-3">
           {open.map((p) => (
             <div key={p.nieuw.code} className="card p-3">
               <div className="text-sm ink font-medium">{p.nieuw.omschrijving}</div>
-              <div className="text-[12px] mt-1.5 flex items-center gap-2" style={{ color: "#44502f" }}>
-                <span className="flex-1 min-w-0 truncate"><span className="font-semibold">Nieuw</span> · {regel(p.nieuw)}</span>
-                <button type="button" title="Deze versie verwijderen; de bestaande blijft"
-                  onClick={() => { onWeg(p.nieuw, p.kandidaten[p.keuze], "nieuw"); sluitAls(open.filter((x) => x.i !== p.i)); }}
-                  className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
-              </div>
-              <div className="text-[12px] mute mt-1">{p.kandidaten.length === 1 ? "Bestaand" : "Kies waarmee samenvoegen"}</div>
+              {!p.nieuwWeg && (
+                <div className="text-[12px] mt-1.5 flex items-center gap-2" style={{ color: "#44502f" }}>
+                  <span className="flex-1 min-w-0 truncate"><span className="font-semibold">Nieuw</span> · {regel(p.nieuw)}</span>
+                  <button type="button" title="Deze versie weggooien" onClick={() => gooiWeg(p, "nieuw")} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
+                </div>
+              )}
+              <div className="text-[12px] mute mt-1">{p.rest.length === 1 ? "Bestaand" : "Kies waarmee samenvoegen"}</div>
               <div className="space-y-1 mt-1">
-                {p.kandidaten.map((k, ki) => (
-                  <button key={k.code} type="button" disabled={p.kandidaten.length === 1}
-                    onClick={() => setOpen((xs) => xs.map((x) => (x.i === p.i ? { ...x, keuze: ki } : x)))}
-                    className="ff w-full text-left rounded-lg px-2.5 py-1.5 text-[12.5px] flex items-center gap-2"
+                {p.rest.map((k, ki) => (
+                  <div key={k.code} className="rounded-lg px-2.5 py-1.5 text-[12.5px] flex items-center gap-2"
                     style={{ border: "1px solid " + (p.keuze === ki ? T.green : T.line), background: p.keuze === ki ? "#eef2e6" : "transparent" }}>
-                    <span className="shrink-0 rounded-full w-3 h-3" style={{ border: "1.5px solid " + (p.keuze === ki ? T.green : T.line), background: p.keuze === ki ? T.green : "transparent" }} />
-                    <span className="min-w-0 flex-1 truncate ink">{k.omschrijving}</span>
-                    <span className="shrink-0 mute">{regel(k)}</span>
-                    <span role="button" title="Deze versie verwijderen; de nieuwe verhuist naar deze lijst"
-                      onClick={(e) => { e.stopPropagation(); onWeg(p.nieuw, k, "oud"); sluitAls(open.filter((x) => x.i !== p.i)); }}
-                      className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></span>
-                  </button>
+                    <button type="button" onClick={() => setOpen((xs) => xs.map((x) => (x.i === p.i ? { ...x, keuze: ki } : x)))} className="ff flex-1 min-w-0 text-left flex items-center gap-2">
+                      <span className="shrink-0 rounded-full w-3 h-3" style={{ border: "1.5px solid " + (p.keuze === ki ? T.green : T.line), background: p.keuze === ki ? T.green : "transparent" }} />
+                      <span className="min-w-0 flex-1 truncate ink">{k.omschrijving}</span>
+                      <span className="shrink-0 mute">{regel(k)}</span>
+                    </button>
+                    <button type="button" title="Deze versie weggooien" onClick={() => gooiWeg(p, k)} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
+                  </div>
                 ))}
               </div>
-              <div className="flex justify-end gap-2 mt-2">
-                <button onClick={() => sluitAls(open.filter((x) => x.i !== p.i))}
-                  className="ff inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>
-                  <X size={14} /> Laat staan
-                </button>
-                <button onClick={() => { onMerge([{ nieuw: p.nieuw, oud: p.kandidaten[p.keuze] }]); setGedaan((n) => n + 1); sluitAls(open.filter((x) => x.i !== p.i)); }}
-                  className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">
-                  <Check size={14} /> Samenvoegen
-                </button>
-              </div>
+              {!p.nieuwWeg && (
+                <div className="flex justify-end gap-2 mt-2">
+                  <button onClick={() => klaar(p.i)} className="ff inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>
+                    <X size={14} /> Laat staan
+                  </button>
+                  <button onClick={() => { onMerge([{ nieuw: p.nieuw, oud: p.rest[p.keuze] }]); setGedaan((n) => n + 1); klaar(p.i); }}
+                    className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">
+                    <Check size={14} /> Samenvoegen
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
         <div className="flex items-center justify-between gap-2 mt-4">
-          <span className="text-[12.5px] mute">{open.length} te beoordelen{gedaan ? " · " + gedaan + " samengevoegd" : ""}</span>
+          <span className="text-[12.5px] mute">{open.length} te beoordelen{gedaan ? " · " + gedaan + " afgerond" : ""}</span>
           <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
         </div>
       </div>
