@@ -269,7 +269,8 @@ function printCleaning(weekLabel, range, days, taskName) {
   let body = "<h1>Schoonmaaklogboek</h1><div class='sub'>" + pEsc(weekLabel) + " · " + pEsc(range) + "</div>";
   if (!days.length) body += "<p>Geen registraties deze week.</p>";
   for (const day of days) {
-    body += "<div class='day'>" + pEsc(day.label) + (day.off ? " — vrije dag (bedrijf dicht)" : "") + "</div>";
+    const autoOff = day.off && (String(day.off.doneBy || "").toLowerCase() === "automatisch" || /automatisch/i.test(String(day.off.note || "")));
+    body += "<div class='day'>" + pEsc(day.label) + (day.off ? (autoOff ? " — niet ingevuld" : " — vrije dag (bedrijf dicht), gemeld door " + pEsc(day.off.doneBy || "onbekend")) : "") + "</div>";
     if (!day.off) {
       body += "<table><thead><tr><th>Taak</th><th>Afgetekend door</th><th>Opmerking</th></tr></thead><tbody>";
       for (const l of day.items) body += "<tr><td>" + pEsc(taskName(l.taskId)) + "</td><td>" + pEsc(l.doneBy) + "</td><td>" + pEsc(l.note) + "</td></tr>";
@@ -532,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-31g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-08-31j"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -567,6 +568,43 @@ const HACCP_UNITS = [
 ];
 // IJkcontrole: thermometer in smeltend ijswater hoort 0 °C te geven (±1 °C).
 const CALIB_TOLERANCE = 1;
+// Hoe vaak de koeling gemeten moet worden. Instelbaar; standaard om de dag.
+const HACCP_INTERVAL_STANDAARD = 2;
+let HACCP_INTERVAL = HACCP_INTERVAL_STANDAARD;
+const zetHaccpInterval = (n) => { const x = Number(n); HACCP_INTERVAL = x > 0 ? x : HACCP_INTERVAL_STANDAARD; };
+// De dagen waarop gemeten had moeten worden en waarop niets staat. Telt terug
+// vanaf vandaag, hooguit 60 dagen, en stopt bij de eerste meting ooit.
+const gemisteMetingen = (logs) => {
+  const rijen = [...(logs || [])].map((l) => String(l.checkDate || "")).filter(Boolean).sort();
+  if (!rijen.length) return [];
+  const gedaan = new Set(rijen);
+  const eerste = rijen[0];
+  const uit = [];
+  const d = new Date(localDate() + "T12:00:00");
+  for (let i = 0; i < 60; i++) {
+    const dag = localDate(d);
+    if (dag < eerste) break;
+    if (i > 0 || new Date().getHours() >= WORKDAY_END) {
+      // een dag telt als gemist wanneer er in het interval eromheen niets staat
+      let dekking = false;
+      for (let k = 0; k < HACCP_INTERVAL; k++) {
+        const t = new Date(d); t.setDate(t.getDate() - k);
+        if (gedaan.has(localDate(t))) { dekking = true; break; }
+      }
+      const vorige = uit.length ? uit[uit.length - 1] : null;
+      const genoegVerschil = !vorige || Math.round((new Date(vorige + "T12:00:00") - new Date(dag + "T12:00:00")) / 86400000) >= HACCP_INTERVAL;
+      if (!dekking && genoegVerschil) uit.push(dag);
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  return uit;
+};
+// Staat er vandaag een meting open volgens het interval?
+const haccpDue = (logs) => {
+  const rijen = [...(logs || [])].map((l) => String(l.checkDate || "")).filter(Boolean).sort();
+  if (!rijen.length) return true;
+  return daysBetween(rijen[rijen.length - 1]) >= HACCP_INTERVAL;
+};
 const inRange = (u, v) => v === null || v === undefined || isNaN(v) ? null : (v >= u.min && v <= u.max);
 const fmtTemp = (v) => (v === null || v === undefined || v === "" ? "—" : String(v).replace(".", ",") + " °C");
 
@@ -2780,6 +2818,13 @@ function App() {
   const [spellingUit, setSpellingUit] = useState([]); // namen die bewust afwijken en niet gecorrigeerd worden
   const [naamAlias, setNaamAlias] = useState({}); // zelf samengevoegde namen: variant -> hoofdnaam
   const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
+  const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
+  React.useMemo(() => zetHaccpInterval(haccpInterval), [haccpInterval]);
+  const saveHaccpInterval = async (n) => {
+    const x = Math.max(1, Math.round(Number(n) || HACCP_INTERVAL_STANDAARD));
+    setHaccpInterval(x);
+    if (live) await supabase.from("app_settings").upsert({ key: "haccp_interval", value: { dagen: x }, updated_at: new Date().toISOString() });
+  };
   React.useMemo(() => zetVormen(eigenVormen), [eigenVormen]);
   const saveVormen = async (lijst) => {
     const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))];
@@ -3302,7 +3347,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen"]),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval"]),
       supabase.from("assortiment").select("*"),
       supabase.from("bd_artikelen").select("*"),
       supabase.from("calculatie_items").select("*"),
@@ -3359,6 +3404,8 @@ function App() {
     if (alRow && alRow.value && alRow.value.paren) setNaamAlias(alRow.value.paren);
     const vmRow = (cs && cs.data && cs.data.find((r) => r.key === "verpakkingsvormen")) || null;
     if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
+    const hiRow = (cs && cs.data && cs.data.find((r) => r.key === "haccp_interval")) || null;
+    if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
     if (cit && cit.data) setCalcItems(cit.data.map((r) => ({ ...(r.data || {}), id: r.id })));
@@ -4029,6 +4076,7 @@ function App() {
     ijs: tableRowsFor("__ice_rows", ICE_ROWS),
     roosteren: tableRowsFor("__roast_rows", ROAST_ROWS),
     maten: tableRowsFor("__maat_rows", MAAT_ROWS),
+    koken: tableRowsFor("__kook_rows", KOOK_ROWS),
   };
   // De prijsmotor rekent lepels en stuks om met deze tabel.
   React.useMemo(() => zetMaten(techTableRows.maten), [werkDocs]);
@@ -4442,6 +4490,15 @@ function App() {
                   }
                 }
               }
+              // Temperaturen: 's ochtends, en alleen als het interval verstreken is.
+              if (haccpDue(haccpLogs) && nu.getHours() >= WORKDAY_START && nu.getHours() < 12 && !cookDismiss["temps"]) {
+                const gemist = gemisteMetingen(haccpLogs);
+                uit.push(<ReminderBanner key="temps" icon={<Thermometer size={15} />} title="HACCP · temperaturen"
+                  text={"Meet de koelcel, koelwerkbank, vrieskast en vriescel — " + intervalLabel(HACCP_INTERVAL) + " aan de beurt."
+                    + (gemist.length ? " Er staan nog " + gemist.length + " gemiste metingen open." : "")}
+                  actionLabel="Invullen" onAction={() => push({ screen: "haccpForm", editing: null })}
+                  onDismiss={() => dismissCook("temps")} />);
+              }
               // Leveringsbanner: dinsdag en vrijdag, zolang er vandaag nog geen leveringscontrole is.
               const dow = nu.getDay();
               if ((dow === 2 || dow === 5) && binnenWerkdag(nu) && !cookDismiss["levering"] && !haccpRecords.some((r) => r.kind === "levering" && r.date === localDate())) {
@@ -4487,6 +4544,7 @@ function App() {
               onDeleteDoc={deleteWerkDoc}
               onEditFerment={() => push({ screen: "fermentGuideForm" })} />}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
+              haccpInterval={haccpInterval} onHaccpInterval={saveHaccpInterval}
               dayDone={cleaningLogs.find((l) => l.taskId === DAY_DONE_ID && l.doneDate === todayKey) || null}
               dayOff={cleaningLogs.find((l) => l.taskId === DAY_OFF_ID && l.doneDate === todayKey) || null}
               onDayDone={markDayDone} onUndoDayDone={undoDayDone} onDayOff={markDayOff}
@@ -7326,6 +7384,25 @@ const MAAT_ROWS = [
   { naam: "citroengras", el: "", stuk: "20", cm: "3" },
 ];
 
+// Wat droog product wordt na koken. Factor = gekookt gewicht per kilo droog.
+const KOOK_ROWS = [
+  { product: "Rijst, wit langkorrel", factor: "2,8", opmerking: "1 kg droog wordt ± 2,8 kg gekookt" },
+  { product: "Rijst, zilvervlies", factor: "2,6", opmerking: "iets steviger, kookt langer" },
+  { product: "Risottorijst", factor: "3", opmerking: "neemt bouillon op tijdens roeren" },
+  { product: "Pasta, droog", factor: "2,4", opmerking: "al dente; doorgekookt loopt op naar 2,6" },
+  { product: "Couscous", factor: "2,8", opmerking: "wellen met gelijk deel vocht plus wat extra" },
+  { product: "Bulgur", factor: "2,7", opmerking: "" },
+  { product: "Quinoa", factor: "2,8", opmerking: "" },
+  { product: "Parelgort", factor: "3", opmerking: "" },
+  { product: "Linzen, droog", factor: "2,4", opmerking: "" },
+  { product: "Kikkererwten, droog", factor: "2,5", opmerking: "na weken en koken" },
+  { product: "Witte bonen, droog", factor: "2,5", opmerking: "" },
+  { product: "Aardappel, geschild gekookt", factor: "0,97", opmerking: "verliest juist een beetje vocht" },
+  { product: "Aardappel, in de schil gekookt", factor: "1", opmerking: "gewicht blijft gelijk" },
+  { product: "Aardappel, geroosterd", factor: "0,75", opmerking: "verdampt een kwart" },
+  { product: "Polenta, droog", factor: "4", opmerking: "met 4 delen vocht" },
+];
+
 const TECH_NOTES_SEED = {
   jam: [
     "Weeg het schoongemaakte fruit; reken 500 g geleisuiker 2:1 per kg.",
@@ -7348,6 +7425,12 @@ const TECH_NOTES_SEED = {
     "Bij stuks en centimeters zonder gewicht rekent de app niets uit; die prijs vul je in het recept zelf in.",
     "Weeg een keer na wat bij jullie in huis is: een ui van 150 gram is een aanname, geen wet.",
   ],
+  koken: [
+    "De factor is het gekookte gewicht per kilo droog product.",
+    "Wil je 5 kg gekookte pasta? 5 ÷ 2,4 = ruim 2 kg droog.",
+    "Rijst en pasta nemen vocht op; aardappel verliest juist vocht, zeker in de oven.",
+    "Weeg een keer na met jullie eigen kooktijd en pas de factor aan.",
+  ],
   roosteren: [
     "Gemeten bij 200 °C, licht geolied, in één laag, en per stap gewogen.",
     "Snijverlies is van onbewerkt naar schoongemaakt (loof, schil, zaadlijst, houtige delen).",
@@ -7356,6 +7439,40 @@ const TECH_NOTES_SEED = {
     "Weeg een keer per seizoen na en pas de waarden aan; jonge tuingroente bevat meer vocht.",
   ],
 };
+
+// Hoeveel droog product heb je nodig voor een gewenst gekookt gewicht?
+function KookReken({ rijen }) {
+  const lijst = (rijen || []).filter((r) => eurNum(r.factor));
+  const [product, setProduct] = useState(lijst.length ? lijst[0].product : "");
+  const [doel, setDoel] = useState("");
+  const rij = lijst.find((r) => r.product === product) || lijst[0];
+  const factor = rij ? eurNum(rij.factor) : null;
+  const gewenst = eurNum(doel);
+  const nodig = factor && gewenst !== null && factor > 0 ? gewenst / factor : null;
+  const kg = (n) => (n >= 1 ? String(Math.round(n * 100) / 100).replace(".", ",") + " kg" : Math.round(n * 1000) + " g");
+  if (!lijst.length) return null;
+  return (
+    <div className="card p-3 mt-2">
+      <div className="text-[12.5px] font-bold ink mb-2">Hoeveel heb ik droog nodig?</div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-[11.5px] font-bold ink mb-1">Product</div>
+          <AppSelect className="input px-2.5 py-2 w-full text-sm" value={product} onChange={setProduct} options={lijst.map((r) => ({ value: r.product, label: r.product }))} />
+        </div>
+        <div>
+          <div className="text-[11.5px] font-bold ink mb-1">Gewenst gekookt (kg)</div>
+          <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={doel}
+            onChange={(e) => setDoel(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 5" />
+        </div>
+      </div>
+      <div className="text-sm ink mt-2">
+        {nodig === null
+          ? <span className="mute">Vul een gewenst gewicht in.</span>
+          : <>Je hebt <span className="font-semibold">{kg(nodig)}</span> droog nodig <span className="mute">({gewenst} ÷ {String(factor).replace(".", ",")})</span></>}
+      </div>
+    </div>
+  );
+}
 
 function TechTable({ head, rows }) {
   return (
@@ -8129,7 +8246,8 @@ const voorraadMist = (v) => {
 function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice, chefMode, recipeById }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
-  const [openYear, setOpenYear] = useState(null);
+  const [openYear, setOpenYear] = useState(null); // eerdere jaren: standaard dicht
+  const [openHuidig, setOpenHuidig] = useState(true); // dit jaar: standaard open
   const currentYear = Number(localDate().slice(0, 4));
   const expiring = stock.filter((v) => v.qty > 0 && v.expiryDate && daysUntil(v.expiryDate) !== null && daysUntil(v.expiryDate) <= 7);
   const match = (v) => softMatchAny([v.product, v.unit, v.storage, (v.ingredients || []).map((i) => i.item).join(" ")], q.trim().toLowerCase());
@@ -8273,13 +8391,17 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
         </div>
       )}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs mute">{shown.length} {shown.length === 1 ? "product" : "producten"} · {currentYear}</span>
+        <button onClick={() => setOpenHuidig((o) => !o)} className="ff inline-flex items-center gap-1.5">
+          {openHuidig ? <ChevronUp size={15} className="acc" /> : <ChevronDown size={15} className="acc" />}
+          <span className="text-sm font-semibold ink">Gemaakt in {currentYear}</span>
+          <span className="text-xs mute">({shown.length})</span>
+        </button>
         <button onClick={() => onExport(currentYear)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Download size={15} /> Excel {currentYear}</button>
       </div>
-      {shown.length === 0 && <Empty label="Nog niets op voorraad dit jaar. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
+      {openHuidig && shown.length === 0 && <Empty label="Nog niets op voorraad dit jaar. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
       {open !== null && <div className="fixed inset-0 z-10" onClick={() => setOpen(null)} />}
-      <div className="space-y-2.5">{shown.map(kaart)}</div>
-      {emptyItems.length > 0 && (
+      {openHuidig && <div className="space-y-2.5">{shown.map(kaart)}</div>}
+      {openHuidig && emptyItems.length > 0 && (
         <div className="mt-5">
           <button onClick={() => setOpenEmpty((o) => !o)} className="ff inline-flex items-center gap-1.5 mb-1.5">
             {openEmpty ? <ChevronUp size={15} className="acc" /> : <ChevronDown size={15} className="acc" />}
@@ -8487,6 +8609,8 @@ const TECH_TABLE_CONFIGS = {
     fields: [{ key: "soort", label: "Soort" }, { key: "suiker", label: "Totaal suiker" }, { key: "glucose", label: "Aandeel glucose" }, { key: "extra", label: "Aandachtspunt", lang: true }] },
   maten: { docId: "__maat_rows", title: "Gewichten per lepel en stuk bewerken", naamVeld: "naam",
     fields: [{ key: "naam", label: "Ingrediënt" }, { key: "el", label: "1 el (g)" }, { key: "stuk", label: "1 stuk (g)" }, { key: "cm", label: "1 cm (g)" }] },
+  koken: { docId: "__kook_rows", title: "Kooktabel bewerken", naamVeld: "product",
+    fields: [{ key: "product", label: "Product" }, { key: "factor", label: "Factor (gekookt per kg droog)" }, { key: "opmerking", label: "Opmerking" }] },
   roosteren: { docId: "__roast_rows", title: "Roostertabel bewerken", naamVeld: "groente",
     fields: [{ key: "groente", label: "Groente" }, { key: "type", label: "Type" }, { key: "snij", label: "Snijverlies" }, { key: "verlies", label: "Vochtverlies" }, { key: "schoon", label: "Schoon voor 1 kg" }, { key: "onbewerkt", label: "Onbewerkt voor 1 kg" }] },
 };
@@ -8631,6 +8755,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   const ice = searching ? tableRows.ijs.filter((r) => hit(r.soort)) : tableRows.ijs;
   const roast = searching ? tableRows.roosteren.filter((r) => hit(r.groente) || hit(r.type)) : tableRows.roosteren;
   const maten = searching ? (tableRows.maten || []).filter((r) => hit(r.naam)) : (tableRows.maten || []);
+  const koken = searching ? (tableRows.koken || []).filter((r) => hit(r.product)) : (tableRows.koken || []);
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
   const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
   const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: !o[key] }));
@@ -8641,7 +8766,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
     if (onFocusDone) onFocusDone();
   }, [focusKey]);
   const n = (k) => (notes && notes[k]) || TECH_NOTES_SEED[k];
-  const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0 && maten.length === 0;
+  const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0 && maten.length === 0 && koken.length === 0;
   return (
     <div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
@@ -8666,6 +8791,13 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
           <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
             rows={roast.map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
           <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
+        </TechCard>
+
+        <TechCard title="Zwaarder door koken" intro="Rijst, pasta en aardappel: van droog naar gekookt" open={isOpen("koken", koken.length)} onToggle={() => toggle("koken")}>
+          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("koken")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
+          <TechTable head={["Product", "Factor", "Opmerking"]} rows={koken.map((r) => [r.product, r.factor, r.opmerking || ""])} />
+          <KookReken rijen={koken} />
+          <TechNotes label="Zo gebruik je de tabel" notes={n("koken")} canEdit={canEdit} onSave={(lines) => onSaveNotes("koken", lines)} />
         </TechCard>
 
         <TechCard title="Gewichten per lepel en stuk" intro="Waarmee de app lepels, stuks en centimeters omrekent" open={isOpen("maten", maten.length)} onToggle={() => toggle("maten")}>
@@ -8726,10 +8858,15 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   );
 }
 
-function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, dayDone, dayOff, onDayDone, onUndoDayDone, onDayOff, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp, onOpenRecord, onEditRecord, onDeleteRecord , onReopenOff }) {
+// Een vrije dag die de app zelf heeft bijgevuld is iets anders dan een dag die
+// iemand als "bedrijf dicht" heeft gemeld.
+const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "automatisch" || /automatisch/i.test(String(log.note || "")));
+
+function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, haccpInterval, onHaccpInterval, dayDone, dayOff, onDayDone, onUndoDayDone, onDayOff, onSign, onEditLog, onDeleteLog, onNewTask, onEditTask, onDeleteTask, onOpenHaccp, onEditHaccp, onDeleteHaccp, onOpenRecord, onEditRecord, onDeleteRecord , onReopenOff }) {
   const [q, setQ] = useState("");
   const [areaF, setAreaF] = useState("Alle");
   const [openAll, setOpenAll] = useState(false);
+  const [springNaar, setSpringNaar] = useState(null); // datum van de gemiste meting waar we heen willen
   const [haccpOpen, setHaccpOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false); // weeklogboek standaard ingeklapt
   const [openDay, setOpenDay] = useState(null); // dagen in het weeklogboek: standaard dicht
@@ -8888,12 +9025,23 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
           <button onClick={() => setHaccpOpen((o) => !o)} className="ff inline-flex items-center gap-2">
             {haccpOpen ? <ChevronUp size={18} className="acc" /> : <ChevronDown size={18} className="acc" />}
             <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
+            {(() => {
+              const gemist = gemisteMetingen(haccpLogs);
+              if (!gemist.length) return null;
+              return (
+                <span onClick={(e) => { e.stopPropagation(); setHaccpOpen(true); setSpringNaar(gemist[0]); }}
+                  title={gemist.length + " gemiste meting" + (gemist.length === 1 ? "" : "en") + " — de laatste op " + fmtDMY(gemist[0])}
+                  className="inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: "#d32f2f" }}>
+                  <AlertTriangle size={20} /> {gemist.length}
+                </span>
+              );
+            })()}
           </button>
           <button onClick={() => printHaccp(haccpLogs, haccpRecords)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>
         </div>
         <p className="text-[13px] mute mb-3">Temperaturen, bereiding, terugkoelen en leveringen — het voedselveiligheidsdossier voor de Keuringsdienst van Waren.</p>
         {haccpOpen && <>
-          <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} />
+          <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} springNaar={springNaar} onSprong={() => setSpringNaar(null)} interval={haccpInterval} onInterval={onHaccpInterval} />
           <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
           <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
           <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
@@ -8921,11 +9069,14 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
               <div key={day.date}>
                 <button onClick={() => setOpenDay(openDay === day.date ? null : day.date)} className="ff w-full flex items-baseline justify-between mb-1">
                   <span className="inline-flex items-center gap-1 text-[13px] font-semibold ink">{openDay === day.date ? <ChevronUp size={13} className="acc" /> : <ChevronDown size={13} className="acc" />} {day.label}</span>
-                  <span className="text-[11.5px] mute">{day.off ? "vrije dag" : (day.done ? "afgerond · " : "") + day.items.length + (day.items.length === 1 ? " taak" : " taken") + (day.who ? " · " + day.who : "")}</span>
+                  <span className="text-[11.5px] mute">{day.off
+                    ? (autoVrij(day.off) ? "niet ingevuld" : "vrije dag" + (day.off.doneBy ? " · " + day.off.doneBy : ""))
+                    : (day.done ? "afgerond · " : "") + day.items.length + (day.items.length === 1 ? " taak" : " taken") + (day.who ? " · " + day.who : "")}</span>
                 </button>
                 {openDay === day.date && (day.off
                   ? <div className="card px-3 py-2 flex items-center gap-2 text-[13px]" style={{ color: "#6a6550" }}>
-                      <Calendar size={14} className="shrink-0" /> <span className="flex-1">Bedrijf dicht</span>
+                      <Calendar size={14} className="shrink-0" />
+                      <span className="flex-1">{autoVrij(day.off) ? "Niemand heeft deze dag afgetekend; de app heeft 'm automatisch als vrije dag weggezet." : "Bedrijf dicht — gemeld door " + (day.off.doneBy || "onbekend")}</span>
                       {canEdit && <button onClick={() => onReopenOff(day.off.id, day.date)} className="ff shrink-0 text-[12.5px] font-medium underline acc" title="Vrije dag heropenen en direct invullen">Heropenen</button>}
                     </div>
                   : <div className="card overflow-hidden divide-y" style={{ borderColor: T.line }}>
@@ -8977,16 +9128,19 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, day
 
 // ---------- HACCP: wekelijkse temperatuurregistratie ----------
 const doneThisWeekInit = (rows) => rows.some((l) => weekKey(String(l.checkDate || l.date)) === weekKey(localDate()));
-function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
+function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint, springNaar, onSprong, interval, onInterval }) {
   const [openAll, setOpenAll] = useState(false);
   // Om de dag: de laatste controle telt als "gedaan" zolang hij van vandaag of
   // gisteren is; ouder = opnieuw invullen.
   const sorted = [...logs].sort((a, b) => (a.checkDate < b.checkDate ? 1 : -1));
-  const doneThisWeek = sorted.length && daysBetween(sorted[0].checkDate) <= 1 ? sorted[0] : null;
+  const doneThisWeek = sorted.length && daysBetween(sorted[0].checkDate) < HACCP_INTERVAL ? sorted[0] : null;
   const shown = openAll ? sorted : sorted.slice(0, 3);
   const warn = (l) => HACCP_UNITS.some((u) => inRange(u, l.values[u.id]) === false) || (l.calibration && l.calibration.ok === false);
   // Inklapbaar: al gedaan deze week → start dicht; nog niet gedaan → start open.
   const [openSec, setOpenSec] = useState(() => !doneThisWeekInit(logs));
+  const gemist = gemisteMetingen(logs);
+  // Klik op de rode driehoek: sectie open en de eerste gemiste dag voorop.
+  useEffect(() => { if (springNaar) { setOpenSec(true); setOpenAll(true); } }, [springNaar]);
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -8997,14 +9151,27 @@ function HaccpBlock({ logs, canEdit, onOpen, onEdit, onDelete, onPrint }) {
         </button>
         <div className="flex items-center gap-3 mb-2">
           {onPrint && <button onClick={onPrint} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>}
+          {canEdit && onInterval && (
+            <AppSelect className="input px-2 py-1 text-[12.5px]" style={{ width: "9rem" }} value={String(interval || HACCP_INTERVAL_STANDAARD)} onChange={(v) => onInterval(v)}
+              options={[1, 2, 3, 7].map((d) => ({ value: String(d), label: intervalLabel(d) }))} title="Hoe vaak meten" />
+          )}
           {canEdit && <button onClick={() => onOpen(null)} className="ff inline-flex items-center gap-1 text-sm font-medium acc hover:opacity-70"><Plus size={15} /> Meting invullen</button>}
         </div>
       </div>
       {openSec && <>
+      {springNaar && (
+        <div className="rounded-xl p-3.5 text-sm flex items-start gap-2 mb-2" style={{ background: "#fbeceb", border: "1px solid #f0cfcb", color: "#8a2f28" }}>
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span className="flex-1">Laatste gemiste meting: <span className="font-semibold">{fmtDMY(springNaar)}</span>. Vul 'm alsnog in met de datum van die dag.
+            {gemist.length > 1 && <> Daarvoor missen er nog {gemist.length - 1}: {gemist.slice(1, 4).map(fmtDMY).join(", ")}{gemist.length > 4 ? " …" : ""}.</>}</span>
+          {canEdit && <button onClick={() => onOpen(null)} className="ff shrink-0 text-[12.5px] font-semibold underline">Invullen</button>}
+          <button onClick={onSprong} className="ff shrink-0 hover:opacity-70"><X size={14} /></button>
+        </div>
+      )}
       {doneThisWeek
         ? <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#e8ebe0", color: T.green }}>
             <Check size={16} className="shrink-0 mt-0.5" />
-            <span>Gecontroleerd op {fmtDMY(doneThisWeek.checkDate)} door <span className="font-medium">{doneThisWeek.doneBy}</span> (om de dag){warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
+            <span>Gecontroleerd op {fmtDMY(doneThisWeek.checkDate)} door <span className="font-medium">{doneThisWeek.doneBy}</span> ({intervalLabel(HACCP_INTERVAL)}){warn(doneThisWeek) && <span style={{ color: "#8a4a3a" }}> — let op: een waarde valt buiten de grenzen</span>}</span>
           </div>
         : <div className="rounded-xl p-3.5 text-sm flex items-start gap-2" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>
             <Bell size={16} className="shrink-0 mt-0.5" />
