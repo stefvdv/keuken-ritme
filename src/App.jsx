@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2836,6 +2836,31 @@ function App() {
   };
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
+  const [samenvoegVraag, setSamenvoegVraag] = useState(null); // {lev, paren} — na het inlezen laten kiezen
+  // Gekozen artikelen verhuizen naar de bestaande (oudere) lijst; het nieuwe
+  // exemplaar verdwijnt, zodat er nergens dubbelen ontstaan.
+  const voegArtikelenSamen = async (paren) => {
+    if (!paren.length) return;
+    const stempel = new Date().toISOString();
+    const bijgewerkt = paren.map(({ nieuw, oud }) => ({
+      ...oud,
+      inhoud: nieuw.inhoud || oud.inhoud,
+      prijs: nieuw.prijs !== null && nieuw.prijs !== undefined ? nieuw.prijs : oud.prijs,
+      ppe: nieuw.ppe !== null && nieuw.ppe !== undefined ? nieuw.ppe : oud.ppe,
+      opmerking: oud.opmerking || nieuw.opmerking || "",
+    }));
+    const weg = new Set(paren.map((p) => p.nieuw.code));
+    const perCode = {};
+    for (const a of bijgewerkt) perCode[a.code] = a;
+    setBdArtikelen((xs) => xs.filter((a) => !weg.has(a.code)).map((a) => perCode[a.code] || a));
+    bewaarArtikelEigen(bijgewerkt);
+    if (live) {
+      const uit = await upsertArtikelen(bijgewerkt.map((a) => ({ ...a, updated_at: stempel })));
+      if (uit === "fout") flash("Samenvoegen alleen lokaal gelukt");
+      for (const code of weg) await supabase.from("bd_artikelen").delete().eq("code", code);
+    }
+    flash(paren.length + " artikelen samengevoegd met de bestaande lijst");
+  };
   // De prijsmotor leest de artikelen uit een module-variabele; hier bijgewerkt.
   React.useMemo(() => zetPrijslijst(bdArtikelen), [bdArtikelen]);
   const [catSettings, setCatSettings] = useState(() => {
@@ -3096,7 +3121,8 @@ function App() {
     const levSleutel = (x) => zonderAccent(x).toLowerCase().replace(/[^a-z0-9]+/g, "");
     const getypt = String(leverancierNaam || "").trim() || "Onbekende leverancier";
     const bekend = [...new Set(bdArtikelen.map((a) => a.leverancier).filter(Boolean))];
-    const levStandaard = bekend.find((n) => levSleutel(n) === levSleutel(getypt)) || getypt;
+    const bestondLev = bekend.find((n) => levSleutel(n) === levSleutel(getypt)) || null;
+    const levStandaard = bestondLev || getypt;
     const zelfdeLev = (a) => levSleutel(a.leverancier || "") === levSleutel(levStandaard);
     // Wat er al van deze leverancier in staat, op omschrijving en op artikelcode.
     const opOms = {}, opCode = {};
@@ -3156,6 +3182,19 @@ function App() {
     }
     const nieuweCodes = new Set(arts.map((a) => a.code));
     const bestondAl = bdArtikelen.filter((a) => nieuweCodes.has(a.code)).length;
+    // Artikelen die onder een andere leverancier al bestaan: die leggen we voor,
+    // zodat het team zelf kiest wat samengevoegd wordt.
+    const omsKey = (x) => zonderAccent(x).toLowerCase().replace(/\s+/g, " ").trim();
+    const paren = [];
+    for (const nieuw of arts) {
+      const sleutel = omsKey(nieuw.omschrijving);
+      if (!sleutel) continue;
+      const oud = bdArtikelen.find((a) => a.code !== nieuw.code && !zelfdeLev(a) && omsKey(a.omschrijving) === sleutel);
+      if (oud) paren.push({ nieuw, oud });
+    }
+    // Alleen bij een nieuwe lijst iets voorleggen; dezelfde leverancier opnieuw
+    // inlezen is gewoon een prijsupdate.
+    if (!bestondLev && paren.length) setSamenvoegVraag({ lev: levStandaard, paren });
     alert("Ingelezen voor " + levStandaard + ":\n\n· " + (arts.length - bestondAl) + " nieuwe artikelen\n· " + bestondAl + " bestaande artikelen bijgewerkt met de nieuwe prijs"
       + (getypt !== levStandaard ? "\n· herkend als bestaande leverancier \"" + levStandaard + "\" (je typte \"" + getypt + "\")" : "")
       + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
@@ -4632,6 +4671,11 @@ function App() {
         </button>
       )}
       {namePrompt && <NamePromptModal label={namePrompt.label} onPick={answerName} />}
+      {samenvoegVraag && (
+        <SamenvoegLijstModal vraag={samenvoegVraag}
+          onSluit={() => setSamenvoegVraag(null)}
+          onOk={(gekozen) => { voegArtikelenSamen(gekozen); setSamenvoegVraag(null); }} />
+      )}
       {importVraag && (
         <PromptModal titel="Van welke leverancier?" label="Leveranciersnaam" waarde={importVraag.naam} placeholder="bv. BD Totaal"
           hint="De artikelen komen onder deze naam in de lijst te staan. Staat er een kolom Leverancier in het bestand, dan wint die."
@@ -4892,6 +4936,52 @@ function PrijsUitleg({ ing, onSluit, onKiesArtikel, onNieuwArtikel, leveranciers
             onSluit={() => setKiezer(false)}
             onKies={(a) => { onKiesArtikel(a ? a.code : null); setKiezer(false); onSluit(); }} />
         )}
+      </div>
+    </div>
+  );
+}
+
+// Na het inlezen: welke artikelen bestaan al onder een andere leverancier?
+// Aanvinken zet ze in de bestaande lijst en haalt ze uit de nieuwe.
+function SamenvoegLijstModal({ vraag, onOk, onSluit }) {
+  const [aan, setAan] = useState(() => vraag.paren.map(() => true));
+  const gekozen = vraag.paren.filter((_, i) => aan[i]);
+  const allesAan = aan.every(Boolean);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-lg rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight">Artikelen samenvoegen?</div>
+        <p className="text-[12.5px] mute mt-1.5 leading-relaxed">
+          {vraag.paren.length} artikel{vraag.paren.length === 1 ? "" : "en"} uit "{vraag.lev}" bestaat al bij een andere leverancier.
+          Aangevinkt betekent: de nieuwe prijs gaat naar de bestaande regel en het exemplaar in de nieuwe lijst verdwijnt. Uitgevinkt blijft alles zoals het is.
+        </p>
+        <button onClick={() => setAan(vraag.paren.map(() => !allesAan))} className="ff self-start text-[12.5px] font-medium acc underline mt-2">
+          {allesAan ? "Alles uitvinken" : "Alles aanvinken"}
+        </button>
+        <div className="flex-1 overflow-y-auto space-y-1.5 mt-2">
+          {vraag.paren.map((p, i) => (
+            <button key={p.nieuw.code} type="button" onClick={() => setAan((xs) => xs.map((x, j) => (j === i ? !x : x)))}
+              className="ff card w-full text-left px-3 py-2 flex items-start gap-2.5">
+              <span className="shrink-0 mt-0.5 rounded-md w-5 h-5 flex items-center justify-center"
+                style={{ border: "1.5px solid " + (aan[i] ? T.green : T.line), background: aan[i] ? T.green : "transparent", color: "#fbf9f2" }}>
+                {aan[i] ? <Check size={13} /> : null}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm ink font-medium truncate">{p.nieuw.omschrijving}</span>
+                <span className="block text-[12px] mute truncate">
+                  Nieuw: {p.nieuw.inhoud || "—"} · {eur(p.nieuw.prijs)} → bestaand bij {p.oud.leverancier || "onbekend"}: {p.oud.inhoud || "—"} · {eur(p.oud.prijs)}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-4">
+          <span className="text-[12.5px] mute">{gekozen.length} van {vraag.paren.length} aangevinkt</span>
+          <div className="flex gap-2">
+            <button onClick={onSluit} className="ff inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}><X size={15} /> Niet samenvoegen</button>
+            <button onClick={() => onOk(gekozen)} disabled={!gekozen.length} className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40"><Check size={15} /> Samenvoegen</button>
+          </div>
+        </div>
       </div>
     </div>
   );
