@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-08-31j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3197,6 +3197,19 @@ function App() {
     }
     flash(nieuwe.length + " artikelen staan nu onder " + naam + (weg.length ? " · " + weg.length + " dubbele regels samengevoegd" : ""));
   };
+  // Alle ingelezen artikelen van één leverancier in één keer weghalen.
+  const deleteLeverancier = async (naam) => {
+    const codes = bdArtikelen.filter((a) => (a.leverancier || "Onbekende leverancier") === naam).map((a) => a.code);
+    if (!codes.length) return;
+    setBdArtikelen((xs) => xs.filter((a) => codes.indexOf(a.code) < 0));
+    if (live) {
+      for (let i = 0; i < codes.length; i += 100) {
+        const { error } = await supabase.from("bd_artikelen").delete().in("code", codes.slice(i, i + 100));
+        if (error) { flash("Niet alles is uit de database verwijderd"); break; }
+      }
+    }
+    flash(codes.length + " artikelen van " + naam + " verwijderd");
+  };
   const deleteBdArtikel = async (code) => {
     setBdArtikelen((xs) => xs.filter((a) => a.code !== code));
     if (live) await supabase.from("bd_artikelen").delete().eq("code", code);
@@ -4529,7 +4542,7 @@ function App() {
               onDelete={(id) => { if (window.confirm("Dit product verwijderen?")) deleteAssortimentItem(id); }}
               recipeById={recipeById} recipes={recipes}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
-              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onHernoem={hernoemArtikelGroep}
+              onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onDeleteLeverancier={deleteLeverancier} onHernoem={hernoemArtikelGroep}
               onImportProducten={importAssortiment}
               calcItems={calcItems} dishes={dishes} dishById={dishById} negeer={negeerIng} onNegeer={negeerIngredient} onSamenvoegen={voegNamenSamen} aliassen={naamAlias}
               onNewItem={() => push({ screen: "calcItemForm", editing: null })}
@@ -5708,7 +5721,7 @@ function CalcUitleg({ onSluit }) {
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onSamenvoegen, aliassen, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onSamenvoegen, aliassen, onDeleteLeverancier, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const prodRef = React.useRef(null);
@@ -5720,6 +5733,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
   const [nieuwArtikel, setNieuwArtikel] = useState(false);
   const [help, setHelp] = useState(false);
   const [samenvoegen, setSamenvoegen] = useState(null);
+  const [levWeg, setLevWeg] = useState(null); // leverancier waarvan de hele lijst weg mag
   const [openCat2, setOpenCat2] = useState({});
   const [alleOntbrekend, setAlleOntbrekend] = useState(false);
   const [qOntbreek, setQOntbreek] = useState("");
@@ -5930,6 +5944,11 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
             onSave={(art) => { onUpdateArtikel(art); setNieuwArtikel(false); }} onSluit={() => setNieuwArtikel(false)} />
         </div>
       )}
+      {levWeg && (
+        <BevestigModal titel="Prijslijst verwijderen" knop="Verwijderen"
+          tekst={"Alle " + levWeg.aantal + " artikelen van " + levWeg.naam + " verdwijnen voor het hele team. Recepten die hieraan hangen verliezen hun inkoopprijs; de recepten zelf blijven staan."}
+          onCancel={() => setLevWeg(null)} onOk={() => { onDeleteLeverancier(levWeg.naam); setLevWeg(null); }} />
+      )}
       {samenvoegen && (
         <SamenvoegKiezer van={samenvoegen}
           opties={(() => {
@@ -5968,6 +5987,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
                     {uit ? <ChevronUp size={16} className="mute shrink-0" /> : <ChevronDown size={16} className="mute shrink-0" />}
                   </button>
                   <button onClick={() => setHernoem({ soort: "lev", oud: lev })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Leverancier hernoemen"><Pencil size={15} /></button>
+                  <button onClick={() => setLevWeg({ naam: lev, aantal })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Hele lijst van deze leverancier verwijderen"><Trash2 size={15} /></button>
                 </div>
                 {uit && (
                   <div className="mt-1.5 ml-2 space-y-1.5">
@@ -7440,36 +7460,46 @@ const TECH_NOTES_SEED = {
   ],
 };
 
-// Hoeveel droog product heb je nodig voor een gewenst gekookt gewicht?
-function KookReken({ rijen }) {
-  const lijst = (rijen || []).filter((r) => eurNum(r.factor));
-  const [product, setProduct] = useState(lijst.length ? lijst[0].product : "");
-  const [doel, setDoel] = useState("");
-  const rij = lijst.find((r) => r.product === product) || lijst[0];
-  const factor = rij ? eurNum(rij.factor) : null;
-  const gewenst = eurNum(doel);
-  const nodig = factor && gewenst !== null && factor > 0 ? gewenst / factor : null;
+// De kooktabel rekent zelf: vul in hoeveel gegaard je wil, lees af hoeveel
+// droog product je nodig hebt.
+function KookTabel({ rijen }) {
+  const [wens, setWens] = useState({});
   const kg = (n) => (n >= 1 ? String(Math.round(n * 100) / 100).replace(".", ",") + " kg" : Math.round(n * 1000) + " g");
-  if (!lijst.length) return null;
   return (
-    <div className="card p-3 mt-2">
-      <div className="text-[12.5px] font-bold ink mb-2">Hoeveel heb ik droog nodig?</div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <div className="text-[11.5px] font-bold ink mb-1">Product</div>
-          <AppSelect className="input px-2.5 py-2 w-full text-sm" value={product} onChange={setProduct} options={lijst.map((r) => ({ value: r.product, label: r.product }))} />
-        </div>
-        <div>
-          <div className="text-[11.5px] font-bold ink mb-1">Gewenst gekookt (kg)</div>
-          <input type="text" inputMode="decimal" className="input px-2.5 py-2 w-full text-sm" value={doel}
-            onChange={(e) => setDoel(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="bv. 5" />
-        </div>
-      </div>
-      <div className="text-sm ink mt-2">
-        {nodig === null
-          ? <span className="mute">Vul een gewenst gewicht in.</span>
-          : <>Je hebt <span className="font-semibold">{kg(nodig)}</span> droog nodig <span className="mute">({gewenst} ÷ {String(factor).replace(".", ",")})</span></>}
-      </div>
+    <div className="overflow-x-auto -mx-1 px-1">
+      <table className="w-full text-[13px]" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
+            <th className="text-left py-1.5 pr-2">Product</th>
+            <th className="text-left py-1.5 pr-2">Factor</th>
+            <th className="text-left py-1.5 pr-2">Gewenst gegaard</th>
+            <th className="text-left py-1.5 pr-2">Nodig droog</th>
+            <th className="text-left py-1.5">Opmerking</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rijen.map((r, i) => {
+            const factor = eurNum(r.factor);
+            const gewenst = eurNum(wens[r.product]);
+            const nodig = factor && factor > 0 && gewenst !== null ? gewenst / factor : null;
+            return (
+              <tr key={i} className="align-middle" style={{ borderTop: "1px solid " + T.line }}>
+                <td className="py-1.5 pr-2 ink">{r.product}</td>
+                <td className="py-1.5 pr-2 mute">{r.factor}</td>
+                <td className="py-1.5 pr-2">
+                  <div className="relative" style={{ width: "6.5rem" }}>
+                    <input type="text" inputMode="decimal" className="input px-2 py-1.5 w-full text-[13px] pr-7" value={wens[r.product] || ""}
+                      onChange={(e) => setWens((w) => ({ ...w, [r.product]: e.target.value.replace(/[^0-9.,]/g, "") }))} placeholder="bv. 5" />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">kg</span>
+                  </div>
+                </td>
+                <td className="py-1.5 pr-2 font-semibold" style={{ color: nodig === null ? "#a5a394" : "#44502f" }}>{nodig === null ? "—" : kg(nodig)}</td>
+                <td className="py-1.5 mute">{r.opmerking || ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -8795,8 +8825,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
 
         <TechCard title="Zwaarder door koken" intro="Rijst, pasta en aardappel: van droog naar gekookt" open={isOpen("koken", koken.length)} onToggle={() => toggle("koken")}>
           {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("koken")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
-          <TechTable head={["Product", "Factor", "Opmerking"]} rows={koken.map((r) => [r.product, r.factor, r.opmerking || ""])} />
-          <KookReken rijen={koken} />
+          <KookTabel rijen={koken} />
           <TechNotes label="Zo gebruik je de tabel" notes={n("koken")} canEdit={canEdit} onSave={(lines) => onSaveNotes("koken", lines)} />
         </TechCard>
 
@@ -9020,35 +9049,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, hac
         </>
       )}
 
-      <div className="mt-10 pt-6" style={{ borderTop: "2px solid " + T.line }}>
-        <div className="flex items-center justify-between mb-1">
-          <button onClick={() => setHaccpOpen((o) => !o)} className="ff inline-flex items-center gap-2">
-            {haccpOpen ? <ChevronUp size={18} className="acc" /> : <ChevronDown size={18} className="acc" />}
-            <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
-            {(() => {
-              const gemist = gemisteMetingen(haccpLogs);
-              if (!gemist.length) return null;
-              return (
-                <span onClick={(e) => { e.stopPropagation(); setHaccpOpen(true); setSpringNaar(gemist[0]); }}
-                  title={gemist.length + " gemiste meting" + (gemist.length === 1 ? "" : "en") + " — de laatste op " + fmtDMY(gemist[0])}
-                  className="inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: "#d32f2f" }}>
-                  <AlertTriangle size={20} /> {gemist.length}
-                </span>
-              );
-            })()}
-          </button>
-          <button onClick={() => printHaccp(haccpLogs, haccpRecords)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>
-        </div>
-        <p className="text-[13px] mute mb-3">Temperaturen, bereiding, terugkoelen en leveringen — het voedselveiligheidsdossier voor de Keuringsdienst van Waren.</p>
-        {haccpOpen && <>
-          <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} springNaar={springNaar} onSprong={() => setSpringNaar(null)} interval={haccpInterval} onInterval={onHaccpInterval} />
-          <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
-          <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
-          <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
-        </>}
-      </div>
-
-      <div className="mt-7 flex items-center justify-between">
+      <div className="mt-8 flex items-center justify-between">
         <button onClick={() => setLogOpen((o) => !o)} className="ff inline-flex items-center gap-1">
           {logOpen ? <ChevronUp size={14} className="acc" /> : <ChevronDown size={14} className="acc" />}
           <Eyebrow>Logboek per week</Eyebrow>
@@ -9122,6 +9123,34 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, hac
             ))}
           </div>}
       </>}
+
+      <div className="mt-10 pt-6" style={{ borderTop: "2px solid " + T.line }}>
+        <div className="flex items-center justify-between mb-1">
+          <button onClick={() => setHaccpOpen((o) => !o)} className="ff inline-flex items-center gap-2">
+            {haccpOpen ? <ChevronUp size={18} className="acc" /> : <ChevronDown size={18} className="acc" />}
+            <h2 className="serif ink text-2xl leading-tight">HACCP</h2>
+            {(() => {
+              const gemist = gemisteMetingen(haccpLogs);
+              if (!gemist.length) return null;
+              return (
+                <span onClick={(e) => { e.stopPropagation(); setHaccpOpen(true); setSpringNaar(gemist[0]); }}
+                  title={gemist.length + " gemiste meting" + (gemist.length === 1 ? "" : "en") + " — de laatste op " + fmtDMY(gemist[0])}
+                  className="inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: "#d32f2f" }}>
+                  <AlertTriangle size={20} /> {gemist.length}
+                </span>
+              );
+            })()}
+          </button>
+          <button onClick={() => printHaccp(haccpLogs, haccpRecords)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70" title="Heel het HACCP-logboek printen"><Printer size={15} /> Print</button>
+        </div>
+        <p className="text-[13px] mute mb-3">Temperaturen, bereiding, terugkoelen en leveringen — het voedselveiligheidsdossier voor de Keuringsdienst van Waren.</p>
+        {haccpOpen && <>
+          <HaccpBlock logs={haccpLogs} canEdit={canEdit} onOpen={onOpenHaccp} onEdit={onEditHaccp} onDelete={onDeleteHaccp} onPrint={null} springNaar={springNaar} onSprong={() => setSpringNaar(null)} interval={haccpInterval} onInterval={onHaccpInterval} />
+          <HaccpRecordBlock kind="bereiding" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+          <HaccpRecordBlock kind="terugkoelen" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+          <HaccpRecordBlock kind="levering" records={haccpRecords} canEdit={canEdit} onOpen={onOpenRecord} onEdit={onEditRecord} onDelete={onDeleteRecord} />
+        </>}
+      </div>
     </div>
   );
 }
