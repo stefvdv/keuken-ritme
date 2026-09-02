@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3189,8 +3189,10 @@ function App() {
     for (const nieuw of arts) {
       const sleutel = omsKey(nieuw.omschrijving);
       if (!sleutel) continue;
-      const oud = bdArtikelen.find((a) => a.code !== nieuw.code && !zelfdeLev(a) && omsKey(a.omschrijving) === sleutel);
-      if (oud) paren.push({ nieuw, oud });
+      // Alle bestaande artikelen met dezelfde omschrijving, zodat de gebruiker
+      // ziet waarmee het samengevoegd zou worden.
+      const kandidaten = bdArtikelen.filter((a) => a.code !== nieuw.code && !zelfdeLev(a) && omsKey(a.omschrijving) === sleutel);
+      if (kandidaten.length) paren.push({ nieuw, kandidaten });
     }
     // Alleen bij een nieuwe lijst iets voorleggen; dezelfde leverancier opnieuw
     // inlezen is gewoon een prijsupdate.
@@ -4674,7 +4676,7 @@ function App() {
       {samenvoegVraag && (
         <SamenvoegLijstModal vraag={samenvoegVraag}
           onSluit={() => setSamenvoegVraag(null)}
-          onOk={(gekozen) => { voegArtikelenSamen(gekozen); setSamenvoegVraag(null); }} />
+          onMerge={(paar) => voegArtikelenSamen(paar)} />
       )}
       {importVraag && (
         <PromptModal titel="Van welke leverancier?" label="Leveranciersnaam" waarde={importVraag.naam} placeholder="bv. BD Totaal"
@@ -4942,45 +4944,55 @@ function PrijsUitleg({ ing, onSluit, onKiesArtikel, onNieuwArtikel, leveranciers
 }
 
 // Na het inlezen: welke artikelen bestaan al onder een andere leverancier?
-// Aanvinken zet ze in de bestaande lijst en haalt ze uit de nieuwe.
-function SamenvoegLijstModal({ vraag, onOk, onSluit }) {
-  const [aan, setAan] = useState(() => vraag.paren.map(() => true));
-  const gekozen = vraag.paren.filter((_, i) => aan[i]);
-  const allesAan = aan.every(Boolean);
+// Eén voor één afwerken: vinkje voegt samen, kruisje slaat over.
+function SamenvoegLijstModal({ vraag, onMerge, onSluit }) {
+  const [open, setOpen] = useState(() => vraag.paren.map((p, i) => ({ ...p, keuze: 0, i })));
+  const [gedaan, setGedaan] = useState(0);
+  const sluitAls = (rest) => { setOpen(rest); if (!rest.length) onSluit(); };
+  const regel = (a) => [a.inhoud || "—", eur(a.prijs), a.leverancier || "onbekend"].filter(Boolean).join(" · ");
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-lg rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="serif ink text-xl leading-tight">Artikelen samenvoegen?</div>
         <p className="text-[12.5px] mute mt-1.5 leading-relaxed">
-          {vraag.paren.length} artikel{vraag.paren.length === 1 ? "" : "en"} uit "{vraag.lev}" bestaat al bij een andere leverancier.
-          Aangevinkt betekent: de nieuwe prijs gaat naar de bestaande regel en het exemplaar in de nieuwe lijst verdwijnt. Uitgevinkt blijft alles zoals het is.
+          Deze artikelen uit "{vraag.lev}" bestaan al bij een andere leverancier. Per regel: het vinkje zet de nieuwe prijs op de bestaande regel en haalt het exemplaar uit de nieuwe lijst. Het kruisje laat beide staan.
         </p>
-        <button onClick={() => setAan(vraag.paren.map(() => !allesAan))} className="ff self-start text-[12.5px] font-medium acc underline mt-2">
-          {allesAan ? "Alles uitvinken" : "Alles aanvinken"}
-        </button>
-        <div className="flex-1 overflow-y-auto space-y-1.5 mt-2">
-          {vraag.paren.map((p, i) => (
-            <button key={p.nieuw.code} type="button" onClick={() => setAan((xs) => xs.map((x, j) => (j === i ? !x : x)))}
-              className="ff card w-full text-left px-3 py-2 flex items-start gap-2.5">
-              <span className="shrink-0 mt-0.5 rounded-md w-5 h-5 flex items-center justify-center"
-                style={{ border: "1.5px solid " + (aan[i] ? T.green : T.line), background: aan[i] ? T.green : "transparent", color: "#fbf9f2" }}>
-                {aan[i] ? <Check size={13} /> : null}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm ink font-medium truncate">{p.nieuw.omschrijving}</span>
-                <span className="block text-[12px] mute truncate">
-                  Nieuw: {p.nieuw.inhoud || "—"} · {eur(p.nieuw.prijs)} → bestaand bij {p.oud.leverancier || "onbekend"}: {p.oud.inhoud || "—"} · {eur(p.oud.prijs)}
-                </span>
-              </span>
-            </button>
+        <div className="flex-1 overflow-y-auto space-y-2 mt-3">
+          {open.map((p) => (
+            <div key={p.nieuw.code} className="card p-3">
+              <div className="text-sm ink font-medium">{p.nieuw.omschrijving}</div>
+              <div className="text-[12px] mt-1.5" style={{ color: "#44502f" }}>
+                <span className="font-semibold">Nieuw</span> · {regel(p.nieuw)}
+              </div>
+              <div className="text-[12px] mute mt-1">{p.kandidaten.length === 1 ? "Bestaand" : "Kies waarmee samenvoegen"}</div>
+              <div className="space-y-1 mt-1">
+                {p.kandidaten.map((k, ki) => (
+                  <button key={k.code} type="button" disabled={p.kandidaten.length === 1}
+                    onClick={() => setOpen((xs) => xs.map((x) => (x.i === p.i ? { ...x, keuze: ki } : x)))}
+                    className="ff w-full text-left rounded-lg px-2.5 py-1.5 text-[12.5px] flex items-center gap-2"
+                    style={{ border: "1px solid " + (p.keuze === ki ? T.green : T.line), background: p.keuze === ki ? "#eef2e6" : "transparent" }}>
+                    <span className="shrink-0 rounded-full w-3 h-3" style={{ border: "1.5px solid " + (p.keuze === ki ? T.green : T.line), background: p.keuze === ki ? T.green : "transparent" }} />
+                    <span className="min-w-0 flex-1 truncate ink">{k.omschrijving}</span>
+                    <span className="shrink-0 mute">{regel(k)}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                <button onClick={() => sluitAls(open.filter((x) => x.i !== p.i))}
+                  className="ff inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>
+                  <X size={14} /> Laat staan
+                </button>
+                <button onClick={() => { onMerge([{ nieuw: p.nieuw, oud: p.kandidaten[p.keuze] }]); setGedaan((n) => n + 1); sluitAls(open.filter((x) => x.i !== p.i)); }}
+                  className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">
+                  <Check size={14} /> Samenvoegen
+                </button>
+              </div>
+            </div>
           ))}
         </div>
         <div className="flex items-center justify-between gap-2 mt-4">
-          <span className="text-[12.5px] mute">{gekozen.length} van {vraag.paren.length} aangevinkt</span>
-          <div className="flex gap-2">
-            <button onClick={onSluit} className="ff inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}><X size={15} /> Niet samenvoegen</button>
-            <button onClick={() => onOk(gekozen)} disabled={!gekozen.length} className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40"><Check size={15} /> Samenvoegen</button>
-          </div>
+          <span className="text-[12.5px] mute">{open.length} te beoordelen{gedaan ? " · " + gedaan + " samengevoegd" : ""}</span>
+          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Sluiten</button>
         </div>
       </div>
     </div>
