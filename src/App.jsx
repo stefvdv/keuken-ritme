@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02j"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4610,6 +4610,7 @@ function App() {
               recipeById={recipeById} recipes={recipes}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
               onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onDeleteLeverancier={deleteLeverancier} onHernoem={hernoemArtikelGroep}
+              onOpenSamenvoegen={(v) => setSamenvoegVraag({ ...v, vanzelf: 0 })}
               onImportProducten={importAssortiment}
               calcItems={calcItems} dishes={dishes} dishById={dishById} negeer={negeerIng} onNegeer={negeerIngredient} onSamenvoegen={voegNamenSamen} aliassen={naamAlias}
               onNewItem={() => push({ screen: "calcItemForm", editing: null })}
@@ -5000,7 +5001,7 @@ function SamenvoegLijstModal({ vraag, onMerge, onWegArtikel, onVerhuis, onSluit 
         <div className="serif ink text-xl leading-tight">Artikelen samenvoegen?</div>
         <p className="text-[12.5px] mute mt-1.5 leading-relaxed">
           {vraag.vanzelf ? vraag.vanzelf + " artikelen zijn al vanzelf samengevoegd (zelfde verpakking of goedkoper per eenheid). " : ""}
-          Deze zijn niet te vergelijken — kies zelf. Het vinkje zet de nieuwe gegevens op de bestaande regel; met een prullenbak gooi je een versie weg. Blijft er één over, dan komt die in de bestaande lijst.
+          Deze artikelen uit "{vraag.lev}" komen ook bij een andere leverancier voor. Het vinkje zet de gegevens uit "{vraag.lev}" op de andere regel; met een prullenbak gooi je een versie weg. Blijft er één over, dan komt die in de andere lijst.
         </p>
         <div className="flex-1 overflow-y-auto space-y-2 mt-3">
           {open.map((p) => (
@@ -5873,7 +5874,7 @@ function CalcUitleg({ onSluit }) {
   );
 }
 
-function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onSamenvoegen, aliassen, onDeleteLeverancier, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
+function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, dishById, calcItems, negeer, onNegeer, onSamenvoegen, aliassen, onDeleteLeverancier, onOpenSamenvoegen, onNewItem, onEditItem, onDeleteItem, onImportProducten, onNew, onEdit, onDelete, onImport, onUpdateArtikel, onDeleteArtikel, onHernoem }) {
   const [q, setQ] = useState("");
   const importRef = React.useRef(null);
   const prodRef = React.useRef(null);
@@ -5942,6 +5943,28 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
   }
   const levs = Object.keys(perLev).sort((x, y) => x.localeCompare(y, "nl"));
   const levKeuzes = [...new Set([...levs, ...VASTE_LEVERANCIERS, "Eigen prijzen"])];
+  // Artikelen die onder meerdere leveranciers voorkomen: per lijst geteld, zodat
+  // je ziet waar nog samengevoegd kan worden.
+  const dubbelPerLev = React.useMemo(() => {
+    const omsKey = (x) => zonderAccent(x).toLowerCase().replace(/\s+/g, " ").trim();
+    const perNaam = {};
+    for (const a of bdArtikelen) {
+      const k = omsKey(a.omschrijving);
+      if (!k) continue;
+      (perNaam[k] = perNaam[k] || []).push(a);
+    }
+    const uit = {};
+    for (const groep of Object.values(perNaam)) {
+      const levs2 = new Set(groep.map((a) => a.leverancier || "Onbekende leverancier"));
+      if (levs2.size < 2) continue; // dubbel binnen dezelfde lijst laten we met rust
+      for (const a of groep) {
+        const lev = a.leverancier || "Onbekende leverancier";
+        const kandidaten = groep.filter((b) => b.code !== a.code && (b.leverancier || "Onbekende leverancier") !== lev);
+        if (kandidaten.length) (uit[lev] = uit[lev] || []).push({ nieuw: a, kandidaten });
+      }
+    }
+    return uit;
+  }, [bdArtikelen]);
   const catsPerLev = {};
   for (const l of levs) catsPerLev[l] = Object.keys(perLev[l]).sort((x, y) => x.localeCompare(y, "nl"));
   return (
@@ -6138,6 +6161,13 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
                     </span>
                     {uit ? <ChevronUp size={16} className="mute shrink-0" /> : <ChevronDown size={16} className="mute shrink-0" />}
                   </button>
+                  {(dubbelPerLev[lev] || []).length > 0 && (
+                    <button onClick={() => onOpenSamenvoegen({ lev, paren: dubbelPerLev[lev] })}
+                      title={dubbelPerLev[lev].length + " artikelen komen ook bij een andere leverancier voor — samenvoegen?"}
+                      className="ff shrink-0 inline-flex items-center gap-1 text-[12.5px] font-semibold px-1.5" style={{ color: "#d32f2f" }}>
+                      <AlertTriangle size={17} /> {dubbelPerLev[lev].length}
+                    </button>
+                  )}
                   <button onClick={() => setHernoem({ soort: "lev", oud: lev })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Leverancier hernoemen"><Pencil size={15} /></button>
                   <button onClick={() => setLevWeg({ naam: lev, aantal })} className="ff shrink-0 mute hover:opacity-60 p-1.5" title="Hele lijst van deze leverancier verwijderen"><Trash2 size={15} /></button>
                 </div>
