@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02g"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2839,16 +2839,21 @@ function App() {
   const [samenvoegVraag, setSamenvoegVraag] = useState(null); // {lev, paren} — na het inlezen laten kiezen
   // Gekozen artikelen verhuizen naar de bestaande (oudere) lijst; het nieuwe
   // exemplaar verdwijnt, zodat er nergens dubbelen ontstaan.
-  const voegArtikelenSamen = async (paren) => {
+  const voegArtikelenSamen = async (paren, automatisch) => {
     if (!paren.length) return;
     const stempel = new Date().toISOString();
-    const bijgewerkt = paren.map(({ nieuw, oud }) => ({
-      ...oud,
-      inhoud: nieuw.inhoud || oud.inhoud,
-      prijs: nieuw.prijs !== null && nieuw.prijs !== undefined ? nieuw.prijs : oud.prijs,
-      ppe: nieuw.ppe !== null && nieuw.ppe !== undefined ? nieuw.ppe : oud.ppe,
-      opmerking: oud.opmerking || nieuw.opmerking || "",
-    }));
+    const bijgewerkt = paren.map(({ nieuw, oud, bron }) => {
+      // De regel blijft in de bestaande lijst staan; alleen de gegevens komen
+      // van de versie die wint (standaard de nieuwe).
+      const win = bron === "oud" ? oud : nieuw;
+      return {
+        ...oud,
+        inhoud: win.inhoud || oud.inhoud,
+        prijs: win.prijs !== null && win.prijs !== undefined ? win.prijs : oud.prijs,
+        ppe: win.ppe !== null && win.ppe !== undefined ? win.ppe : oud.ppe,
+        opmerking: oud.opmerking || nieuw.opmerking || "",
+      };
+    });
     const weg = new Set(paren.map((p) => p.nieuw.code));
     const perCode = {};
     for (const a of bijgewerkt) perCode[a.code] = a;
@@ -2859,7 +2864,7 @@ function App() {
       if (uit === "fout") flash("Samenvoegen alleen lokaal gelukt");
       for (const code of weg) await supabase.from("bd_artikelen").delete().eq("code", code);
     }
-    flash(paren.length + " artikelen samengevoegd met de bestaande lijst");
+    flash(paren.length + " artikelen " + (automatisch ? "vanzelf " : "") + "samengevoegd met de bestaande lijst");
   };
   // De prijsmotor leest de artikelen uit een module-variabele; hier bijgewerkt.
   React.useMemo(() => zetPrijslijst(bdArtikelen), [bdArtikelen]);
@@ -3185,18 +3190,23 @@ function App() {
     // Artikelen die onder een andere leverancier al bestaan: die leggen we voor,
     // zodat het team zelf kiest wat samengevoegd wordt.
     const omsKey = (x) => zonderAccent(x).toLowerCase().replace(/\s+/g, " ").trim();
-    const paren = [];
+    const paren = [], vanzelf = [];
     for (const nieuw of arts) {
       const sleutel = omsKey(nieuw.omschrijving);
       if (!sleutel) continue;
       // Alle bestaande artikelen met dezelfde omschrijving, zodat de gebruiker
       // ziet waarmee het samengevoegd zou worden.
       const kandidaten = bdArtikelen.filter((a) => a.code !== nieuw.code && !zelfdeLev(a) && omsKey(a.omschrijving) === sleutel);
-      if (kandidaten.length) paren.push({ nieuw, kandidaten });
+      if (!kandidaten.length) continue;
+      // Eén kandidaat en een duidelijke regel? Dan doet de app het zelf.
+      const keuze = kandidaten.length === 1 ? samenvoegKeuze(nieuw, kandidaten[0]) : null;
+      if (keuze && keuze.auto) vanzelf.push({ nieuw, oud: kandidaten[0], bron: keuze.bron });
+      else paren.push({ nieuw, kandidaten });
     }
+    if (!bestondLev && vanzelf.length) await voegArtikelenSamen(vanzelf, true);
     // Alleen bij een nieuwe lijst iets voorleggen; dezelfde leverancier opnieuw
     // inlezen is gewoon een prijsupdate.
-    if (!bestondLev && paren.length) setSamenvoegVraag({ lev: levStandaard, paren });
+    if (!bestondLev && paren.length) setSamenvoegVraag({ lev: levStandaard, paren, vanzelf: vanzelf.length });
     alert("Ingelezen voor " + levStandaard + ":\n\n· " + (arts.length - bestondAl) + " nieuwe artikelen\n· " + bestondAl + " bestaande artikelen bijgewerkt met de nieuwe prijs"
       + (getypt !== levStandaard ? "\n· herkend als bestaande leverancier \"" + levStandaard + "\" (je typte \"" + getypt + "\")" : "")
       + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
@@ -4955,7 +4965,8 @@ function SamenvoegLijstModal({ vraag, onMerge, onSluit }) {
       <div className="w-full max-w-lg rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="serif ink text-xl leading-tight">Artikelen samenvoegen?</div>
         <p className="text-[12.5px] mute mt-1.5 leading-relaxed">
-          Deze artikelen uit "{vraag.lev}" bestaan al bij een andere leverancier. Per regel: het vinkje zet de nieuwe prijs op de bestaande regel en haalt het exemplaar uit de nieuwe lijst. Het kruisje laat beide staan.
+          {vraag.vanzelf ? vraag.vanzelf + " artikelen zijn al vanzelf samengevoegd (zelfde verpakking of goedkoper per eenheid). " : ""}
+          Deze zijn niet te vergelijken — kies zelf. Het vinkje zet de nieuwe gegevens op de bestaande regel en haalt het exemplaar uit de nieuwe lijst; het kruisje laat beide staan.
         </p>
         <div className="flex-1 overflow-y-auto space-y-2 mt-3">
           {open.map((p) => (
@@ -8361,6 +8372,22 @@ function VormKiezer({ waarde, onChange, className, eigen, onEigen }) {
     </>
   );
 }
+
+// Twee artikelen met dezelfde naam: mag de app ze zelf samenvoegen, en welke
+// versie wordt dan de standaard? Alleen bij twijfel komt er een vraag.
+const samenvoegKeuze = (nieuw, oud) => {
+  const eenheid = (x) => zonderAccent(x && x.inhoud).toLowerCase().replace(/\s+/g, "").trim();
+  const pbN = artikelPerBasis(nieuw), pbO = artikelPerBasis(oud);
+  // Zelfde verpakking: de nieuwe prijs geldt, ook als hij gelijk is gebleven.
+  if (eenheid(nieuw) === eenheid(oud)) return { auto: true, bron: "nieuw", reden: "zelfde verpakking" };
+  // Andere verpakking, wel te vergelijken: de goedkoopste per kilo/liter/stuk wint.
+  if (pbN && pbO && pbN.b === pbO.b) {
+    return pbN.prijs <= pbO.prijs
+      ? { auto: true, bron: "nieuw", reden: "goedkoper per " + pbN.b }
+      : { auto: true, bron: "oud", reden: "bestaande is goedkoper per " + pbO.b };
+  }
+  return null; // niet te vergelijken: laat het team kiezen
+};
 
 // Verplichte velden van een voorraadregel; ouder werk mist ze soms nog.
 const voorraadMist = (v) => {
