@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4682,7 +4682,17 @@ function App() {
         {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
-          setChefMode(true); flash("Chef-modus aan"); return true;
+          setChefMode(true);
+          // Meteen kijken of er nog artikelen dubbel staan bij twee leveranciers.
+          const dubbel = dubbeleArtikelen(bdArtikelen);
+          const levs = Object.keys(dubbel).sort((a, b) => dubbel[b].length - dubbel[a].length);
+          const totaal = levs.reduce((n, l) => n + dubbel[l].length, 0);
+          if (totaal) {
+            setTimeout(() => alert("Chef-modus aan.\n\nEr staan " + totaal + " artikelen dubbel bij twee leveranciers:\n\n· "
+              + levs.map((l) => l + ": " + dubbel[l].length).join("\n· ")
+              + "\n\nOnder Calculaties staat bij die leveranciers een rode driehoek; daar voeg je ze samen."), 200);
+          } else flash("Chef-modus aan — geen dubbele artikelen gevonden");
+          return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
 
@@ -5945,26 +5955,7 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
   const levKeuzes = [...new Set([...levs, ...VASTE_LEVERANCIERS, "Eigen prijzen"])];
   // Artikelen die onder meerdere leveranciers voorkomen: per lijst geteld, zodat
   // je ziet waar nog samengevoegd kan worden.
-  const dubbelPerLev = React.useMemo(() => {
-    const omsKey = (x) => zonderAccent(x).toLowerCase().replace(/\s+/g, " ").trim();
-    const perNaam = {};
-    for (const a of bdArtikelen) {
-      const k = omsKey(a.omschrijving);
-      if (!k) continue;
-      (perNaam[k] = perNaam[k] || []).push(a);
-    }
-    const uit = {};
-    for (const groep of Object.values(perNaam)) {
-      const levs2 = new Set(groep.map((a) => a.leverancier || "Onbekende leverancier"));
-      if (levs2.size < 2) continue; // dubbel binnen dezelfde lijst laten we met rust
-      for (const a of groep) {
-        const lev = a.leverancier || "Onbekende leverancier";
-        const kandidaten = groep.filter((b) => b.code !== a.code && (b.leverancier || "Onbekende leverancier") !== lev);
-        if (kandidaten.length) (uit[lev] = uit[lev] || []).push({ nieuw: a, kandidaten });
-      }
-    }
-    return uit;
-  }, [bdArtikelen]);
+  const dubbelPerLev = React.useMemo(() => dubbeleArtikelen(bdArtikelen), [bdArtikelen]);
   const catsPerLev = {};
   for (const l of levs) catsPerLev[l] = Object.keys(perLev[l]).sort((x, y) => x.localeCompare(y, "nl"));
   return (
@@ -8441,6 +8432,28 @@ function VormKiezer({ waarde, onChange, className, eigen, onEigen }) {
     </>
   );
 }
+
+// Artikelen die onder meerdere leveranciers voorkomen, per lijst.
+const dubbeleArtikelen = (arts) => {
+  const omsKey = (x) => zonderAccent(x).toLowerCase().replace(/\s+/g, " ").trim();
+  const perNaam = {};
+  for (const a of arts || []) {
+    const k = omsKey(a.omschrijving);
+    if (!k) continue;
+    (perNaam[k] = perNaam[k] || []).push(a);
+  }
+  const uit = {};
+  for (const groep of Object.values(perNaam)) {
+    const levs = new Set(groep.map((a) => a.leverancier || "Onbekende leverancier"));
+    if (levs.size < 2) continue; // dubbel binnen dezelfde lijst laten we met rust
+    for (const a of groep) {
+      const lev = a.leverancier || "Onbekende leverancier";
+      const kandidaten = groep.filter((b) => b.code !== a.code && (b.leverancier || "Onbekende leverancier") !== lev);
+      if (kandidaten.length) (uit[lev] = uit[lev] || []).push({ nieuw: a, kandidaten });
+    }
+  }
+  return uit;
+};
 
 // Twee artikelen met dezelfde naam: mag de app ze zelf samenvoegen, en welke
 // versie wordt dan de standaard? Alleen bij twijfel komt er een vraag.
