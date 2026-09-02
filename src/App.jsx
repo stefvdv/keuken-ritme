@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-02g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-02h"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2839,6 +2839,14 @@ function App() {
   const [samenvoegVraag, setSamenvoegVraag] = useState(null); // {lev, paren} — na het inlezen laten kiezen
   // Gekozen artikelen verhuizen naar de bestaande (oudere) lijst; het nieuwe
   // exemplaar verdwijnt, zodat er nergens dubbelen ontstaan.
+  // In de popup een van de twee versies weggooien. Blijft de nieuwe over, dan
+  // verhuist die naar de lijst van de weggegooide (de oudste map).
+  const kiesUitPaar = async (nieuw, oud, welke) => {
+    if (welke === "nieuw") { await deleteBdArtikel(nieuw.code); flash('"' + nieuw.omschrijving + '" uit de nieuwe lijst verwijderd'); return; }
+    await deleteBdArtikel(oud.code);
+    await updateBdArtikel({ ...nieuw, leverancier: oud.leverancier || nieuw.leverancier, categorie: oud.categorie || nieuw.categorie, opmerking: nieuw.opmerking || oud.opmerking || "" });
+    flash('"' + nieuw.omschrijving + '" staat nu onder ' + (oud.leverancier || "de bestaande lijst"));
+  };
   const voegArtikelenSamen = async (paren, automatisch) => {
     if (!paren.length) return;
     const stempel = new Date().toISOString();
@@ -2854,15 +2862,17 @@ function App() {
         opmerking: oud.opmerking || nieuw.opmerking || "",
       };
     });
-    const weg = new Set(paren.map((p) => p.nieuw.code));
+    const weg = [...new Set(paren.map((p) => p.nieuw.code))];
+    const wegSet = new Set(weg);
     const perCode = {};
     for (const a of bijgewerkt) perCode[a.code] = a;
-    setBdArtikelen((xs) => xs.filter((a) => !weg.has(a.code)).map((a) => perCode[a.code] || a));
+    setBdArtikelen((xs) => xs.filter((a) => !wegSet.has(a.code)).map((a) => perCode[a.code] || a));
     bewaarArtikelEigen(bijgewerkt);
     if (live) {
       const uit = await upsertArtikelen(bijgewerkt.map((a) => ({ ...a, updated_at: stempel })));
       if (uit === "fout") flash("Samenvoegen alleen lokaal gelukt");
-      for (const code of weg) await supabase.from("bd_artikelen").delete().eq("code", code);
+      // In blokken verwijderen; per artikel apart duurt bij een hele bestellijst te lang.
+      for (let i = 0; i < weg.length; i += 100) await supabase.from("bd_artikelen").delete().in("code", weg.slice(i, i + 100));
     }
     flash(paren.length + " artikelen " + (automatisch ? "vanzelf " : "") + "samengevoegd met de bestaande lijst");
   };
@@ -3203,13 +3213,20 @@ function App() {
       if (keuze && keuze.auto) vanzelf.push({ nieuw, oud: kandidaten[0], bron: keuze.bron });
       else paren.push({ nieuw, kandidaten });
     }
-    if (!bestondLev && vanzelf.length) await voegArtikelenSamen(vanzelf, true);
+    // Eerst het scherm: de popup staat er meteen, het opruimen loopt erachteraan.
     // Alleen bij een nieuwe lijst iets voorleggen; dezelfde leverancier opnieuw
     // inlezen is gewoon een prijsupdate.
     if (!bestondLev && paren.length) setSamenvoegVraag({ lev: levStandaard, paren, vanzelf: vanzelf.length });
-    alert("Ingelezen voor " + levStandaard + ":\n\n· " + (arts.length - bestondAl) + " nieuwe artikelen\n· " + bestondAl + " bestaande artikelen bijgewerkt met de nieuwe prijs"
-      + (getypt !== levStandaard ? "\n· herkend als bestaande leverancier \"" + levStandaard + "\" (je typte \"" + getypt + "\")" : "")
-      + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
+    if (!bestondLev && vanzelf.length) voegArtikelenSamen(vanzelf, true);
+    const regels = [
+      (arts.length - bestondAl - vanzelf.length) + " nieuwe artikelen in \"" + levStandaard + "\"",
+      bestondAl ? bestondAl + " artikelen van deze leverancier bijgewerkt" : null,
+      vanzelf.length ? vanzelf.length + " vanzelf samengevoegd met een bestaande lijst" : null,
+      paren.length ? paren.length + " voorgelegd om zelf te kiezen" : null,
+      getypt !== levStandaard ? "herkend als bestaande leverancier \"" + levStandaard + "\" (je typte \"" + getypt + "\")" : null,
+    ].filter(Boolean);
+    alert("Ingelezen:\n\n· " + regels.join("\n· ") + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
+
   };
   // Leverancier of categorie een nettere naam geven — geldt voor het hele team.
   const hernoemArtikelGroep = async (soort, oud, nieuw, leverancier) => {
@@ -4686,7 +4703,8 @@ function App() {
       {samenvoegVraag && (
         <SamenvoegLijstModal vraag={samenvoegVraag}
           onSluit={() => setSamenvoegVraag(null)}
-          onMerge={(paar) => voegArtikelenSamen(paar)} />
+          onMerge={(paar) => voegArtikelenSamen(paar)}
+          onWeg={(nieuw, oud, welke) => kiesUitPaar(nieuw, oud, welke)} />
       )}
       {importVraag && (
         <PromptModal titel="Van welke leverancier?" label="Leveranciersnaam" waarde={importVraag.naam} placeholder="bv. BD Totaal"
@@ -4955,7 +4973,7 @@ function PrijsUitleg({ ing, onSluit, onKiesArtikel, onNieuwArtikel, leveranciers
 
 // Na het inlezen: welke artikelen bestaan al onder een andere leverancier?
 // Eén voor één afwerken: vinkje voegt samen, kruisje slaat over.
-function SamenvoegLijstModal({ vraag, onMerge, onSluit }) {
+function SamenvoegLijstModal({ vraag, onMerge, onWeg, onSluit }) {
   const [open, setOpen] = useState(() => vraag.paren.map((p, i) => ({ ...p, keuze: 0, i })));
   const [gedaan, setGedaan] = useState(0);
   const sluitAls = (rest) => { setOpen(rest); if (!rest.length) onSluit(); };
@@ -4972,8 +4990,11 @@ function SamenvoegLijstModal({ vraag, onMerge, onSluit }) {
           {open.map((p) => (
             <div key={p.nieuw.code} className="card p-3">
               <div className="text-sm ink font-medium">{p.nieuw.omschrijving}</div>
-              <div className="text-[12px] mt-1.5" style={{ color: "#44502f" }}>
-                <span className="font-semibold">Nieuw</span> · {regel(p.nieuw)}
+              <div className="text-[12px] mt-1.5 flex items-center gap-2" style={{ color: "#44502f" }}>
+                <span className="flex-1 min-w-0 truncate"><span className="font-semibold">Nieuw</span> · {regel(p.nieuw)}</span>
+                <button type="button" title="Deze versie verwijderen; de bestaande blijft"
+                  onClick={() => { onWeg(p.nieuw, p.kandidaten[p.keuze], "nieuw"); sluitAls(open.filter((x) => x.i !== p.i)); }}
+                  className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
               </div>
               <div className="text-[12px] mute mt-1">{p.kandidaten.length === 1 ? "Bestaand" : "Kies waarmee samenvoegen"}</div>
               <div className="space-y-1 mt-1">
@@ -4985,6 +5006,9 @@ function SamenvoegLijstModal({ vraag, onMerge, onSluit }) {
                     <span className="shrink-0 rounded-full w-3 h-3" style={{ border: "1.5px solid " + (p.keuze === ki ? T.green : T.line), background: p.keuze === ki ? T.green : "transparent" }} />
                     <span className="min-w-0 flex-1 truncate ink">{k.omschrijving}</span>
                     <span className="shrink-0 mute">{regel(k)}</span>
+                    <span role="button" title="Deze versie verwijderen; de nieuwe verhuist naar deze lijst"
+                      onClick={(e) => { e.stopPropagation(); onWeg(p.nieuw, k, "oud"); sluitAls(open.filter((x) => x.i !== p.i)); }}
+                      className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></span>
                   </button>
                 ))}
               </div>
