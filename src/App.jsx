@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3604,6 +3604,22 @@ function App() {
   const calcOpenRef = React.useRef(false);
   useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
   const [fabLabelOpen, setFabLabelOpen] = useState(false); // vrij etiket via de zwevende etiket-knop
+  // Enter zonder cursor in een invoerveld opent het etiketvenster — handig als
+  // je met natte handen net even geen muis wil pakken.
+  useEffect(() => {
+    const toets = (e) => {
+      if (e.key !== "Enter" || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement;
+      const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
+      if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || (el && el.isContentEditable)) return;
+      if (fabLabelOpen || batchLabelFor || measureOpen || checkOpen || calcOpen) return; // er staat al iets open
+      e.preventDefault();
+      setFabLabelOpen(true);
+      try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (err) {}
+    };
+    document.addEventListener("keydown", toets);
+    return () => document.removeEventListener("keydown", toets);
+  });
   // (declaratie stáát bewust vóór het effect hieronder: de dependency-array
   // wordt al tijdens het renderen gelezen — andersom crasht de app bij het opstarten)
   const fabLabelRef = React.useRef(false);
@@ -8084,18 +8100,19 @@ function BatchLabelModal({ batch, onClose }) {
 function printCustomLabel(f) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const inhoud = String(f.gram || "").trim();
-  // Alleen naam (evt. + productiedatum) ingevuld → grote vul-layout:
+  // Alleen naam, productiedatum en/of T.H.T. ingevuld → grote vul-layout:
   // de tekst wordt automatisch zo groot geschaald dat hij de sticker vult.
-  const bijnaLeeg = !f.tht && !f.ready && !inhoud && !String(f.note || "").trim() && !(f.allergens && f.allergens.length);
+  const bijnaLeeg = !f.ready && !inhoud && !String(f.note || "").trim() && !(f.allergens && f.allergens.length);
   if (bijnaLeeg) {
     const fmtD = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd + "-" + m + "-" + y; };
-    const voet = f.prod ? '<div class="voet">Gemaakt: ' + fmtD(f.prod) + "</div>" : "";
+    const regels = [f.prod ? "Gemaakt: " + fmtD(f.prod) : "", f.tht ? "T.H.T. " + fmtD(f.tht) : ""].filter(Boolean);
+    const voet = regels.length ? '<div class="voet">' + esc(regels.join("  ·  ")) + "</div>" : "";
     printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
       "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
       "html,body{margin:0;padding:0}" +
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
-      '.vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:' + (f.prod ? "6mm" : "1.5mm") + ';display:flex;align-items:center;justify-content:center;overflow:hidden}' +
+      '.vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:' + (regels.length ? "6mm" : "1.5mm") + ';display:flex;align-items:center;justify-content:center;overflow:hidden}' +
       "#groot{font-weight:bold;line-height:1.05;text-align:center;word-wrap:break-word;max-width:100%}" +
       ".voet{position:absolute;left:2.5mm;right:2.5mm;bottom:1.2mm;font-weight:bold;font-size:9pt;text-align:center}" +
       "</style></head><body>" +
@@ -8179,6 +8196,20 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     if (!name.trim()) { alert("Vul een productnaam in."); return false; }
     return true; // datums zijn vrij: soms is een etiket alleen tekst
   };
+  // Enter zonder cursor in een veld: printen. Zo kun je met de scanner of het
+  // toetsenbord doorwerken zonder de muis te pakken.
+  useEffect(() => {
+    const toets = (e) => {
+      if (e.key !== "Enter" || e.repeat) return;
+      const el = document.activeElement;
+      const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
+      if (tag === "input" || tag === "textarea" || tag === "select" || (el && el.isContentEditable)) return;
+      e.preventDefault();
+      doPrint();
+    };
+    document.addEventListener("keydown", toets);
+    return () => document.removeEventListener("keydown", toets);
+  });
   const doPrint = () => {
     if (!verplichtOk()) return;
     // Invulling bewaren voor de "Vorige"-knop: extra stickers van dezelfde
