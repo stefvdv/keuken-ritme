@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3609,9 +3609,8 @@ function App() {
   useEffect(() => {
     const toets = (e) => {
       if (e.key !== "Enter" || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-      const el = document.activeElement;
-      const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
-      if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || (el && el.isContentEditable)) return;
+      const isVeld = (el) => { const t = el && el.tagName ? el.tagName.toLowerCase() : ""; return t === "input" || t === "textarea" || t === "select" || t === "button" || (el && el.isContentEditable); };
+      if (isVeld(e.target) || isVeld(document.activeElement)) return;
       if (fabLabelOpen || batchLabelFor || measureOpen || checkOpen || calcOpen) return; // er staat al iets open
       e.preventDefault();
       setFabLabelOpen(true);
@@ -8208,9 +8207,11 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   useEffect(() => {
     const toets = (e) => {
       if (e.key !== "Enter" || e.repeat) return;
-      const el = document.activeElement;
-      const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
-      if (tag === "input" || tag === "textarea" || tag === "select" || (el && el.isContentEditable)) return;
+      // Kijk naar het element waar de toets vandaan kwam. Het veld verlaat zichzelf
+      // bij de eerste Enter; pas de tweede Enter komt van de pagina zelf en print.
+      const van = e.target, actief = document.activeElement;
+      const isVeld = (el) => { const t = el && el.tagName ? el.tagName.toLowerCase() : ""; return t === "input" || t === "textarea" || t === "select" || (el && el.isContentEditable); };
+      if (isVeld(van) || isVeld(actief)) return;
       e.preventDefault();
       doPrint();
     };
