@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4605,7 +4605,8 @@ function App() {
               return uit;
             })()}
             {canEdit && loaded && !dismissedNotices[noticeKey] && (
-              <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onMeasure={(id) => setMeasureFor(id)} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [noticeKey]: true }))} />
+              <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onMeasure={(id) => setMeasureFor(id)}
+                onFinish={(id) => toggleBatchDone(id)} onExtend={(id) => extendBatch(id)} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [noticeKey]: true }))} />
             )}
             {canEdit && checkBanner && (
               <ReminderBanner groep="Schoonmaak" icon={<Sparkles size={15} />} title="Schoonmaakcontrole"
@@ -7176,7 +7177,7 @@ function ReminderBanner({ icon, title, text, actionLabel, onAction, onDismiss, g
   );
 }
 
-function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) {
+function NoticeBanner({ batches, canAck, onAck, onMeasure, onFinish, onExtend, onOpen, onDismiss }) {
   const { ready, items } = collectNotices(batches);
   if (ready.length === 0 && items.length === 0) return null;
   const short = (t) => (t.length > 48 ? t.slice(0, 48).trim() + "…" : t);
@@ -7200,7 +7201,12 @@ function NoticeBanner({ batches, canAck, onAck, onMeasure, onOpen, onDismiss }) 
               <li key={b.id} className="flex items-start gap-1.5">
                 <Check size={14} className="shrink-0 mt-0.5" />
                 <span className="flex-1"><span className="font-medium">{b.product}</span> is klaar — dag {day}/{b.days}</span>
-                {canAck && <button onClick={() => onAck(b.id, READY_KEY)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Gezien — verberg tot morgen">Afvinken</button>}
+                {canAck && (
+                  <div className="flex flex-wrap justify-end gap-1 shrink-0">
+                    <button onClick={() => onExtend(b.id)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Nog niet klaar — een dag erbij">+1 dag</button>
+                    <button onClick={() => onFinish(b.id)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#44502f", color: "#fbf9f2" }} title="Batch afronden en de eindmeting invullen">Afronden</button>
+                  </div>
+                )}
               </li>
             ))}
             {items.map(({ b, day, label, needMeasure }) => (
