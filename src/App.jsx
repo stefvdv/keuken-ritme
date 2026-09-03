@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03d"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -7953,7 +7953,14 @@ function LabelPrintModal({ recipe, onClose }) {
   };
   const enter = (e) => { if (e.key === "Enter") { e.preventDefault(); doPrint(); } };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => {
+        // Enter in een invoerveld sluit dat veld af; de volgende Enter print.
+        if (e.key !== "Enter" || e.repeat) return;
+        const el = e.target;
+        if (el && el.tagName === "INPUT") { e.preventDefault(); el.blur(); }
+      }}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -8271,7 +8278,13 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown" && sugg.length) { e.preventDefault(); setSuggIdx((x) => (x + 1) % sugg.length); }
                 else if (e.key === "ArrowUp" && sugg.length) { e.preventDefault(); setSuggIdx((x) => (x <= 0 ? sugg.length - 1 : x - 1)); }
-                else if (e.key === "Enter") { e.preventDefault(); if (suggIdx >= 0 && sugg[suggIdx]) applyRecipe(sugg[suggIdx]); else setPicked(true); setSuggIdx(-1); }
+                else if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (suggIdx >= 0 && sugg[suggIdx]) applyRecipe(sugg[suggIdx]); else setPicked(true);
+                  setSuggIdx(-1);
+                  // Cursor uit het veld: de volgende Enter print het etiket.
+                  e.target.blur();
+                }
                 else if (e.key === "Escape" && sugg.length) { e.preventDefault(); e.stopPropagation(); setPicked(true); setSuggIdx(-1); }
               }}
               onBlur={() => setTimeout(() => setPicked(true), 120)}
