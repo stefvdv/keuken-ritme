@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03g"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3616,8 +3616,8 @@ function App() {
       setFabLabelOpen(true);
       try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (err) {}
     };
-    document.addEventListener("keydown", toets);
-    return () => document.removeEventListener("keydown", toets);
+    document.addEventListener("keydown", toets, true);
+    return () => document.removeEventListener("keydown", toets, true);
   });
   // (declaratie stáát bewust vóór het effect hieronder: de dependency-array
   // wordt al tijdens het renderen gelezen — andersom crasht de app bij het opstarten)
@@ -8208,21 +8208,19 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     if (!name.trim()) { alert("Vul een productnaam in."); return false; }
     return true; // datums zijn vrij: soms is een etiket alleen tekst
   };
-  // Enter zonder cursor in een veld: printen. Zo kun je met de scanner of het
-  // toetsenbord doorwerken zonder de muis te pakken.
+  // Enter zonder cursor in een veld: printen. Deze luisteraar draait in de
+  // capture-fase, dus vóór het veld zichzelf verlaat — anders zou dezelfde druk
+  // eerst het veld sluiten en meteen daarna printen.
   useEffect(() => {
     const toets = (e) => {
       if (e.key !== "Enter" || e.repeat) return;
-      // Kijk naar het element waar de toets vandaan kwam. Het veld verlaat zichzelf
-      // bij de eerste Enter; pas de tweede Enter komt van de pagina zelf en print.
-      const van = e.target, actief = document.activeElement;
       const isVeld = (el) => { const t = el && el.tagName ? el.tagName.toLowerCase() : ""; return t === "input" || t === "textarea" || t === "select" || (el && el.isContentEditable); };
-      if (isVeld(van) || isVeld(actief)) return;
+      if (isVeld(e.target) || isVeld(document.activeElement)) return; // dit is de bevestiging van het veld
       e.preventDefault();
       doPrint();
     };
-    document.addEventListener("keydown", toets);
-    return () => document.removeEventListener("keydown", toets);
+    document.addEventListener("keydown", toets, true);
+    return () => document.removeEventListener("keydown", toets, true);
   });
   const doPrint = () => {
     if (!verplichtOk()) return;
