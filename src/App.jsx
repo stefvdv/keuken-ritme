@@ -533,7 +533,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03h"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -6625,6 +6625,48 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
   );
 }
 
+// Zoekt uit welke endpoints de MICE-API teruggeeft. Praat met /api/mice, dat op
+// de server de sleutel toevoegt — die staat dus nooit in de browser.
+function MiceVerkenner() {
+  const [pad, setPad] = useState("events");
+  const [extra, setExtra] = useState("");
+  const [bezig, setBezig] = useState(false);
+  const [uit, setUit] = useState(null);
+  const haal = async () => {
+    setBezig(true); setUit(null);
+    try {
+      const url = "/api/mice?path=" + encodeURIComponent(pad.trim()) + (extra.trim() ? "&" + extra.trim().replace(/^[?&]/, "") : "");
+      const r = await fetch(url);
+      const j = await r.json();
+      setUit(j);
+    } catch (e) { setUit({ fout: String((e && e.message) || e) }); }
+    setBezig(false);
+  };
+  const tekst = uit ? JSON.stringify(uit, null, 2) : "";
+  return (
+    <>
+      <SectionTitle>MICE-koppeling</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute mb-3">Uitzoeken welke gegevens MICE teruggeeft. Werkt alleen als <span className="ink font-medium">MICE_API_KEY</span> in Vercel staat.</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Pad"><input className="input px-3 py-2 w-full text-sm" value={pad} onChange={(e) => setPad(e.target.value)} placeholder="events" /></Field>
+          <Field label="Extra (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="date_from=2026-09-01" /></Field>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-2">
+          <button onClick={haal} disabled={bezig} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">{bezig ? "Bezig…" : "Ophalen"}</button>
+          {["events", "products", "packages", "locations", "event_types"].map((p) => (
+            <button key={p} onClick={() => setPad(p)} className="btno ff rounded-lg px-2.5 py-2 text-[12.5px] font-medium">{p}</button>
+          ))}
+          {tekst && <button onClick={() => { try { navigator.clipboard.writeText(tekst); } catch (e) {} }} className="btno ff rounded-lg px-2.5 py-2 text-[12.5px] font-medium">Kopieer</button>}
+        </div>
+        {uit && (
+          <pre className="mt-3 text-[11px] p-3 rounded-lg overflow-auto" style={{ background: "#f3f1e7", maxHeight: "22rem", whiteSpace: "pre-wrap" }}>{tekst}</pre>
+        )}
+      </div>
+    </>
+  );
+}
+
 function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
@@ -6685,6 +6727,8 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, o
           <input ref={herstelRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onRestore(f); }} />
         </div>
       </div>
+
+      {chefMode && <MiceVerkenner />}
 
       <SectionTitle>Over</SectionTitle>
       <div className="card p-4 text-sm mute space-y-1">
