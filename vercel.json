@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/mice-sync", "schedule": "0 5 * * *" },
+    { "path": "/api/mice-sync", "schedule": "0 6 * * *" }
+  ]
+}
