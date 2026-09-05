@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-03k"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2863,6 +2863,20 @@ function App() {
     flash(rijen.length + " boekingen opgehaald");
     return rijen.length;
   };
+  // Vangnet: als de eerste keuken de app opent en de boekingen zijn nog van
+  // gisteren, halen we ze alsnog op. De geplande taak om 07:00 doet het meestal
+  // al; dit dekt de dagen dat die niet gedraaid heeft.
+  const boekingenGehaald = React.useRef(false);
+  useEffect(() => {
+    if (!loaded || !chefMode || boekingenGehaald.current) return;
+    const nieuwste = boekingen.reduce((t, b) => (String(b.opgehaald_op || "") > t ? String(b.opgehaald_op) : t), "");
+    const vandaag = localDate();
+    if (nieuwste.slice(0, 10) === vandaag) { boekingenGehaald.current = true; return; }
+    boekingenGehaald.current = true;
+    const d = new Date(); d.setDate(d.getDate() + 42);
+    haalBoekingen(vandaag, localDate(d));
+  }, [loaded, chefMode, boekingen]);
+
   const saveKoppeling = async (naam, producten) => {
     const sleutel = boekingSleutel(naam);
     setKoppeling((k) => ({ ...k, [sleutel]: producten }));
