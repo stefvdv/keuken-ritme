@@ -8747,6 +8747,24 @@ const mepTellen = (regels) => {
   return Object.values(per).sort((a, b) => (a.soort === b.soort ? b.porties - a.porties : a.soort === "recept" ? -1 : 1));
 };
 
+// Welke allergen-labels raken aan woorden in de dieetwensen-tekst van een
+// boeking. Grof op woordstam; liever één keer te veel rood dan gemist.
+const ALLERGEEN_TREF = {
+  Gluten: /glut/, Ei: /(^| )ei( |$)|eier|eivrij|eitje/, Lactose: /lactos|melk|zuivel/,
+  Noten: /noten|hazeln|walnoot|amandel|cashew|pistache|pecan/, Pinda: /pinda/,
+  Soja: /soja/, Vis: /(^| )vis|pescetari/, Schaaldieren: /schaaldier|garna|kreeft|krab|scampi/,
+  Weekdieren: /weekdier|mossel|oester|inktvis/, Selderij: /selder/, Mosterd: /mosterd/,
+  Sesam: /sesam/, Sulfiet: /sulfiet|zwavel/, Lupine: /lupine/,
+};
+const VEGAN_RAAKT = ["Ei", "Lactose", "Vis", "Schaaldieren", "Weekdieren"];
+const allergeenRaaktBericht = (label, bericht) => {
+  const t = " " + zonderAccent(String(bericht || "")).toLowerCase() + " ";
+  if (/vegan/.test(t) && VEGAN_RAAKT.includes(label)) return true;
+  if (/vegetari/.test(t) && ["Vis", "Schaaldieren", "Weekdieren"].includes(label)) return true;
+  const re = ALLERGEEN_TREF[label];
+  return re ? re.test(t) : false;
+};
+
 // Allergieën en dieetwensen uit het opmerkingenveld vissen.
 const ALLERGIE_WOORDEN = /(allergie|allergen|gluten|lactose|noten|notenvrij|pinda|schaaldier|vegan|veganist|vegetari|halal|kosher|dieet|intoleran|zwanger|sesam|soja|selderij|ei-|eivrij|vis|schelp|mosterd|sulfiet|lupine)/i;
 const allergieRegels = (bericht) => {
@@ -9774,6 +9792,21 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
                               </button>
                             ))}
                           </div>
+                          {(() => {
+                            const al = new Set();
+                            for (const m of mep) if (m.soort === "recept") { const r = recipeById(m.id); if (r) recipeAllergens(r).forEach((x) => al.add(x)); }
+                            if (!al.size) return null;
+                            const lijst = ALLERGEN_LABELS.filter((l) => al.has(l));
+                            return (
+                              <div className="text-[12px] mt-1.5 leading-relaxed">
+                                <span className="mute">Allergenen in de gerechten: </span>
+                                {lijst.map((l, i) => {
+                                  const raak = allergie.length > 0 && allergeenRaaktBericht(l, b.bericht);
+                                  return <span key={l} style={raak ? { color: "#d32f2f", fontWeight: 600 } : { color: "#6b6f5e" }}>{l}{i < lijst.length - 1 ? " · " : ""}</span>;
+                                })}
+                              </div>
+                            );
+                          })()}
                         </>
                       )}
                     </div>
