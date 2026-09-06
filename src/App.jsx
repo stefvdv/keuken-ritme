@@ -2841,6 +2841,9 @@ function App() {
       if (!(j.data && j.data.page && j.data.page.next_url)) break;
     }
     if (!rijen.length) { flash("Geen producten opgehaald"); return; }
+    // Categorie komt niet uit de API maar uit de Excel-import; niet kwijtraken.
+    const catBij = {}; for (const p of miceProducten) if (p.categorie) catBij[p.id] = p.categorie;
+    for (const r of rijen) if (catBij[r.id]) r.categorie = catBij[r.id];
     if (live) {
       const { error } = await supabase.from("mice_producten").upsert(rijen);
       if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_producten.sql in Supabase."); return; }
@@ -2854,6 +2857,44 @@ function App() {
       if (product) await supabase.from("mice_prodkoppeling").upsert({ mice_id: miceId, product_id: product.id, product_naam: product.name, updated_by: user || "", updated_at: new Date().toISOString() });
       else await supabase.from("mice_prodkoppeling").delete().eq("mice_id", miceId);
     }
+  };
+  // Categorieën uit de MICE-productexport (Excel) inlezen. De API geeft geen
+  // categorie mee, de export wel: kolom "Identificatienummer product" is onze
+  // groep_id, kolom "Categorie" de naam. Eén keer per seizoen bijwerken volstaat.
+  const importMiceCategorieen = async (file) => {
+    if (!miceProducten.length) { alert("Haal eerst de productenlijst op (knop Productenlijst verversen), daarna kun je de categorieën uit de export erbij zetten."); return; }
+    const laadXLSX = () => new Promise((res, rej) => {
+      if (window.XLSX) return res(window.XLSX);
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      sc.onload = () => res(window.XLSX); sc.onerror = () => rej(new Error("cdn"));
+      document.head.appendChild(sc);
+    });
+    let XLSX;
+    try { XLSX = await laadXLSX(); } catch (e) { alert("Kon de Excel-bibliotheek niet laden — controleer de internetverbinding."); return; }
+    let rows;
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
+    } catch (e) { alert("Dit bestand kon niet gelezen worden. Gebruik de productexport uit MICE (Excel)."); return; }
+    const kop = (rows[0] || []).map((c) => String(c).toLowerCase().trim());
+    const kId = kop.findIndex((c) => c.startsWith("identificatienummer product"));
+    const kCat = kop.findIndex((c) => c === "categorie");
+    if (kId < 0 || kCat < 0) { alert("Dit lijkt geen MICE-productexport: kolommen \"Identificatienummer product\" en \"Categorie\" niet gevonden."); return; }
+    const catVan = {};
+    for (const r of rows.slice(1)) {
+      const id = String(r[kId] || "").trim(); const cat = String(r[kCat] || "").trim();
+      if (id && cat) catVan[id] = cat;
+    }
+    const bijgewerkt = miceProducten.map((p) => catVan[String(p.groep_id)] ? { ...p, categorie: catVan[String(p.groep_id)] } : p);
+    const geraakt = bijgewerkt.filter((p, i) => p !== miceProducten[i]).length;
+    if (!geraakt) { alert("Geen overeenkomsten gevonden tussen de export en de opgehaalde productenlijst."); return; }
+    if (live) {
+      const { error } = await supabase.from("mice_producten").upsert(bijgewerkt.filter((p) => p.categorie).map((p) => ({ id: p.id, naam: p.naam, omschrijving: p.omschrijving || "", prijs: p.prijs || 0, groep_id: p.groep_id, categorie: p.categorie, opgehaald_op: p.opgehaald_op || new Date().toISOString() })));
+      if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst het regeltje uit mice_categorie.sql in Supabase."); return; }
+    }
+    setMiceProducten(bijgewerkt);
+    flash(geraakt + " producten van een categorie voorzien");
   };
   const boekingSleutel = (naam) => zonderAccent(String(naam || "")).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -4772,6 +4813,7 @@ function App() {
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling}
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
+                onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
@@ -9609,7 +9651,8 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onHaalProducten, onProdKoppel, onOpenRecipe }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe }) {
+  const catImportRef = React.useRef(null);
   const vandaag = localDate();
   const [tot, setTot] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 21); return localDate(d); });
   const [bezig, setBezig] = useState(false);
@@ -9657,6 +9700,10 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
           className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">{bezig ? "Ophalen…" : "Ophalen uit MICE"}</button>
         <button onClick={() => setAlleen((a) => !a)} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">{alleen ? "Alleen bevestigd" : "Ook opties"}</button>
         {canEdit && <button onClick={onHaalProducten} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Productenlijst verversen</button>}
+        {canEdit && <>
+          <input ref={catImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
+          <button onClick={() => catImportRef.current && catImportRef.current.click()} title="Productexport uit MICE (Instellingen → Producten → exporteren)" className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Categorieën (Excel)</button>
+        </>}
       </div>
       {miceProducten.length > 0 && (() => {
         const gekoppeld = miceProducten.filter((p) => prodKoppeling[p.id]).length;
@@ -9783,7 +9830,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
 function ProductKiezer({ boeking, lijst, onKies, onSluit }) {
   const [q, setQ] = useState("");
   const [aantal, setAantal] = useState(String(boeking.gasten || ""));
-  const hits = (lijst || []).filter((p) => !q.trim() || softMatchAny([p.naam, p.omschrijving], q)).slice(0, 60);
+  const hits = (lijst || []).filter((p) => !q.trim() || softMatchAny([p.naam, p.omschrijving, p.categorie], q)).slice(0, 60);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-md rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
@@ -9796,7 +9843,7 @@ function ProductKiezer({ boeking, lijst, onKies, onSluit }) {
         <div className="flex-1 overflow-y-auto space-y-1.5 mt-2">
           {hits.map((p) => (
             <button key={p.id} onClick={() => onKies(p, Number(aantal) || boeking.gasten || 0)} className="ff card cardh w-full text-left px-3 py-2">
-              <div className="text-sm ink truncate">{p.naam}</div>
+              <div className="text-sm ink truncate">{p.naam}{p.categorie ? <span className="mute font-normal"> · {p.categorie}</span> : null}</div>
               {p.omschrijving && <div className="text-[12px] mute">{String(p.omschrijving).slice(0, 120)}</div>}
             </button>
           ))}
