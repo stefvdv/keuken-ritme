@@ -2851,10 +2851,12 @@ function App() {
     setMiceProducten(rijen.sort((a, b) => a.naam.localeCompare(b.naam, "nl")));
     flash(rijen.length + " MICE-producten opgehaald");
   };
-  const saveProdKoppeling = async (miceId, product) => {
-    setProdKoppeling((k) => ({ ...k, [miceId]: product ? { productId: product.id, naam: product.name } : null }));
+  // Culinaire invulling van een MICE-product: een eigen product uit de
+  // calculaties, een recept, of vrije tekst.
+  const saveProdKoppeling = async (miceId, inv) => {
+    setProdKoppeling((k) => ({ ...k, [miceId]: inv || null }));
     if (live) {
-      if (product) await supabase.from("mice_prodkoppeling").upsert({ mice_id: miceId, product_id: product.id, product_naam: product.name, updated_by: user || "", updated_at: new Date().toISOString() });
+      if (inv) await supabase.from("mice_prodkoppeling").upsert({ mice_id: miceId, product_id: inv.productId || null, product_naam: inv.naam || "", recipe_id: inv.recipeId || null, tekst: inv.tekst || "", updated_by: user || "", updated_at: new Date().toISOString() });
       else await supabase.from("mice_prodkoppeling").delete().eq("mice_id", miceId);
     }
   };
@@ -2935,8 +2937,17 @@ function App() {
         };
         pakProducten(e.products, "", "");
         for (const a of e.activities || []) pakProducten(a.products, a.name || "", String(a.datetime_start || "").slice(11, 16));
+        // Eigen veld "dieetwensen": MICE levert eigen velden in wisselende vorm.
+        const eigenVeld = (ev, naam) => {
+          for (const bron of [ev.extra_fields, ev.custom_attributes]) {
+            if (Array.isArray(bron)) { const x = bron.find((f) => String((f && (f.key || f.name)) || "").toLowerCase() === naam); if (x && x.value != null && String(x.value).trim()) return String(x.value); }
+            else if (bron && typeof bron === "object" && bron[naam] != null && String(bron[naam]).trim()) return String(bron[naam]);
+          }
+          return "";
+        };
         rijen.push({
           regels,
+          dieet: eigenVeld(e, "dieetwensen"),
           tel: (klant[e.client_id] || {}).tel || "",
           contact: (klant[e.client_id] || {}).naam || "",
           id: e.id, naam: e.name || "", datum,
@@ -2975,6 +2986,7 @@ function App() {
           for (const id of Object.keys(a)) if (!(id in n)) w.push("Weg: " + a[id] + "× " + naamVan(o.regels, id));
           const al1 = allergieRegels(o.bericht).join("|"), al2 = allergieRegels(r.bericht).join("|");
           if (al1 !== al2) w.push("Allergieën gewijzigd" + (al2 ? ": " + allergieRegels(r.bericht).join("; ") : " (verwijderd)"));
+          if (String(o.dieet || "") !== String(r.dieet || "")) w.push("Dieetwensen: " + (String(r.dieet || "").trim() || "(leeg)"));
         }
         const vorig = (o && Array.isArray(o.log) && o.log) || [];
         r.log = w.length ? [...vorig, { t: new Date().toISOString(), w }].slice(-30) : vorig;
@@ -3703,7 +3715,7 @@ function App() {
     if (mpr && !mpr.error) setMiceProducten(mpr.data || []);
     if (mpk && !mpk.error) {
       const k = {};
-      for (const r of mpk.data || []) k[r.mice_id] = { productId: r.product_id, naam: r.product_naam };
+      for (const r of mpk.data || []) k[r.mice_id] = { productId: r.product_id || null, recipeId: r.recipe_id || null, tekst: r.tekst || "", naam: r.product_naam };
       setProdKoppeling(k);
     }
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
@@ -4761,7 +4773,7 @@ function App() {
     else if (section === "assortiment") push({ screen: "assortimentForm", editing: null });
     else if (section === "schoonmaak") push({ screen: "cleaningForm", editing: null });
   };
-  const showFab = current.screen === "list" && canEdit && section !== "home";
+  const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
@@ -4868,7 +4880,7 @@ function App() {
               onEditFerment={() => push({ screen: "fermentGuideForm" })} />}
             {section === "boekingen" && chefMode && (
               <BoekingenList boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
-                producten={assortiment} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
+                producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling}
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
@@ -4952,7 +4964,7 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : "Batch"}
         </button>
       )}
-      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab} />}
+      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"} />}
       {user && canEdit && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
           className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab ? "bottom-[5.25rem]" : "bottom-6")}
@@ -8779,6 +8791,22 @@ const statusNL = (st) => {
   if (s.includes("expired")) return "optie verlopen";
   return s;
 };
+// Allergie-informatie van een boeking: het losse dieetwensen-veld gaat voor;
+// is dat leeg, dan herkennen we allergiezinnen in de notities (bericht).
+const allergieVanBoeking = (b) => {
+  const uitVeld = String((b && b.dieet) || "").trim();
+  if (uitVeld) return uitVeld.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean);
+  return allergieRegels(b && b.bericht);
+};
+// Randkleur per status: blauw in optie, groen bevestigd, oranje verlopen,
+// rood geannuleerd. Onbekende statussen kleuren blauw (optie-achtig).
+const statusRand = (st) => {
+  const s = String(st || "");
+  if (s === "confirmed") return "#5a7d46";
+  if (s === "cancelled") return "#8a2f28";
+  if (s.includes("expired")) return "#c07a1a";
+  return "#3b6ea5";
+};
 const autoKeuzesUitBoeking = (b) => {
   const per = {};
   for (const r of (b && b.regels) || []) {
@@ -8786,6 +8814,25 @@ const autoKeuzesUitBoeking = (b) => {
     per[r.id].aantal += Number(r.aantal) || 0;
   }
   return Object.values(per);
+};
+// Eén keuze omzetten naar mep-regels via de culinaire invulling: recept en
+// vrije tekst gaan direct door, een eigen product via de calculatie.
+const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishById, recipeById) => {
+  const vert = keuze.miceId && prodKoppeling ? prodKoppeling[keuze.miceId] : null;
+  const aantal = keuze.aantal || boeking.gasten || 0;
+  if (vert && vert.recipeId) {
+    const r = recipeById(vert.recipeId);
+    return [{ soort: "recept", id: vert.recipeId, naam: (r && r.name) || vert.naam || "recept", porties: aantal, item: keuze.naam || "" }];
+  }
+  if (vert && vert.tekst) return [{ soort: "los", naam: vert.tekst, porties: aantal, item: keuze.naam || "" }];
+  const id = (vert && vert.productId) || keuze.productId;
+  const p = id ? (producten || []).find((x) => x.id === id) || null : null;
+  return p ? mepVoorProduct(p, aantal, calcItems, dishById, recipeById) : [];
+};
+const heeftInvulling = (keuze, prodKoppeling) => {
+  if (keuze.productId) return true;
+  const vert = keuze.miceId && prodKoppeling ? prodKoppeling[keuze.miceId] : null;
+  return !!(vert && (vert.productId || vert.recipeId || vert.tekst));
 };
 const mepVoorProduct = (product, personen, calcItems, dishById, recipeById) => {
   const uit = [];
@@ -9434,10 +9481,9 @@ function BoekingLog({ log }) {
 }
 
 const MARKEER_KLEUREN = [
-  { naam: "geel", kleur: "#f7e59a" },
-  { naam: "groen", kleur: "#cfe3bd" },
-  { naam: "blauw", kleur: "#c9dced" },
-  { naam: "roze", kleur: "#f2cfd4" },
+  { naam: "geel", kleur: "#f7e59a", melding: "Mee bezig" },
+  { naam: "groen", kleur: "#cfe3bd", melding: "Afgerond" },
+  { naam: "rood", kleur: "#f2b8b1", melding: "Let op" },
 ];
 // Woord-voor-woord markeren met de stift: elk woord is los aan te tikken.
 function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style }) {
@@ -9504,6 +9550,9 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
   const [stift, setStift] = useState(null);
   const [bewerk, setBewerk] = useState(null); // partij in het bewerkscherm
   const [nootOpen, setNootOpen] = useState({});
+  const [melding, setMelding] = useState(""); // toast bij het kiezen van een stift
+  const meldTijd = React.useRef(0);
+  const toonMelding = (t) => { setMelding(t); const nu = Date.now(); meldTijd.current = nu; setTimeout(() => { if (meldTijd.current === nu) setMelding(""); }, 2200); };
   const [markering, setMarkering] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ritme_mep_markering") || "{}"); } catch (e) { return {}; }
   });
@@ -9528,11 +9577,6 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
     .filter((b) => dagen.includes(b.datum) && String(b.status) !== "cancelled")
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
 
-  const onsProduct = (keuze) => {
-    const vert = keuze.miceId && prodKoppeling ? prodKoppeling[keuze.miceId] : null;
-    const id = (vert && vert.productId) || keuze.productId;
-    return id ? (producten || []).find((x) => x.id === id) || null : null;
-  };
   // Mep-aanpassingen (sleutel "mep|…") gaan vóór; anders wat de boekingpagina
   // toont: handmatige invulling of de bestelling uit MICE.
   const gekozen = (b) => {
@@ -9542,10 +9586,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
     const hand = koppeling[sl] || [];
     return hand.length ? hand : autoKeuzesUitBoeking(b);
   };
-  const mepVan = (b) => gekozen(b).flatMap((k) => {
-    const p = onsProduct(k);
-    return p ? mepVoorProduct(p, k.aantal || b.gasten, calcItems, dishById, recipeById) : [];
-  });
+  const mepVan = (b) => gekozen(b).flatMap((k) => mepVoorKeuze(k, b, prodKoppeling, producten, calcItems, dishById, recipeById));
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
 
@@ -9576,7 +9617,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       const items = partijen.filter((b) => b.datum === d);
       if (!items.length) return "";
       return "<h2>" + pEsc(dagKop(d)) + "</h2>" + items.map((b) => {
-        const al = allergieRegels(b.bericht);
+        const al = allergieVanBoeking(b);
         const noot = kaalBericht(b.bericht);
         const st = statusNL(b.status);
         const pr = gekozen(b).map((k) => pEsc(productRegel(k, b))).join(" &nbsp;|&nbsp; ");
@@ -9665,13 +9706,13 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
             </div>
             <div className="space-y-2">
               {items.map((b) => {
-                const allergie = allergieRegels(b.bericht);
+                const allergie = allergieVanBoeking(b);
                 const noot = kaalBericht(b.bericht);
                 const keuzes = gekozen(b);
                 const mep = mepTellen(mepVan(b));
                 const st = statusNL(b.status);
                 return (
-                  <div key={b.id} className="card p-3">
+                  <div key={b.id} className="card p-3" style={{ border: "1.5px solid " + statusRand(b.status) }}>
                     <div className="flex items-baseline gap-2">
                       <span className="serif ink text-[17px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
                       {st && <span className="text-[11.5px] font-semibold shrink-0" style={{ color: "#a05a00" }}>{st}</span>}
@@ -9699,7 +9740,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                         <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[13px]">
                           {mep.map((m, i) => (
                             <div key={i} className="flex justify-between gap-2">
-                              <MarkTekst tekst={m.naam} basis={"m:" + b.id + ":" + m.naam} stift={stift} markering={markering} zetMark={zetMark} className="min-w-0 ink" />
+                              <span onClick={!stift && m.soort === "recept" ? () => onOpenRecipe(m.id) : undefined} className="min-w-0"
+                                style={m.soort === "recept" ? { textDecoration: "underline", textDecorationColor: "#b6b2a3", cursor: stift ? undefined : "pointer" } : undefined}>
+                                <MarkTekst tekst={m.naam} basis={"m:" + b.id + ":" + m.naam} stift={stift} markering={markering} zetMark={zetMark} className="ink" />
+                              </span>
                               <span className="shrink-0 font-semibold" style={{ color: "#44502f" }}>{Math.round(m.porties)}</span>
                             </div>
                           ))}
@@ -9709,7 +9753,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                     {!keuzes.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vereist nog culinaire invulling.</div>}
                     {keuzes.length > 0 && !mep.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Vereist nog culinaire invulling.</div>}
                     {allergie.length > 0 && (
-                      <div className="rounded-lg px-2.5 py-1.5 mt-1.5 text-[12.5px] font-medium" style={{ background: "#fbeceb", color: "#8a2f28" }}>
+                      <div className="mt-1.5 text-[13px] font-bold" style={{ color: "#b3261e" }}>
                         {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
                       </div>
                     )}
@@ -9732,17 +9776,20 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
         );
       })}
 
-      {/* Zwevende markeerstiften: kies een kleur en tik woorden aan. */}
-      <div className="fixed z-40 flex flex-col items-center gap-1.5" style={{ right: 12, bottom: 96 }}>
-        {MARKEER_KLEUREN.map((k) => (
-          <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)} title={"Markeren met " + k.naam}
-            className="ff rounded-full w-9 h-9 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.8)") }} />
-        ))}
+      {/* Markeerstiften op de plek van de plusknop: geel = mee bezig, groen = afgerond, rood = let op. */}
+      <div className="fixed z-40 flex items-center gap-2" style={{ right: 16, bottom: 24 }}>
         {Object.keys(markering).length > 0 && (
           <button onClick={() => { setMarkering({}); setStift(null); try { localStorage.removeItem("ritme_mep_markering"); } catch (e) {} }}
             className="ff rounded-full w-9 h-9 shadow flex items-center justify-center" title="Alle markeringen wissen" style={{ background: T.paper, border: "1px solid " + T.line }}><X size={15} /></button>
         )}
+        {MARKEER_KLEUREN.map((k) => (
+          <button key={k.naam} onClick={() => { const aan = stift !== k.naam; setStift(aan ? k.naam : null); if (aan) toonMelding(k.melding + " — tik woorden aan om te markeren"); }}
+            title={k.melding} className="ff rounded-full w-10 h-10 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
+        ))}
       </div>
+      {melding && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 rounded-2xl text-sm px-4 py-2.5 shadow-lg max-w-[92vw] w-max" style={{ background: T.ink, color: T.paper }}>{melding}</div>
+      )}
 
       {bewerk && (
         <PartijBewerk boeking={bewerk} keuzes={gekozen(bewerk)} miceProducten={miceProducten} producten={producten}
@@ -9891,7 +9938,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe }) {
   const catImportRef = React.useRef(null);
   const vandaag = localDate();
   const tot = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return localDate(d); })(); // sync loopt twee maanden vooruit
@@ -9902,7 +9949,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
-    .filter((b) => (alleen ? String(b.status) === "confirmed" : String(b.status) !== "cancelled"))
+    .filter((b) => (alleen ? String(b.status) === "confirmed" : true))
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
 
   const perDag = [];
@@ -9919,14 +9966,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
     const id = (vert && vert.productId) || keuze.productId;
     return id ? (producten || []).find((x) => x.id === id) || null : null;
   };
-  const mepVan = (b) => {
-    const uit = [];
-    for (const keuze of gekozen(b)) {
-      const p = onsProduct(keuze);
-      if (p) uit.push(...mepVoorProduct(p, keuze.aantal || b.gasten, calcItems, dishById, recipeById));
-    }
-    return mepTellen(uit);
-  };
+  const mepVan = (b) => mepTellen(gekozen(b).flatMap((k) => mepVoorKeuze(k, b, prodKoppeling, producten, calcItems, dishById, recipeById)));
   const tijd = (iso) => (iso ? String(iso).slice(11, 16) : "");
   const dagNaam = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + "/" + (x.getMonth() + 1); };
 
@@ -9954,12 +9994,12 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
           <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">{dagNaam(dag.datum)}</div>
           <div className="space-y-2">
             {dag.items.map((b) => {
-              const allergie = allergieRegels(b.bericht);
+              const allergie = allergieVanBoeking(b);
               const keuzes = gekozen(b);
               const mep = mepVan(b);
               const uit = open === b.id;
               return (
-                <div key={b.id} className="card p-3">
+                <div key={b.id} className="card p-3" style={{ border: "1.5px solid " + statusRand(b.status) }}>
                   <button onClick={() => setOpen(uit ? null : b.id)} className="ff w-full text-left flex items-start gap-2">
                     <span className="min-w-0 flex-1">
                       <span className="block serif ink text-lg leading-tight truncate">{b.naam || "Zonder naam"}</span>
@@ -9984,7 +10024,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
                       <div className="flex flex-wrap items-center gap-1.5 mb-2">
                         {keuzes.map((k, i) => {
                           const vert = k.miceId ? prodKoppeling[k.miceId] : null;
-                          const ok = !!onsProduct(k);
+                          const ok = heeftInvulling(k, prodKoppeling);
                           return (
                             <span key={i} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px]"
                               style={{ background: ok ? "#eef2e6" : "#fbeceb", color: ok ? "#44502f" : "#8a2f28" }}>
@@ -10068,9 +10108,10 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
           }} />
       )}
       {vertaalVoor && (
-        <EigenProductKiezer miceNaam={vertaalVoor.naam} producten={producten}
+        <EigenProductKiezer miceNaam={vertaalVoor.naam} producten={producten} recepten={recepten}
+          omschrijving={((miceProducten || []).find((p) => p.id === vertaalVoor.miceId) || {}).omschrijving || ""}
           onSluit={() => setVertaalVoor(null)}
-          onKies={(p) => { onProdKoppel(vertaalVoor.miceId, p); setVertaalVoor(null); }} />
+          onKies={(inv) => { onProdKoppel(vertaalVoor.miceId, inv); setVertaalVoor(null); }} />
       )}
     </div>
   );
@@ -10107,25 +10148,41 @@ function ProductKiezer({ boeking, lijst, onKies, onSluit }) {
 }
 
 // Een MICE-product één keer aan ons eigen product hangen.
-function EigenProductKiezer({ miceNaam, producten, onKies, onSluit }) {
+function EigenProductKiezer({ miceNaam, omschrijving, producten, recepten, onKies, onSluit }) {
   const [q, setQ] = useState("");
-  const hits = (producten || []).filter((p) => !q.trim() || softMatchAny([p.name, p.doel, p.cat], q)).slice(0, 40);
+  const [tekst, setTekst] = useState("");
+  const prodHits = (producten || []).filter((p) => !q.trim() || softMatchAny([p.name, p.doel, p.cat], q)).slice(0, 20);
+  const recHits = q.trim() ? (recepten || []).filter((r) => softMatchAny([r.name, r.category], q)).slice(0, 20) : [];
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
-      <div className="w-full max-w-md rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="serif ink text-xl leading-tight">Waar hoort dit bij?</div>
-        <p className="text-[12.5px] mute mt-1 mb-2">"{miceNaam}" een invulling geven met een product uit de calculaties. Dit hoef je maar één keer te doen; daarna geldt het voor elke boeking met dit product.</p>
-        <Field label="Zoek"><input autoFocus className="input px-3 py-2 w-full text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="bv. buffet" /></Field>
-        <div className="flex-1 overflow-y-auto space-y-1.5 mt-2">
-          {hits.map((p) => (
-            <button key={p.id} onClick={() => onKies(p)} className="ff card cardh w-full text-left px-3 py-2">
-              <div className="text-sm ink truncate">{p.name}</div>
-              <div className="text-[12px] mute truncate">{[p.doel, p.cat].filter(Boolean).join(" · ")}</div>
+        <p className="text-[12.5px] mute mt-1 mb-2">"{miceNaam}" een culinaire invulling geven: een product uit de calculaties, een recept, of eigen tekst. Eén keer doen; daarna geldt het voor elke boeking met dit product.</p>
+        {omschrijving ? <div className="rounded-lg px-2.5 py-2 mb-2 text-[12px] leading-relaxed" style={{ background: "#f2f0e6", color: "#5c5a4c" }}><span className="font-semibold">Volgens MICE: </span>{String(omschrijving).slice(0, 400)}</div> : null}
+        <Field label="Zoek in producten en recepten"><input autoFocus className="input px-3 py-2 text-sm w-full" value={q} onChange={(e) => setQ(e.target.value)} placeholder="bv. buffet, soep, tapas" /></Field>
+        <div className="overflow-y-auto flex-1 mt-2 space-y-1" style={{ minHeight: 0 }}>
+          {prodHits.map((p) => (
+            <button key={"p" + p.id} onClick={() => onKies({ productId: p.id, naam: p.name })} className="ff w-full text-left rounded-lg px-2.5 py-2 hover:opacity-80" style={{ background: "#f6f4ec" }}>
+              <div className="text-sm ink">{p.name}</div>
+              <div className="text-[11.5px] mute">{[p.doel, p.cat].filter(Boolean).join(" · ") || "calculatie"}</div>
             </button>
           ))}
-          {!hits.length && <p className="text-[12.5px] mute">Geen product gevonden.</p>}
+          {recHits.map((r) => (
+            <button key={"r" + r.id} onClick={() => onKies({ recipeId: r.id, naam: r.name })} className="ff w-full text-left rounded-lg px-2.5 py-2 hover:opacity-80" style={{ background: "#eef2e6" }}>
+              <div className="text-sm ink">{r.name}</div>
+              <div className="text-[11.5px]" style={{ color: "#44502f" }}>recept{r.category ? " · " + r.category : ""}</div>
+            </button>
+          ))}
+          {!prodHits.length && !recHits.length && <p className="text-[12.5px] mute px-1 py-2">Niets gevonden — typ hieronder je eigen invulling.</p>}
         </div>
-        <div className="flex justify-end mt-3"><button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Sluiten</button></div>
+        <div className="flex items-center gap-1.5 mt-2.5">
+          <input className="input px-3 py-2 text-sm min-w-0 flex-1" value={tekst} onChange={(e) => setTekst(e.target.value)} placeholder="Of typ zelf, bv. 3 warme gerechten + salade"
+            onKeyDown={(e) => { if (e.key === "Enter" && tekst.trim()) onKies({ tekst: tekst.trim(), naam: tekst.trim().slice(0, 80) }); }} />
+          <button disabled={!tekst.trim()} onClick={() => onKies({ tekst: tekst.trim(), naam: tekst.trim().slice(0, 80) })} className="btnp ff rounded-lg px-3 py-2 text-[12.5px] font-semibold disabled:opacity-50">Bewaar</button>
+        </div>
+        <div className="flex justify-end mt-2">
+          <button onClick={onSluit} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Sluiten</button>
+        </div>
       </div>
     </div>
   );
