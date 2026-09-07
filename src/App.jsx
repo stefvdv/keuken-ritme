@@ -4814,10 +4814,10 @@ function App() {
               onNewItem={() => push({ screen: "calcItemForm", editing: null })}
               onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
               onDeleteItem={deleteCalcItem} />}
-            {section === "technieken" && chefMode && (
+            {section === "technieken" && (
               <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
-                prodKoppeling={prodKoppeling} miceProducten={miceProducten}
+                prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveKoppeling}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -9367,7 +9367,8 @@ const MARKEER_KLEUREN = [
   { naam: "blauw", kleur: "#c9dced" },
   { naam: "roze", kleur: "#f2cfd4" },
 ];
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onOpenRecipe }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onOpenRecipe }) {
+  const [kiesVoor, setKiesVoor] = useState(null); // boeking waarvoor een product wordt toegevoegd
   // Losse dagen aanvinken: minimaal 1, maximaal 7. Het venster toont twee
   // weken en schuift per week.
   const [anker, setAnker] = useState(() => localDate());
@@ -9570,9 +9571,22 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                     )}
                     {keuzes.length > 0 && (
                       <div className="text-[12.5px] mt-1 space-y-0.5">
-                        {keuzes.map((k, i) => <div key={i} className="mute">{productRegel(k, b)}</div>)}
+                        {keuzes.map((k, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <button onClick={(e) => { e.stopPropagation(); const v = window.prompt("Aantal voor " + k.naam, String(k.aantal || b.gasten)); if (v == null) return; const n = parseInt(String(v).replace(",", "."), 10); if (!isFinite(n) || n < 0) return; onKoppel(b.naam, keuzes.map((x, j) => (j === i ? { ...x, aantal: n } : x))); }}
+                              className="ff font-semibold shrink-0" style={{ color: "#44502f" }}>{(k.aantal || b.gasten)}×</button>
+                            <span className="min-w-0 flex-1 mute truncate">{k.naam}{catVan[k.miceId] ? " · " + catVan[k.miceId] : ""}</span>
+                            <button onClick={(e) => { e.stopPropagation(); onKoppel(b.naam, keuzes.filter((_, j) => j !== i)); }} className="ff mute hover:opacity-60"><X size={12} /></button>
+                          </div>
+                        ))}
                       </div>
                     )}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button onClick={(e) => { e.stopPropagation(); setKiesVoor(b); }} className="btno ff rounded-lg px-2 py-1 text-[12px] font-medium"><Plus size={12} /> Product</button>
+                      {(koppeling[boekingSleutel(b.naam)] || []).length > 0 && (b.regels || []).length > 0 && (
+                        <button onClick={(e) => { e.stopPropagation(); onKoppel(b.naam, []); }} className="ff text-[12px] mute underline">terug naar MICE-bestelling</button>
+                      )}
+                    </div>
                     {mep.length > 0 && (
                       <>
                         <div className="text-[11px] font-semibold uppercase tracking-widest acc mt-2 mb-0.5">Te maken</div>
@@ -9601,6 +9615,15 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
           </div>
         );
       })}
+      {kiesVoor && (
+        <ProductKiezer boeking={kiesVoor} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
+          onSluit={() => setKiesVoor(null)}
+          onKies={(p, aantal) => {
+            const keuze = p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal };
+            onKoppel(kiesVoor.naam, [...gekozen(kiesVoor), keuze]);
+            setKiesVoor(null);
+          }} />
+      )}
     </div>
   );
 }
@@ -9915,7 +9938,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
         <ProductKiezer boeking={kiesVoor} lijst={miceProducten.length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
           onSluit={() => setKiesVoor(null)}
           onKies={(p, aantal) => {
-            const huidig = koppeling[boekingSleutel(kiesVoor.naam)] || [];
+            const huidig = gekozen(kiesVoor);
             const keuze = p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal };
             onKoppel(kiesVoor.naam, [...huidig, keuze]);
             setKiesVoor(null);
