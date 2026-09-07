@@ -2779,7 +2779,7 @@ export default function AppRoot() {
 if (typeof console !== "undefined") console.log("Ritme " + RITME_VERSIE);
 function App() {
   const [user, setUser] = useState(null);
-  const [section, setSection] = useState("recepten"); // de app opent op de receptenpagina
+  const [section, setSection] = useState("mep"); // de app opent op de mise-en-place
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
   // Live (met database): start leeg tot de echte batches geladen zijn — de
@@ -2996,11 +2996,15 @@ function App() {
       const { error } = await supabase.from("mice_events").upsert(rijen);
       if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase."); return 0; }
     }
+    // Bewaartermijn: boekingen ouder dan twee maanden gaan weg, zodat de
+    // database niet volloopt. Elke sync ruimt meteen op.
+    const bewaarGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 62); return localDate(d); })();
+    if (live) { try { await supabase.from("mice_events").delete().lt("datum", bewaarGrens); } catch (e) {} }
     setBoekingen((xs) => {
       const per = {};
       for (const b of xs) per[b.id] = b;
       for (const b of rijen) per[b.id] = b;
-      return Object.values(per).sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
+      return Object.values(per).filter((b) => String(b.datum) >= bewaarGrens).sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
     });
     if (!stil) flash(rijen.length + " boekingen opgehaald");
     return rijen.length;
@@ -5358,7 +5362,7 @@ function PromptModal({ titel, label, hint, waarde, placeholder, wachtwoord, okLa
         {hint && <p className="text-xs mute mt-1 leading-relaxed">{hint}</p>}
         <div className="mt-3">
           {label && <div className="text-[11.5px] font-bold ink mb-1">{label}</div>}
-          <input ref={ref} type={wachtwoord ? "password" : "text"} className="input px-3 py-2.5 w-full text-[15px]" value={v} placeholder={placeholder || ""}
+          <input ref={ref} type="text" name="invoer" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} className="input px-3 py-2.5 w-full text-[15px]" value={v} placeholder={placeholder || ""}
             onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); bevestig(); } }} />
         </div>
         {fout && <p className="text-[12px] mt-1.5 font-medium" style={{ color: "#9a4a2f" }}>{fout}</p>}
@@ -8986,7 +8990,14 @@ const allergieRegels = (bericht) => {
   const kaal = String(bericht || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
   return kaal.split(/(?<=[.!?])\s+|\n+/).map((z) => z.trim()).filter((z) => z && ALLERGIE_WOORDEN.test(z));
 };
-const kaalBericht = (bericht) => String(bericht || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+// Regeleinden uit MICE (alinea's, <br>) blijven staan zodat de notitie leest
+// zoals hij is ingevoerd.
+const kaalBericht = (bericht) => String(bericht || "")
+  .replace(/<\s*(br|\/p|\/div|\/li)[^>]*>/gi, "\n")
+  .replace(/<[^>]*>/g, " ")
+  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+  .split("\n").map((r) => r.replace(/\s+/g, " ").trim()).join("\n")
+  .replace(/\n{3,}/g, "\n\n").trim();
 
 // Artikelen die onder meerdere leveranciers voorkomen, per lijst.
 const dubbeleArtikelen = (arts) => {
@@ -9568,8 +9579,8 @@ function BoekingLog({ log }) {
 }
 
 const MARKEER_KLEUREN = [
-  { naam: "geel", kleur: "#f7e59a", melding: "Mee bezig" },
   { naam: "groen", kleur: "#cfe3bd", melding: "Afgerond" },
+  { naam: "geel", kleur: "#f7e59a", melding: "Mee bezig" },
   { naam: "rood", kleur: "#f2b8b1", melding: "Let op" },
 ];
 // Woord-voor-woord markeren met de stift: elk woord is los aan te tikken.
@@ -9614,6 +9625,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
   const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
   const [receptZoek, setReceptZoek] = useState(""); // zoekveld voor recept-bijlagen
+  // Escape of de terugknop van het toestel sluit de bewerkstand zonder opslaan.
+  useEffect(() => {
+    if (!bewerk) return;
+    const sluit = () => setBewerk(false);
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); setBewerk(false); } };
+    try { window.history.pushState({ app: "ritme", kaart: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", sluit);
+    window.addEventListener("keydown", toets, true);
+    return () => { window.removeEventListener("popstate", sluit); window.removeEventListener("keydown", toets, true); };
+  }, [bewerk]);
 
   const keuzesS = sorteerEetmoment(keuzes || [], catVan);
   const bezorging = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
@@ -9751,7 +9772,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <>
                 <button onClick={() => setNootOpen((o) => !o)} className="ff text-[12px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
                 {nootOpen && (
-                  <p className="text-[12px] mute leading-relaxed mt-1 mb-0">
+                  <p className="text-[12px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
                     <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
                   </p>
                 )}
@@ -10212,7 +10233,6 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
 function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe }) {
-  const catImportRef = React.useRef(null);
   const vandaag = localDate();
   const tot = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return localDate(d); })(); // sync loopt twee maanden vooruit
   const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
@@ -10250,13 +10270,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   return (
     <div>
       <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE, twee maanden vooruit. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
-      <div className="flex flex-wrap items-end gap-2 mb-3">
-        <button onClick={() => setAlleen((a) => !a)} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">{alleen ? "Alleen bevestigd" : "Ook opties"}</button>
-        {canEdit && <>
-          <input ref={catImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
-          <button onClick={() => catImportRef.current && catImportRef.current.click()} title="Productexport uit MICE (Instellingen → Producten → exporteren)" className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Categorieën (Excel)</button>
-        </>}
-      </div>
 
       {!perDag.length && <Empty label="Geen boekingen in de komende twee maanden." />}
 
