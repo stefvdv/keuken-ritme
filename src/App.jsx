@@ -2997,7 +2997,7 @@ function App() {
   // bij het openen van de mise-en-place twee weken. Geen knoppen meer nodig.
   const syncBezig = React.useRef(false);
   useEffect(() => {
-    if (!loaded || (section !== "boekingen" && section !== "technieken")) return;
+    if (!loaded || (section !== "boekingen" && section !== "mep")) return;
     if (syncBezig.current) return;
     syncBezig.current = true;
     const d = new Date(); d.setDate(d.getDate() + (section === "boekingen" ? 62 : 14));
@@ -4766,7 +4766,7 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} />
+      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} />
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
         {!FORM_SCREENS.has(current.screen) && (
@@ -4852,7 +4852,7 @@ function App() {
               onNewItem={() => push({ screen: "calcItemForm", editing: null })}
               onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
               onDeleteItem={deleteCalcItem} />}
-            {section === "technieken" && (
+            {section === "mep" && (
               <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling}
@@ -5421,7 +5421,7 @@ function Login({ onPick, live }) {
     </div>
   );
 }
-function Header({ user, onHome, onOpenSettings }) {
+function Header({ user, onHome, onOpenSettings, onMep }) {
   return (
     <header className="sticky top-0 z-20 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
@@ -5429,6 +5429,7 @@ function Header({ user, onHome, onOpenSettings }) {
           <Wordmark onHome={onHome} />
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
+          {onMep && <button onClick={onMep} className="mute hover:opacity-70 focus:outline-none shrink-0" title="Mise en place"><BookOpen size={19} /></button>}
           <button onClick={onOpenSettings} className="mute hover:opacity-70 focus:outline-none shrink-0" title="Instellingen"><Settings size={19} /></button>
         </div>
       </div>
@@ -6986,7 +6987,7 @@ const SECTIONS = [
   { id: "fermentatie", label: "Fermenteren", icon: <FlaskConical size={24} /> },
   { id: "smaak", label: "Smaak", icon: <Blend size={24} /> },
   { id: "voorraad", label: "Voorraad", icon: <ShelfIcon size={24} /> },
-  { id: "technieken", label: "Mise en place", icon: <BookOpen size={24} /> },
+  { id: "technieken", label: "Werkwijze", icon: <BookOpen size={24} /> },
   { id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={24} /> },
 ];
 
@@ -8768,6 +8769,16 @@ function VormKiezer({ waarde, onChange, className, eigen, onEigen }) {
 // Bestelde productregels uit de MICE-sync omzetten naar keuzes; gebruikt
 // wanneer er voor de boeking niets handmatig is gekozen. Hetzelfde product in
 // meerdere programmadelen telt op tot één keuze.
+// MICE-status in keukentaal. "unconfirmed" dekt zowel lopende als verlopen
+// opties; die partijen gaan vaak alsnog door en horen dus gewoon in beeld.
+const statusNL = (st) => {
+  const s = String(st || "");
+  if (s === "confirmed") return "";
+  if (s === "cancelled") return "geannuleerd";
+  if (s === "unconfirmed") return "in optie";
+  if (s.includes("expired")) return "optie verlopen";
+  return s;
+};
 const autoKeuzesUitBoeking = (b) => {
   const per = {};
   for (const r of (b && b.regels) || []) {
@@ -9428,13 +9439,71 @@ const MARKEER_KLEUREN = [
   { naam: "blauw", kleur: "#c9dced" },
   { naam: "roze", kleur: "#f2cfd4" },
 ];
+// Woord-voor-woord markeren met de stift: elk woord is los aan te tikken.
+function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style }) {
+  const delen = String(tekst || "").split(/(\s+)/);
+  let idx = 0;
+  return (
+    <span className={className} style={style}>
+      {delen.map((w, i) => {
+        if (!w || /^\s+$/.test(w)) return w;
+        const sleutel = basis + ":" + idx++;
+        const k = MARKEER_KLEUREN.find((x) => x.naam === markering[sleutel]);
+        return (
+          <span key={i} onClick={stift ? (e) => { e.stopPropagation(); zetMark(sleutel); } : undefined}
+            style={{ background: k ? k.kleur : undefined, cursor: stift ? "cell" : undefined, borderRadius: 3 }}>{w}</span>
+        );
+      })}
+    </span>
+  );
+}
+
+// Bewerkscherm voor één partij op de mise-en-place. Wijzigingen gelden alleen
+// hier; de boeking op de boekingpagina blijft ongemoeid.
+function PartijBewerk({ boeking, keuzes, miceProducten, producten, aangepast, onOpslaan, onHerstel, onSluit }) {
+  const [regels, setRegels] = useState(() => keuzes.map((k) => ({ ...k })));
+  const [kies, setKies] = useState(false);
+  const zet = (i, veld, w) => setRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-md rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="serif ink text-xl leading-tight">Partij bewerken</div>
+        <p className="text-[12.5px] mute mt-1 mb-2">"{boeking.naam}" — geldt alleen voor de mise-en-place; de boeking zelf verandert niet mee.</p>
+        <div className="overflow-y-auto flex-1 space-y-1.5" style={{ minHeight: 0 }}>
+          {regels.map((k, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zet(i, "aantal", e.target.value)} placeholder={String(boeking.gasten || "")} />
+              <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={k.naam || ""} onChange={(e) => zet(i, "naam", e.target.value)} />
+              <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
+            </div>
+          ))}
+          {!regels.length && <p className="text-[12.5px] mute">Nog geen producten. Voeg er een toe met de knop hieronder.</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <button onClick={() => setKies(true)} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium inline-flex items-center gap-1"><Plus size={13} /> Product</button>
+          {aangepast && <button onClick={() => { onHerstel(); onSluit(); }} className="ff text-[12px] mute underline">terug naar boeking</button>}
+          <span className="flex-1" />
+          <button onClick={onSluit} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Annuleren</button>
+          <button onClick={() => { onOpslaan(regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim())); onSluit(); }} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Opslaan</button>
+        </div>
+        {kies && (
+          <ProductKiezer boeking={boeking} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
+            onSluit={() => setKies(false)}
+            onKies={(p, aantal) => { setRegels((rs) => [...rs, p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal }]); setKies(false); }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onOpenRecipe }) {
-  const [kiesVoor, setKiesVoor] = useState(null); // boeking waarvoor een product wordt toegevoegd
-  // Losse dagen aanvinken: minimaal 1, maximaal 7. Het venster toont twee
-  // weken en schuift per week.
-  const [anker, setAnker] = useState(() => localDate());
-  const [sel, setSel] = useState(() => [localDate()]);
+  const vandaag = localDate();
+  const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
+  const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
+  const [somDagen, setSomDagen] = useState(2); // optelsom over 2, 3 of 4 dagen
   const [stift, setStift] = useState(null);
+  const [bewerk, setBewerk] = useState(null); // partij in het bewerkscherm
+  const [nootOpen, setNootOpen] = useState({});
   const [markering, setMarkering] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ritme_mep_markering") || "{}"); } catch (e) { return {}; }
   });
@@ -9447,23 +9516,17 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       return nieuw;
     });
   };
-  const kleurVan = (sleutel) => { const k = MARKEER_KLEUREN.find((x) => x.naam === markering[sleutel]); return k ? k.kleur : null; };
 
-  const venster = [];
-  for (let i = 0; i < 14; i++) { const d = new Date(anker + "T12:00:00"); d.setDate(d.getDate() + i); venster.push(localDate(d)); }
-  const toggleDag = (d) => setSel((xs) => {
-    if (xs.includes(d)) return xs.length > 1 ? xs.filter((x) => x !== d) : xs;
-    if (xs.length >= 7) return xs;
-    return [...xs, d].sort();
-  });
-  const dagen = [...sel].sort();
-  const schuifWeek = (n) => { const d = new Date(anker + "T12:00:00"); d.setDate(d.getDate() + n * 7); setAnker(localDate(d)); };
+  const dagen = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); dagen.push(localDate(d)); }
+  const schuifWeek = (n) => { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + n * 7); setWeekStart(localDate(d)); };
+  // De optelsom telt vanaf vandaag (als die in beeld is), anders vanaf maandag.
+  const somVanaf = dagen.includes(vandaag) ? vandaag : dagen[0];
+  const somSet = dagen.filter((d) => d >= somVanaf).slice(0, somDagen);
 
   const partijen = (boekingen || [])
-    .filter((b) => sel.includes(b.datum) && String(b.status) !== "cancelled")
+    .filter((b) => dagen.includes(b.datum) && String(b.status) !== "cancelled")
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
-  const perVensterDag = {};
-  for (const b of boekingen || []) if (String(b.status) !== "cancelled") perVensterDag[b.datum] = (perVensterDag[b.datum] || 0) + 1;
 
   const onsProduct = (keuze) => {
     const vert = keuze.miceId && prodKoppeling ? prodKoppeling[keuze.miceId] : null;
@@ -9486,10 +9549,11 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
 
-  // Optelsom over de gekozen dagen; alleen bereidingen die in meer dan één
-  // partij zitten horen bovenaan (dat is de overlap die je samen wilt maken).
+  // Optelsom over de somdagen: alleen bereidingen die in meer dan één partij
+  // zitten — de overlap die je in één keer wilt maken.
   const perBereiding = {};
   for (const b of partijen) {
+    if (!somSet.includes(b.datum)) continue;
     for (const m of mepVan(b)) {
       const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + String(m.naam).toLowerCase();
       if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, boekingen: new Set() };
@@ -9502,21 +9566,22 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
 
   const dagKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()]; };
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
-  const chipKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
   const tijd = (iso) => (iso ? String(iso).slice(11, 16) : "");
   const productRegel = (k, b) => (k.aantal || b.gasten) + "× " + k.naam + (catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
+  const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ");
 
   const printen = () => {
-    const rij = (r) => "<tr><td>" + pEsc(r.naam) + "</td>" + dagen.map((d) => "<td class='n'>" + (r.perDag[d] ? Math.round(r.perDag[d]) : "") + "</td>").join("") + "<td class='n tot'>" + Math.round(r.totaal) + "</td></tr>";
+    const rij = (r) => "<tr><td>" + pEsc(r.naam) + "</td>" + somSet.map((d) => "<td class='n'>" + (r.perDag[d] ? Math.round(r.perDag[d]) : "") + "</td>").join("") + "<td class='n tot'>" + Math.round(r.totaal) + "</td></tr>";
     const dagBlok = (d) => {
       const items = partijen.filter((b) => b.datum === d);
       if (!items.length) return "";
       return "<h2>" + pEsc(dagKop(d)) + "</h2>" + items.map((b) => {
         const al = allergieRegels(b.bericht);
         const noot = kaalBericht(b.bericht);
+        const st = statusNL(b.status);
         const pr = gekozen(b).map((k) => pEsc(productRegel(k, b))).join(" &nbsp;|&nbsp; ");
         const mep = mepTellen(mepVan(b)).map((m) => pEsc(m.naam) + " " + Math.round(m.porties) + "×").join(" &nbsp;·&nbsp; ");
-        return "<div class='p'><div class='pt'>" + pEsc(b.naam || "Zonder naam") + " <span class='mut'>" + (tijd(b.start_tijd) || "tijd onbekend") + " · " + (b.gasten || 0) + " gasten" + (b.tel ? " · " + pEsc((b.contact ? b.contact + " " : "") + b.tel) : "") + "</span></div>"
+        return "<div class='p'><div class='pt'>" + pEsc(b.naam || "Zonder naam") + (st ? " <span class='st'>[" + pEsc(st) + "]</span>" : "") + " <span class='mut'>" + (tijd(b.start_tijd) || "tijd onbekend") + " · " + (b.gasten || 0) + " gasten" + (b.tel ? " · " + pEsc((b.contact ? b.contact + " " : "") + b.tel) : "") + "</span></div>"
           + (pr ? "<div class='pr'>" + pr + "</div>" : "")
           + (mep ? "<div class='mep'>" + mep + "</div>" : "")
           + (al.length ? "<div class='al'>" + al.map(pEsc).join("<br>") + "</div>" : "")
@@ -9530,10 +9595,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
       + "td{padding:1.4mm 1mm;border-bottom:1px solid #e6e3d8}td.n{text-align:right;width:11mm}td.tot{font-weight:700;border-left:1px solid #ccc}"
-      + ".p{margin-bottom:3mm}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}"
+      + ".p{margin-bottom:3mm}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
       + ".pr{color:#44502f}.mep{color:#2b2e24}.al{color:#8a2f28;margin-top:.8mm}"
-      + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + dagen.map((d) => pEsc(dagKop(d))).join(" · ") + "</div>"
-      + (overlap.length ? "<table><thead><tr><th>Samen maken</th>" + dagen.map((d) => "<th class='n'>" + pEsc(kolKop(d)) + "</th>").join("") + "<th class='n'>Totaal</th></tr></thead><tbody>" + overlap.map(rij).join("") + "</tbody></table>" : "")
+      + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
+      + (overlap.length ? "<table><thead><tr><th>Samen maken (" + somSet.length + " dagen)</th>" + somSet.map((d) => "<th class='n'>" + pEsc(kolKop(d)) + "</th>").join("") + "<th class='n'>Totaal</th></tr></thead><tbody>" + overlap.map(rij).join("") + "</tbody></table>" : "")
       + dagen.map(dagBlok).join("") + "</body></html>");
   };
 
@@ -9542,65 +9607,45 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       <div className="flex items-center justify-between gap-2 mb-2">
         <div>
           <div className="serif ink text-xl leading-tight">Mise en place</div>
-          <div className="text-[12.5px] mute">{dagen.map(dagKop).join(" · ")}</div>
+          <div className="text-[12.5px] mute">{weekLabel}</div>
         </div>
         <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
       </div>
 
-      <div className="flex items-center gap-1 mb-1.5">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
-        <div className="flex-1 flex flex-wrap gap-1">
-          {venster.map((d) => {
-            const aan = sel.includes(d);
-            const n = perVensterDag[d] || 0;
-            return (
-              <button key={d} onClick={() => toggleDag(d)}
-                className="ff rounded-lg px-2 py-1 text-[12px] font-medium"
-                style={{ background: aan ? T.green : "transparent", color: aan ? "#fbf9f2" : n ? undefined : "#b6b2a3", border: "1px solid " + (aan ? T.green : T.line) }}>
-                {chipKop(d)}{n ? <span style={{ opacity: 0.75 }}> ·{n}</span> : null}
-              </button>
-            );
-          })}
-        </div>
+        <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Deze week</button>
         <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={14} /></button>
-      </div>
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <span className="text-[11.5px] mute">Tik dagen aan (max 7) om overlap te zien.</span>
-        <span className="w-2" />
-        {MARKEER_KLEUREN.map((k) => (
-          <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)} title={"Markeren met " + k.naam}
-            className="ff rounded-lg w-7 h-7" style={{ background: k.kleur, border: "2px solid " + (stift === k.naam ? T.green : "transparent") }} />
+        <span className="flex-1" />
+        <span className="text-[11.5px] mute">Optelsom</span>
+        {[2, 3, 4].map((n) => (
+          <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
+            style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n}d</button>
         ))}
-        {Object.keys(markering).length > 0 && (
-          <button onClick={() => { setMarkering({}); try { localStorage.removeItem("ritme_mep_markering"); } catch (e) {} }} className="ff text-[12px] mute underline">wissen</button>
-        )}
       </div>
 
-      {!partijen.length && <Empty label="Geen partijen op de gekozen dagen." />}
+      {!partijen.length && <Empty label="Geen partijen in deze week." />}
 
       {overlap.length > 0 && (
         <div className="card p-3 mb-4">
-          <div className="flex items-baseline justify-between gap-2 mb-1.5">
-            <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Samen maken — in meerdere partijen</span>
-          </div>
+          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
           <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-1.5 pr-2">Bereiding</th>
-                {dagen.map((d) => <th key={d} className="text-right py-1.5 px-1">{kolKop(d)}</th>)}
+                {somSet.map((d) => <th key={d} className="text-right py-1.5 px-1">{kolKop(d)}</th>)}
                 <th className="text-right py-1.5 pl-2">Totaal</th>
               </tr>
             </thead>
             <tbody>
               {overlap.map((r) => (
-                <tr key={r.sleutel} onClick={() => zetMark("t:" + r.sleutel)}
-                  style={{ borderTop: "1px solid " + T.line, background: kleurVan("t:" + r.sleutel) || undefined, cursor: stift ? "cell" : "default" }}>
+                <tr key={r.sleutel} style={{ borderTop: "1px solid " + T.line }}>
                   <td className="py-2 pr-2 ink">
-                    {r.soort === "recept"
-                      ? <button onClick={(e) => { if (!stift) { e.stopPropagation(); onOpenRecipe(r.id); } }} className="ff text-left">{r.naam}<span className="mute"> · {r.boekingen.size} partijen</span></button>
-                      : <span>{r.naam}<span className="mute"> · {r.boekingen.size} partijen</span></span>}
+                    <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} />
+                    {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[12px]">open</button>}
+                    <span className="mute text-[12px]"> · {r.boekingen.size} partijen</span>
                   </td>
-                  {dagen.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? Math.round(r.perDag[d]) : "·"}</td>)}
+                  {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? Math.round(r.perDag[d]) : "·"}</td>)}
                   <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{Math.round(r.totaal)}</td>
                 </tr>
               ))}
@@ -9624,59 +9669,60 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                 const noot = kaalBericht(b.bericht);
                 const keuzes = gekozen(b);
                 const mep = mepTellen(mepVan(b));
-                const sleutel = "b:" + b.id;
+                const st = statusNL(b.status);
                 return (
-                  <div key={b.id} onClick={() => zetMark(sleutel)} className="card p-3"
-                    style={{ background: kleurVan(sleutel) || undefined, cursor: stift ? "cell" : "default" }}>
+                  <div key={b.id} className="card p-3">
                     <div className="flex items-baseline gap-2">
                       <span className="serif ink text-[17px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
+                      {st && <span className="text-[11.5px] font-semibold shrink-0" style={{ color: "#a05a00" }}>{st}</span>}
                       <span className="text-[13px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijd(b.start_tijd) || "—"} · {b.gasten || 0}p</span>
+                      <button onClick={() => setBewerk(b)} className="ff mute hover:opacity-70 shrink-0" title="Partij bewerken"><Pencil size={15} /></button>
                     </div>
                     {(b.tel || b.zaal) && (
                       <div className="text-[12.5px] mute mt-0.5">
                         {b.zaal || ""}{b.zaal && b.tel ? " · " : ""}
-                        {b.tel ? <a href={"tel:" + b.tel.replace(/[^+0-9]/g, "")} className="ff underline" onClick={(e) => e.stopPropagation()}>{(b.contact ? b.contact + " · " : "") + b.tel}</a> : null}
+                        {b.tel ? <a href={"tel:" + b.tel.replace(/[^+0-9]/g, "")} className="ff underline">{(b.contact ? b.contact + " · " : "") + b.tel}</a> : null}
                       </div>
                     )}
                     {keuzes.length > 0 && (
                       <div className="text-[12.5px] mt-1 space-y-0.5">
                         {keuzes.map((k, i) => (
-                          <div key={i} className="flex items-center gap-1.5">
-                            <button onClick={(e) => { e.stopPropagation(); const v = window.prompt("Aantal voor " + k.naam, String(k.aantal || b.gasten)); if (v == null) return; const n = parseInt(String(v).replace(",", "."), 10); if (!isFinite(n) || n < 0) return; onKoppel(b.naam, keuzes.map((x, j) => (j === i ? { ...x, aantal: n } : x))); }}
-                              className="ff font-semibold shrink-0" style={{ color: "#44502f" }}>{(k.aantal || b.gasten)}×</button>
-                            <span className="min-w-0 flex-1 mute truncate">{k.naam}{catVan[k.miceId] ? " · " + catVan[k.miceId] : ""}</span>
-                            <button onClick={(e) => { e.stopPropagation(); onKoppel(b.naam, keuzes.filter((_, j) => j !== i)); }} className="ff mute hover:opacity-60"><X size={12} /></button>
+                          <div key={i} className="mute">
+                            <MarkTekst tekst={productRegel(k, b)} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
                           </div>
                         ))}
                       </div>
                     )}
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <button onClick={(e) => { e.stopPropagation(); setKiesVoor(b); }} className="btno ff rounded-lg px-2 py-1 text-[12px] font-medium"><Plus size={12} /> Product</button>
-                      {koppeling["mep|" + boekingSleutel(b.naam)] !== undefined && (
-                        <button onClick={(e) => { e.stopPropagation(); onWisMep(b.naam); }} className="ff text-[12px] mute underline">terug naar boeking</button>
-                      )}
-                    </div>
                     {mep.length > 0 && (
                       <>
                         <div className="text-[11px] font-semibold uppercase tracking-widest acc mt-2 mb-0.5">Te maken</div>
                         <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[13px]">
                           {mep.map((m, i) => (
                             <div key={i} className="flex justify-between gap-2">
-                              <span className="min-w-0 truncate ink">{m.naam}</span>
+                              <MarkTekst tekst={m.naam} basis={"m:" + b.id + ":" + m.naam} stift={stift} markering={markering} zetMark={zetMark} className="min-w-0 ink" />
                               <span className="shrink-0 font-semibold" style={{ color: "#44502f" }}>{Math.round(m.porties)}</span>
                             </div>
                           ))}
                         </div>
                       </>
                     )}
-                    {!keuzes.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vul de boeking in via Boekingen.</div>}
-                    {keuzes.length > 0 && !mep.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Producten nog niet vertaald naar gerechten — doe dat via Boekingen.</div>}
+                    {!keuzes.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vereist nog culinaire invulling.</div>}
+                    {keuzes.length > 0 && !mep.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Vereist nog culinaire invulling.</div>}
                     {allergie.length > 0 && (
                       <div className="rounded-lg px-2.5 py-1.5 mt-1.5 text-[12.5px] font-medium" style={{ background: "#fbeceb", color: "#8a2f28" }}>
-                        {allergie.map((z, i) => <div key={i}>{z}</div>)}
+                        {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
                       </div>
                     )}
-                    {noot && <p className="text-[12px] mute leading-relaxed mt-1.5 mb-0">{noot.length > 400 ? noot.slice(0, 400) + "…" : noot}</p>}
+                    {noot && (
+                      <div className="mt-1.5">
+                        <button onClick={() => setNootOpen((o) => ({ ...o, [b.id]: !o[b.id] }))} className="ff text-[12px] mute underline">{nootOpen[b.id] ? "Notitie verbergen" : "Notitie"}</button>
+                        {nootOpen[b.id] && (
+                          <p className="text-[12px] mute leading-relaxed mt-1 mb-0">
+                            <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <BoekingLog log={b.log} />
                   </div>
                 );
@@ -9685,14 +9731,25 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
           </div>
         );
       })}
-      {kiesVoor && (
-        <ProductKiezer boeking={kiesVoor} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
-          onSluit={() => setKiesVoor(null)}
-          onKies={(p, aantal) => {
-            const keuze = p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal };
-            onKoppel(kiesVoor.naam, [...gekozen(kiesVoor), keuze]);
-            setKiesVoor(null);
-          }} />
+
+      {/* Zwevende markeerstiften: kies een kleur en tik woorden aan. */}
+      <div className="fixed z-40 flex flex-col items-center gap-1.5" style={{ right: 12, bottom: 96 }}>
+        {MARKEER_KLEUREN.map((k) => (
+          <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)} title={"Markeren met " + k.naam}
+            className="ff rounded-full w-9 h-9 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.8)") }} />
+        ))}
+        {Object.keys(markering).length > 0 && (
+          <button onClick={() => { setMarkering({}); setStift(null); try { localStorage.removeItem("ritme_mep_markering"); } catch (e) {} }}
+            className="ff rounded-full w-9 h-9 shadow flex items-center justify-center" title="Alle markeringen wissen" style={{ background: T.paper, border: "1px solid " + T.line }}><X size={15} /></button>
+        )}
+      </div>
+
+      {bewerk && (
+        <PartijBewerk boeking={bewerk} keuzes={gekozen(bewerk)} miceProducten={miceProducten} producten={producten}
+          aangepast={koppeling["mep|" + boekingSleutel(bewerk.naam)] !== undefined}
+          onOpslaan={(regels) => onKoppel(bewerk.naam, regels)}
+          onHerstel={() => onWisMep(bewerk.naam)}
+          onSluit={() => setBewerk(null)} />
       )}
     </div>
   );
@@ -9841,7 +9898,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
   const [open, setOpen] = useState(null);
   const [kiesVoor, setKiesVoor] = useState(null); // boeking waarvoor we een product kiezen
   const [vertaalVoor, setVertaalVoor] = useState(null); // MICE-product dat nog een eigen product mist
-  const [alleen, setAlleen] = useState(true); // alleen bevestigd
+  const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
@@ -9908,7 +9965,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, calcIt
                       <span className="block serif ink text-lg leading-tight truncate">{b.naam || "Zonder naam"}</span>
                       <span className="block text-[12.5px] mute">
                         {tijd(b.start_tijd)}{b.gasten ? " · " + b.gasten + " gasten" : ""}{b.zaal ? " · " + b.zaal : ""}{b.soort ? " · " + b.soort : ""}
-                        {b.status !== "confirmed" ? " · " + b.status : ""}
+                        {statusNL(b.status) ? " · " : ""}{statusNL(b.status) ? <span style={{ color: "#a05a00", fontWeight: 600 }}>{statusNL(b.status)}</span> : null}
                       </span>
                     </span>
                     {allergie.length > 0 && <span style={{ color: "#d32f2f" }} title="Let op: dieetwensen"><AlertTriangle size={18} /></span>}
