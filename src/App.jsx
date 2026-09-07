@@ -5441,7 +5441,7 @@ function Login({ onPick, live }) {
 }
 function Header({ user, onHome, onOpenSettings, onMep, mepActief }) {
   return (
-    <header style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
+    <header className="sticky top-0 z-40 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <Wordmark onHome={onHome} />
@@ -7057,7 +7057,7 @@ function SectionNav({ section, setSection, chef }) {
     wrap.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
   }, [section]);
   return (
-    <div ref={scroller} className="flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1.5 -mx-4 px-4 no-scrollbar sm:justify-center" style={{ background: T.paper }}>
+    <div ref={scroller} className="sticky top-14 z-30 flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1.5 -mx-4 px-4 no-scrollbar sm:justify-center" style={{ background: T.paper }}>
       {items.map((it) => (
         <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex flex-col items-center justify-center gap-0.5 rounded-2xl px-2.5 sm:px-3 py-1.5 min-w-[64px] text-[11.5px] sm:text-[12px] font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}<span>{it.label}</span>
@@ -9535,12 +9535,14 @@ const MARKEER_KLEUREN = [
 ];
 // Woord-voor-woord markeren met de stift: elk woord is los aan te tikken.
 function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style }) {
-  const delen = String(tekst || "").split(/(\s+)/);
+  // Segmenten tussen scheidingstekens (komma, |, /, regeleinde) markeren als
+  // één geheel: "snijbiet stoof | habanero" heeft twee tikbare stukken.
+  const delen = String(tekst || "").split(/([,|\/\n]+)/);
   let idx = 0;
   return (
     <span className={className} style={style}>
       {delen.map((w, i) => {
-        if (!w || /^\s+$/.test(w)) return w;
+        if (!w || /^[,|\/\n\s]+$/.test(w)) return w;
         const sleutel = basis + ":" + idx++;
         const k = MARKEER_KLEUREN.find((x) => x.naam === markering[sleutel]);
         return (
@@ -9753,7 +9755,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           {regels.map((k, i) => (
             <div key={i} className="flex items-center gap-1.5">
               <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")} />
-              <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
+              <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
+                data-regel={i}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setRegels((rs) => [...rs.slice(0, i + 1), { naam: "", aantal: "" }, ...rs.slice(i + 1)]); setTimeout(() => { const el = document.querySelector('[data-regel="' + (i + 1) + '"]'); if (el) el.focus(); }, 30); } }} />
               <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
             </div>
           ))}
@@ -9797,6 +9801,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
   const [markering, setMarkering] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ritme_mep_markering") || "{}"); } catch (e) { return {}; }
   });
+  const [dagDicht, setDagDicht] = useState({}); // per dag inklapbaar
   const zetMark = (sleutel) => {
     if (!stift) return;
     setMarkering((m) => {
@@ -9955,11 +9960,12 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
         if (!items.length) return null;
         return (
           <div key={d} className="mb-4">
-            <div className="flex items-baseline gap-2 mb-1.5 pb-1" style={{ borderBottom: "1px solid " + T.line }}>
+            <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !o[d] }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "1px solid " + T.line }}>
+              {dagDicht[d] ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
               <span className="serif ink text-lg leading-tight">{dagKop(d)}</span>
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
-            </div>
-            <div className="space-y-2">
+            </button>
+            {!dagDicht[d] && <div className="space-y-2">
               {items.map((b) => {
                 const sl = boekingSleutel(b.naam);
                 return (
@@ -9985,7 +9991,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                     miceProducten={miceProducten} producten={producten} />
                 );
               })}
-            </div>
+            </div>}
           </div>
         );
       })}
@@ -10029,26 +10035,9 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   }, [focusKey]);
   const n = (k) => (notes && notes[k]) || TECH_NOTES_SEED[k];
   const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0 && maten.length === 0 && koken.length === 0;
-  const [werkOpen, setWerkOpen] = useState(false); // de oude werkwijze-pagina, standaard dicht
-  if (!werkOpen && !searching) {
-    return (
-      <div className="mt-8">
-        <button onClick={() => setWerkOpen(true)} className="ff w-full card cardh p-3.5 flex items-center gap-2 text-left">
-          <ChevronDown size={17} className="acc shrink-0" />
-          <span className="min-w-0 flex-1">
-            <span className="block serif ink text-lg leading-tight">Werkwijze</span>
-            <span className="block text-[12.5px] mute">Tabellen en documenten: jam, ijs, roosteren, koken, maten, fermentatie</span>
-          </span>
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="mt-8">
-      <button onClick={() => setWerkOpen(false)} className="ff inline-flex items-center gap-1.5 mb-2">
-        <ChevronUp size={17} className="acc" />
-        <span className="serif ink text-lg leading-tight">Werkwijze</span>
-      </button>
+      <div className="serif ink text-lg leading-tight mb-2">Werkwijze</div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
       {nothing && <Empty label="Niets gevonden in de technieken." />}
       <div className="space-y-2.5">
