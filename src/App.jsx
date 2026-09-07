@@ -4872,8 +4872,8 @@ function App() {
               onDeleteItem={deleteCalcItem} />}
             {section === "mep" && (
               <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
-                producten={assortiment} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
-                prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra}
+                producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
+                prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -5422,7 +5422,7 @@ function Login({ onPick, live }) {
         {live ? (
           <div className="card p-4">
             <label className="block text-sm font-medium ink mb-1.5 inline-flex items-center gap-1.5"><Lock size={14} /> Keukenwachtwoord</label>
-            <input type="password" autoFocus className="input px-3 py-2.5" value={pw}
+            <input type="text" autoComplete="one-time-code" autoCorrect="off" spellCheck={false} style={{ WebkitTextSecurity: "disc" }} autoFocus className="input px-3 py-2.5" value={pw}
               onChange={(e) => setPw(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitPw(); }}
               placeholder="Eenmalig per apparaat" />
@@ -5448,8 +5448,7 @@ function Header({ user, onHome, onOpenSettings, onMep, mepActief }) {
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
           {onMep && (
-            <button onClick={onMep} className="ff inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-medium shrink-0"
-              style={mepActief ? { background: T.green, color: "#fbf9f2", border: "1px solid " + T.green } : { border: "1px solid " + T.line, color: T.ink }}>
+            <button onClick={onMep} className={"ff inline-flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-[12.5px] font-medium shrink-0 " + (mepActief ? "pillon" : "pill")}>
               <BookOpen size={15} /> Mise en place
             </button>
           )}
@@ -8131,6 +8130,25 @@ function printLabel(recipe, inhoud, dates) {
   }
   const fmt = (iso) => { const [y, m, d] = iso.split("-"); return d + "-" + m + "-" + y; };
   const esc = (x) => String(x ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Naam altijd zo groot als er past: reken uit hoeveel hoogte de overige
+  // regels innemen en zoek de grootste corpsgrootte waarbij de (eventueel
+  // afbrekende) naam nog binnen het etiket valt.
+  const naamPt = (() => {
+    const mm = (pt, lh) => pt * 0.3528 * lh;
+    let overige = mm(12, 1.3); // Gemaakt-regel staat er altijd
+    if (inhoud && String(inhoud).trim()) overige += mm(10, 1.15) + 0.5;
+    if (tht) overige += mm(12, 1.3);
+    if (recipeAllergens(recipe).length) overige += mm(9, 1.15) + 1;
+    const beschikbaar = LABEL_MM.h - 3 - 2.5 - overige - 1;
+    const breedte = LABEL_MM.w - 6;
+    const tekst = String(recipe.name || "");
+    for (let f = 42; f >= 12; f--) {
+      const perRegel = Math.max(1, Math.floor(breedte / (0.55 * f * 0.3528)));
+      const regelsNodig = Math.max(1, Math.ceil(tekst.length / perRegel));
+      if (regelsNodig * mm(f, 1.1) <= beschikbaar) return f;
+    }
+    return 12;
+  })();
   printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
@@ -8143,7 +8161,7 @@ function printLabel(recipe, inhoud, dates) {
     ".wrap{position:absolute;top:3mm;left:3mm;right:3mm;text-align:center}" +
     // Alles vet en ruim bemeten: dunne letters verdwijnen in het raster van de
     // thermische driver (203 dpi), dikke streken blijven staan.
-    ".naam{font-weight:bold;font-size:14pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
+    ".naam{font-weight:bold;font-size:" + naamPt + "pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
     // Inhoudsregel (bv. "500 gram vacumeer zak"): alleen geprint als hij is ingevuld.
     ".inh{font-weight:bold;font-size:10pt;line-height:1.15;margin:0 0 0.5mm 0;word-wrap:break-word}" +
     ".rij{font-weight:bold;font-size:12pt;line-height:1.3;margin:0}" +
@@ -8798,8 +8816,9 @@ const statusNL = (st) => {
   const s = String(st || "");
   if (s === "confirmed") return "";
   if (s === "cancelled") return "geannuleerd";
-  if (s === "unconfirmed") return "in optie";
+  if (s === "unconfirmed" || s === "option") return "in optie";
   if (s.includes("expired")) return "optie verlopen";
+  if (s === "completed") return "afgerond";
   return s;
 };
 // Allergie-informatie van een boeking: het losse dieetwensen-veld gaat voor;
@@ -8813,7 +8832,7 @@ const allergieVanBoeking = (b) => {
 // rood geannuleerd. Onbekende statussen kleuren blauw (optie-achtig).
 const statusRand = (st) => {
   const s = String(st || "");
-  if (s === "confirmed") return "#5a7d46";
+  if (s === "confirmed" || s === "completed") return "#5a7d46";
   if (s === "cancelled") return "#8a2f28";
   if (s.includes("expired")) return "#c07a1a";
   return "#3b6ea5";
@@ -8826,6 +8845,23 @@ const autoKeuzesUitBoeking = (b) => {
   }
   return Object.values(per);
 };
+// Naam normaliseren zodat kleine typeverschillen ("kip stoof"/"kipstoof")
+// in de optelsom samenvallen.
+const normNaam = (t) => zonderAccent(String(t || "")).toLowerCase().replace(/[^a-z0-9]+/g, "");
+// Losse tekst splitsen op scheidingstekens: elk onderdeel telt apart mee.
+const losSplits = (naam, porties, item) => String(naam || "").split(/[|,\/]+/).map((t) => t.trim()).filter(Boolean).map((t) => ({ soort: "los", naam: t, porties, item }));
+// Sorteren op eetmoment: aankomst → ontbijt → lunch → snack → amuse → diner → borrel.
+const EETMOMENTEN = [
+  ["aankomst", "ontvangst", "arrival", "welkom"],
+  ["ontbijt", "breakfast"],
+  ["lunch", "brood", "sandwich", "soep"],
+  ["snack", "middag", "taart", "zoet", "koffie", "thee"],
+  ["amuse"],
+  ["diner", "dinner", "buffet", "walking", "hoofdgerecht"],
+  ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"],
+];
+const eetRang = (t) => { const x = zonderAccent(String(t || "")).toLowerCase(); for (let i = 0; i < EETMOMENTEN.length; i++) if (EETMOMENTEN[i].some((w) => x.includes(w))) return i; return EETMOMENTEN.length; };
+const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRang((a.naam || "") + " " + ((catVan && catVan[a.miceId]) || "")) - eetRang((b.naam || "") + " " + ((catVan && catVan[b.miceId]) || "")));
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
 // Eén keuze omzetten naar mep-regels via de culinaire invulling. Een invulling
@@ -8845,21 +8881,21 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
       const p = (producten || []).find((x) => x.id === o.productId) || null;
       return p ? mepVoorProduct(p, porties, calcItems, dishById, recipeById) : [];
     }
-    return o.naam ? [{ soort: "los", naam: o.naam, porties, item: keuze.naam || "" }] : [];
+    return o.naam ? losSplits(o.naam, porties, keuze.naam || "") : [];
   };
   if (vert && Array.isArray(vert.onderdelen) && vert.onderdelen.length) return vert.onderdelen.flatMap(perOnderdeel);
   if (vert && vert.recipeId) {
     const r = recipeById(vert.recipeId);
     return [{ soort: "recept", id: vert.recipeId, naam: (r && r.name) || vert.naam || "recept", porties: aantal, item: keuze.naam || "" }];
   }
-  if (vert && vert.tekst) return [{ soort: "los", naam: vert.tekst, porties: aantal, item: keuze.naam || "" }];
+  if (vert && vert.tekst) return losSplits(vert.tekst, aantal, keuze.naam || "");
   const id = (vert && vert.productId) || keuze.productId;
   if (id) {
     const p = (producten || []).find((x) => x.id === id) || null;
     return p ? mepVoorProduct(p, aantal, calcItems, dishById, recipeById) : [];
   }
   // Vrije regel (geen MICE-product, geen eigen product): telt als losse bereiding.
-  if (!keuze.miceId && keuze.naam) return [{ soort: "los", naam: keuze.kern || keuze.naam, porties: aantal, item: "" }];
+  if (!keuze.miceId && keuze.naam) return losSplits(keuze.kern || keuze.naam, aantal, "");
   return [];
 };
 const heeftInvulling = (keuze, prodKoppeling) => {
@@ -8915,7 +8951,7 @@ const mepVoorProduct = (product, personen, calcItems, dishById, recipeById) => {
 const mepTellen = (regels) => {
   const per = {};
   for (const r of regels) {
-    const sleutel = (r.soort === "recept" ? "r:" + r.id : "x:" + String(r.naam).toLowerCase());
+    const sleutel = (r.soort === "recept" ? "r:" + r.id : "x:" + normNaam(r.naam));
     if (!per[sleutel]) per[sleutel] = { ...r, porties: 0, vanaf: [] };
     per[sleutel].porties += r.porties;
     if (per[sleutel].vanaf.indexOf(r.item) < 0) per[sleutel].vanaf.push(r.item);
@@ -9569,21 +9605,23 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling }) {
   const [bewerk, setBewerk] = useState(false);
   const [regels, setRegels] = useState([]);
+  const [inv, setInv] = useState({}); // invulling-onderdelen per miceId (bewerkstand)
   const [velden, setVelden] = useState({ gasten: "", tijd: "", allergie: "", notitie: "" });
   const [kies, setKies] = useState(false);
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
-  const [invulVoor, setInvulVoor] = useState(null); // miceId waarvoor de invulling openstaat
-  const [invulRegels, setInvulRegels] = useState([]);
-  const [sugRij, setSugRij] = useState(-1); // rij met open suggestielijst
-  const startInvul = (k) => {
-    const inv = (invullingVan && invullingVan(k.miceId)) || null;
-    let rijen = [];
-    if (inv && Array.isArray(inv.onderdelen) && inv.onderdelen.length) rijen = inv.onderdelen.map((o) => ({ ...o }));
-    else if (inv && (inv.recipeId || inv.productId || inv.tekst)) rijen = [{ hoeveelheid: "", naam: inv.naam || inv.tekst || "", recipeId: inv.recipeId || null, productId: inv.productId || null }];
-    else rijen = [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }];
-    setInvulRegels(rijen); setSugRij(-1); setInvulVoor(k.miceId);
+  const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
+  const [receptZoek, setReceptZoek] = useState(""); // zoekveld voor recept-bijlagen
+
+  const keuzesS = sorteerEetmoment(keuzes || [], catVan);
+  const bezorging = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
+  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || "")));
+  const onderdelenVan = (miceId) => {
+    const v = miceId && invullingVan ? invullingVan(miceId) : null;
+    if (!v) return null;
+    if (Array.isArray(v.onderdelen) && v.onderdelen.length) return v.onderdelen;
+    if (v.recipeId || v.productId || v.tekst) return [{ hoeveelheid: "", naam: v.naam || v.tekst || "", recipeId: v.recipeId || null, productId: v.productId || null }];
+    return null;
   };
-  const zetInvul = (i, veld, w) => setInvulRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w, ...(veld === "naam" ? { recipeId: null, productId: null } : {}) } : x)));
   const suggesties = (tekst) => {
     const q = String(tekst || "").trim();
     if (q.length < 2) return [];
@@ -9591,55 +9629,61 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     const prod = (producten || []).filter((p) => softMatchAny([p.name, p.doel, p.cat], q)).slice(0, 3).map((p) => ({ productId: p.id, naam: p.name, label: "calculatie" }));
     return [...rec, ...prod];
   };
-  const bewaarInvul = () => {
-    const onderdelen = invulRegels
-      .map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null }))
-      .filter((o) => o.naam);
-    const inv = onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null;
-    onInvulling(invulVoor, inv);
-    setInvulVoor(null);
-  };
-  const bezorging = (keuzes || []).some((k) => /bezorg/i.test(String(k.naam || "")));
-  const toonKeuzes = (keuzes || []).filter((k) => !/bezorg/i.test(String(k.naam || "")));
-  // Zodra een product een invulling heeft, tonen we alleen aantal + gerecht;
-  // zonder invulling de MICE-naam met categorie.
-  const productRegel = (k) => {
-    const st = invulStatus ? invulStatus(k) : null;
-    if (st && st.ok && st.naam) return (k.aantal || b.gasten) + "× " + st.naam;
-    return (k.aantal || b.gasten) + "× " + k.naam + (catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
-  };
+  const focusNa = (sel) => setTimeout(() => { const el = document.querySelector(sel); if (el) el.focus(); }, 30);
+
   const datumKop = (() => { const x = new Date(String(b.datum) + "T12:00:00"); return isFinite(x) ? ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()] : ""; })();
   const printPartij = () => {
+    const rijen = [];
+    for (const k of toonKeuzes) {
+      const od = onderdelenVan(k.miceId);
+      rijen.push("<div class='pr'>" + pEsc((k.aantal || b.gasten) + "× " + k.naam) + "</div>");
+      if (od) for (const o of od) rijen.push("<div class='pr sub'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam) + "</div>");
+    }
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>" + pEsc(b.naam || "Partij") + "</title><style>"
       + "@page{size:A4;margin:16mm}body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:19px;margin:0}.st{color:#a05a00;font-weight:600;font-size:13px}"
-      + ".sub{color:#6a6550;margin:1mm 0 5mm}.pr{font-weight:700;margin:.6mm 0}"
+      + ".sub{margin-left:5mm;font-weight:600}"
+      + ".subkop{color:#6a6550;margin:1mm 0 5mm}.pr{font-weight:700;margin:.6mm 0}"
       + "h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:5mm 0 1.5mm}"
       + ".m{display:flex;justify-content:space-between;border-bottom:1px solid #e6e3d8;padding:1mm 0}.m b{color:#44502f}"
       + ".al{color:#b3261e;font-weight:700;margin-top:4mm}.noot{color:#6a6550;margin-top:4mm;white-space:pre-wrap}"
       + "</style></head><body>"
       + "<h1>" + pEsc(b.naam || "Zonder naam") + (statusTekst ? " <span class='st'>[" + pEsc(statusTekst) + "]</span>" : "") + "</h1>"
-      + "<div class='sub'>" + pEsc([datumKop, (tijdTekst || "tijd onbekend") + " · " + gastenTekst + " gasten" + (bezorging ? " · bezorging" : ""), zaal || "", (contact ? contact + " " : "") + (tel || "")].filter(Boolean).join(" · ")) + "</div>"
-      + toonKeuzes.map((k) => "<div class='pr'>" + pEsc(productRegel(k)) + "</div>").join("")
+      + "<div class='subkop'>" + pEsc([datumKop, (tijdTekst || "tijd onbekend") + " · " + gastenTekst + " gasten" + (bezorging ? " · bezorging" : ""), zaal || "", (contact ? contact + " " : "") + (tel || "")].filter(Boolean).join(" · ")) + "</div>"
+      + rijen.join("")
       + (mepRegels.length ? "<h2>Te maken</h2>" + mepRegels.map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span><b>" + fmtPorties(m.porties) + "</b></div>").join("") : "")
       + (allergie.length ? "<div class='al'>" + allergie.map(pEsc).join("<br>") + "</div>" : "")
       + (noot ? "<div class='noot'>" + pEsc(noot) + "</div>" : "")
       + "</body></html>");
   };
+
   const startBewerk = () => {
-    setRegels((keuzes || []).map((k) => ({ ...k })));
+    setRegels(keuzesS.map((k) => ({ ...k })));
+    const m = {};
+    for (const k of keuzesS) if (k.miceId) m[String(k.miceId)] = (onderdelenVan(k.miceId) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o }));
+    setInv(m);
     setVelden({
       gasten: String((extra && extra.gasten) != null && (extra && extra.gasten) !== "" ? extra.gasten : (b.gasten || "")),
       tijd: (extra && extra.tijd) || (b.start_tijd ? String(b.start_tijd).slice(11, 16) : ""),
       allergie: (extra && extra.allergie) || (allergie || []).join("\n"),
       notitie: (extra && extra.notitie) || noot || "",
+      recepten: ((extra && extra.recepten) || []).map((r) => ({ ...r })),
     });
-    setBewerk(true);
+    setSug(""); setReceptZoek(""); setBewerk(true);
   };
   const zetR = (i, veld, w) => setRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
+  const zetO = (mid, j, veld, w) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, [veld]: w, ...(veld === "naam" ? { recipeId: null, productId: null } : {}) } : x)) }));
+  const plusO = (mid, na) => setInv((m) => { const rs = (m[mid] || []).slice(); rs.splice(na == null ? rs.length : na, 0, { hoeveelheid: "", naam: "", recipeId: null, productId: null }); return { ...m, [mid]: rs }; });
+  const wegO = (mid, j) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).filter((_, jj) => jj !== j) }));
   const opslaan = () => {
     const schoon = regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim());
     onOpslaan(schoon, magExtra ? velden : null);
+    if (onInvulling) {
+      for (const mid of Object.keys(inv)) {
+        const onderdelen = inv[mid].map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null })).filter((o) => o.naam);
+        onInvulling(mid, onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null);
+      }
+    }
     setBewerk(false);
   };
 
@@ -9664,53 +9708,24 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           {toonKeuzes.length > 0 && (
             <div className="text-[13px] mt-1 space-y-0.5">
               {toonKeuzes.map((k, i) => {
-                const st = invulStatus ? invulStatus(k) : null;
+                const od = k.miceId ? onderdelenVan(k.miceId) : null;
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
                 return (
-                  <div key={i} className="flex items-baseline gap-1.5">
-                    <span className="min-w-0 font-semibold ink">
-                      <MarkTekst tekst={productRegel(k)} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
-                    </span>
-                    {k.miceId && magInvullen && (
-                      <button onClick={() => (invulVoor === k.miceId ? setInvulVoor(null) : startInvul(k))}
-                        className="ff text-[12px] underline shrink-0" style={{ color: st && st.ok ? "#6a6550" : "#8a2f28" }}>invulling</button>
-                    )}
-                    {st && !st.ok && !magInvullen && onInvullen && <button onClick={() => onInvullen(k)} className="ff text-[12px] underline shrink-0" style={{ color: "#8a2f28" }}>invulling</button>}
+                  <div key={i}>
+                    <div className="font-semibold ink">
+                      <MarkTekst tekst={kop} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
+                    </div>
+                    {od && od.map((o, j) => (
+                      <div key={j} className="font-semibold ink pl-3">
+                        <span onClick={!stift && o.recipeId ? () => onOpenRecipe(o.recipeId) : undefined}
+                          style={o.recipeId ? { textDecoration: "underline", textDecorationColor: "#b6b2a3", cursor: stift ? undefined : "pointer" } : undefined}>
+                          <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} />
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 );
               })}
-            </div>
-          )}
-          {invulVoor != null && (
-            <div className="rounded-xl p-2.5 mt-1.5 space-y-1.5" style={{ background: "#f2f0e6" }}>
-              <div className="text-[11px] font-semibold uppercase tracking-widest acc">Culinaire invulling — geldt voor elke boeking met dit product</div>
-              {invulRegels.map((o, i) => (
-                <div key={i}>
-                  <div className="flex items-center gap-1.5">
-                    <input className="input px-2 py-1.5 text-sm" style={{ width: "5.4rem", flex: "0 0 5.4rem" }} value={o.hoeveelheid} onChange={(e) => zetInvul(i, "hoeveelheid", e.target.value)} placeholder="7 liter" />
-                    <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={o.naam} onChange={(e) => { zetInvul(i, "naam", e.target.value); setSugRij(i); }} onFocus={() => setSugRij(i)} placeholder="gerecht, recept of eigen tekst" />
-                    <button onClick={() => setInvulRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
-                  </div>
-                  {o.recipeId && <div className="text-[11px] ml-1" style={{ color: "#44502f" }}>gekoppeld recept</div>}
-                  {o.productId && <div className="text-[11px] ml-1" style={{ color: "#44502f" }}>gekoppeld aan calculatie</div>}
-                  {sugRij === i && !o.recipeId && !o.productId && suggesties(o.naam).length > 0 && (
-                    <div className="mt-1 space-y-0.5">
-                      {suggesties(o.naam).map((sug, j) => (
-                        <button key={j} onClick={() => { setInvulRegels((rs) => rs.map((x, jj) => (jj === i ? { ...x, naam: sug.naam, recipeId: sug.recipeId || null, productId: sug.productId || null } : x))); setSugRij(-1); }}
-                          className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sug.recipeId ? "#eef2e6" : "#fbf9f2" }}>
-                          {sug.naam} <span className="mute text-[11px]">· {sug.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div className="flex items-center gap-2">
-                <button onClick={() => { setInvulRegels((rs) => [...rs, { hoeveelheid: "", naam: "", recipeId: null, productId: null }]); }} className="btno ff rounded-lg px-2 py-1 text-[12px] font-medium"><Plus size={12} /> regel</button>
-                <span className="flex-1" />
-                <button onClick={() => { onInvulling(invulVoor, null); setInvulVoor(null); }} className="ff text-[12px] mute underline">wissen</button>
-                <button onClick={() => setInvulVoor(null)} className="btno ff rounded-lg px-2.5 py-1.5 text-[12px] font-medium">Annuleren</button>
-                <button onClick={bewaarInvul} className="btnp ff rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">Opslaan</button>
-              </div>
             </div>
           )}
           {mepRegels.length > 0 && (
@@ -9736,31 +9751,90 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
             </div>
           )}
-          {noot && (
-            <div className="mt-1.5">
-              <button onClick={() => setNootOpen((o) => !o)} className="ff text-[12px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
-              {nootOpen && (
-                <p className="text-[12px] mute leading-relaxed mt-1 mb-0">
-                  <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
-                </p>
-              )}
+          {extra && Array.isArray(extra.recepten) && extra.recepten.length > 0 && (
+            <div className="mt-1.5 space-y-0.5 text-[13px]">
+              {extra.recepten.map((r, i) => (
+                <div key={i}>
+                  <button onClick={() => onOpenRecipe(r.id)} className="ff ink font-medium" style={{ textDecoration: "underline", textDecorationColor: "#b6b2a3" }}>{r.naam}</button>
+                </div>
+              ))}
             </div>
           )}
+          <div className="mt-1.5">
+            {noot ? (
+              <>
+                <button onClick={() => setNootOpen((o) => !o)} className="ff text-[12px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
+                {nootOpen && (
+                  <p className="text-[12px] mute leading-relaxed mt-1 mb-0">
+                    <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
+                  </p>
+                )}
+              </>
+            ) : <span className="text-[12px] mute">Geen notitie</span>}
+          </div>
           <BoekingLog log={log} />
         </>
       )}
 
       {bewerk && (
-        <div className="mt-2 space-y-1.5">
-          {regels.map((k, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")} />
-              <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
-                data-regel={i}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setRegels((rs) => [...rs.slice(0, i + 1), { naam: "", aantal: "" }, ...rs.slice(i + 1)]); setTimeout(() => { const el = document.querySelector('[data-regel="' + (i + 1) + '"]'); if (el) el.focus(); }, 30); } }} />
-              <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
-            </div>
-          ))}
+        <div className="mt-2 space-y-2">
+          {regels.map((k, i) => {
+            if (k.miceId) {
+              const mid = String(k.miceId);
+              return (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-pa={b.id + "-" + i}
+                      value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); } }} />
+                    <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>
+                    <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
+                  </div>
+                  {(inv[mid] || []).map((o, j) => {
+                    const sleutel = mid + ":" + j;
+                    return (
+                      <div key={j}>
+                        <div className="flex items-center gap-1.5 pl-3">
+                          <input className="input px-2 py-1.5 text-sm" style={{ width: "5.2rem", flex: "0 0 5.2rem" }} data-oa={b.id + "-" + i + "-" + j}
+                            value={o.hoeveelheid} onChange={(e) => zetO(mid, j, "hoeveelheid", e.target.value)} placeholder={String(k.aantal || b.gasten || "")}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); } }} />
+                          <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-" + j}
+                            value={o.naam} onChange={(e) => { zetO(mid, j, "naam", e.target.value); setSug(sleutel); }} onFocus={() => setSug(sleutel)}
+                            placeholder="gerecht | onderdeel | onderdeel"
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); } }} />
+                          <button onClick={() => wegO(mid, j)} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
+                        </div>
+                        {o.recipeId && <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>gekoppeld recept</div>}
+                        {o.productId && <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>gekoppeld aan calculatie</div>}
+                        {sug === sleutel && !o.recipeId && !o.productId && suggesties(o.naam).length > 0 && (
+                          <div className="pl-3 mt-1 space-y-0.5">
+                            {suggesties(o.naam).map((sg, jj) => (
+                              <button key={jj} onClick={() => { setInv((m) => ({ ...m, [mid]: m[mid].map((x, xx) => (xx === j ? { ...x, naam: sg.naam, recipeId: sg.recipeId || null, productId: sg.productId || null } : x)) })); setSug(""); }}
+                                className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sg.recipeId ? "#eef2e6" : "#fbf9f2" }}>
+                                {sg.naam} <span className="mute text-[11px]">· {sg.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button onClick={() => { const na = (inv[mid] || []).length; plusO(mid); focusNa('[data-oa="' + b.id + "-" + i + "-" + na + '"]'); }} className="ff ml-3 text-[12px] mute underline">+ regel</button>
+                </div>
+              );
+            }
+            return (
+              <div key={i} className="flex items-center gap-1.5">
+                <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-fa={b.id + "-" + i}
+                  value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-regel="' + b.id + "-" + i + '"]'); } }} />
+                <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
+                  data-regel={b.id + "-" + i}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setRegels((rs) => [...rs.slice(0, i + 1), { naam: "", aantal: "" }, ...rs.slice(i + 1)]); focusNa('[data-fa="' + b.id + "-" + (i + 1) + '"]'); } }} />
+                <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
+              </div>
+            );
+          })}
           <button onClick={() => setKies(true)} className="btno ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium inline-flex items-center gap-1"><Plus size={13} /> Product</button>
           {magExtra && (
             <>
@@ -9770,6 +9844,26 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               </div>
               <Field label="Allergenen (één per regel)"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.allergie} onChange={(e) => setVelden((v) => ({ ...v, allergie: e.target.value }))} /></Field>
               <Field label="Notitie"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.notitie} onChange={(e) => setVelden((v) => ({ ...v, notitie: e.target.value }))} /></Field>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-0.5">Recepten bij deze partij</div>
+                {(velden.recepten || []).map((r, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-[13px] mb-0.5">
+                    <span className="min-w-0 flex-1 ink truncate">{r.naam}</span>
+                    <button onClick={() => setVelden((v) => ({ ...v, recepten: v.recepten.filter((_, j) => j !== i) }))} className="ff mute hover:opacity-60"><Trash2 size={13} /></button>
+                  </div>
+                ))}
+                <input className="input px-2 py-1.5 text-sm w-full" value={receptZoek} onChange={(e) => setReceptZoek(e.target.value)} placeholder="Voeg recept toe — typ om te zoeken" />
+                {receptZoek.trim().length >= 2 && (
+                  <div className="mt-1 space-y-0.5">
+                    {(recepten || []).filter((r) => softMatchAny([r.name, r.category], receptZoek)).slice(0, 6).map((r) => (
+                      <button key={r.id} onClick={() => { setVelden((v) => ({ ...v, recepten: [...(v.recepten || []), { id: r.id, naam: r.name }] })); setReceptZoek(""); }}
+                        className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: "#eef2e6" }}>
+                        {r.name} <span className="mute text-[11px]">· recept{r.category ? " · " + r.category : ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -9781,7 +9875,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           {kies && (
             <ProductKiezer boeking={b} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
               onSluit={() => setKies(false)}
-              onKies={(p, aantal) => { setRegels((rs) => [...rs, p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal }]); setKies(false); }} />
+              onKies={(p, aantal) => { setRegels((rs) => [...rs, p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal }]); if (!p.eigen) setInv((m) => (m[String(p.id)] ? m : { ...m, [String(p.id)]: (onderdelenVan(p.id) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o })) })); setKies(false); }} />
           )}
         </div>
       )}
@@ -9789,7 +9883,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onOpenRecipe }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onOpenRecipe }) {
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
@@ -9801,7 +9895,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
   const [markering, setMarkering] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ritme_mep_markering") || "{}"); } catch (e) { return {}; }
   });
-  const [dagDicht, setDagDicht] = useState({}); // per dag inklapbaar
+  const [dagDicht, setDagDicht] = useState({}); // per dag inklapbaar; verleden standaard dicht
+  const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
   const zetMark = (sleutel) => {
     if (!stift) return;
     setMarkering((m) => {
@@ -9852,7 +9947,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
   for (const b of partijen) {
     if (!somSet.includes(b.datum)) continue;
     for (const m of mepVan(b)) {
-      const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + String(m.naam).toLowerCase();
+      const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + normNaam(m.naam);
       if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, boekingen: new Set() };
       perBereiding[sleutel].perDag[b.datum] = (perBereiding[sleutel].perDag[b.datum] || 0) + m.porties;
       perBereiding[sleutel].totaal += m.porties;
@@ -9878,7 +9973,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
           const naam = vert && (vert.productId || vert.recipeId || vert.tekst) && vert.naam ? vert.naam : k.naam;
           return (k.aantal || gastenVan(b)) + "× " + naam;
         };
-        const pr = gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).map((k) => "<div class='pr'>" + pEsc(regelTxt(k)) + "</div>").join("");
+        const pr = sorteerEetmoment(gekozen(b), catVan).filter((k) => !/bezorg/i.test(String(k.naam || ""))).map((k) => "<div class='pr'>" + pEsc(regelTxt(k)) + "</div>").join("");
         const bez = gekozen(b).some((k) => /bezorg/i.test(String(k.naam || "")));
         const mep = mepTellen(mepVan(b)).map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span> <b>" + Math.round(m.porties) + "</b></div>").join("");
         return "<div class='p'><div class='pt'>" + pEsc(b.naam || "Zonder naam") + (st ? " <span class='st'>[" + pEsc(st) + "]</span>" : "") + " <span class='mut'>" + (tijdVan(b) || "tijd onbekend") + " · " + gastenVan(b) + " gasten" + (bez ? " · bezorging" : "") + (b.tel ? " · " + pEsc((b.contact ? b.contact + " " : "") + b.tel) : "") + "</span></div>"
@@ -9894,7 +9989,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
       + "td{padding:1.4mm 1mm;border-bottom:1px solid #e6e3d8}td.n{text-align:right;width:11mm}td.tot{font-weight:700;border-left:1px solid #ccc}"
-      + ".p{margin-bottom:4mm}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
+      + ".p{margin-bottom:4mm;break-inside:avoid;page-break-inside:avoid}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
       + ".pr{font-weight:700;margin:.5mm 0}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
       + ".m{display:flex;justify-content:space-between;max-width:90mm;border-bottom:1px solid #eee}.m b{color:#44502f}"
       + ".al{color:#b3261e;margin-top:1mm;font-weight:700}"
@@ -9960,12 +10055,12 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
         if (!items.length) return null;
         return (
           <div key={d} className="mb-4">
-            <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !o[d] }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "1px solid " + T.line }}>
-              {dagDicht[d] ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
+            <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "1px solid " + T.line }}>
+              {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
               <span className="serif ink text-lg leading-tight">{dagKop(d)}</span>
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
             </button>
-            {!dagDicht[d] && <div className="space-y-2">
+            {!isDicht(d) && <div className="space-y-2">
               {items.map((b) => {
                 const sl = boekingSleutel(b.naam);
                 return (
@@ -9975,11 +10070,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                     canEdit={true} magExtra={true} extra={extraVan(b)}
                     aangepast={koppeling["mep|" + sl] !== undefined || koppeling["mepx|" + sl] !== undefined}
                     nootOpenStandaard={false}
-                    invulStatus={(k) => ({ ok: heeftInvulling(k, prodKoppeling), naam: (k.miceId && prodKoppeling[k.miceId] && prodKoppeling[k.miceId].naam) || "" })} onInvullen={null}
+                    invulStatus={null} onInvullen={null} recepten={recepten}
+                    invullingVan={(miceId) => prodKoppeling[miceId] || null}
+                    onInvulling={(miceId, inv) => onProdKoppel(miceId, inv)}
                     onOpslaan={(regels, velden) => {
                       onKoppel(b.naam, regels);
                       if (velden) {
                         const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
+                          && !((velden.recepten || []).length)
                           && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === (b.start_tijd ? String(b.start_tijd).slice(11, 16) : "");
                         onMepExtra(b.naam, leeg ? null : velden);
                       }
@@ -10138,6 +10236,8 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const vandaag = localDate();
   const tot = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return localDate(d); })(); // sync loopt twee maanden vooruit
   const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
+  const [dagDicht, setDagDicht] = useState({});
+  const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
@@ -10177,19 +10277,16 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
           <button onClick={() => catImportRef.current && catImportRef.current.click()} title="Productexport uit MICE (Instellingen → Producten → exporteren)" className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Categorieën (Excel)</button>
         </>}
       </div>
-      {miceProducten.length > 0 && (() => {
-        const gekoppeld = miceProducten.filter((p) => prodKoppeling[p.id]).length;
-        const open = miceProducten.length - gekoppeld;
-        if (!open) return null;
-        return <p className="text-[12.5px] mb-3" style={{ color: "#8a2f28" }}>{open} van de {miceProducten.length} MICE-producten hebben nog geen invulling. Geef die bij een boeking zodra je ze tegenkomt.</p>;
-      })()}
 
       {!perDag.length && <Empty label="Geen boekingen in de komende twee maanden." />}
 
       {perDag.map((dag) => (
         <div key={dag.datum} className="mb-5">
-          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">{dagNaam(dag.datum)}</div>
-          <div className="space-y-2">
+          <button onClick={() => setDagDicht((o) => ({ ...o, [dag.datum]: !isDicht(dag.datum) }))} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
+            {isDicht(dag.datum) ? <ChevronDown size={14} className="shrink-0" /> : <ChevronUp size={14} className="shrink-0" />}
+            {dagNaam(dag.datum)}
+          </button>
+          {!isDicht(dag.datum) && <div className="space-y-2">
             {dag.items.map((b) => (
               <PartijKaart key={b.id} b={b} keuzes={gekozen(b)} mepRegels={mepVan(b)}
                 allergie={allergieEff(b)} noot={nootEff(b)}
@@ -10198,15 +10295,15 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 canEdit={canEdit} magExtra={true} extra={bkxVan(b)}
                 aangepast={((koppeling[boekingSleutel(b.naam)] || []).length > 0 && (b.regels || []).length > 0) || !!bkxVan(b)}
                 nootOpenStandaard={true}
-                invulStatus={(k) => ({ ok: heeftInvulling(k, prodKoppeling), naam: (k.miceId && prodKoppeling[k.miceId] && prodKoppeling[k.miceId].naam) || "" })}
-                magInvullen={canEdit} recepten={recepten}
+                invulStatus={null} magInvullen={canEdit} recepten={recepten}
                 invullingVan={(miceId) => prodKoppeling[miceId] || null}
-                onInvulling={(miceId, inv) => onProdKoppel(miceId, inv)}
+                onInvulling={canEdit ? (miceId, inv) => onProdKoppel(miceId, inv) : null}
                 onInvullen={null}
                 onOpslaan={(regels, velden) => {
                   onKoppel(b.naam, regels);
                   if (velden) {
                     const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
+                      && !((velden.recepten || []).length)
                       && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === tijd(b.start_tijd);
                     onBkExtra(b.naam, leeg ? null : velden);
                   }
@@ -10217,7 +10314,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 tel={b.tel} contact={b.contact} zaal={b.zaal}
                 miceProducten={miceProducten} producten={producten} />
             ))}
-          </div>
+          </div>}
         </div>
       ))}
 
