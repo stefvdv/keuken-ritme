@@ -5422,7 +5422,7 @@ function Login({ onPick, live }) {
         {live ? (
           <div className="card p-4">
             <label className="block text-sm font-medium ink mb-1.5 inline-flex items-center gap-1.5"><Lock size={14} /> Keukenwachtwoord</label>
-            <input type="text" autoComplete="one-time-code" autoCorrect="off" spellCheck={false} style={{ WebkitTextSecurity: "disc" }} autoFocus className="input px-3 py-2.5" value={pw}
+            <input type="text" name="keukencode" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} autoFocus className="input px-3 py-2.5" value={pw}
               onChange={(e) => setPw(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitPw(); }}
               placeholder="Eenmalig per apparaat" />
@@ -6986,7 +6986,6 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, o
         </div>
       </div>
 
-      {chefMode && <MiceVerkenner />}
 
       <SectionTitle>Over</SectionTitle>
       <div className="card p-4 text-sm mute space-y-1">
@@ -8879,7 +8878,8 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
     }
     if (o.productId) {
       const p = (producten || []).find((x) => x.id === o.productId) || null;
-      return p ? mepVoorProduct(p, porties, calcItems, dishById, recipeById) : [];
+      const uit = p ? mepVoorProduct(p, porties, calcItems, dishById, recipeById) : [];
+      return uit.length ? uit : losSplits(o.naam, porties, keuze.naam || "");
     }
     return o.naam ? losSplits(o.naam, porties, keuze.naam || "") : [];
   };
@@ -8896,6 +8896,9 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
   }
   // Vrije regel (geen MICE-product, geen eigen product): telt als losse bereiding.
   if (!keuze.miceId && keuze.naam) return losSplits(keuze.kern || keuze.naam, aantal, "");
+  // Hernoemde regels uit oudere versies dragen nog een miceId maar zijn
+  // duidelijk eigen tekst (scheidingstekens): tel ze toch als los.
+  if (keuze.miceId && /[|,\/]/.test(String(keuze.naam || ""))) return losSplits(keuze.naam, aantal, "");
   return [];
 };
 const heeftInvulling = (keuze, prodKoppeling) => {
@@ -9651,7 +9654,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       + "<h1>" + pEsc(b.naam || "Zonder naam") + (statusTekst ? " <span class='st'>[" + pEsc(statusTekst) + "]</span>" : "") + "</h1>"
       + "<div class='subkop'>" + pEsc([datumKop, (tijdTekst || "tijd onbekend") + " · " + gastenTekst + " gasten" + (bezorging ? " · bezorging" : ""), zaal || "", (contact ? contact + " " : "") + (tel || "")].filter(Boolean).join(" · ")) + "</div>"
       + rijen.join("")
-      + (mepRegels.length ? "<h2>Te maken</h2>" + mepRegels.map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span><b>" + fmtPorties(m.porties) + "</b></div>").join("") : "")
       + (allergie.length ? "<div class='al'>" + allergie.map(pEsc).join("<br>") + "</div>" : "")
       + (noot ? "<div class='noot'>" + pEsc(noot) + "</div>" : "")
       + "</body></html>");
@@ -9691,15 +9693,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     <div className="card p-3" style={{ border: "3px solid " + randKleur }}>
       <div className="flex items-center gap-2">
         <span className="serif ink font-bold text-[17px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
-        {statusTekst && <span className="text-[11.5px] font-semibold shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
+        {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
         <span className="text-[13px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
-        <button onClick={printPartij} className="ff mute hover:opacity-70 shrink-0" title="Deze partij printen"><Printer size={15} /></button>
-        {canEdit && !bewerk && <button onClick={startBewerk} className="ff mute hover:opacity-70 shrink-0" title="Partij bewerken"><Pencil size={15} /></button>}
+        <button onClick={printPartij} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Deze partij printen"><Printer size={17} /></button>
+        {canEdit && !bewerk && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
       </div>
       {(tel || zaal) && (
-        <div className="text-[12.5px] mute mt-0.5">
-          {zaal || ""}{zaal && tel ? " · " : ""}
-          {tel ? <a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline">{(contact ? contact + " · " : "") + tel}</a> : null}
+        <div className="text-[12.5px] mt-0.5">
+          {zaal ? <span className="font-bold ink">{zaal}</span> : null}{zaal && tel ? <span className="mute"> · </span> : null}
+          {tel ? <a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline mute">{(contact ? contact + " · " : "") + tel}</a> : null}
         </div>
       )}
 
@@ -9716,7 +9718,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       <MarkTekst tekst={kop} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
                     </div>
                     {od && od.map((o, j) => (
-                      <div key={j} className="font-semibold ink pl-3">
+                      <div key={j} className="ink pl-3">
                         <span onClick={!stift && o.recipeId ? () => onOpenRecipe(o.recipeId) : undefined}
                           style={o.recipeId ? { textDecoration: "underline", textDecorationColor: "#b6b2a3", cursor: stift ? undefined : "pointer" } : undefined}>
                           <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} />
@@ -9727,22 +9729,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 );
               })}
             </div>
-          )}
-          {mepRegels.length > 0 && (
-            <>
-              <div className="text-[11px] font-semibold uppercase tracking-widest acc mt-2 mb-0.5">Te maken</div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[13px]">
-                {mepRegels.map((m, i) => (
-                  <div key={i} className="flex justify-between gap-2">
-                    <span onClick={!stift && m.soort === "recept" ? () => onOpenRecipe(m.id) : undefined} className="min-w-0"
-                      style={m.soort === "recept" ? { textDecoration: "underline", textDecorationColor: "#b6b2a3", cursor: stift ? undefined : "pointer" } : undefined}>
-                      <MarkTekst tekst={m.naam} basis={"m:" + b.id + ":" + m.naam} stift={stift} markering={markering} zetMark={zetMark} className="ink" />
-                    </span>
-                    <span className="shrink-0 font-semibold" style={{ color: "#44502f" }}>{fmtPorties(m.porties)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
           )}
           {!toonKeuzes.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vereist nog culinaire invulling.</div>}
           {toonKeuzes.length > 0 && !mepRegels.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Vereist nog culinaire invulling.</div>}
@@ -9975,10 +9961,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         };
         const pr = sorteerEetmoment(gekozen(b), catVan).filter((k) => !/bezorg/i.test(String(k.naam || ""))).map((k) => "<div class='pr'>" + pEsc(regelTxt(k)) + "</div>").join("");
         const bez = gekozen(b).some((k) => /bezorg/i.test(String(k.naam || "")));
-        const mep = mepTellen(mepVan(b)).map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span> <b>" + Math.round(m.porties) + "</b></div>").join("");
         return "<div class='p'><div class='pt'>" + pEsc(b.naam || "Zonder naam") + (st ? " <span class='st'>[" + pEsc(st) + "]</span>" : "") + " <span class='mut'>" + (tijdVan(b) || "tijd onbekend") + " · " + gastenVan(b) + " gasten" + (bez ? " · bezorging" : "") + (b.tel ? " · " + pEsc((b.contact ? b.contact + " " : "") + b.tel) : "") + "</span></div>"
           + pr
-          + (mep ? "<div class='mepkop'>Te maken</div>" + mep : "")
           + (al.length ? "<div class='al'>" + al.map(pEsc).join("<br>") + "</div>" : "")
           + "</div>";
       }).join("");
@@ -10095,12 +10079,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       })}
 
       <div className="fixed z-40 flex items-center gap-2" style={{ right: 16, bottom: 24 }}>
-        {Object.keys(markering).length > 0 && (
-          <button onClick={() => { setMarkering({}); setStift(null); try { localStorage.removeItem("ritme_mep_markering"); } catch (e) {} }}
-            className="ff rounded-full w-9 h-9 shadow flex items-center justify-center" title="Alle markeringen wissen" style={{ background: T.paper, border: "1px solid " + T.line }}><X size={15} /></button>
-        )}
         {MARKEER_KLEUREN.map((k) => (
-          <button key={k.naam} onClick={() => { const aan = stift !== k.naam; setStift(aan ? k.naam : null); if (aan) toonMelding(k.melding + " — tik woorden aan om te markeren"); }}
+          <button key={k.naam} onClick={() => { const aan = stift !== k.naam; setStift(aan ? k.naam : null); if (aan) toonMelding(k.melding); }}
             title={k.melding} className="ff rounded-full w-10 h-10 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
         ))}
       </div>
