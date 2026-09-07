@@ -2856,7 +2856,7 @@ function App() {
   const saveProdKoppeling = async (miceId, inv) => {
     setProdKoppeling((k) => ({ ...k, [miceId]: inv || null }));
     if (live) {
-      if (inv) await supabase.from("mice_prodkoppeling").upsert({ mice_id: miceId, product_id: inv.productId || null, product_naam: inv.naam || "", recipe_id: inv.recipeId || null, tekst: inv.tekst || "", updated_by: user || "", updated_at: new Date().toISOString() });
+      if (inv) await supabase.from("mice_prodkoppeling").upsert({ mice_id: miceId, product_id: inv.productId || null, product_naam: inv.naam || "", recipe_id: inv.recipeId || null, tekst: inv.tekst || "", onderdelen: inv.onderdelen || null, updated_by: user || "", updated_at: new Date().toISOString() });
       else await supabase.from("mice_prodkoppeling").delete().eq("mice_id", miceId);
     }
   };
@@ -3721,7 +3721,7 @@ function App() {
     if (mpr && !mpr.error) setMiceProducten(mpr.data || []);
     if (mpk && !mpk.error) {
       const k = {};
-      for (const r of mpk.data || []) k[r.mice_id] = { productId: r.product_id || null, recipeId: r.recipe_id || null, tekst: r.tekst || "", naam: r.product_naam };
+      for (const r of mpk.data || []) k[r.mice_id] = { productId: r.product_id || null, recipeId: r.recipe_id || null, tekst: r.tekst || "", naam: r.product_naam, onderdelen: Array.isArray(r.onderdelen) ? r.onderdelen : null };
       setProdKoppeling(k);
     }
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
@@ -4971,9 +4971,9 @@ function App() {
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"} />}
-      {user && canEdit && section !== "mep" && (
+      {user && canEdit && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
-          className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab ? "bottom-[5.25rem]" : "bottom-6")}
+          className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab || section === "mep" ? "bottom-[5.25rem]" : "bottom-6")}
           style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
           <Tag size={19} />
         </button>
@@ -7057,7 +7057,7 @@ function SectionNav({ section, setSection, chef }) {
     wrap.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
   }, [section]);
   return (
-    <div ref={scroller} className="sticky top-0 z-30 flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1.5 -mx-4 px-4 no-scrollbar sm:justify-center" style={{ background: T.paper }}>
+    <div ref={scroller} className="flex gap-1 sm:gap-1.5 overflow-x-auto pt-2 pb-1.5 -mx-4 px-4 no-scrollbar sm:justify-center" style={{ background: T.paper }}>
       {items.map((it) => (
         <button key={it.id} ref={(el) => { btns.current[it.id] = el; }} onClick={() => setSection(it.id)} className={"ff shrink-0 inline-flex flex-col items-center justify-center gap-0.5 rounded-2xl px-2.5 sm:px-3 py-1.5 min-w-[64px] text-[11.5px] sm:text-[12px] font-medium " + (section === it.id ? "pillon" : "pill")}>
           {it.icon}<span>{it.label}</span>
@@ -8826,24 +8826,61 @@ const autoKeuzesUitBoeking = (b) => {
   }
   return Object.values(per);
 };
-// Eén keuze omzetten naar mep-regels via de culinaire invulling: recept en
-// vrije tekst gaan direct door, een eigen product via de calculatie.
+// Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
+const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
+// Eén keuze omzetten naar mep-regels via de culinaire invulling. Een invulling
+// kan uit meerdere onderdelen bestaan (recept, calc-product of vrije tekst),
+// elk met een eigen hoeveelheid; elk onderdeel telt los mee in de optelsom.
 const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishById, recipeById) => {
   const vert = keuze.miceId && prodKoppeling ? prodKoppeling[keuze.miceId] : null;
   const aantal = keuze.aantal || boeking.gasten || 0;
+  const perOnderdeel = (o) => {
+    const n = o.hoeveelheid ? eersteGetal(o.hoeveelheid) : 0;
+    const porties = n || aantal;
+    if (o.recipeId) {
+      const r = recipeById(o.recipeId);
+      return [{ soort: "recept", id: o.recipeId, naam: (r && r.name) || o.naam || "recept", porties, item: keuze.naam || "" }];
+    }
+    if (o.productId) {
+      const p = (producten || []).find((x) => x.id === o.productId) || null;
+      return p ? mepVoorProduct(p, porties, calcItems, dishById, recipeById) : [];
+    }
+    return o.naam ? [{ soort: "los", naam: o.naam, porties, item: keuze.naam || "" }] : [];
+  };
+  if (vert && Array.isArray(vert.onderdelen) && vert.onderdelen.length) return vert.onderdelen.flatMap(perOnderdeel);
   if (vert && vert.recipeId) {
     const r = recipeById(vert.recipeId);
     return [{ soort: "recept", id: vert.recipeId, naam: (r && r.name) || vert.naam || "recept", porties: aantal, item: keuze.naam || "" }];
   }
   if (vert && vert.tekst) return [{ soort: "los", naam: vert.tekst, porties: aantal, item: keuze.naam || "" }];
   const id = (vert && vert.productId) || keuze.productId;
-  const p = id ? (producten || []).find((x) => x.id === id) || null : null;
-  return p ? mepVoorProduct(p, aantal, calcItems, dishById, recipeById) : [];
+  if (id) {
+    const p = (producten || []).find((x) => x.id === id) || null;
+    return p ? mepVoorProduct(p, aantal, calcItems, dishById, recipeById) : [];
+  }
+  // Vrije regel (geen MICE-product, geen eigen product): telt als losse bereiding.
+  if (!keuze.miceId && keuze.naam) return [{ soort: "los", naam: keuze.kern || keuze.naam, porties: aantal, item: "" }];
+  return [];
 };
 const heeftInvulling = (keuze, prodKoppeling) => {
   if (keuze.productId) return true;
-  const vert = keuze.miceId && prodKoppeling ? prodKoppeling[keuze.miceId] : null;
-  return !!(vert && (vert.productId || vert.recipeId || vert.tekst));
+  if (!keuze.miceId) return !!keuze.naam; // vrije regel is zijn eigen invulling
+  const vert = prodKoppeling ? prodKoppeling[keuze.miceId] : null;
+  return !!(vert && ((Array.isArray(vert.onderdelen) && vert.onderdelen.length) || vert.productId || vert.recipeId || vert.tekst));
+};
+// Vaste weekstandaard voor de Necker-lunch: maandag en woensdag hebben elk hun
+// eigen lijst. Alleen gebruikt zolang er niets handmatigs op de partij staat.
+const NECKER_STANDAARD = {
+  1: [["7 liter", "soep"], ["2 schalen", "frisse salade"], ["3 bakjes", "hummus"], ["2 bakjes", "vega smeersel"], ["6 stukken", "kaas à 500 gram"], ["2 potjes", "chutney"], ["2 schalen", "vullende salade"], ["2 bakjes", "boter"], ["2 bakjes", "vegan smeersel"], ["8 bakjes", "eiersalade"], ["", "extra kaaspapier"], ["1 potje", "jam"]],
+  3: [["2,5 liter", "soep"], ["2 bakken", "frisse salade"], ["2 bakjes", "eiersalade"], ["2 grote", "quiches"]],
+};
+const neckerKeuzes = (b, boekingSleutel) => {
+  const sl = boekingSleutel(b.naam);
+  if (!sl.includes("necker")) return null;
+  const dag = new Date(b.datum + "T12:00:00").getDay();
+  const lijst = NECKER_STANDAARD[dag];
+  if (!lijst) return null;
+  return lijst.map(([hoe, kern]) => ({ naam: (hoe ? hoe + " " : "") + kern, kern, aantal: eersteGetal(hoe) }));
 };
 const mepVoorProduct = (product, personen, calcItems, dishById, recipeById) => {
   const uit = [];
@@ -9516,6 +9553,7 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style }
 }
 
 const GEEN_MARKERING = {};
+const fmtPorties = (n) => { const r = Math.round((Number(n) || 0) * 10) / 10; return r % 1 ? r.toFixed(1).replace(".", ",") : String(r); };
 // Tekstvak dat automatisch meegroeit met de inhoud.
 function AutoTextarea({ value, onChange, className, placeholder }) {
   const ref = React.useRef(null);
@@ -9526,12 +9564,39 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling }) {
   const [bewerk, setBewerk] = useState(false);
   const [regels, setRegels] = useState([]);
   const [velden, setVelden] = useState({ gasten: "", tijd: "", allergie: "", notitie: "" });
   const [kies, setKies] = useState(false);
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
+  const [invulVoor, setInvulVoor] = useState(null); // miceId waarvoor de invulling openstaat
+  const [invulRegels, setInvulRegels] = useState([]);
+  const [sugRij, setSugRij] = useState(-1); // rij met open suggestielijst
+  const startInvul = (k) => {
+    const inv = (invullingVan && invullingVan(k.miceId)) || null;
+    let rijen = [];
+    if (inv && Array.isArray(inv.onderdelen) && inv.onderdelen.length) rijen = inv.onderdelen.map((o) => ({ ...o }));
+    else if (inv && (inv.recipeId || inv.productId || inv.tekst)) rijen = [{ hoeveelheid: "", naam: inv.naam || inv.tekst || "", recipeId: inv.recipeId || null, productId: inv.productId || null }];
+    else rijen = [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }];
+    setInvulRegels(rijen); setSugRij(-1); setInvulVoor(k.miceId);
+  };
+  const zetInvul = (i, veld, w) => setInvulRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w, ...(veld === "naam" ? { recipeId: null, productId: null } : {}) } : x)));
+  const suggesties = (tekst) => {
+    const q = String(tekst || "").trim();
+    if (q.length < 2) return [];
+    const rec = (recepten || []).filter((r) => softMatchAny([r.name, r.category], q)).slice(0, 4).map((r) => ({ recipeId: r.id, naam: r.name, label: "recept" + (r.category ? " · " + r.category : "") }));
+    const prod = (producten || []).filter((p) => softMatchAny([p.name, p.doel, p.cat], q)).slice(0, 3).map((p) => ({ productId: p.id, naam: p.name, label: "calculatie" }));
+    return [...rec, ...prod];
+  };
+  const bewaarInvul = () => {
+    const onderdelen = invulRegels
+      .map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null }))
+      .filter((o) => o.naam);
+    const inv = onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null;
+    onInvulling(invulVoor, inv);
+    setInvulVoor(null);
+  };
   const bezorging = (keuzes || []).some((k) => /bezorg/i.test(String(k.naam || "")));
   const toonKeuzes = (keuzes || []).filter((k) => !/bezorg/i.test(String(k.naam || "")));
   // Zodra een product een invulling heeft, tonen we alleen aantal + gerecht;
@@ -9554,7 +9619,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       + "<h1>" + pEsc(b.naam || "Zonder naam") + (statusTekst ? " <span class='st'>[" + pEsc(statusTekst) + "]</span>" : "") + "</h1>"
       + "<div class='sub'>" + pEsc([datumKop, (tijdTekst || "tijd onbekend") + " · " + gastenTekst + " gasten" + (bezorging ? " · bezorging" : ""), zaal || "", (contact ? contact + " " : "") + (tel || "")].filter(Boolean).join(" · ")) + "</div>"
       + toonKeuzes.map((k) => "<div class='pr'>" + pEsc(productRegel(k)) + "</div>").join("")
-      + (mepRegels.length ? "<h2>Te maken</h2>" + mepRegels.map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span><b>" + Math.round(m.porties) + "</b></div>").join("") : "")
+      + (mepRegels.length ? "<h2>Te maken</h2>" + mepRegels.map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span><b>" + fmtPorties(m.porties) + "</b></div>").join("") : "")
       + (allergie.length ? "<div class='al'>" + allergie.map(pEsc).join("<br>") + "</div>" : "")
       + (noot ? "<div class='noot'>" + pEsc(noot) + "</div>" : "")
       + "</body></html>");
@@ -9603,10 +9668,47 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     <span className="min-w-0 font-semibold ink">
                       <MarkTekst tekst={productRegel(k)} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
                     </span>
-                    {st && !st.ok && onInvullen && <button onClick={() => onInvullen(k)} className="ff text-[12px] underline shrink-0" style={{ color: "#8a2f28" }}>invulling</button>}
+                    {k.miceId && magInvullen && (
+                      <button onClick={() => (invulVoor === k.miceId ? setInvulVoor(null) : startInvul(k))}
+                        className="ff text-[12px] underline shrink-0" style={{ color: st && st.ok ? "#6a6550" : "#8a2f28" }}>invulling</button>
+                    )}
+                    {st && !st.ok && !magInvullen && onInvullen && <button onClick={() => onInvullen(k)} className="ff text-[12px] underline shrink-0" style={{ color: "#8a2f28" }}>invulling</button>}
                   </div>
                 );
               })}
+            </div>
+          )}
+          {invulVoor != null && (
+            <div className="rounded-xl p-2.5 mt-1.5 space-y-1.5" style={{ background: "#f2f0e6" }}>
+              <div className="text-[11px] font-semibold uppercase tracking-widest acc">Culinaire invulling — geldt voor elke boeking met dit product</div>
+              {invulRegels.map((o, i) => (
+                <div key={i}>
+                  <div className="flex items-center gap-1.5">
+                    <input className="input px-2 py-1.5 text-sm" style={{ width: "5.4rem", flex: "0 0 5.4rem" }} value={o.hoeveelheid} onChange={(e) => zetInvul(i, "hoeveelheid", e.target.value)} placeholder="7 liter" />
+                    <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={o.naam} onChange={(e) => { zetInvul(i, "naam", e.target.value); setSugRij(i); }} onFocus={() => setSugRij(i)} placeholder="gerecht, recept of eigen tekst" />
+                    <button onClick={() => setInvulRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
+                  </div>
+                  {o.recipeId && <div className="text-[11px] ml-1" style={{ color: "#44502f" }}>gekoppeld recept</div>}
+                  {o.productId && <div className="text-[11px] ml-1" style={{ color: "#44502f" }}>gekoppeld aan calculatie</div>}
+                  {sugRij === i && !o.recipeId && !o.productId && suggesties(o.naam).length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {suggesties(o.naam).map((sug, j) => (
+                        <button key={j} onClick={() => { setInvulRegels((rs) => rs.map((x, jj) => (jj === i ? { ...x, naam: sug.naam, recipeId: sug.recipeId || null, productId: sug.productId || null } : x))); setSugRij(-1); }}
+                          className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sug.recipeId ? "#eef2e6" : "#fbf9f2" }}>
+                          {sug.naam} <span className="mute text-[11px]">· {sug.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setInvulRegels((rs) => [...rs, { hoeveelheid: "", naam: "", recipeId: null, productId: null }]); }} className="btno ff rounded-lg px-2 py-1 text-[12px] font-medium"><Plus size={12} /> regel</button>
+                <span className="flex-1" />
+                <button onClick={() => { onInvulling(invulVoor, null); setInvulVoor(null); }} className="ff text-[12px] mute underline">wissen</button>
+                <button onClick={() => setInvulVoor(null)} className="btno ff rounded-lg px-2.5 py-1.5 text-[12px] font-medium">Annuleren</button>
+                <button onClick={bewaarInvul} className="btnp ff rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">Opslaan</button>
+              </div>
             </div>
           )}
           {mepRegels.length > 0 && (
@@ -9619,7 +9721,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       style={m.soort === "recept" ? { textDecoration: "underline", textDecorationColor: "#b6b2a3", cursor: stift ? undefined : "pointer" } : undefined}>
                       <MarkTekst tekst={m.naam} basis={"m:" + b.id + ":" + m.naam} stift={stift} markering={markering} zetMark={zetMark} className="ink" />
                     </span>
-                    <span className="shrink-0 font-semibold" style={{ color: "#44502f" }}>{Math.round(m.porties)}</span>
+                    <span className="shrink-0 font-semibold" style={{ color: "#44502f" }}>{fmtPorties(m.porties)}</span>
                   </div>
                 ))}
               </div>
@@ -9722,7 +9824,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
     if (over !== undefined) return over;
     const hand = koppeling[sl] || [];
     if (hand.length) return hand;
-    return autoKeuzesUitBoeking(b);
+    return neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b);
   };
   // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
   const extraVan = (b) => {
@@ -9759,7 +9861,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
   const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ");
 
   const printen = () => {
-    const rij = (r) => "<tr><td>" + pEsc(r.naam) + "</td>" + somSet.map((d) => "<td class='n'>" + (r.perDag[d] ? Math.round(r.perDag[d]) : "") + "</td>").join("") + "<td class='n tot'>" + Math.round(r.totaal) + "</td></tr>";
+    const rij = (r) => "<tr><td>" + pEsc(r.naam) + "</td>" + somSet.map((d) => "<td class='n'>" + (r.perDag[d] ? fmtPorties(r.perDag[d]) : "") + "</td>").join("") + "<td class='n tot'>" + fmtPorties(r.totaal) + "</td></tr>";
     const dagBlok = (d) => {
       const items = partijen.filter((b) => b.datum === d);
       if (!items.length) return "";
@@ -9839,8 +9941,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                     {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[12px]">open</button>}
                     <span className="mute text-[12px]"> · {r.boekingen.size} partijen</span>
                   </td>
-                  {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? Math.round(r.perDag[d]) : "·"}</td>)}
-                  <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{Math.round(r.totaal)}</td>
+                  {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                  <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
                 </tr>
               ))}
             </tbody>
@@ -9916,9 +10018,9 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   const maten = searching ? (tableRows.maten || []).filter((r) => hit(r.naam)) : (tableRows.maten || []);
   const koken = searching ? (tableRows.koken || []).filter((r) => hit(r.product)) : (tableRows.koken || []);
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
-  // Standaard staat alles open (eigen pagina); dichtklappen kan nog steeds.
-  const isOpen = (key, count) => (searching ? count > 0 : openCards[key] !== false);
-  const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: o[key] === false }));
+  // Bij zoeken klapt alleen de tabel open die een treffer heeft.
+  const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
+  const toggle = (key) => setOpenCards((o) => ({ ...o, [key]: !o[key] }));
   // Vanuit een recept (kritische waarden) gelinkt: open die kaart direct.
   useEffect(() => {
     if (!focusKey) return;
@@ -10046,7 +10148,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const catImportRef = React.useRef(null);
   const vandaag = localDate();
   const tot = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return localDate(d); })(); // sync loopt twee maanden vooruit
-  const [vertaalVoor, setVertaalVoor] = useState(null); // MICE-product dat nog een invulling mist
   const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
 
   const lijst = (boekingen || [])
@@ -10064,7 +10165,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   // tellen hier bewust niet mee.)
   const gekozen = (b) => {
     const hand = koppeling[boekingSleutel(b.naam)] || [];
-    return hand.length ? hand : autoKeuzesUitBoeking(b);
+    return hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
   };
   const mepVan = (b) => mepTellen(gekozen(b).flatMap((k) => mepVoorKeuze(k, b, prodKoppeling, producten, calcItems, dishById, recipeById)));
   const catVan = {};
@@ -10109,7 +10210,10 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 aangepast={((koppeling[boekingSleutel(b.naam)] || []).length > 0 && (b.regels || []).length > 0) || !!bkxVan(b)}
                 nootOpenStandaard={true}
                 invulStatus={(k) => ({ ok: heeftInvulling(k, prodKoppeling), naam: (k.miceId && prodKoppeling[k.miceId] && prodKoppeling[k.miceId].naam) || "" })}
-                onInvullen={canEdit ? (k) => setVertaalVoor(k) : null}
+                magInvullen={canEdit} recepten={recepten}
+                invullingVan={(miceId) => prodKoppeling[miceId] || null}
+                onInvulling={(miceId, inv) => onProdKoppel(miceId, inv)}
+                onInvullen={null}
                 onOpslaan={(regels, velden) => {
                   onKoppel(b.naam, regels);
                   if (velden) {
@@ -10128,12 +10232,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         </div>
       ))}
 
-      {vertaalVoor && (
-        <EigenProductKiezer miceNaam={vertaalVoor.naam} producten={producten} recepten={recepten}
-          omschrijving={((miceProducten || []).find((p) => p.id === vertaalVoor.miceId) || {}).omschrijving || ""}
-          onSluit={() => setVertaalVoor(null)}
-          onKies={(inv) => { onProdKoppel(vertaalVoor.miceId, inv); setVertaalVoor(null); }} />
-      )}
     </div>
   );
 }
