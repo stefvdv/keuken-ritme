@@ -9548,7 +9548,31 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
   const bezorging = (keuzes || []).some((k) => /bezorg/i.test(String(k.naam || "")));
   const toonKeuzes = (keuzes || []).filter((k) => !/bezorg/i.test(String(k.naam || "")));
-  const productRegel = (k) => (k.aantal || b.gasten) + "× " + k.naam + (catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
+  // Zodra een product een invulling heeft, tonen we alleen aantal + gerecht;
+  // zonder invulling de MICE-naam met categorie.
+  const productRegel = (k) => {
+    const st = invulStatus ? invulStatus(k) : null;
+    if (st && st.ok && st.naam) return (k.aantal || b.gasten) + "× " + st.naam;
+    return (k.aantal || b.gasten) + "× " + k.naam + (catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
+  };
+  const datumKop = (() => { const x = new Date(String(b.datum) + "T12:00:00"); return isFinite(x) ? ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()] : ""; })();
+  const printPartij = () => {
+    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>" + pEsc(b.naam || "Partij") + "</title><style>"
+      + "@page{size:A4;margin:16mm}body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
+      + "h1{font-size:19px;margin:0}.st{color:#a05a00;font-weight:600;font-size:13px}"
+      + ".sub{color:#6a6550;margin:1mm 0 5mm}.pr{font-weight:700;margin:.6mm 0}"
+      + "h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:5mm 0 1.5mm}"
+      + ".m{display:flex;justify-content:space-between;border-bottom:1px solid #e6e3d8;padding:1mm 0}.m b{color:#44502f}"
+      + ".al{color:#b3261e;font-weight:700;margin-top:4mm}.noot{color:#6a6550;margin-top:4mm;white-space:pre-wrap}"
+      + "</style></head><body>"
+      + "<h1>" + pEsc(b.naam || "Zonder naam") + (statusTekst ? " <span class='st'>[" + pEsc(statusTekst) + "]</span>" : "") + "</h1>"
+      + "<div class='sub'>" + pEsc([datumKop, (tijdTekst || "tijd onbekend") + " · " + gastenTekst + " gasten" + (bezorging ? " · bezorging" : ""), zaal || "", (contact ? contact + " " : "") + (tel || "")].filter(Boolean).join(" · ")) + "</div>"
+      + toonKeuzes.map((k) => "<div class='pr'>" + pEsc(productRegel(k)) + "</div>").join("")
+      + (mepRegels.length ? "<h2>Te maken</h2>" + mepRegels.map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span><b>" + Math.round(m.porties) + "</b></div>").join("") : "")
+      + (allergie.length ? "<div class='al'>" + allergie.map(pEsc).join("<br>") + "</div>" : "")
+      + (noot ? "<div class='noot'>" + pEsc(noot) + "</div>" : "")
+      + "</body></html>");
+  };
   const startBewerk = () => {
     setRegels((keuzes || []).map((k) => ({ ...k })));
     setVelden({
@@ -9572,6 +9596,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         <span className="serif ink font-bold text-[17px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
         {statusTekst && <span className="text-[11.5px] font-semibold shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
         <span className="text-[13px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
+        <button onClick={printPartij} className="ff mute hover:opacity-70 shrink-0" title="Deze partij printen"><Printer size={15} /></button>
         {canEdit && !bewerk && <button onClick={startBewerk} className="ff mute hover:opacity-70 shrink-0" title="Partij bewerken"><Pencil size={15} /></button>}
       </div>
       {(tel || zaal) && (
@@ -9592,7 +9617,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     <span className="min-w-0 font-semibold ink">
                       <MarkTekst tekst={productRegel(k)} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
                     </span>
-                    {st && st.ok && st.naam && <span className="mute text-[12px] shrink-0 truncate">→ {st.naam}</span>}
                     {st && !st.ok && onInvullen && <button onClick={() => onInvullen(k)} className="ff text-[12px] underline shrink-0" style={{ color: "#8a2f28" }}>invulling</button>}
                   </div>
                 );
@@ -9754,16 +9778,19 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       if (!items.length) return "";
       return "<h2>" + pEsc(dagKop(d)) + "</h2>" + items.map((b) => {
         const al = allergieEff(b);
-        const noot = nootEff(b);
         const st = statusNL(b.status);
-        const pr = gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).map((k) => pEsc((k.aantal || gastenVan(b)) + "× " + k.naam)).join(" &nbsp;|&nbsp; ");
+        const regelTxt = (k) => {
+          const vert = k.miceId && prodKoppeling ? prodKoppeling[k.miceId] : null;
+          const naam = vert && (vert.productId || vert.recipeId || vert.tekst) && vert.naam ? vert.naam : k.naam;
+          return (k.aantal || gastenVan(b)) + "× " + naam;
+        };
+        const pr = gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).map((k) => "<div class='pr'>" + pEsc(regelTxt(k)) + "</div>").join("");
         const bez = gekozen(b).some((k) => /bezorg/i.test(String(k.naam || "")));
-        const mep = mepTellen(mepVan(b)).map((m) => pEsc(m.naam) + " " + Math.round(m.porties) + "×").join(" &nbsp;·&nbsp; ");
+        const mep = mepTellen(mepVan(b)).map((m) => "<div class='m'><span>" + pEsc(m.naam) + "</span> <b>" + Math.round(m.porties) + "</b></div>").join("");
         return "<div class='p'><div class='pt'>" + pEsc(b.naam || "Zonder naam") + (st ? " <span class='st'>[" + pEsc(st) + "]</span>" : "") + " <span class='mut'>" + (tijdVan(b) || "tijd onbekend") + " · " + gastenVan(b) + " gasten" + (bez ? " · bezorging" : "") + (b.tel ? " · " + pEsc((b.contact ? b.contact + " " : "") + b.tel) : "") + "</span></div>"
-          + (pr ? "<div class='pr'>" + pr + "</div>" : "")
-          + (mep ? "<div class='mep'>" + mep + "</div>" : "")
+          + pr
+          + (mep ? "<div class='mepkop'>Te maken</div>" + mep : "")
           + (al.length ? "<div class='al'>" + al.map(pEsc).join("<br>") + "</div>" : "")
-          + (noot ? "<div class='mut'>" + pEsc(noot.slice(0, 300)) + "</div>" : "")
           + "</div>";
       }).join("");
     };
@@ -9773,8 +9800,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
       + "td{padding:1.4mm 1mm;border-bottom:1px solid #e6e3d8}td.n{text-align:right;width:11mm}td.tot{font-weight:700;border-left:1px solid #ccc}"
-      + ".p{margin-bottom:3mm}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
-      + ".pr{color:#44502f;font-weight:600}.mep{color:#2b2e24}.al{color:#8a2f28;margin-top:.8mm;font-weight:700}"
+      + ".p{margin-bottom:4mm}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
+      + ".pr{font-weight:700;margin:.5mm 0}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
+      + ".m{display:flex;justify-content:space-between;max-width:90mm;border-bottom:1px solid #eee}.m b{color:#44502f}"
+      + ".al{color:#b3261e;margin-top:1mm;font-weight:700}"
       + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
       + (overlap.length ? "<table><thead><tr><th>Samen maken (" + somSet.length + " dagen)</th>" + somSet.map((d) => "<th class='n'>" + pEsc(kolKop(d)) + "</th>").join("") + "<th class='n'>Totaal</th></tr></thead><tbody>" + overlap.map(rij).join("") + "</tbody></table>" : "")
       + dagen.map(dagBlok).join("") + "</body></html>");
@@ -9853,7 +9882,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, calcItems, r
                     canEdit={true} magExtra={true} extra={extraVan(b)}
                     aangepast={koppeling["mep|" + sl] !== undefined || koppeling["mepx|" + sl] !== undefined}
                     nootOpenStandaard={false}
-                    invulStatus={null} onInvullen={null}
+                    invulStatus={(k) => ({ ok: heeftInvulling(k, prodKoppeling), naam: (k.miceId && prodKoppeling[k.miceId] && prodKoppeling[k.miceId].naam) || "" })} onInvullen={null}
                     onOpslaan={(regels, velden) => {
                       onKoppel(b.naam, regels);
                       if (velden) {
