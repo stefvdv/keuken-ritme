@@ -10238,6 +10238,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
   const [dagDicht, setDagDicht] = useState({});
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
+  const [somDagen, setSomDagen] = useState(2); // optelsom over 2, 3 of 4 dagen
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
@@ -10266,10 +10267,62 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const allergieEff = (b) => { const e = bkxVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
   const nootEff = (b) => { const e = bkxVan(b); return (e && String(e.notitie || "").trim()) || kaalBericht(b.bericht); };
   const dagNaam = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + "/" + (x.getMonth() + 1); };
+  const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
+  // Optelsom van overlappende producten: hetzelfde product in meer dan één
+  // partij binnen de gekozen dagen, met aantallen per dag en totaal.
+  const somSet = [];
+  for (let i = 0; i < somDagen; i++) { const d = new Date(vandaag + "T12:00:00"); d.setDate(d.getDate() + i); somSet.push(localDate(d)); }
+  const perProduct = {};
+  for (const b of lijst) {
+    if (!somSet.includes(b.datum)) continue;
+    for (const k of gekozen(b)) {
+      if (/bezorg/i.test(String(k.naam || ""))) continue;
+      const sleutel = k.miceId ? "m:" + k.miceId : "x:" + normNaam(k.naam);
+      if (!perProduct[sleutel]) perProduct[sleutel] = { sleutel, naam: k.naam, perDag: {}, totaal: 0, boekingen: new Set() };
+      const n = k.aantal || b.gasten || 0;
+      perProduct[sleutel].perDag[b.datum] = (perProduct[sleutel].perDag[b.datum] || 0) + n;
+      perProduct[sleutel].totaal += n;
+      perProduct[sleutel].boekingen.add(b.id);
+    }
+  }
+  const prodOverlap = Object.values(perProduct).filter((r) => r.boekingen.size > 1).sort((a, b) => b.totaal - a.totaal);
 
   return (
     <div>
       <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE, twee maanden vooruit. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="flex-1" />
+        <span className="text-[11.5px] mute">Optelsom</span>
+        {[2, 3, 4].map((n) => (
+          <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
+            style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n} dagen</button>
+        ))}
+      </div>
+
+      {prodOverlap.length > 0 && (
+        <div className="card p-3 mb-4">
+          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen in meerdere partijen — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
+          <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
+                <th className="text-left py-1.5 pr-2">Product</th>
+                {somSet.map((d) => <th key={d} className="text-right py-1.5 px-1">{kolKop(d)}</th>)}
+                <th className="text-right py-1.5 pl-2">Totaal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prodOverlap.map((r) => (
+                <tr key={r.sleutel} style={{ borderTop: "1px solid " + T.line }}>
+                  <td className="py-2 pr-2 ink">{r.naam}<span className="mute text-[12px]"> · {r.boekingen.size} partijen</span></td>
+                  {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                  <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {!perDag.length && <Empty label="Geen boekingen in de komende twee maanden." />}
 
