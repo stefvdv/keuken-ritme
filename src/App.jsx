@@ -4897,7 +4897,18 @@ function App() {
         onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }}
         onInstellingen={() => push({ screen: "settings" })} />
 
+      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="md:hidden">
+        <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"} />
+      </div>
+
       <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
+        <div className="md:hidden">
+          {!FORM_SCREENS.has(current.screen) && (
+            <SectionNav chef={chefMode} section={current.screen === "list" ? section : null}
+              setSection={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }} />
+          )}
+        </div>
         {current.screen === "list" && (
           <div {...swipe}>
             {/* Pas tonen als de teamdata geladen is: anders knippert de banner
@@ -5071,6 +5082,7 @@ function App() {
           return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
+      </div>
 
       {nieuwBoekingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={() => setNieuwBoekingOpen(false)}>
@@ -7179,7 +7191,7 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen }) {
     { id: "__instellingen", label: "Instellingen", icon: <Settings size={22} />, doe: onInstellingen },
   ].filter(Boolean);
   return (
-    <nav className="sticky top-0 self-start h-screen overflow-y-auto no-scrollbar shrink-0 flex flex-col gap-1 py-2 px-1.5"
+    <nav className="hidden md:flex sticky top-0 self-start h-screen overflow-y-auto no-scrollbar shrink-0 flex-col gap-1 py-2 px-1.5"
       style={{ width: "5.2rem", background: T.paper, borderRight: "1px solid " + T.line }}>
       {items.map((it) => {
         const actief = section === it.id;
@@ -10693,7 +10705,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               const inMaand = d.slice(0, 7) === maand;
               const items = perDatum[d] || [];
               return (
-                <div key={d} className="p-1" style={{ background: d === vandaag ? "#eef2e6" : T.paper, minHeight: "6.5rem", opacity: inMaand ? 1 : 0.45, boxShadow: d === vandaag ? "inset 0 0 0 2.5px " + T.green : "none" }}>
+                <div key={d} className="p-1" style={{ background: d === vandaag ? "#eef2e6" : T.paper, minHeight: "6.5rem", opacity: inMaand && d >= vandaag ? 1 : 0.45, boxShadow: d === vandaag ? "inset 0 0 0 2.5px " + T.green : "none" }}>
                   <div className="mb-1 px-0.5">
                     {d === vandaag
                       ? <span className="inline-flex items-center justify-center rounded-full text-[11.5px] font-bold" style={{ background: T.green, color: "#fbf9f2", width: "1.5rem", height: "1.5rem" }}>{Number(d.slice(8, 10))}</span>
