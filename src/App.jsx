@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Tractor
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -10033,7 +10033,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   };
 
   return (
-    <div id={"partij-" + b.id} className={"card p-3 min-w-0" + (bewerk ? " md:col-span-2" : "")} style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
+    <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
@@ -10056,8 +10056,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         {!bewerk && (
           <span className="text-[14px] font-semibold shrink-0 inline-flex items-center gap-1" style={{ color: "#44502f" }}>
             {bezorging
-              ? <span title="Bezorging" className="inline-flex"><Truck size={15} /></span>
-              : zaal ? <span title={zaal} className="inline-flex"><Tractor size={15} /></span> : null}
+              ? <span title="Bezorging" className="inline-flex"><Truck size={22} /></span>
+              : zaal ? <span title={zaal} className="inline-flex"><Home size={22} /></span> : null}
             <span>{(tijdTekst || "—") + " · " + gastenTekst + "p"}</span>
           </span>
         )}
@@ -10329,6 +10329,17 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     window.addEventListener("contextmenu", rechts);
     return () => { window.removeEventListener("keydown", toets, true); window.removeEventListener("contextmenu", rechts); };
   }, [stift]);
+  // Bij openen start de pagina met de ingeklapte optelsomtabel bovenaan.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const el = document.getElementById("som-kaart");
+      if (!el) return;
+      const balk = document.querySelector(".top-14");
+      const off = (balk ? Math.round(balk.getBoundingClientRect().height) + 56 : 56) + 8;
+      window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - off));
+    }, 130);
+    return () => clearTimeout(t);
+  }, []);
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
   const zetMark = (sleutel) => {
     if (!stift) return;
@@ -10456,7 +10467,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   // De optelsomtabel staat direct boven de eerste dag vanaf vandaag met partijen.
   const somAnker = dagen.find((d) => d >= vandaag && partijen.some((b) => b.datum === d)) || null;
   const somKaart = partijen.length > 0 && somSet.length > 0 ? (
-        <div className="card p-3 mb-4">
+        <div id="som-kaart" className="card p-3 mb-4">
           <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
             style={{ margin: -12, marginBottom: somOpen ? 6 : -12, padding: 12, width: "calc(100% + 24px)" }}>
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
