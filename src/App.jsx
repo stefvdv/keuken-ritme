@@ -2919,7 +2919,7 @@ function App() {
       const jk = await rk.json();
       for (const c of (jk && jk.data && jk.data.data) || []) klant[c.id] = { tel: String(c.phone || c.phone_2 || "").trim(), naam: c.name || "" };
     } catch (e) {}
-    for (let pagina = 1; pagina <= 8; pagina++) {
+    for (let pagina = 1; pagina <= 30; pagina++) {
       const r = await fetch("/api/mice?path=events&page=" + pagina + "&per_page=100&include_products=1&include_packages=1&include_activities=1");
       const j = await r.json();
       const lijst = (j && j.data && j.data.data) || [];
@@ -3047,8 +3047,9 @@ function App() {
     if (!loaded || (section !== "boekingen" && section !== "mep")) return;
     if (syncBezig.current) return;
     syncBezig.current = true;
-    const d = new Date(); d.setDate(d.getDate() + (section === "boekingen" ? 62 : 14));
-    Promise.resolve(haalBoekingen(localDate(), localDate(d), true))
+    // Alles ophalen: vanaf de bewaartermijn (twee maanden terug) tot ver vooruit.
+    const van = new Date(); van.setDate(van.getDate() - 62);
+    Promise.resolve(haalBoekingen(localDate(van), "9999-12-31", true))
       .catch(() => {})
       .finally(() => { syncBezig.current = false; });
     // De productenlijst hooguit één keer per dag mee verversen.
@@ -3065,6 +3066,25 @@ function App() {
   const [nieuwBoekingOpen, setNieuwBoekingOpen] = useState(false);
   const [nieuwBoekingDatum, setNieuwBoekingDatum] = useState(() => localDate());
   const [nieuwBewerk, setNieuwBewerk] = useState(null); // { id } → kaart opent in bewerkstand
+  // Alles rond boekingen terugzetten naar de kale MICE-stand: kaartlagen weg,
+  // eigen testboekingen weg, events vers opgehaald. Invullingen (product →
+  // gerecht) blijven bewust staan.
+  const resetBoekingen = async () => {
+    if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?")) return;
+    const ookInvulling = window.confirm("Ook de culinaire invullingen (product → gerecht) wissen?\n\nOK = ja, ook invullingen weg. Annuleren = invullingen bewaren.");
+    if (live) {
+      try { await supabase.from("mice_koppeling").delete().neq("sleutel", ""); } catch (e) {}
+      try { await supabase.from("mice_events").delete().neq("id", 0); } catch (e) {}
+      if (ookInvulling) { try { await supabase.from("mice_prodkoppeling").delete().neq("mice_id", 0); } catch (e) {} }
+    }
+    if (ookInvulling) setProdKoppeling({});
+    setKoppeling({});
+    setBoekingen([]);
+    try { localStorage.removeItem("ritme_mep_markering"); localStorage.removeItem("ritme_som_af"); } catch (e) {}
+    const van = new Date(); van.setDate(van.getDate() - 62);
+    await haalBoekingen(localDate(van), "9999-12-31");
+    flash("Boekingen opnieuw geladen uit MICE");
+  };
   const maakEigenBoeking = async (datum) => {
     if (!datum) return;
     const rij = {
@@ -5001,7 +5021,7 @@ function App() {
           editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -6990,7 +7010,7 @@ function MiceVerkenner() {
   );
 }
 
-function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
+function SettingsScreen({ onBack, onResetBoekingen, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -7032,6 +7052,9 @@ function SettingsScreen({ onBack, installed, canInstall, onInstall, onSignOut, o
       <div className="card p-4">
         <p className="text-sm mute mb-3">De chef-versie toont Calculaties (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
         <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
+        {chefMode && onResetBoekingen && (
+          <button onClick={onResetBoekingen} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><RotateCcw size={15} /> Boekingen resetten en opnieuw uit MICE laden</button>
+        )}
         {chefOpen && (
           <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefFout}
             hint="Prijzen en het assortiment blijven zichtbaar tot de app ververst wordt."
@@ -10572,7 +10595,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
 
   return (
     <div>
-      <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE, twee maanden vooruit. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
+      <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
 
       {prodOverlap.length > 0 && (
         <div className="card p-3 mb-4">
@@ -10636,8 +10659,12 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               const inMaand = d.slice(0, 7) === maand;
               const items = perDatum[d] || [];
               return (
-                <div key={d} className="p-1" style={{ background: d === vandaag ? "#f2f0e6" : T.paper, minHeight: "6.5rem", opacity: inMaand ? 1 : 0.45 }}>
-                  <div className={"text-[11.5px] mb-1 px-0.5 " + (d === vandaag ? "font-bold ink" : "mute")}>{Number(d.slice(8, 10))}</div>
+                <div key={d} className="p-1" style={{ background: d === vandaag ? "#eef2e6" : T.paper, minHeight: "6.5rem", opacity: inMaand ? 1 : 0.45, boxShadow: d === vandaag ? "inset 0 0 0 2.5px " + T.green : "none" }}>
+                  <div className="mb-1 px-0.5">
+                    {d === vandaag
+                      ? <span className="inline-flex items-center justify-center rounded-full text-[11.5px] font-bold" style={{ background: T.green, color: "#fbf9f2", width: "1.5rem", height: "1.5rem" }}>{Number(d.slice(8, 10))}</span>
+                      : <span className="text-[11.5px] mute">{Number(d.slice(8, 10))}</span>}
+                  </div>
                   <div className="space-y-0.5">
                     {items.map((b) => (
                       <button key={b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(b.status), color: "#fbf9f2" }}>
