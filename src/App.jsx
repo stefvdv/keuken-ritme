@@ -2920,9 +2920,12 @@ function App() {
       for (const c of (jk && jk.data && jk.data.data) || []) klant[c.id] = { tel: String(c.phone || c.phone_2 || "").trim(), naam: c.name || "" };
     } catch (e) {}
     for (let pagina = 1; pagina <= 30; pagina++) {
-      const r = await fetch("/api/mice?path=events&page=" + pagina + "&per_page=100&include_products=1&include_packages=1&include_activities=1");
-      const j = await r.json();
-      const lijst = (j && j.data && j.data.data) || [];
+      let lijst = [];
+      try {
+        const r = await fetch("/api/mice?path=events&page=" + pagina + "&per_page=100&include_products=1&include_packages=1&include_activities=1");
+        const j = await r.json();
+        lijst = (j && j.data && j.data.data) || [];
+      } catch (e) { break; } // haperende pagina: bewaren wat we al hebben
       if (!lijst.length) break;
       for (const e of lijst) {
         const datum = String(e.datetime_start || "").slice(0, 10);
@@ -2994,9 +2997,19 @@ function App() {
         r.log = w.length ? [...vorig, { t: new Date().toISOString(), w }].slice(-30) : vorig;
       }
     }
+    // Ontdubbelen (voor het geval de API pagina's herhaalt) en in brokken
+    // opslaan: één reuzenverzoek loopt bij honderden events tegen limieten aan.
+    {
+      const perId = {};
+      for (const b of rijen) perId[b.id] = b;
+      rijen.length = 0;
+      for (const b of Object.values(perId)) rijen.push(b);
+    }
     if (live) {
-      const { error } = await supabase.from("mice_events").upsert(rijen);
-      if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase."); return 0; }
+      for (let i = 0; i < rijen.length; i += 100) {
+        const { error } = await supabase.from("mice_events").upsert(rijen.slice(i, i + 100));
+        if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase."); return 0; }
+      }
     }
     // Bewaartermijn: boekingen ouder dan twee maanden gaan weg, zodat de
     // database niet volloopt. Elke sync ruimt meteen op.
@@ -3040,22 +3053,39 @@ function App() {
     } catch (e) {}
     return rijen.length;
   };
-  // Achtergrondsync: bij het openen van Boekingen twee maanden vooruit ophalen,
-  // bij het openen van de mise-en-place twee weken. Geen knoppen meer nodig.
+  // Achtergrondsync: alles uit MICE, stil. Draait (1) meteen bij het openen
+  // van de app, (2) bij het openen van Boekingen of Mise en place, en (3) via
+  // een klok elke tien minuten met een vaste ochtendcontrole om 07:00 —
+  // wijzigingen komen dan via de diff in de geschiedenis van de kaarten.
   const syncBezig = React.useRef(false);
-  useEffect(() => {
-    if (!loaded || (section !== "boekingen" && section !== "mep")) return;
-    if (syncBezig.current) return;
+  const laatsteSync = React.useRef(0);
+  const doeSync = async () => {
+    if (syncBezig.current || !live) return;
     syncBezig.current = true;
-    // Alles ophalen: vanaf de bewaartermijn (twee maanden terug) tot ver vooruit.
-    const van = new Date(); van.setDate(van.getDate() - 62);
-    Promise.resolve(haalBoekingen(localDate(van), "9999-12-31", true))
-      .catch(() => {})
-      .finally(() => { syncBezig.current = false; });
-    // De productenlijst hooguit één keer per dag mee verversen.
-    const nieuwste = miceProducten.reduce((t, p) => (String(p.opgehaald_op || "") > t ? String(p.opgehaald_op) : t), "");
-    if (nieuwste.slice(0, 10) !== localDate()) Promise.resolve(haalMiceProducten(true)).catch(() => {});
-  }, [loaded, section]);
+    try {
+      const van = new Date(); van.setDate(van.getDate() - 62);
+      await haalBoekingen(localDate(van), "9999-12-31", true);
+      laatsteSync.current = Date.now();
+      const nieuwste = miceProducten.reduce((t, p) => (String(p.opgehaald_op || "") > t ? String(p.opgehaald_op) : t), "");
+      if (nieuwste.slice(0, 10) !== localDate()) await haalMiceProducten(true);
+    } catch (e) {}
+    syncBezig.current = false;
+  };
+  const doeSyncRef = React.useRef(doeSync);
+  doeSyncRef.current = doeSync;
+  useEffect(() => { if (loaded) doeSyncRef.current(); }, [loaded]);
+  useEffect(() => { if (loaded && (section === "boekingen" || section === "mep")) doeSyncRef.current(); }, [loaded, section]);
+  useEffect(() => {
+    if (!loaded) return;
+    const klok = setInterval(() => {
+      const nu = Date.now();
+      const zeven = new Date(); zeven.setHours(7, 0, 0, 0);
+      const naZevenNogNietGedaan = nu >= zeven.getTime() && laatsteSync.current < zeven.getTime();
+      const langGeleden = nu - laatsteSync.current > 6 * 3600 * 1000;
+      if (naZevenNogNietGedaan || langGeleden) doeSyncRef.current();
+    }, 10 * 60 * 1000);
+    return () => clearInterval(klok);
+  }, [loaded]);
 
   const saveKoppelingSleutel = async (sleutel, producten) => {
     setKoppeling((k) => ({ ...k, [sleutel]: producten }));
@@ -3082,8 +3112,12 @@ function App() {
     setBoekingen([]);
     try { localStorage.removeItem("ritme_mep_markering"); localStorage.removeItem("ritme_som_af"); } catch (e) {}
     const van = new Date(); van.setDate(van.getDate() - 62);
-    await haalBoekingen(localDate(van), "9999-12-31");
-    flash("Boekingen opnieuw geladen uit MICE");
+    try {
+      const n = await haalBoekingen(localDate(van), "9999-12-31");
+      flash((n || 0) + " boekingen opnieuw geladen uit MICE");
+    } catch (e) {
+      alert("Opnieuw laden mislukt: " + (e && e.message ? e.message : e) + "\n\nProbeer het nog eens via deze knop.");
+    }
   };
   const maakEigenBoeking = async (datum) => {
     if (!datum) return;
