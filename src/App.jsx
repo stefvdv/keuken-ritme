@@ -3139,6 +3139,14 @@ function App() {
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
   const saveMepExtra = (b, extra) => saveKoppelingSleutel("mepx|id|" + b.id, extra ? [extra] : []);
   const saveBkExtra = (b, extra) => saveKoppelingSleutel("bkx|id|" + b.id, extra ? [extra] : []);
+  // Verwijderen = verbergen met een terugzetlaag; de sync haalt MICE-partijen
+  // anders gewoon opnieuw binnen.
+  const verwijderBoeking = (b) => saveKoppelingSleutel("del|" + b.id, [{ naam: b.naam || "Zonder naam", datum: b.datum, t: new Date().toISOString() }]);
+  const herstelBoeking = async (id) => {
+    const sleutel = "del|" + id;
+    setKoppeling((k) => { const n = { ...k }; delete n[sleutel]; return n; });
+    if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
+  };
   const wisMepKoppeling = async (b) => {
     for (const voor of ["mep|id|", "mepx|id|"]) {
       const sleutel = voor + b.id;
@@ -5007,6 +5015,7 @@ function App() {
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling}
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
+                onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -9011,12 +9020,18 @@ const allergieVanBoeking = (b) => {
 const VERBERG_CATEGORIEEN = new Set(["dranken", "locatiehuur", "personeelsdiensten", "bloemen en cadeaus", "workshops", "buitenkeuken"]);
 const VERBERG_IDS = new Set([251091, 269892, 294470, 315007, 325635, 399647, 420970, 431060]); // o.a. korting, kurkgeld, wijnarrangement, zelfoogst
 const TOON_IDS = new Set([242048, 264671]); // workshop met de kok, appel crumble
+const VERBERG_NAAM = /(koffie|thee\b|dranken|frisdrank|wijn|bier|bubbels|cava|cider|limonade|nacalculatie|zaalhuur|locatiehuur|dagdeel)/;
 const isKeukenRegel = (k, catVan) => {
   const id = Number(k.miceId);
   if (TOON_IDS.has(id)) return true;
   if (VERBERG_IDS.has(id)) return false;
-  return !VERBERG_CATEGORIEEN.has(String((catVan && catVan[k.miceId]) || "").toLowerCase().trim());
+  const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
+  if (cat) return !VERBERG_CATEGORIEEN.has(cat);
+  // Geen categorie bekend (nieuw of nooit geïmporteerd): vang duidelijke
+  // dranken- en huurnamen alsnog af.
+  return !VERBERG_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase());
 };
+const isVerwijderd = (koppeling, b) => koppeling["del|" + b.id] !== undefined;
 const statusRand = (st) => {
   const s = String(st || "");
   if (s === "confirmed" || s === "completed") return "#5a7d46";
@@ -9811,7 +9826,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij }) {
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -10141,9 +10156,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <Field label="Notitie"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.notitie} onChange={(e) => setVelden((v) => ({ ...v, notitie: e.target.value }))} /></Field>
             </>
           )}
-          {aangepast && onHerstel && (
-            <div className="pt-1">
-              <button onClick={() => { onHerstel(); setBewerk(false); }} className="ff text-[12px] mute underline">terug naar boeking</button>
+          {(aangepast || onVerwijderPartij) && (
+            <div className="pt-1 flex items-center gap-3">
+              {aangepast && onHerstel && <button onClick={() => { onHerstel(); setBewerk(false); }} className="ff text-[12px] mute underline">terug naar boeking</button>}
+              {onVerwijderPartij && (
+                <button onClick={() => { if (window.confirm('Deze partij verwijderen?\n\nHij verdwijnt van boekingen en mise-en-place, en is terug te zetten via "Verwijderd" naast de Vandaag-knop.')) onVerwijderPartij(); }}
+                  className="ff text-[12px] underline" style={{ color: "#b3261e" }}>partij verwijderen</button>
+              )}
             </div>
           )}
           {kies && (
@@ -10200,7 +10219,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const somSet = dagen.filter((d) => d >= somVanaf).slice(0, somDagen);
 
   const partijen = (boekingen || [])
-    .filter((b) => dagen.includes(b.datum) && String(b.status) !== "cancelled")
+    .filter((b) => dagen.includes(b.datum) && String(b.status) !== "cancelled" && !isVerwijderd(koppeling, b))
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
 
   // Volgorde: mep-aanpassing > handmatige invulling > MICE-bestelling.
@@ -10318,7 +10337,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
             Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}
           </button>
-          {somOpen && <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
+          {somOpen && <div className="overflow-x-auto"><table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse", minWidth: "34rem" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-1.5 pr-2">Bereiding</th>
@@ -10357,7 +10376,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                 </React.Fragment>
               ))}
             </tbody>
-          </table>}
+          </table></div>}
           {overlapKlaar.length > 0 && (
             <div className="mt-2 pt-2" style={{ borderTop: "1px solid " + T.line }}>
               <button onClick={() => setKlaarOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-widest mute">
@@ -10562,7 +10581,8 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel }) {
+  const [prullenOpen, setPrullenOpen] = useState(false);
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
@@ -10599,7 +10619,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   for (let i = 0; i < somDagen; i++) { const d = new Date(vandaag + "T12:00:00"); d.setDate(d.getDate() + i); somSet.push(localDate(d)); }
   const perProduct = {};
   for (const b of boekingen || []) {
-    if (!somSet.includes(b.datum) || String(b.status) === "cancelled") continue;
+    if (!somSet.includes(b.datum) || String(b.status) === "cancelled" || isVerwijderd(koppeling, b)) continue;
     for (const k of gekozen(b)) {
       if (/bezorg/i.test(String(k.naam || ""))) continue;
       if (!isKeukenRegel(k, catVan)) continue;
@@ -10629,9 +10649,12 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   }
   const perDatum = {};
   for (const b of boekingen || []) {
+    if (isVerwijderd(koppeling, b)) continue;
     if (!perDatum[b.datum]) perDatum[b.datum] = [];
     perDatum[b.datum].push(b);
   }
+  const verwijderd = (boekingen || []).filter((b) => isVerwijderd(koppeling, b))
+    .sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
   for (const d of Object.keys(perDatum)) perDatum[d].sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || "")));
   const MAANDEN = ["januari","februari","maart","april","mei","juni","juli","augustus","september","oktober","november","december"];
   const maandLabel = MAANDEN[mnd - 1] + " " + jr;
@@ -10649,7 +10672,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
             Samen in meerdere partijen — komende 7 dagen
           </button>
-          {somOpen && <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
+          {somOpen && <div className="overflow-x-auto"><table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse", minWidth: "34rem" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-1.5 pr-2">Product</th>
@@ -10684,7 +10707,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 </React.Fragment>
               ))}
             </tbody>
-          </table>}
+          </table></div>}
         </div>
       )}
 
@@ -10693,7 +10716,25 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         <span className="serif ink font-bold text-xl leading-tight capitalize">{maandLabel}</span>
         <button onClick={() => schuifMaand(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={15} /></button>
         <button onClick={() => setMaand(vandaag.slice(0, 7))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Vandaag</button>
+        {verwijderd.length > 0 && (
+          <button onClick={() => setPrullenOpen((o) => !o)} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium inline-flex items-center gap-1.5">
+            <Trash2 size={13} /> Verwijderd ({verwijderd.length})
+          </button>
+        )}
       </div>
+      {prullenOpen && verwijderd.length > 0 && (
+        <div className="card p-3 mb-3">
+          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Verwijderde partijen</div>
+          <div className="space-y-1">
+            {verwijderd.map((b) => (
+              <div key={b.id} className="flex items-center gap-2 text-[13.5px]">
+                <span className="min-w-0 flex-1 truncate ink">{b.naam || "Zonder naam"} <span className="mute">· {kolKop(b.datum)}</span></span>
+                <button onClick={() => onHerstel(b.id)} className="btno ff rounded-lg px-2.5 py-1 text-[12px] font-medium">Terugzetten</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto -mx-4 px-4 pb-2">
         <div style={{ minWidth: "44rem" }}>
@@ -10753,6 +10794,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 }
               }}
               onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); }}
+              onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(detailBoeking.status)} statusTekst={statusNL(detailBoeking.status)}
               tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal}
