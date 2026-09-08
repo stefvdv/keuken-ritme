@@ -2725,7 +2725,7 @@ const seasonStyle = {
 
 function BrandCSS() {
   return (
-    <style>{`
+    <style>{`html,body{overflow-x:hidden;max-width:100vw} 
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap');
 html{font-size:17px}
 .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
@@ -4843,7 +4843,7 @@ function App() {
 
   const todayKey = localDate();
   const noticeKey = kitchenDate(); // aandacht-banner: weggeklikt tot 02:00, dan nieuwe dag
-  const swipe = useSwipeSections(section, (s) => { setSection(s); setSearch(""); });
+  const swipe = {}; // paginaswipe uitgezet: werd niet gebruikt en botste met scrollen
 
   // Dagelijkse schoonmaakcontrole om 16:45 (alleen voor koks): toont een banner
   // bovenaan de pagina in plaats van een popup. Weggeklikt → komt om 18:00 nog
@@ -9851,7 +9851,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift }) {
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -9943,6 +9943,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     const rijenAl = alParse(alBron);
     setAlRijen(rijenAl.length ? rijenAl : [{ aantal: "", tekst: "" }]);
     setSug(""); setBewerk(true);
+    if (onSluitStift) onSluitStift();
   };
   const zetR = (i, veld, w) => setRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const zetO = (mid, j, veld, w) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, [veld]: w } : x)) }));
@@ -9974,29 +9975,31 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 
   return (
     <div id={"partij-" + b.id} className="card p-3" style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
           : <span className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
+
+        {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
+        {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
         {bewerk && magNaamStatus && (
-          <select className="input px-1.5 py-1 text-[12.5px] shrink-0" value={velden.status} onChange={(e) => setVelden((v) => ({ ...v, status: e.target.value }))}>
+          <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }}
+            value={velden.status} onChange={(e) => setVelden((v) => ({ ...v, status: e.target.value }))}>
             {STATUS_OPTIES.map(([w, l]) => <option key={w} value={w}>{l}</option>)}
           </select>
         )}
-        {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
-        {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
-        {bewerk && magExtra ? (
-          <span className="flex items-center gap-1 shrink-0">
-            <input type="time" className="input px-1.5 py-1 text-[13px]" style={{ width: "6.2rem" }} value={velden.tijd} onChange={(e) => setVelden((v) => ({ ...v, tijd: e.target.value }))} />
-            <input inputMode="numeric" className="input px-1.5 py-1 text-[13px]" style={{ width: "3.4rem" }} value={velden.gasten} onChange={(e) => setVelden((v) => ({ ...v, gasten: e.target.value }))} placeholder="gasten" />
-            <span className="text-[13px] mute">p</span>
-          </span>
-        ) : (
+        {bewerk && magExtra && (
+          <>
+            <input type="time" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "6.2rem" }} value={velden.tijd} onChange={(e) => setVelden((v) => ({ ...v, tijd: e.target.value }))} />
+            <input inputMode="numeric" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "3.6rem" }} value={velden.gasten} onChange={(e) => setVelden((v) => ({ ...v, gasten: e.target.value }))} placeholder="p" />
+          </>
+        )}
+        {!bewerk && (
           <span className="text-[14px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
         )}
         {!bewerk && (
           <>
-            <button onClick={() => setInfoOpen(true)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
+            <button onClick={() => { setInfoOpen(true); if (onSluitStift) onSluitStift(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
             <button onClick={printPartij} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Deze partij printen"><Printer size={17} /></button>
             {canEdit && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
           </>
@@ -10237,13 +10240,20 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     return n;
   });
   const [stift, setStift] = useState(null);
-  const [melding, setMelding] = useState("");
-  const meldTijd = React.useRef(0);
-  const toonMelding = (t) => { setMelding(t); const nu = Date.now(); meldTijd.current = nu; setTimeout(() => { if (meldTijd.current === nu) setMelding(""); }, 2200); };
+  // De stiftmelding blijft staan zolang de stift actief is.
   const [markering, setMarkering] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ritme_mep_markering") || "{}"); } catch (e) { return {}; }
   });
   const [dagDicht, setDagDicht] = useState({}); // per dag inklapbaar; verleden standaard dicht
+  // Stift sluit met Escape of een rechtermuisklik.
+  useEffect(() => {
+    if (!stift) return;
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); setStift(null); } };
+    const rechts = (e) => { e.preventDefault(); setStift(null); };
+    window.addEventListener("keydown", toets, true);
+    window.addEventListener("contextmenu", rechts);
+    return () => { window.removeEventListener("keydown", toets, true); window.removeEventListener("contextmenu", rechts); };
+  }, [stift]);
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
   const zetMark = (sleutel) => {
     if (!stift) return;
@@ -10481,7 +10491,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                       }
                     }}
                     onHerstel={() => onWisMep(b)}
-                    onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true}
+                    onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))} statusTekst={statusNL(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal}
                     miceProducten={miceProducten} producten={producten} />
@@ -10494,12 +10504,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
       <div className="fixed z-40 flex items-center gap-2" style={{ right: 16, bottom: 24 }}>
         {MARKEER_KLEUREN.map((k) => (
-          <button key={k.naam} onClick={() => { const aan = stift !== k.naam; setStift(aan ? k.naam : null); if (aan) toonMelding(k.melding); }}
+          <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)}
             title={k.melding} className="ff rounded-full w-10 h-10 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
         ))}
       </div>
-      {melding && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 rounded-2xl text-sm px-4 py-2.5 shadow-lg max-w-[92vw] w-max" style={{ background: T.ink, color: T.paper }}>{melding}</div>
+      {stift && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 rounded-2xl text-sm px-4 py-2.5 shadow-lg max-w-[92vw] w-max" style={{ background: T.ink, color: T.paper }}>
+          {(MARKEER_KLEUREN.find((x) => x.naam === stift) || {}).melding} — stift actief
+        </div>
       )}
     </div>
   );
