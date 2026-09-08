@@ -3073,6 +3073,13 @@ function App() {
   };
   const doeSyncRef = React.useRef(doeSync);
   doeSyncRef.current = doeSync;
+  // Viewport hard vastzetten: sommige omgevingen missen de meta waardoor de
+  // telefoon een 980px-desktoplayout rendert en kan uitzoomen.
+  useEffect(() => {
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) { m = document.createElement("meta"); m.name = "viewport"; document.head.appendChild(m); }
+    m.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no";
+  }, []);
   useEffect(() => { if (loaded) doeSyncRef.current(); }, [loaded]);
   useEffect(() => { if (loaded && (section === "boekingen" || section === "mep")) doeSyncRef.current(); }, [loaded, section]);
   useEffect(() => {
@@ -7344,7 +7351,7 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen }) {
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} {shown.length === 1 ? "gerecht" : "gerechten"}</div>
-      <div className="space-y-2.5">
+      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
         {shown.map((d) => (
           <button key={d.id} onClick={() => onOpen(d.id)} className="card cardh ff w-full text-left p-4 flex items-start gap-3">
             <div className="flex-1 min-w-0">
@@ -7435,7 +7442,7 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
       </div>
       {bedoeldeJe && <div className="rounded-xl p-3 mb-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{q}" — bedoelde je:</div>}
       <div className="text-right text-xs mute mb-2">{sorted.length} {sorted.length === 1 ? "recept" : "recepten"}</div>
-      <div className="space-y-2.5">
+      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
         {visible.map((r) => (
           <button key={r.id} onClick={() => onOpen(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
@@ -7592,7 +7599,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
       </div>
       {bedoeldeJe && <div className="rounded-xl p-3 mb-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{query}" — bedoelde je:</div>}
       <div className="text-right text-xs mute mb-2">{fermentRecipes.length} recepten</div>
-      <div className="space-y-2.5">
+      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
         {fermentRecipes.slice(0, limit).map((r) => (
           <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
@@ -7874,7 +7881,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} producten</div>
-      <div className="space-y-2">
+      <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
         {shown.map((p) => (
           <div key={p.name} ref={(el) => { cardRefs.current[p.name] = el; }} className="card overflow-hidden">
             <button onClick={() => setOpen(open === p.name ? null : p.name)} className="ff w-full flex items-center justify-between px-4 py-3 text-left">
@@ -9427,7 +9434,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
       </div>
       {openHuidig && shown.length === 0 && <Empty label="Nog niets op voorraad dit jaar. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
       {open !== null && <div className="fixed inset-0 z-10" onClick={() => setOpen(null)} />}
-      {openHuidig && <div className="space-y-2.5">{shown.map(kaart)}</div>}
+      {openHuidig && <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">{shown.map(kaart)}</div>}
       {openHuidig && emptyItems.length > 0 && (
         <div className="mt-5">
           <button onClick={() => setOpenEmpty((o) => !o)} className="ff inline-flex items-center gap-1.5 mb-1.5">
@@ -10330,7 +10337,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     };
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
       + "@page{size:A4;margin:14mm}body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
-      + "h1{font-size:17px;margin:0 0 2mm}h2{font-size:13px;margin:5mm 0 1.5mm;border-bottom:1px solid #ccc;padding-bottom:1mm}"
+      + "h1{font-size:17px;margin:0 0 2mm}h2{font-size:13px;margin:5mm 0 1.5mm;border-bottom:1px solid #ccc;padding-bottom:1mm;break-after:avoid;page-break-after:avoid}"
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
       + "td{padding:1.4mm 1mm;border-bottom:1px solid #e6e3d8}td.n{text-align:right;width:11mm}td.tot{font-weight:700;border-left:1px solid #ccc}"
@@ -10367,13 +10374,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
       {!partijen.length && <Empty label="Geen partijen in deze week." />}
 
-      {(overlap.length > 0) && (
+      {partijen.length > 0 && (
         <div className="card p-3 mb-4">
           <button onClick={() => setSomOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
             Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}
           </button>
-          {somOpen && <div className="overflow-x-auto"><table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse", minWidth: "34rem" }}>
+          {somOpen && !overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
+          {somOpen && overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse", minWidth: "34rem" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-1.5 pr-2">Bereiding</th>
@@ -10524,7 +10532,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
       <div className="serif ink text-lg leading-tight mb-2">Werkwijze</div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
       {nothing && <Empty label="Niets gevonden in de technieken." />}
-      <div className="space-y-2.5">
+      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
         <TechCard title="Jam & confituur" intro="Met 2:1 geleisuiker — per kg schoongemaakt fruit" open={isOpen("jam", jam.length)} onToggle={() => toggle("jam")}>
           {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("jam")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
           <TechTable head={["Fruit", "Pectine", "Geleisuiker 2:1", "Extra pectine", "Citroenzuur"]}
@@ -11043,7 +11051,7 @@ function CleaningList({ tasks, logs, haccpLogs, haccpRecords, canEdit, user, hac
               <button key={a} onClick={() => setAreaF(a)} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (areaF === a ? "pillon" : "pill")}>{a}</button>
             ))}
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-3 md:items-start">
             {grouped.map((g) => (
               <div key={g.area}>
                 <div className="flex items-baseline gap-2 mb-1.5">
