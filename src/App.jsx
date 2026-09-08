@@ -2932,7 +2932,7 @@ function App() {
         const pakProducten = (arr, act, tijd) => {
           for (const p of arr || []) {
             if (p.object_type !== "product") continue;
-            regels.push({ id: p.object_id, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "" });
+            regels.push({ id: p.object_id, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", catId: p.object_category_id || null });
           }
         };
         pakProducten(e.products, "", "");
@@ -2987,6 +2987,8 @@ function App() {
           const al1 = allergieRegels(o.bericht).join("|"), al2 = allergieRegels(r.bericht).join("|");
           if (al1 !== al2) w.push("Allergieën gewijzigd" + (al2 ? ": " + allergieRegels(r.bericht).join("; ") : " (verwijderd)"));
           if (String(o.dieet || "") !== String(r.dieet || "")) w.push("Dieetwensen: " + (String(r.dieet || "").trim() || "(leeg)"));
+          const no1 = kaalBericht(o.bericht), no2 = kaalBericht(r.bericht);
+          if (no1 !== no2) w.push("Notitie gewijzigd" + (no2 ? ": " + no2.slice(0, 140).replace(/\n/g, " ") + (no2.length > 140 ? "…" : "") : " (verwijderd)"));
         }
         const vorig = (o && Array.isArray(o.log) && o.log) || [];
         r.log = w.length ? [...vorig, { t: new Date().toISOString(), w }].slice(-30) : vorig;
@@ -3007,6 +3009,35 @@ function App() {
       return Object.values(per).filter((b) => String(b.datum) >= bewaarGrens).sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
     });
     if (!stil) flash(rijen.length + " boekingen opgehaald");
+    // Categorieën zonder Excel: (a) probeer stilletjes het categories-endpoint
+    // (naam per id); (b) leer id→naam uit producten die al een categorie
+    // hebben; (c) geef producten zonder categorie de naam die bij hun catId
+    // hoort zodra die ergens in een boeking voorbijkomt.
+    try {
+      const catNaam = {};
+      try {
+        const rc = await fetch("/api/mice?path=categories");
+        const jc = await rc.json();
+        const lijst = (jc && jc.data && (Array.isArray(jc.data.data) ? jc.data.data : Array.isArray(jc.data) ? jc.data : [])) || [];
+        for (const c of lijst) if (c && c.id != null && (c.name || c.naam)) catNaam[c.id] = c.name || c.naam;
+      } catch (e) {}
+      const catIdPerProduct = {};
+      for (const b of rijen) for (const r of b.regels || []) if (r.catId != null) catIdPerProduct[r.id] = r.catId;
+      for (const p of miceProducten) {
+        const cid = catIdPerProduct[p.id];
+        if (cid != null && p.categorie && !catNaam[cid]) catNaam[cid] = p.categorie;
+      }
+      const bij = [];
+      for (const p of miceProducten) {
+        if (p.categorie) continue;
+        const cid = catIdPerProduct[p.id];
+        if (cid != null && catNaam[cid]) bij.push({ ...p, categorie: catNaam[cid] });
+      }
+      if (bij.length) {
+        setMiceProducten((xs) => xs.map((p) => bij.find((n) => n.id === p.id) || p));
+        if (live) await supabase.from("mice_producten").upsert(bij.map((p) => ({ id: p.id, naam: p.naam, omschrijving: p.omschrijving || "", prijs: p.prijs || 0, groep_id: p.groep_id, categorie: p.categorie, opgehaald_op: p.opgehaald_op || new Date().toISOString() })));
+      }
+    } catch (e) {}
     return rijen.length;
   };
   // Achtergrondsync: bij het openen van Boekingen twee maanden vooruit ophalen,
@@ -8904,11 +8935,19 @@ const allergieVanBoeking = (b) => {
 };
 // Randkleur per status: blauw in optie, groen bevestigd, oranje verlopen,
 // rood geannuleerd. Onbekende statussen kleuren blauw (optie-achtig).
-// Categorieën die niet in de keuken thuishoren (dranken, servies, huur…):
-// op de mise-en-place worden die regels verborgen. Werkt op de categorie uit
-// de MICE-productexport.
-const KEUKEN_UIT = new Set(["dranken", "servies en bestek", "personeelsdiensten", "locatiehuur", "workshops", "bloemen en cadeaus"]);
-const isKeukenRegel = (k, catVan) => !KEUKEN_UIT.has(String((catVan && catVan[k.miceId]) || "").toLowerCase().trim());
+// Zichtbaarheid van producten op de kaarten (boeking én mep), volgens de
+// lijst van de chefs. Regels: hele categorieën verborgen (dranken, huur,
+// personeel, bloemen, workshops, buitenkeuken), met per product twee soorten
+// uitzonderingen. Nieuwe producten volgen automatisch hun categorie.
+const VERBERG_CATEGORIEEN = new Set(["dranken", "locatiehuur", "personeelsdiensten", "bloemen en cadeaus", "workshops", "buitenkeuken"]);
+const VERBERG_IDS = new Set([251091, 269892, 294470, 315007, 325635, 399647, 420970, 431060]); // o.a. korting, kurkgeld, wijnarrangement, zelfoogst
+const TOON_IDS = new Set([242048, 264671]); // workshop met de kok, appel crumble
+const isKeukenRegel = (k, catVan) => {
+  const id = Number(k.miceId);
+  if (TOON_IDS.has(id)) return true;
+  if (VERBERG_IDS.has(id)) return false;
+  return !VERBERG_CATEGORIEEN.has(String((catVan && catVan[k.miceId]) || "").toLowerCase().trim());
+};
 const statusRand = (st) => {
   const s = String(st || "");
   if (s === "confirmed" || s === "completed") return "#5a7d46";
@@ -8952,10 +8991,13 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
   const perOnderdeel = (o) => {
     const n = o.hoeveelheid ? eersteGetal(o.hoeveelheid) : 0;
     const porties = n || aantal;
-    if (o.recipeId) {
+    // Een recept is een bijlage: de getypte tekst is de invulling en telt.
+    // Alleen zonder eigen tekst telt het recept zelf.
+    if (o.recipeId && !String(o.naam || "").trim()) {
       const r = recipeById(o.recipeId);
-      return [{ soort: "recept", id: o.recipeId, naam: (r && r.name) || o.naam || "recept", porties, item: keuze.naam || "" }];
+      return [{ soort: "recept", id: o.recipeId, naam: (r && r.name) || o.receptNaam || "recept", porties, item: keuze.naam || "" }];
     }
+    if (o.recipeId) return losSplits(o.naam, porties, keuze.naam || "");
     if (o.productId) {
       const p = (producten || []).find((x) => x.id === o.productId) || null;
       const uit = p ? mepVoorProduct(p, porties, calcItems, dishById, recipeById) : [];
@@ -9631,24 +9673,32 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
 
 // Mise en place voor de komende dagen. Opzet als een A4: bovenaan wat je in één
 // keer kunt maken, daaronder per dag de partijen.
-// Uitklapbaar logboek per boeking: wat is er sinds de vorige sync veranderd.
+// Geschiedenis per boeking: wat er sinds eerdere syncs in MICE veranderd is,
+// als tabel per dag. Zonder wijzigingen is de knop lichtgrijs en inactief.
 function BoekingLog({ log }) {
   const [open, setOpen] = useState(false);
-  if (!log || !log.length) return null;
+  const heeft = log && log.length > 0;
+  if (!heeft) return <div className="mt-1.5"><span className="text-[13.5px] font-bold" style={{ color: "#c9c5b6" }}>Geschiedenis</span></div>;
   return (
     <div className="mt-1.5">
-      <button onClick={(e) => { e.stopPropagation(); setOpen(!open); }} className="ff text-[12px] mute underline">{open ? "Logboek verbergen" : "Logboek (" + log.length + ")"}</button>
+      <button onClick={(e) => { e.stopPropagation(); setOpen(!open); }} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{open ? "Geschiedenis verbergen" : "Geschiedenis (" + log.length + ")"}</button>
       {open && (
-        <div className="mt-1 space-y-1.5">
-          {[...log].reverse().map((e2, i) => (
-            <div key={i} className="text-[12px] leading-relaxed">
-              <div className="mute">{String(e2.t).slice(8, 10)}-{String(e2.t).slice(5, 7)} {String(e2.t).slice(11, 16)}</div>
-              {(e2.w || []).map((r, j) => (
-                <div key={j} style={{ color: r.startsWith("Erbij") ? "#44502f" : r.startsWith("Weg") ? "#8a2f28" : undefined }}>{r}</div>
-              ))}
-            </div>
-          ))}
-        </div>
+        <table className="w-full text-[12.5px] mt-1" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr className="text-[10.5px] font-semibold uppercase tracking-widest acc">
+              <th className="text-left py-1 pr-2" style={{ width: "5.5rem" }}>Dag</th>
+              <th className="text-left py-1">Wijziging</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...log].reverse().map((e2, i) => (e2.w || []).map((r, j) => (
+              <tr key={i + "-" + j} style={{ borderTop: j === 0 ? "1px solid " + T.line : "none" }}>
+                <td className="py-1 pr-2 mute align-top whitespace-nowrap">{j === 0 ? String(e2.t).slice(8, 10) + "-" + String(e2.t).slice(5, 7) + " " + String(e2.t).slice(11, 16) : ""}</td>
+                <td className="py-1" style={{ color: r.startsWith("Erbij") ? "#44502f" : r.startsWith("Weg") ? "#8a2f28" : undefined }}>{r}</td>
+              </tr>
+            )))}
+          </tbody>
+        </table>
       )}
     </div>
   );
@@ -9692,7 +9742,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige }) {
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -9702,8 +9752,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [velden, setVelden] = useState({ gasten: "", tijd: "", allergie: "", notitie: "" });
   const [kies, setKies] = useState(false);
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
+  const [overigeOpen, setOverigeOpen] = useState(false);
   const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
-  const [receptZoek, setReceptZoek] = useState(""); // zoekveld voor recept-bijlagen
   // Escape of de terugknop van het toestel sluit de bewerkstand zonder opslaan.
   useEffect(() => {
     if (!bewerk) return;
@@ -9717,7 +9767,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 
   const keuzesS = sorteerEetmoment(keuzes || [], catVan);
   const bezorging = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
-  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => !alleenKeuken || isKeukenRegel(k, catVan));
+  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isKeukenRegel(k, catVan));
+  // Verborgen regels (dranken, huur, personeel…) blijven op de boekingpagina
+  // bereikbaar onder een ingeklapt kopje Overige.
+  const overigeKeuzes = toonOverige ? keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || "")) && !isKeukenRegel(k, catVan)) : [];
+  const prijsVan = (miceId) => {
+    if (!toonPrijs || !miceId) return "";
+    const p = (miceProducten || []).find((x) => x.id === miceId);
+    return p && p.prijs ? " · € " + Number(p.prijs).toFixed(2).replace(".", ",") : "";
+  };
   const onderdelenVan = (miceId) => {
     const v = miceId && invullingVan ? invullingVan(miceId) : null;
     if (!v) return null;
@@ -9769,20 +9827,34 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       tijd: (extra && extra.tijd) || (b.start_tijd ? String(b.start_tijd).slice(11, 16) : ""),
       allergie: (extra && extra.allergie) || (allergie || []).join("\n"),
       notitie: (extra && extra.notitie) || noot || "",
-      recepten: ((extra && extra.recepten) || []).map((r) => ({ ...r })),
     });
-    setSug(""); setReceptZoek(""); setBewerk(true);
+    const alBron = (extra && extra.allergie) || (allergie || []).join("\n");
+    const rijenAl = alParse(alBron);
+    setAlRijen(rijenAl.length ? rijenAl : [{ aantal: "", tekst: "" }]);
+    setSug(""); setBewerk(true);
   };
   const zetR = (i, veld, w) => setRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
-  const zetO = (mid, j, veld, w) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, [veld]: w, ...(veld === "naam" ? { recipeId: null, productId: null } : {}) } : x)) }));
+  const zetO = (mid, j, veld, w) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, [veld]: w } : x)) }));
+  const koppelRecept = (mid, j, sg) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, recipeId: sg.recipeId || null, productId: sg.productId || null, receptNaam: sg.naam } : x)) }));
+  const ontkoppel = (mid, j) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, recipeId: null, productId: null, receptNaam: "" } : x)) }));
+  const [koppelRij, setKoppelRij] = useState(""); // rij waarvoor handmatig een recept gezocht wordt
+  const [koppelZoek, setKoppelZoek] = useState("");
+  const [alRijen, setAlRijen] = useState([]); // allergenen: [aantal][inhoud] per rij
+  const alParse = (tekst) => String(tekst || "").split(/\r?\n+/).map((r) => r.trim()).filter(Boolean).map((r) => {
+    const m = r.match(/^(\d+)\s*[x×]?\s*(.*)$/);
+    return m ? { aantal: m[1], tekst: m[2] } : { aantal: "", tekst: r };
+  });
+  const alTekst = (rs) => rs.map((r) => ({ aantal: String(r.aantal || "").trim(), tekst: String(r.tekst || "").trim() }))
+    .filter((r) => r.tekst).map((r) => (r.aantal ? r.aantal + "x " : "") + r.tekst).join("\n");
+  const zetAl = (i, veld, w) => setAlRijen((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const plusO = (mid, na) => setInv((m) => { const rs = (m[mid] || []).slice(); rs.splice(na == null ? rs.length : na, 0, { hoeveelheid: "", naam: "", recipeId: null, productId: null }); return { ...m, [mid]: rs }; });
   const wegO = (mid, j) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).filter((_, jj) => jj !== j) }));
   const opslaan = () => {
     const schoon = regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim());
-    onOpslaan(schoon, magExtra ? velden : null);
+    onOpslaan(schoon, magExtra ? { ...velden, allergie: alTekst(alRijen) } : null);
     if (onInvulling) {
       for (const mid of Object.keys(inv)) {
-        const onderdelen = inv[mid].map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null })).filter((o) => o.naam);
+        const onderdelen = inv[mid].map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "" })).filter((o) => o.naam || o.recipeId);
         onInvulling(mid, onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null);
       }
     }
@@ -9795,7 +9867,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         <span className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
         {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
         {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
-        <span className="text-[14px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
+        {bewerk && magExtra ? (
+          <span className="flex items-center gap-1 shrink-0">
+            <input type="time" className="input px-1.5 py-1 text-[13px]" style={{ width: "6.2rem" }} value={velden.tijd} onChange={(e) => setVelden((v) => ({ ...v, tijd: e.target.value }))} />
+            <input inputMode="numeric" className="input px-1.5 py-1 text-[13px]" style={{ width: "3.4rem" }} value={velden.gasten} onChange={(e) => setVelden((v) => ({ ...v, gasten: e.target.value }))} placeholder="gasten" />
+            <span className="text-[13px] mute">p</span>
+          </span>
+        ) : (
+          <span className="text-[14px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
+        )}
         {!bewerk && (
           <>
             <button onClick={() => setInfoOpen(true)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
@@ -9835,7 +9915,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             <div className="text-[14.5px] mt-1 space-y-1">
               {toonKeuzes.map((k, i) => {
                 const od = k.miceId ? onderdelenVan(k.miceId) : null;
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId);
                 return (
                   <div key={i}>
                     <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
@@ -9843,10 +9923,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     </div>
                     {od && od.map((o, j) => (
                       <div key={j} className="ink pl-3">
-                        <span onClick={!stift && o.recipeId ? () => onOpenRecipe(o.recipeId) : undefined}
-                          style={o.recipeId ? { textDecoration: "underline", textDecorationColor: "#b6b2a3", cursor: stift ? undefined : "pointer" } : undefined}>
-                          <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} />
-                        </span>
+                        <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} />
+                        {o.recipeId && !stift && (
+                          <button onClick={() => onOpenRecipe(o.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
+                            {o.receptNaam || "recept"}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -9859,13 +9941,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
             </div>
           )}
-          {extra && Array.isArray(extra.recepten) && extra.recepten.length > 0 && (
-            <div className="mt-1.5 space-y-0.5 text-[13px]">
-              {extra.recepten.map((r, i) => (
-                <div key={i}>
-                  <button onClick={() => onOpenRecipe(r.id)} className="ff ink font-medium" style={{ textDecoration: "underline", textDecorationColor: "#b6b2a3" }}>{r.naam}</button>
+          {overigeKeuzes.length > 0 && (
+            <div className="mt-1.5">
+              <button onClick={() => setOverigeOpen((o) => !o)} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{overigeOpen ? "Overige verbergen" : "Overige (" + overigeKeuzes.length + ")"}</button>
+              {overigeOpen && (
+                <div className="text-[13.5px] mt-1 space-y-0.5">
+                  {overigeKeuzes.map((k, i) => (
+                    <div key={i} className="mute">{(k.aantal || b.gasten) + "× " + k.naam + (catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId)}</div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
           <div className="mt-1.5">
@@ -9898,6 +9983,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     {magProductNaam
                       ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
                       : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>}
+                    {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
                   </div>
                   {(inv[mid] || []).map((o, j) => {
@@ -9911,25 +9997,44 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                           <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-" + j}
                             value={o.naam} onChange={(e) => { zetO(mid, j, "naam", e.target.value); setSug(sleutel); }} onFocus={() => setSug(sleutel)}
                             placeholder="gerecht | onderdeel | onderdeel"
-                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); } }} />
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setSug(""); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); } }} />
+                          <button onClick={() => { setKoppelRij(koppelRij === sleutel ? "" : sleutel); setKoppelZoek(""); }} className="ff mute hover:opacity-60" title="Recept als bijlage koppelen"><Plus size={15} /></button>
                           <button onClick={() => wegO(mid, j)} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
                         </div>
-                        {o.recipeId && <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>gekoppeld recept</div>}
-                        {o.productId && <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>gekoppeld aan calculatie</div>}
+                        {(o.recipeId || o.productId) && (
+                          <div className="pl-3 text-[12px] flex items-center gap-1" style={{ color: "#44502f" }}>
+                            ⤷ {o.receptNaam || (o.recipeId ? "recept" : "calculatie")}
+                            <button onClick={() => ontkoppel(mid, j)} className="ff mute hover:opacity-60" title="Bijlage loskoppelen"><X size={12} /></button>
+                          </div>
+                        )}
                         {sug === sleutel && !o.recipeId && !o.productId && suggesties(o.naam).length > 0 && (
                           <div className="pl-3 mt-1 space-y-0.5">
                             {suggesties(o.naam).map((sg, jj) => (
-                              <button key={jj} onClick={() => { setInv((m) => ({ ...m, [mid]: m[mid].map((x, xx) => (xx === j ? { ...x, naam: sg.naam, recipeId: sg.recipeId || null, productId: sg.productId || null } : x)) })); setSug(""); }}
+                              <button key={jj} onClick={() => { koppelRecept(mid, j, sg); setSug(""); }}
                                 className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sg.recipeId ? "#eef2e6" : "#fbf9f2" }}>
-                                {sg.naam} <span className="mute text-[11px]">· {sg.label}</span>
+                                ⤷ {sg.naam} <span className="mute text-[11px]">· {sg.label} als bijlage</span>
                               </button>
                             ))}
+                          </div>
+                        )}
+                        {koppelRij === sleutel && (
+                          <div className="pl-3 mt-1">
+                            <input autoFocus className="input px-2 py-1.5 text-sm w-full" value={koppelZoek} onChange={(e) => setKoppelZoek(e.target.value)} placeholder="Zoek een recept om te koppelen" />
+                            {koppelZoek.trim().length >= 2 && (
+                              <div className="mt-1 space-y-0.5">
+                                {(recepten || []).filter((r) => softMatchAny([r.name, r.category], koppelZoek)).slice(0, 6).map((r) => (
+                                  <button key={r.id} onClick={() => { koppelRecept(mid, j, { recipeId: r.id, naam: r.name }); setKoppelRij(""); setKoppelZoek(""); }}
+                                    className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: "#eef2e6" }}>
+                                    ⤷ {r.name} <span className="mute text-[11px]">· recept{r.category ? " · " + r.category : ""}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     );
                   })}
-                  <button onClick={() => { const na = (inv[mid] || []).length; plusO(mid); focusNa('[data-oa="' + b.id + "-" + i + "-" + na + '"]'); }} className="ff ml-3 text-[12px] mute underline">+ regel</button>
                 </div>
               );
             }
@@ -9948,32 +10053,23 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           <button onClick={() => setKies(true)} className="btno ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium inline-flex items-center gap-1"><Plus size={13} /> Product</button>
           {magExtra && (
             <>
-              <div className="flex items-center gap-1.5">
-                <Field label="Gasten"><input className="input px-2 py-1.5 text-sm" style={{ width: "5rem" }} inputMode="numeric" value={velden.gasten} onChange={(e) => setVelden((v) => ({ ...v, gasten: e.target.value }))} /></Field>
-                <Field label="Starttijd"><input type="time" className="input px-2 py-1.5 text-sm" value={velden.tijd} onChange={(e) => setVelden((v) => ({ ...v, tijd: e.target.value }))} /></Field>
-              </div>
-              <Field label="Allergenen (één per regel)"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.allergie} onChange={(e) => setVelden((v) => ({ ...v, allergie: e.target.value }))} /></Field>
-              <Field label="Notitie"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.notitie} onChange={(e) => setVelden((v) => ({ ...v, notitie: e.target.value }))} /></Field>
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-0.5">Recepten bij deze partij</div>
-                {(velden.recepten || []).map((r, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-[13px] mb-0.5">
-                    <span className="min-w-0 flex-1 ink truncate">{r.naam}</span>
-                    <button onClick={() => setVelden((v) => ({ ...v, recepten: v.recepten.filter((_, j) => j !== i) }))} className="ff mute hover:opacity-60"><Trash2 size={13} /></button>
-                  </div>
-                ))}
-                <input className="input px-2 py-1.5 text-sm w-full" value={receptZoek} onChange={(e) => setReceptZoek(e.target.value)} placeholder="Voeg recept toe — typ om te zoeken" />
-                {receptZoek.trim().length >= 2 && (
-                  <div className="mt-1 space-y-0.5">
-                    {(recepten || []).filter((r) => softMatchAny([r.name, r.category], receptZoek)).slice(0, 6).map((r) => (
-                      <button key={r.id} onClick={() => { setVelden((v) => ({ ...v, recepten: [...(v.recepten || []), { id: r.id, naam: r.name }] })); setReceptZoek(""); }}
-                        className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: "#eef2e6" }}>
-                        {r.name} <span className="mute text-[11px]">· recept{r.category ? " · " + r.category : ""}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-0.5">Allergenen</div>
+                <div className="space-y-1.5">
+                  {alRijen.map((r, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-ala={b.id + "-" + i}
+                        value={r.aantal} onChange={(e) => zetAl(i, "aantal", e.target.value)} placeholder="1"
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-alt="' + b.id + "-" + i + '"]'); } }} />
+                      <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-alt={b.id + "-" + i}
+                        value={r.tekst} onChange={(e) => zetAl(i, "tekst", e.target.value)} placeholder="bv. glutenvrij en lactosevrij"
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setAlRijen((rs) => [...rs.slice(0, i + 1), { aantal: "", tekst: "" }, ...rs.slice(i + 1)]); focusNa('[data-ala="' + b.id + "-" + (i + 1) + '"]'); } }} />
+                      <button onClick={() => setAlRijen((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                </div>
               </div>
+              <Field label="Notitie"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.notitie} onChange={(e) => setVelden((v) => ({ ...v, notitie: e.target.value }))} /></Field>
             </>
           )}
           {aangepast && onHerstel && (
@@ -10248,7 +10344,6 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                       onKoppel(b, regels);
                       if (velden) {
                         const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
-                          && !((velden.recepten || []).length)
                           && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === (b.start_tijd ? String(b.start_tijd).slice(11, 16) : "");
                         onMepExtra(b, leeg ? null : velden);
                       }
@@ -10464,6 +10559,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     if (!somSet.includes(b.datum)) continue;
     for (const k of gekozen(b)) {
       if (/bezorg/i.test(String(k.naam || ""))) continue;
+      if (!isKeukenRegel(k, catVan)) continue;
       const sleutel = k.miceId ? "m:" + k.miceId : "x:" + normNaam(k.naam);
       if (!perProduct[sleutel]) perProduct[sleutel] = { sleutel, naam: k.naam, perDag: {}, totaal: 0, gezien: new Set(), partijen: [] };
       const r = perProduct[sleutel];
@@ -10553,7 +10649,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 canEdit={canEdit} magExtra={true} extra={bkxVan(b)}
                 aangepast={((leesLaag(koppeling, boekingSleutel, b, "") || []).length > 0 && (b.regels || []).length > 0) || !!bkxVan(b)}
                 nootOpenStandaard={true}
-                invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true}
+                invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true} toonPrijs={true} toonOverige={true}
                 autoBewerk={nieuwBewerk && nieuwBewerk.id === b.id}
                 invullingVan={(miceId) => prodKoppeling[miceId] || null}
                 onInvulling={canEdit ? (miceId, inv) => onProdKoppel(miceId, inv) : null}
@@ -10562,7 +10658,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   onKoppel(b, regels);
                   if (velden) {
                     const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
-                      && !((velden.recepten || []).length)
                       && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === tijd(b.start_tijd);
                     onBkExtra(b, leeg ? null : velden);
                   }
@@ -10599,7 +10694,7 @@ function ProductKiezer({ boeking, lijst, onKies, onSluit }) {
         <div className="flex-1 overflow-y-auto space-y-1.5 mt-2">
           {hits.map((p) => (
             <button key={p.id} onClick={() => onKies(p, Number(aantal) || boeking.gasten || 0)} className="ff card cardh w-full text-left px-3 py-2">
-              <div className="text-sm ink truncate">{p.naam}{p.categorie ? <span className="mute font-normal"> · {p.categorie}</span> : null}</div>
+              <div className="text-sm ink truncate">{p.naam}{p.categorie ? <span className="mute font-normal"> · {p.categorie}</span> : null}{p.prijs ? <span className="font-normal" style={{ color: "#44502f" }}> · € {Number(p.prijs).toFixed(2).replace(".", ",")}</span> : null}</div>
               {p.omschrijving && <div className="text-[12px] mute">{String(p.omschrijving).slice(0, 120)}</div>}
             </button>
           ))}
