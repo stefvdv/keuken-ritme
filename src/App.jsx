@@ -10254,12 +10254,6 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
   const somSet = dagen.filter((d) => d >= vandaag).slice(0, somDagen);
 
-  const statusVan = (b) => { const e = extraVan(b); return (e && e.status) || b.status; };
-  const naamVan = (b) => { const e = extraVan(b); return (e && e.naam) || b.naam; };
-  const partijen = (boekingen || [])
-    .filter((b) => dagen.includes(b.datum) && String(statusVan(b)) !== "cancelled" && !isAanvraagStatus(statusVan(b)) && !isVerwijderd(koppeling, b))
-    .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
-
   // Volgorde: mep-aanpassing > handmatige invulling > MICE-bestelling.
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
@@ -10282,6 +10276,11 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const gastenVan = (b) => { const e = extraVan(b); const g = e && e.gasten !== "" && e.gasten != null ? Number(e.gasten) : null; return g != null && isFinite(g) ? g : (b.gasten || 0); };
   const allergieEff = (b) => { const e = extraVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
   const nootEff = (b) => { const e = extraVan(b); return (e && String(e.notitie || "").trim()) || kaalBericht(b.bericht); };
+  const statusVan = (b) => { const e = extraVan(b); return (e && e.status) || b.status; };
+  const naamVan = (b) => { const e = extraVan(b); return (e && e.naam) || b.naam; };
+  const partijen = (boekingen || [])
+    .filter((b) => dagen.includes(b.datum) && String(statusVan(b)) !== "cancelled" && !isAanvraagStatus(statusVan(b)) && !isVerwijderd(koppeling, b))
+    .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
   const mepVan = (b) => gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppeling, producten, calcItems, dishById, recipeById));
   const perBereiding = {};
   for (const b of partijen) {
