@@ -4790,7 +4790,7 @@ function App() {
       <BrandCSS />
       <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"} />
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-4 pb-28">
+      <main className="flex-1 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28">
         {!FORM_SCREENS.has(current.screen) && (
           <SectionNav chef={chefMode} section={current.screen === "list" ? section : null}
             setSection={(s) => { setSection(s); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }} />
@@ -5446,7 +5446,7 @@ function Login({ onPick, live }) {
 function Header({ user, onHome, onOpenSettings, onMep, mepActief }) {
   return (
     <header className="sticky top-0 z-40 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
-      <div className="w-full max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+      <div className="w-full max-w-2xl lg:max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <Wordmark onHome={onHome} />
         </div>
@@ -10062,10 +10062,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           <div key={d} className="mb-4">
             <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "1px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
-              <span className="serif ink text-lg leading-tight">{dagKop(d)}</span>
+              <span className="serif ink font-bold text-xl leading-tight">{dagKop(d)}</span>
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
             </button>
-            {!isDicht(d) && <div className="space-y-2">
+            {!isDicht(d) && <div className="grid gap-2 items-start md:grid-cols-2 xl:grid-cols-3">
               {items.map((b) => {
                 const sl = boekingSleutel(b.naam);
                 return (
@@ -10238,7 +10238,10 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
   const [dagDicht, setDagDicht] = useState({});
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
-  const [somDagen, setSomDagen] = useState(2); // optelsom over 2, 3 of 4 dagen
+  const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
+  const [weekDicht, setWeekDicht] = useState({});
+  const isWeekDicht = (w) => (weekDicht[w] != null ? weekDicht[w] : w > maandagVan(vandaag)); // eerste week open, rest dicht
+  const somDagen = 7; // optelsom kijkt altijd een week vooruit
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
@@ -10251,6 +10254,15 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     if (laatste && laatste.datum === b.datum) laatste.items.push(b);
     else perDag.push({ datum: b.datum, items: [b] });
   }
+  // Dagen gebundeld per week, met een inklapbare weekkop.
+  const perWeek = [];
+  for (const dag of perDag) {
+    const w = maandagVan(dag.datum);
+    const laatste = perWeek[perWeek.length - 1];
+    if (laatste && laatste.week === w) laatste.dagen.push(dag);
+    else perWeek.push({ week: w, dagen: [dag] });
+  }
+  const weekLabel = (w) => { const a = new Date(w + "T12:00:00"); const z = new Date(w + "T12:00:00"); z.setDate(z.getDate() + 6); const M = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"]; return a.getDate() + " " + M[a.getMonth()] + " – " + z.getDate() + " " + M[z.getMonth()]; };
   // Volgorde: handmatige invulling > MICE-bestelling. (Mep-eigen aanpassingen
   // tellen hier bewust niet mee.)
   const gekozen = (b) => {
@@ -10291,18 +10303,9 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     <div>
       <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE, twee maanden vooruit. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <span className="flex-1" />
-        <span className="text-[11.5px] mute">Optelsom</span>
-        {[2, 3, 4].map((n) => (
-          <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
-            style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n} dagen</button>
-        ))}
-      </div>
-
       {prodOverlap.length > 0 && (
         <div className="card p-3 mb-4">
-          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen in meerdere partijen — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
+          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen in meerdere partijen — komende 7 dagen</div>
           <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
@@ -10326,13 +10329,20 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
 
       {!perDag.length && <Empty label="Geen boekingen in de komende twee maanden." />}
 
-      {perDag.map((dag) => (
-        <div key={dag.datum} className="mb-5">
-          <button onClick={() => setDagDicht((o) => ({ ...o, [dag.datum]: !isDicht(dag.datum) }))} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
-            {isDicht(dag.datum) ? <ChevronDown size={14} className="shrink-0" /> : <ChevronUp size={14} className="shrink-0" />}
-            {dagNaam(dag.datum)}
+      {perWeek.map((wk) => (
+        <div key={wk.week} className="mb-6">
+          <button onClick={() => setWeekDicht((o) => ({ ...o, [wk.week]: !isWeekDicht(wk.week) }))} className="ff w-full text-left flex items-center gap-2 mb-2 pb-1" style={{ borderBottom: "2px solid " + T.line }}>
+            {isWeekDicht(wk.week) ? <ChevronDown size={16} className="acc shrink-0" /> : <ChevronUp size={16} className="acc shrink-0" />}
+            <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Week {weekLabel(wk.week)}</span>
+            <span className="text-[12px] mute">{wk.dagen.reduce((n, d) => n + d.items.length, 0)} partijen</span>
           </button>
-          {!isDicht(dag.datum) && <div className="space-y-2">
+          {!isWeekDicht(wk.week) && wk.dagen.map((dag) => (
+        <div key={dag.datum} className="mb-5">
+          <button onClick={() => setDagDicht((o) => ({ ...o, [dag.datum]: !isDicht(dag.datum) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5">
+            {isDicht(dag.datum) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
+            <span className="serif ink font-bold text-xl leading-tight">{dagNaam(dag.datum)}</span>
+          </button>
+          {!isDicht(dag.datum) && <div className="grid gap-2 items-start md:grid-cols-2 xl:grid-cols-3">
             {dag.items.map((b) => (
               <PartijKaart key={b.id} b={b} keuzes={gekozen(b)} mepRegels={mepVan(b)}
                 allergie={allergieEff(b)} noot={nootEff(b)}
@@ -10361,6 +10371,8 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 miceProducten={miceProducten} producten={producten} />
             ))}
           </div>}
+        </div>
+          ))}
         </div>
       ))}
 
