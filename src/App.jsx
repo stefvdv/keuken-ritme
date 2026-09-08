@@ -5036,7 +5036,7 @@ function App() {
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling}
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
-                onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen}
+                onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -5096,7 +5096,7 @@ function App() {
           editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -7086,7 +7086,7 @@ function MiceVerkenner() {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
+function SettingsScreen({ onBack, onResetBoekingen, onOpenGerechten, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -7128,6 +7128,9 @@ function SettingsScreen({ onBack, onResetBoekingen, installed, canInstall, onIns
       <div className="card p-4">
         <p className="text-sm mute mb-3">De chef-versie toont Calculaties (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
         <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
+        {onOpenGerechten && (
+          <button onClick={onOpenGerechten} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Utensils size={15} /> Gerechten-pagina openen (testperiode)</button>
+        )}
         {chefMode && onResetBoekingen && (
           <button onClick={onResetBoekingen} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><RotateCcw size={15} /> Boekingen resetten en opnieuw uit MICE laden</button>
         )}
@@ -7211,7 +7214,7 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen }) {
   const items = [
     { id: "__home", label: "Home", icon: <Home size={22} />, doe: onHome },
     { id: "mep", label: "Mise en place", icon: <ClipboardList size={22} />, doe: onMep },
-    per.gerechten, per.recepten, per.fermentatie, per.smaak,
+    per.recepten, per.fermentatie, per.smaak,
     per.technieken,
     per.schoonmaak, per.voorraad,
     ...(chef ? [
@@ -7237,11 +7240,13 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen }) {
   );
 }
 
+const NAV_VERBORGEN = new Set(["gerechten"]); // testperiode: alleen via Instellingen
 function SectionNav({ section, setSection, chef }) {
   // section is null op detailpagina’s: geen knop actief, tik navigeert terug naar de lijst.
+  const basis = SECTIONS.filter((x) => !NAV_VERBORGEN.has(x.id));
   const items = chef
-    ? [...SECTIONS, { id: "boekingen", label: "Boekingen", icon: <CalendarDays size={24} /> }, { id: "assortiment", label: "Calculaties", icon: <Receipt size={24} /> }]
-    : SECTIONS;
+    ? [...basis, { id: "boekingen", label: "Boekingen", icon: <CalendarDays size={24} /> }, { id: "assortiment", label: "Calculaties", icon: <Receipt size={24} /> }]
+    : basis;
   const scroller = React.useRef(null);
   const btns = React.useRef({});
   // De actieve knop netjes in het midden schuiven, ook na een swipe.
@@ -9434,7 +9439,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
       </div>
       {openHuidig && shown.length === 0 && <Empty label="Nog niets op voorraad dit jaar. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
       {open !== null && <div className="fixed inset-0 z-10" onClick={() => setOpen(null)} />}
-      {openHuidig && <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">{shown.map(kaart)}</div>}
+      {openHuidig && <div className="space-y-2.5 md:space-y-0 md:columns-2 md:gap-2.5 md:[&>*]:mb-2.5 md:[&>*]:break-inside-avoid">{shown.map(kaart)}</div>}
       {openHuidig && emptyItems.length > 0 && (
         <div className="mt-5">
           <button onClick={() => setOpenEmpty((o) => !o)} className="ff inline-flex items-center gap-1.5 mb-1.5">
@@ -9851,7 +9856,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel }) {
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -9974,14 +9979,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   };
 
   return (
-    <div id={"partij-" + b.id} className="card p-3" style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
+    <div id={"partij-" + b.id} className={"card p-3 min-w-0" + (bewerk ? " md:col-span-2" : "")} style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
-          : <span className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
+          : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
 
         {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
-        {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
+        {statusTekst && !bewerk && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
         {bewerk && magNaamStatus && (
           <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }}
             value={velden.status} onChange={(e) => setVelden((v) => ({ ...v, status: e.target.value }))}>
@@ -10204,7 +10209,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           )}
           {(aangepast || onVerwijderPartij) && (
             <div className="pt-1 flex items-center gap-3">
-              {aangepast && onHerstel && <button onClick={() => { onHerstel(); setBewerk(false); }} className="ff text-[12px] mute underline">terug naar boeking</button>}
+              {aangepast && onHerstel && <button onClick={() => { if (window.confirm((herstelLabel || "Wijzigingen resetten") + "?\n\nAlle handmatige aanpassingen aan deze partij gaan terug naar de bron.")) { onHerstel(); setBewerk(false); } }} className="ff text-[12px] mute underline">{herstelLabel || "wijzigingen resetten"}</button>}
               {onVerwijderPartij && (
                 <button onClick={() => { if (window.confirm('Deze partij verwijderen?\n\nHij verdwijnt van boekingen en mise-en-place, en is terug te zetten via "Verwijderd" naast de Vandaag-knop.')) onVerwijderPartij(); }}
                   className="ff text-[12px] underline" style={{ color: "#b3261e" }}>partij verwijderen</button>
@@ -10490,7 +10495,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                         onMepExtra(b, leeg ? null : velden);
                       }
                     }}
-                    onHerstel={() => onWisMep(b)}
+                    onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten"
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))} statusTekst={statusNL(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal}
@@ -10637,7 +10642,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
@@ -10819,7 +10824,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   <div className="space-y-0.5">
                     {items.map((b) => (
                       <button key={b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2" }}>
-                        <span className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
+                        <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
                         <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)}p · {tijdVan(b) || "—"}</span>
                       </button>
                     ))}
@@ -10859,7 +10864,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   onBkExtra(detailBoeking, leeg ? null : velden);
                 }
               }}
-              onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); }}
+              onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
