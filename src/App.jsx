@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Tractor
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -9836,7 +9836,7 @@ const MARKEER_KLEUREN = [
   { naam: "rood", kleur: "#f2b8b1", melding: "Let op" },
 ];
 // Woord-voor-woord markeren met de stift: elk woord is los aan te tikken.
-function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style }) {
+function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf }) {
   // Segmenten tussen scheidingstekens (komma, |, /, regeleinde) markeren als
   // één geheel: "snijbiet stoof | habanero" heeft twee tikbare stukken.
   const delen = String(tekst || "").split(/([,|\/\n]+)/);
@@ -9846,7 +9846,7 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style }
       {delen.map((w, i) => {
         if (!w || /^[,|\/\n\s]+$/.test(w)) return w;
         const sleutel = basis + ":" + idx++;
-        const k = MARKEER_KLEUREN.find((x) => x.naam === markering[sleutel]);
+        const k = MARKEER_KLEUREN.find((x) => x.naam === (markering[sleutel] || erf));
         return (
           <span key={i} onClick={stift ? (e) => { e.stopPropagation(); zetMark(sleutel); } : undefined}
             style={{ background: k ? k.kleur : undefined, cursor: stift ? "cell" : undefined, borderRadius: 3 }}>{w}</span>
@@ -9947,6 +9947,39 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       + "</body></html>");
   };
 
+  // Eén klik: partij-etiket (102 x 38 mm) met de naam zo groot als past.
+  const printPartijEtiket = () => {
+    const rijen = [
+      gastenTekst + " gasten",
+      [datumKop, tijdTekst || ""].filter(Boolean).join(" · "),
+      bezorging ? "Bezorging" + (zaal ? " · " + zaal : "") : (zaal || ""),
+      [contact, tel].filter(Boolean).join(" · "),
+    ].filter((r) => String(r).trim());
+    const mm = (pt, lh) => pt * 0.3528 * lh;
+    const naamTxt = String(naamTekst || b.naam || "Zonder naam");
+    const beschikbaar = LABEL_MM.h - 3 - rijen.length * mm(12, 1.3) - 1;
+    const breedte = LABEL_MM.w - 6;
+    let naamPt = 12;
+    for (let f = 46; f >= 12; f--) {
+      const perRegel = Math.max(1, Math.floor(breedte / (0.55 * f * 0.3528)));
+      const regelsNodig = Math.max(1, Math.ceil(naamTxt.length / perRegel));
+      if (regelsNodig * mm(f, 1.1) <= beschikbaar) { naamPt = f; break; }
+    }
+    printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+      "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
+      "html,body{margin:0;padding:0}" +
+      "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
+      "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+      ".wrap{position:absolute;top:3mm;left:3mm;right:3mm;text-align:center}" +
+      ".naam{font-weight:bold;font-size:" + naamPt + "pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
+      ".rij{font-weight:bold;font-size:12pt;line-height:1.3;margin:0}" +
+      "</style></head><body>" +
+      '<div class="wrap">' +
+      '<div class="naam">' + pEsc(naamTxt) + "</div>" +
+      rijen.map((r) => '<div class="rij">' + pEsc(r) + "</div>").join("") +
+      "</div></body></html>");
+  };
+
   const startBewerk = () => {
     setRegels(keuzesS.map((k) => ({ ...k })));
     const m = {};
@@ -10021,12 +10054,17 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           </>
         )}
         {!bewerk && (
-          <span className="text-[14px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
+          <span className="text-[14px] font-semibold shrink-0 inline-flex items-center gap-1" style={{ color: "#44502f" }}>
+            {bezorging
+              ? <span title="Bezorging" className="inline-flex"><Truck size={15} /></span>
+              : zaal ? <span title={zaal} className="inline-flex"><Tractor size={15} /></span> : null}
+            <span>{(tijdTekst || "—") + " · " + gastenTekst + "p"}</span>
+          </span>
         )}
         {!bewerk && (
           <>
             <button onClick={() => { setInfoOpen(true); if (onSluitStift) onSluitStift(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
-            <button onClick={printPartij} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Deze partij printen"><Printer size={17} /></button>
+            <button onClick={printPartijEtiket} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Etiket printen"><Tag size={17} /></button>
             {canEdit && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
           </>
         )}
@@ -10063,14 +10101,17 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               {toonKeuzes.map((k, i) => {
                 const od = k.miceId ? onderdelenVan(k.miceId) : null;
                 const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId);
+                const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
+                // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
+                const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
                 return (
                   <div key={i}>
                     <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
-                      <MarkTekst tekst={kop} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
+                      <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
                     </div>
                     {od && od.map((o, j) => (
                       <div key={j} className="ink pl-3">
-                        <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " \u00b7 " + fmtGram(p * n2) + " (" + Math.round(p) + " g p.p.)" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} />
+                        <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " \u00b7 " + fmtGram(p * n2) + " (" + Math.round(p) + " g p.p.)" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} />
                         {o.recipeId && !stift && (
                           <button onClick={() => onOpenRecipe(o.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
                             {o.receptNaam || "recept"}
@@ -10260,7 +10301,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
-  const [somDagen, setSomDagen] = useState(7); // standaard een hele week
+  const somDagen = 7; // optelsom altijd een hele week
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
   const [klaarOpen, setKlaarOpen] = useState(false);
   const [somRij, setSomRij] = useState(null); // uitgeklapte bereiding met partijnamen
@@ -10504,12 +10545,6 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
         <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Deze week</button>
         <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={14} /></button>
-        <span className="flex-1" />
-        <span className="text-[11.5px] mute">Optelsom</span>
-        {[2, 3, 4, 7].map((n) => (
-          <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
-            style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n} dagen</button>
-        ))}
       </div>
 
       {!partijen.length && <Empty label="Geen partijen in deze week." />}
@@ -10705,7 +10740,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
   const [detail, setDetail] = useState(null); // boekings-id in de detailweergave
   const somDagen = 7;
-  const [somOpen, setSomOpen] = useState(true);
+  const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
   const [somRij, setSomRij] = useState(null);
 
   // Nieuwe boeking: naar de juiste maand en meteen de detailkaart in bewerkstand.
@@ -10799,6 +10834,20 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const maandLabel = MAANDEN[mnd - 1] + " " + jr;
   const schuifMaand = (n) => { const x = new Date(jr, mnd - 1 + n, 1, 12); setMaand(localDate(x).slice(0, 7)); };
 
+  // De maandbalk plakt onder de vaste kop- en tabbalk; hoogte bij openen gemeten.
+  const [plakTop, setPlakTop] = useState(122);
+  useEffect(() => {
+    const meet = () => { const t = document.querySelector(".top-14"); setPlakTop(t ? Math.round(t.getBoundingClientRect().height) + 56 : 56); };
+    meet();
+    window.addEventListener("resize", meet);
+    return () => window.removeEventListener("resize", meet);
+  }, []);
+  // Bij openen de week van vandaag in beeld zetten.
+  useEffect(() => {
+    const t = setTimeout(() => { const el = document.getElementById("bkdag-" + vandaag); if (el) el.scrollIntoView({ block: "center" }); }, 130);
+    return () => clearTimeout(t);
+  }, []);
+
   const detailBoeking = detail != null ? (boekingen || []).find((b) => b.id === detail) : null;
 
   return (
@@ -10851,7 +10900,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 py-1.5 -mx-4 px-4" style={{ position: "sticky", top: plakTop, zIndex: 20, background: T.paper }}>
         <button onClick={() => schuifMaand(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={15} /></button>
         <span className="serif ink font-bold text-xl leading-tight capitalize">{maandLabel}</span>
         <button onClick={() => schuifMaand(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={15} /></button>
@@ -10888,7 +10937,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               const inMaand = d.slice(0, 7) === maand;
               const items = perDatum[d] || [];
               return (
-                <div key={d} className="p-1" style={{ background: d === vandaag ? "#eef2e6" : T.paper, minHeight: "6.5rem", opacity: inMaand && d >= vandaag ? 1 : 0.45, boxShadow: d === vandaag ? "inset 0 0 0 2.5px " + T.green : "none" }}>
+                <div key={d} id={"bkdag-" + d} className="p-1" style={{ background: d === vandaag ? "#eef2e6" : T.paper, minHeight: "6.5rem", opacity: inMaand && d >= vandaag ? 1 : 0.45, boxShadow: d === vandaag ? "inset 0 0 0 2.5px " + T.green : "none" }}>
                   <div className="mb-1 px-0.5">
                     {d === vandaag
                       ? <span className="inline-flex items-center justify-center rounded-full text-[11.5px] font-bold" style={{ background: T.green, color: "#fbf9f2", width: "1.5rem", height: "1.5rem" }}>{Number(d.slice(8, 10))}</span>
