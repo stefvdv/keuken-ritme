@@ -9995,8 +9995,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         )}
         {bewerk && magExtra && (
           <>
-            <input type="time" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "6.2rem" }} value={velden.tijd} onChange={(e) => setVelden((v) => ({ ...v, tijd: e.target.value }))} />
-            <input inputMode="numeric" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "3.6rem" }} value={velden.gasten} onChange={(e) => setVelden((v) => ({ ...v, gasten: e.target.value }))} placeholder="p" />
+            <input type="time" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "5.4rem" }} value={velden.tijd} onChange={(e) => setVelden((v) => ({ ...v, tijd: e.target.value }))} />
+            <input inputMode="numeric" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "3rem" }} value={velden.gasten} onChange={(e) => setVelden((v) => ({ ...v, gasten: e.target.value }))} placeholder="p" />
           </>
         )}
         {!bewerk && (
@@ -10103,7 +10103,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               return (
                 <div key={i} className="space-y-1">
                   <div className="flex items-center gap-1.5">
-                    <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-pa={b.id + "-" + i}
+                    <input className="input px-2 py-1.5 text-sm" style={{ width: "3.2rem", flex: "0 0 3.2rem" }} inputMode="numeric" data-pa={b.id + "-" + i}
                       value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); } }} />
                     {magProductNaam
@@ -10117,7 +10117,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     return (
                       <div key={j}>
                         <div className="flex items-center gap-1.5 pl-3">
-                          <input className="input px-2 py-1.5 text-sm" style={{ width: "5.2rem", flex: "0 0 5.2rem" }} data-oa={b.id + "-" + i + "-" + j}
+                          <input className="input px-2 py-1.5 text-sm" style={{ width: "3.8rem", flex: "0 0 3.8rem" }} data-oa={b.id + "-" + i + "-" + j}
                             value={o.hoeveelheid} onChange={(e) => zetO(mid, j, "hoeveelheid", e.target.value)} placeholder={String(k.aantal || b.gasten || "")}
                             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); } }} />
                           <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-" + j}
@@ -10169,7 +10169,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             }
             return (
               <div key={i} className="flex items-center gap-1.5">
-                <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-fa={b.id + "-" + i}
+                <input className="input px-2 py-1.5 text-sm" style={{ width: "3.2rem", flex: "0 0 3.2rem" }} inputMode="numeric" data-fa={b.id + "-" + i}
                   value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-regel="' + b.id + "-" + i + '"]'); } }} />
                 <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
@@ -10190,7 +10190,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 <div className="space-y-1.5">
                   {alRijen.map((r, i) => (
                     <div key={i} className="flex items-center gap-1.5">
-                      <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-ala={b.id + "-" + i}
+                      <input className="input px-2 py-1.5 text-sm" style={{ width: "3.2rem", flex: "0 0 3.2rem" }} inputMode="numeric" data-ala={b.id + "-" + i}
                         value={r.aantal} onChange={(e) => zetAl(i, "aantal", e.target.value)} placeholder="1"
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-alt="' + b.id + "-" + i + '"]'); } }} />
                       <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-alt={b.id + "-" + i}
