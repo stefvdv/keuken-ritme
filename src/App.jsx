@@ -3146,6 +3146,15 @@ function App() {
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
   const saveMepExtra = (b, extra) => saveKoppelingSleutel("mepx|id|" + b.id, extra ? [extra] : []);
   const saveBkExtra = (b, extra) => saveKoppelingSleutel("bkx|id|" + b.id, extra ? [extra] : []);
+  // Culinaire invulling per pártij (laag "inv|id|…"): bewerken op een kaart
+  // raakt alleen die partij. Een lege set onderdelen maskeert bewust een
+  // eventueel nog bestaande oude globale invulling van dat product.
+  const saveInvullingPartij = (b, miceId, inv) => {
+    const laag = (leesLaag(koppeling, boekingSleutel, b, "inv|") || []).filter((x) => String(x.miceId) !== String(miceId));
+    laag.push({ miceId, onderdelen: inv ? inv.onderdelen : [], naam: inv ? inv.naam : "" });
+    return saveKoppelingSleutel("inv|id|" + b.id, laag);
+  };
+  const wisInvullingPartij = (b) => saveKoppelingSleutel("inv|id|" + b.id, []);
   // Verwijderen = verbergen met een terugzetlaag; de sync haalt MICE-partijen
   // anders gewoon opnieuw binnen.
   const verwijderBoeking = (b) => saveKoppelingSleutel("del|" + b.id, [{ naam: b.naam || "Zonder naam", datum: b.datum, t: new Date().toISOString() }]);
@@ -5019,7 +5028,7 @@ function App() {
             {section === "mep" && (
               <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
-                prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling}
+                prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -5037,6 +5046,7 @@ function App() {
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
+                onInvulPartij={saveInvullingPartij} onWisInv={wisInvullingPartij}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -9856,7 +9866,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling }) {
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -9972,6 +9982,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     if (onInvulling) {
       for (const mid of Object.keys(inv)) {
         const onderdelen = inv[mid].map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "" })).filter((o) => o.naam || o.recipeId);
+        // Alleen schrijven wat echt gewijzigd is: onaangeraakte producten
+        // behouden hun bestaande (partij- of globale) invulling.
+        const was = onderdelenVan(mid) || [];
+        const norm = (l) => JSON.stringify(l.map((o) => [String(o.hoeveelheid || ""), String(o.naam || ""), o.recipeId || null, o.productId || null]));
+        if (norm(onderdelen) === norm(was)) continue;
         onInvulling(mid, onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null);
       }
     }
@@ -10110,6 +10125,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
                       : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>}
                     {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
+                    {vorigeInvulling && vorigeInvulling(k.miceId) && (
+                      <button onClick={() => { const vd = vorigeInvulling(k.miceId); if (vd) setInv((m) => ({ ...m, [mid]: vd.map((o) => ({ ...o })) })); }}
+                        className="ff mute hover:opacity-60 shrink-0" title="Invulling van de vorige keer overnemen"><RotateCcw size={15} /></button>
+                    )}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
                   </div>
                   {(inv[mid] || []).map((o, j) => {
@@ -10227,7 +10246,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onOpenRecipe }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe }) {
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
@@ -10303,7 +10322,24 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const partijen = (boekingen || [])
     .filter((b) => dagen.includes(b.datum) && String(statusVan(b)) !== "cancelled" && !isAanvraagStatus(statusVan(b)) && !isVerwijderd(koppeling, b))
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
-  const mepVan = (b) => gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppeling, producten, calcItems, dishById, recipeById));
+  // Partij-eigen invullaag gaat vóór de (oude) globale productinvulling.
+  const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
+  const invVoor = (b, miceId) => { const e = invLaag(b).find((x) => String(x.miceId) === String(miceId)); if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return prodKoppeling[miceId] || null; };
+  const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
+  const mepVan = (b) => gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
+  // Invulling van de laatste eerdere partij met hetzelfde product, om over
+  // te nemen met het herhaalknopje in de bewerkstand.
+  const vorigeInvulling = (b, miceId) => {
+    const eerder = (boekingen || [])
+      .filter((x) => x.id !== b.id && String(x.datum) <= String(b.datum))
+      .sort((a, c) => String(c.datum).localeCompare(String(a.datum)));
+    for (const x of eerder) {
+      const e = (leesLaag(koppeling, boekingSleutel, x, "inv|") || []).find((y) => String(y.miceId) === String(miceId));
+      if (e && (e.onderdelen || []).length) return e.onderdelen.map((o) => ({ ...o }));
+    }
+    return null;
+  };
+
   const perBereiding = {};
   for (const b of partijen) {
     if (!somSet.includes(b.datum)) continue;
@@ -10485,8 +10521,9 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     aangepast={leesLaag(koppeling, boekingSleutel, b, "mep|") !== undefined || leesLaag(koppeling, boekingSleutel, b, "mepx|") !== undefined}
                     nootOpenStandaard={false}
                     invulStatus={null} onInvullen={null} recepten={recepten}
-                    invullingVan={(miceId) => prodKoppeling[miceId] || null}
-                    onInvulling={(miceId, inv) => onProdKoppel(miceId, inv)}
+                    invullingVan={(miceId) => invVoor(b, miceId)}
+                    onInvulling={(miceId, inv) => onInvulPartij(b, miceId, inv)}
+                    vorigeInvulling={(miceId) => vorigeInvulling(b, miceId)}
                     onOpslaan={(regels, velden) => {
                       onKoppel(b, regels);
                       if (velden) {
@@ -10642,7 +10679,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onWisInv }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
@@ -10666,7 +10703,23 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
     return hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
   };
-  const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppeling, producten, calcItems, dishById, recipeById)));
+  const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
+  const invVoor = (b, miceId) => { const e = invLaag(b).find((x) => String(x.miceId) === String(miceId)); if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return prodKoppeling[miceId] || null; };
+  const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
+  const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
+  // Invulling van de laatste eerdere partij met hetzelfde product, om over
+  // te nemen met het herhaalknopje in de bewerkstand.
+  const vorigeInvulling = (b, miceId) => {
+    const eerder = (boekingen || [])
+      .filter((x) => x.id !== b.id && String(x.datum) <= String(b.datum))
+      .sort((a, c) => String(c.datum).localeCompare(String(a.datum)));
+    for (const x of eerder) {
+      const e = (leesLaag(koppeling, boekingSleutel, x, "inv|") || []).find((y) => String(y.miceId) === String(miceId));
+      if (e && (e.onderdelen || []).length) return e.onderdelen.map((o) => ({ ...o }));
+    }
+    return null;
+  };
+
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const tijd = (iso) => (iso ? String(iso).slice(11, 16) : "");
@@ -10851,8 +10904,9 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               nootOpenStandaard={true}
               invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true} toonPrijs={true} toonOverige={true}
               autoBewerk={nieuwBewerk && nieuwBewerk.id === detailBoeking.id}
-              invullingVan={(miceId) => prodKoppeling[miceId] || null}
-              onInvulling={canEdit ? (miceId, inv) => onProdKoppel(miceId, inv) : null}
+              invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
+              onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null}
+              vorigeInvulling={(miceId) => vorigeInvulling(detailBoeking, miceId)}
               onInvullen={null}
               onOpslaan={(regels, velden) => {
                 onKoppel(detailBoeking, regels);
@@ -10864,7 +10918,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   onBkExtra(detailBoeking, leeg ? null : velden);
                 }
               }}
-              onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
+              onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); onWisInv(detailBoeking); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
