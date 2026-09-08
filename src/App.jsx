@@ -3029,17 +3029,34 @@ function App() {
     setKoppeling((k) => ({ ...k, [sleutel]: producten }));
     if (live) await supabase.from("mice_koppeling").upsert({ sleutel, producten, updated_by: user || "", updated_at: new Date().toISOString() });
   };
-  const saveKoppeling = (naam, producten) => saveKoppelingSleutel(boekingSleutel(naam), producten);
+  const saveKoppeling = (b, producten) => saveKoppelingSleutel("id|" + b.id, producten);
+  // Eigen boeking (niet uit MICE): negatief id zodat het nooit botst met MICE.
+  const [nieuwBoekingOpen, setNieuwBoekingOpen] = useState(false);
+  const [nieuwBoekingDatum, setNieuwBoekingDatum] = useState(() => localDate());
+  const [nieuwBewerk, setNieuwBewerk] = useState(null); // { id } → kaart opent in bewerkstand
+  const maakEigenBoeking = async (datum) => {
+    if (!datum) return;
+    const rij = {
+      id: -Date.now(), naam: "Nieuwe boeking", datum,
+      start_tijd: datum + "T12:00:00", eind_tijd: "", gasten: 0, status: "confirmed",
+      zaal: "", bericht: "", regels: [], dieet: "", tel: "", contact: "", log: [],
+      opgehaald_op: new Date().toISOString(),
+    };
+    if (live) { try { await supabase.from("mice_events").upsert([rij]); } catch (e) {} }
+    setBoekingen((xs) => [...xs, rij].sort((a, b2) => String(a.datum).localeCompare(String(b2.datum))));
+    setNieuwBoekingOpen(false);
+    setNieuwBewerk({ id: rij.id, datum });
+  };
   // Aanpassingen op de mise-en-place staan los van de boeking zelf: eigen
   // sleutel met voorvoegsel, zodat de boekingpagina blijft tonen wat besteld is.
-  const saveMepKoppeling = (naam, producten) => saveKoppelingSleutel("mep|" + boekingSleutel(naam), producten);
+  const saveMepKoppeling = (b, producten) => saveKoppelingSleutel("mep|id|" + b.id, producten);
   // Overige mep-velden (gasten, tijd, allergie, notitie) als één object in een
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
-  const saveMepExtra = (naam, extra) => saveKoppelingSleutel("mepx|" + boekingSleutel(naam), extra ? [extra] : []);
-  const saveBkExtra = (naam, extra) => saveKoppelingSleutel("bkx|" + boekingSleutel(naam), extra ? [extra] : []);
-  const wisMepKoppeling = async (naam) => {
-    for (const voor of ["mep|", "mepx|"]) {
-      const sleutel = voor + boekingSleutel(naam);
+  const saveMepExtra = (b, extra) => saveKoppelingSleutel("mepx|id|" + b.id, extra ? [extra] : []);
+  const saveBkExtra = (b, extra) => saveKoppelingSleutel("bkx|id|" + b.id, extra ? [extra] : []);
+  const wisMepKoppeling = async (b) => {
+    for (const voor of ["mep|id|", "mepx|id|"]) {
+      const sleutel = voor + b.id;
       setKoppeling((k) => { const n = { ...k }; delete n[sleutel]; return n; });
       if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
     }
@@ -4774,6 +4791,7 @@ function App() {
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
   const fabAction = () => {
+    if (section === "boekingen") { setNieuwBoekingDatum(localDate()); setNieuwBoekingOpen(true); return; }
     if (section === "gerechten") push({ screen: "dishForm", editing: null });
     else if (section === "recepten") push({ screen: "recipeForm", editing: null });
     else if (section === "fermentatie") push({ screen: "batchForm", prefill: null });
@@ -4892,7 +4910,7 @@ function App() {
               <BoekingenList boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling}
-                canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra}
+                canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -4969,9 +4987,21 @@ function App() {
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
       </main>
 
+      {nieuwBoekingOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={() => setNieuwBoekingOpen(false)}>
+          <div className="w-full max-w-xs rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
+            <div className="serif ink font-bold text-lg leading-tight mb-2">Nieuwe boeking</div>
+            <Field label="Op welke dag?"><input type="date" className="input px-3 py-2 text-sm w-full" value={nieuwBoekingDatum} onChange={(e) => setNieuwBoekingDatum(e.target.value)} /></Field>
+            <div className="flex justify-end gap-2 mt-3">
+              <button onClick={() => setNieuwBoekingOpen(false)} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Annuleren</button>
+              <button onClick={() => maakEigenBoeking(nieuwBoekingDatum)} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Aanmaken</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showFab && (
         <button onClick={fabAction} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
-          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : "Batch"}
+          <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : section === "boekingen" ? "Boeking" : "Batch"}
         </button>
       )}
       {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"} />}
@@ -7050,9 +7080,9 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen }) {
   const per = {}; for (const x of SECTIONS) per[x.id] = x;
   const items = [
     { id: "__home", label: "Home", icon: <Home size={22} />, doe: onHome },
-    { id: "mep", label: "Mise en place", icon: <BookOpen size={22} />, doe: onMep },
+    { id: "mep", label: "Mise en place", icon: <ClipboardList size={22} />, doe: onMep },
     per.gerechten, per.recepten, per.fermentatie, per.smaak,
-    { ...per.technieken, icon: <ClipboardList size={22} /> },
+    per.technieken,
     per.schoonmaak, per.voorraad,
     ...(chef ? [
       { id: "boekingen", label: "Boekingen", icon: <CalendarDays size={22} /> },
@@ -8859,6 +8889,14 @@ const statusNL = (st) => {
 };
 // Allergie-informatie van een boeking: het losse dieetwensen-veld gaat voor;
 // is dat leeg, dan herkennen we allergiezinnen in de notities (bericht).
+// Kaartlagen (invulling, mep-aanpassing, extra velden) horen bij één partij:
+// nieuwe sleutels op boekings-id, met terugval op de oude naamsleutel zodat
+// bestaand werk blijft staan.
+const leesLaag = (koppeling, boekingSleutel, b, voor) => {
+  const idW = koppeling[(voor || "") + "id|" + b.id];
+  if (idW !== undefined) return idW;
+  return koppeling[(voor || "") + boekingSleutel(b.naam)];
+};
 const allergieVanBoeking = (b) => {
   const uitVeld = String((b && b.dieet) || "").trim();
   if (uitVeld) return uitVeld.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean);
@@ -8866,6 +8904,11 @@ const allergieVanBoeking = (b) => {
 };
 // Randkleur per status: blauw in optie, groen bevestigd, oranje verlopen,
 // rood geannuleerd. Onbekende statussen kleuren blauw (optie-achtig).
+// Categorieën die niet in de keuken thuishoren (dranken, servies, huur…):
+// op de mise-en-place worden die regels verborgen. Werkt op de categorie uit
+// de MICE-productexport.
+const KEUKEN_UIT = new Set(["dranken", "servies en bestek", "personeelsdiensten", "locatiehuur", "workshops", "bloemen en cadeaus"]);
+const isKeukenRegel = (k, catVan) => !KEUKEN_UIT.has(String((catVan && catVan[k.miceId]) || "").toLowerCase().trim());
 const statusRand = (st) => {
   const s = String(st || "");
   if (s === "confirmed" || s === "completed") return "#5a7d46";
@@ -9649,8 +9692,11 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk }) {
   const [bewerk, setBewerk] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
+  }, []);
   const [regels, setRegels] = useState([]);
   const [inv, setInv] = useState({}); // invulling-onderdelen per miceId (bewerkstand)
   const [velden, setVelden] = useState({ gasten: "", tijd: "", allergie: "", notitie: "" });
@@ -9671,7 +9717,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 
   const keuzesS = sorteerEetmoment(keuzes || [], catVan);
   const bezorging = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
-  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || "")));
+  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => !alleenKeuken || isKeukenRegel(k, catVan));
   const onderdelenVan = (miceId) => {
     const v = miceId && invullingVan ? invullingVan(miceId) : null;
     if (!v) return null;
@@ -9744,18 +9790,42 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   };
 
   return (
-    <div className="card p-3" style={{ border: "3px solid " + randKleur }}>
+    <div id={"partij-" + b.id} className="card p-3" style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
       <div className="flex items-center gap-2">
         <span className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
+        {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
         {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
         <span className="text-[14px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
-        <button onClick={printPartij} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Deze partij printen"><Printer size={17} /></button>
-        {canEdit && !bewerk && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
+        {!bewerk && (
+          <>
+            <button onClick={() => setInfoOpen(true)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
+            <button onClick={printPartij} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Deze partij printen"><Printer size={17} /></button>
+            {canEdit && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
+          </>
+        )}
+        {bewerk && (
+          <>
+            <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Annuleren"><X size={18} /></button>
+            <button onClick={opslaan} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #4f7a3a", color: "#4f7a3a" }} title="Opslaan"><Check size={18} /></button>
+          </>
+        )}
       </div>
-      {(tel || zaal) && (
-        <div className="text-[13.5px] mt-0.5">
-          {zaal ? <span className="font-bold ink">{zaal}</span> : null}{zaal && tel ? <span className="mute"> · </span> : null}
-          {tel ? <a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline mute">{(contact ? contact + " · " : "") + tel}</a> : null}
+      {infoOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={() => setInfoOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
+            <div className="serif ink font-bold text-lg leading-tight mb-2">{b.naam || "Zonder naam"}</div>
+            <div className="space-y-1.5 text-[14px]">
+              <div><span className="mute">Datum · tijd: </span><span className="ink">{datumKop} · {tijdTekst || "—"}</span></div>
+              <div><span className="mute">Gasten: </span><span className="ink">{gastenTekst}{bezorging ? " · bezorging" : ""}</span></div>
+              {statusTekst && <div><span className="mute">Status: </span><span style={{ color: "#a05a00" }}>{statusTekst}</span></div>}
+              {zaal && <div><span className="mute">Locatie: </span><span className="ink font-semibold">{zaal}</span></div>}
+              {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
+              {tel && <div><span className="mute">Telefoon: </span><a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline ink">{tel}</a></div>}
+            </div>
+            <div className="flex justify-end mt-3">
+              <button onClick={() => setInfoOpen(false)} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Sluiten</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -9768,7 +9838,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
                 return (
                   <div key={i}>
-                    <div className="font-semibold ink">
+                    <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
                       <MarkTekst tekst={kop} basis={"p:" + b.id + ":" + (k.miceId || k.productId || k.naam)} stift={stift} markering={markering} zetMark={zetMark} />
                     </div>
                     {od && od.map((o, j) => (
@@ -9784,8 +9854,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               })}
             </div>
           )}
-          {!toonKeuzes.length && <div className="text-[13px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vereist nog culinaire invulling.</div>}
-          {toonKeuzes.length > 0 && !mepRegels.length && <div className="text-[13px] mt-1" style={{ color: "#8a2f28" }}>Vereist nog culinaire invulling.</div>}
           {allergie.length > 0 && (
             <div className="mt-1.5 text-[14.5px] font-bold" style={{ color: "#b3261e" }}>
               {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
@@ -9827,7 +9895,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     <input className="input px-2 py-1.5 text-sm" style={{ width: "4.2rem", flex: "0 0 4.2rem" }} inputMode="numeric" data-pa={b.id + "-" + i}
                       value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); } }} />
-                    <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>
+                    {magProductNaam
+                      ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
+                      : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
                   </div>
                   {(inv[mid] || []).map((o, j) => {
@@ -9906,12 +9976,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               </div>
             </>
           )}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {aangepast && onHerstel && <button onClick={() => { onHerstel(); setBewerk(false); }} className="ff text-[12px] mute underline">terug naar boeking</button>}
-            <span className="flex-1" />
-            <button onClick={() => setBewerk(false)} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Annuleren</button>
-            <button onClick={opslaan} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Opslaan</button>
-          </div>
+          {aangepast && onHerstel && (
+            <div className="pt-1">
+              <button onClick={() => { onHerstel(); setBewerk(false); }} className="ff text-[12px] mute underline">terug naar boeking</button>
+            </div>
+          )}
           {kies && (
             <ProductKiezer boeking={b} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
               onSluit={() => setKies(false)}
@@ -9928,7 +9997,18 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
   const [somDagen, setSomDagen] = useState(7); // standaard een hele week
-  const [somOpen, setSomOpen] = useState(true);
+  const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
+  const [klaarOpen, setKlaarOpen] = useState(false);
+  const [somRij, setSomRij] = useState(null); // uitgeklapte bereiding met partijnamen
+  const [somAf, setSomAf] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ritme_som_af") || "{}"); } catch (e) { return {}; }
+  });
+  const toggleAf = (sleutel) => setSomAf((m) => {
+    const n = { ...m };
+    if (n[sleutel]) delete n[sleutel]; else n[sleutel] = true;
+    try { localStorage.setItem("ritme_som_af", JSON.stringify(n)); } catch (e) {}
+    return n;
+  });
   const [stift, setStift] = useState(null);
   const [melding, setMelding] = useState("");
   const meldTijd = React.useRef(0);
@@ -9960,18 +10040,16 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
   // Volgorde: mep-aanpassing > handmatige invulling > MICE-bestelling.
   const gekozen = (b) => {
-    const sl = boekingSleutel(b.naam);
-    const over = koppeling["mep|" + sl];
+    const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
     if (over !== undefined) return over;
-    const hand = koppeling[sl] || [];
+    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
     if (hand.length) return hand;
     return neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b);
   };
   // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
   const extraVan = (b) => {
-    const sl = boekingSleutel(b.naam);
-    const bk = (koppeling["bkx|" + sl] || [])[0] || {};
-    const mp = (koppeling["mepx|" + sl] || [])[0] || {};
+    const bk = (leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0] || {};
+    const mp = (leesLaag(koppeling, boekingSleutel, b, "mepx|") || [])[0] || {};
     const uit = { ...bk };
     for (const k of Object.keys(mp)) if (String(mp[k] == null ? "" : mp[k]).trim() !== "") uit[k] = mp[k];
     return Object.keys(uit).length ? uit : null;
@@ -9989,13 +10067,21 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     if (!somSet.includes(b.datum)) continue;
     for (const m of mepVan(b)) {
       const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + normNaam(m.naam);
-      if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, boekingen: new Set() };
-      perBereiding[sleutel].perDag[b.datum] = (perBereiding[sleutel].perDag[b.datum] || 0) + m.porties;
-      perBereiding[sleutel].totaal += m.porties;
-      perBereiding[sleutel].boekingen.add(b.id);
+      if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, gezien: new Set(), partijen: [] };
+      const r = perBereiding[sleutel];
+      r.perDag[b.datum] = (r.perDag[b.datum] || 0) + m.porties;
+      r.totaal += m.porties;
+      if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); }
     }
   }
-  const overlap = Object.values(perBereiding).filter((r) => r.boekingen.size > 1).sort((a, b) => b.totaal - a.totaal);
+  const overlap = Object.values(perBereiding).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
+  const overlapActief = overlap.filter((r) => !somAf[r.sleutel]);
+  const overlapKlaar = overlap.filter((r) => somAf[r.sleutel]);
+  // Naar de kaart van een partij springen: dag openklappen en scrollen.
+  const springNaar = (p) => {
+    setDagDicht((o) => ({ ...o, [p.datum]: false }));
+    setTimeout(() => { const el = document.getElementById("partij-" + p.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 90);
+  };
 
   const dagKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()]; };
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
@@ -10033,7 +10119,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       + ".m{display:flex;justify-content:space-between;max-width:90mm;border-bottom:1px solid #eee}.m b{color:#44502f}"
       + ".al{color:#b3261e;margin-top:1mm;font-weight:700}"
       + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
-      + (overlap.length ? "<table><thead><tr><th>Samen maken (" + somSet.length + " dagen)</th>" + somSet.map((d) => "<th class='n'>" + pEsc(kolKop(d)) + "</th>").join("") + "<th class='n'>Totaal</th></tr></thead><tbody>" + overlap.map(rij).join("") + "</tbody></table>" : "")
+      + (overlap.length ? "<table><thead><tr><th>Samen maken (" + somSet.length + " dagen)</th>" + somSet.map((d) => "<th class='n'>" + pEsc(kolKop(d)) + "</th>").join("") + "<th class='n'>Totaal</th></tr></thead><tbody>" + overlapActief.map(rij).join("") + "</tbody></table>" : "")
       + dagen.map(dagBlok).join("") + "</body></html>");
   };
 
@@ -10061,7 +10147,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
       {!partijen.length && <Empty label="Geen partijen in deze week." />}
 
-      {overlap.length > 0 && (
+      {(overlap.length > 0) && (
         <div className="card p-3 mb-4">
           <button onClick={() => setSomOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
@@ -10076,19 +10162,62 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
               </tr>
             </thead>
             <tbody>
-              {overlap.map((r) => (
-                <tr key={r.sleutel} style={{ borderTop: "1px solid " + T.line }}>
-                  <td className="py-2 pr-2 ink">
-                    <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} />
-                    {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[12px]">open</button>}
-                    <span className="mute text-[12px]"> · {r.boekingen.size} partijen</span>
-                  </td>
-                  {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
-                  <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
-                </tr>
+              {overlapActief.map((r) => (
+                <React.Fragment key={r.sleutel}>
+                  <tr style={{ borderTop: "1px solid " + T.line }}>
+                    <td className="py-2 pr-2 ink">
+                      <input type="checkbox" checked={false} onChange={() => toggleAf(r.sleutel)} className="mr-2 align-middle" style={{ width: 16, height: 16 }} />
+                      <span onClick={() => !stift && setSomRij(somRij === r.sleutel ? null : r.sleutel)} style={{ cursor: stift ? undefined : "pointer" }}>
+                        <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} />
+                      </span>
+                      {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[12px]">open</button>}
+                      <span className="mute text-[12px]"> · {r.partijen.length} partijen</span>
+                    </td>
+                    {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                    <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
+                  </tr>
+                  {somRij === r.sleutel && (
+                    <tr>
+                      <td colSpan={somSet.length + 2} className="pb-2">
+                        <div className="flex flex-wrap gap-1.5 pl-6">
+                          {r.partijen.map((p) => (
+                            <button key={p.id} onClick={() => springNaar(p)} className="ff rounded-lg px-2 py-1 text-[12px]" style={{ background: "#f2f0e6", border: "1px solid " + T.line }}>
+                              {p.naam} <span className="mute">· {kolKop(p.datum)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>}
+          {overlapKlaar.length > 0 && (
+            <div className="mt-2 pt-2" style={{ borderTop: "1px solid " + T.line }}>
+              <button onClick={() => setKlaarOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-widest mute">
+                {klaarOpen ? <ChevronUp size={13} className="shrink-0" /> : <ChevronDown size={13} className="shrink-0" />}
+                Afgevinkt ({overlapKlaar.length})
+              </button>
+              {klaarOpen && (
+                <table className="w-full text-[13.5px] mt-1" style={{ borderCollapse: "collapse" }}>
+                  <tbody>
+                    {overlapKlaar.map((r) => (
+                      <tr key={r.sleutel} style={{ borderTop: "1px solid " + T.line, opacity: 0.65 }}>
+                        <td className="py-2 pr-2 ink">
+                          <input type="checkbox" checked={true} onChange={() => toggleAf(r.sleutel)} className="mr-2 align-middle" style={{ width: 16, height: 16 }} />
+                          <span style={{ textDecoration: "line-through" }}>{r.naam}</span>
+                          <span className="mute text-[12px]"> · {r.partijen.length} partijen</span>
+                        </td>
+                        {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                        <td className="text-right py-2 pl-2 font-bold mute" style={{ borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -10110,22 +10239,22 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     allergie={allergieEff(b)} noot={nootEff(b)} tijdTekst={tijdVan(b)} gastenTekst={gastenVan(b)}
                     catVan={catVan} stift={stift} markering={markering} zetMark={zetMark}
                     canEdit={true} magExtra={true} extra={extraVan(b)}
-                    aangepast={koppeling["mep|" + sl] !== undefined || koppeling["mepx|" + sl] !== undefined}
+                    aangepast={leesLaag(koppeling, boekingSleutel, b, "mep|") !== undefined || leesLaag(koppeling, boekingSleutel, b, "mepx|") !== undefined}
                     nootOpenStandaard={false}
                     invulStatus={null} onInvullen={null} recepten={recepten}
                     invullingVan={(miceId) => prodKoppeling[miceId] || null}
                     onInvulling={(miceId, inv) => onProdKoppel(miceId, inv)}
                     onOpslaan={(regels, velden) => {
-                      onKoppel(b.naam, regels);
+                      onKoppel(b, regels);
                       if (velden) {
                         const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
                           && !((velden.recepten || []).length)
                           && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === (b.start_tijd ? String(b.start_tijd).slice(11, 16) : "");
-                        onMepExtra(b.naam, leeg ? null : velden);
+                        onMepExtra(b, leeg ? null : velden);
                       }
                     }}
-                    onHerstel={() => onWisMep(b.naam)}
-                    onOpenRecipe={onOpenRecipe} log={b.log}
+                    onHerstel={() => onWisMep(b)}
+                    onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true}
                     randKleur={statusRand(b.status)} statusTekst={statusNL(b.status)}
                     tel={b.tel} contact={b.contact} zaal={b.zaal}
                     miceProducten={miceProducten} producten={producten} />
@@ -10269,7 +10398,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk }) {
   const vandaag = localDate();
   const tot = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return localDate(d); })(); // sync loopt twee maanden vooruit
   const [alleen, setAlleen] = useState(false); // standaard ook opties tonen (die gaan vaak door)
@@ -10280,6 +10409,14 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const isWeekDicht = (w) => (weekDicht[w] != null ? weekDicht[w] : w > maandagVan(vandaag)); // eerste week open, rest dicht
   const somDagen = 7; // optelsom kijkt altijd een week vooruit
   const [somOpen, setSomOpen] = useState(true);
+  const [somRij, setSomRij] = useState(null); // uitgeklapt product met partijnamen
+  // Nieuwe boeking: week en dag openen en ernaartoe scrollen.
+  useEffect(() => {
+    if (!nieuwBewerk) return;
+    setWeekDicht((o) => ({ ...o, [maandagVan(nieuwBewerk.datum)]: false }));
+    setDagDicht((o) => ({ ...o, [nieuwBewerk.datum]: false }));
+    setTimeout(() => { const el = document.getElementById("partij-" + nieuwBewerk.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 150);
+  }, [nieuwBewerk]);
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
@@ -10304,14 +10441,14 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   // Volgorde: handmatige invulling > MICE-bestelling. (Mep-eigen aanpassingen
   // tellen hier bewust niet mee.)
   const gekozen = (b) => {
-    const hand = koppeling[boekingSleutel(b.naam)] || [];
+    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
     return hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
   };
   const mepVan = (b) => mepTellen(gekozen(b).flatMap((k) => mepVoorKeuze(k, b, prodKoppeling, producten, calcItems, dishById, recipeById)));
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const tijd = (iso) => (iso ? String(iso).slice(11, 16) : "");
-  const bkxVan = (b) => ((koppeling["bkx|" + boekingSleutel(b.naam)] || [])[0]) || null;
+  const bkxVan = (b) => ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null;
   const tijdVan = (b) => { const e = bkxVan(b); return (e && e.tijd) || tijd(b.start_tijd); };
   const gastenVan = (b) => { const e = bkxVan(b); const g = e && e.gasten !== "" && e.gasten != null ? Number(e.gasten) : null; return g != null && isFinite(g) ? g : (b.gasten || 0); };
   const allergieEff = (b) => { const e = bkxVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
@@ -10328,14 +10465,20 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     for (const k of gekozen(b)) {
       if (/bezorg/i.test(String(k.naam || ""))) continue;
       const sleutel = k.miceId ? "m:" + k.miceId : "x:" + normNaam(k.naam);
-      if (!perProduct[sleutel]) perProduct[sleutel] = { sleutel, naam: k.naam, perDag: {}, totaal: 0, boekingen: new Set() };
+      if (!perProduct[sleutel]) perProduct[sleutel] = { sleutel, naam: k.naam, perDag: {}, totaal: 0, gezien: new Set(), partijen: [] };
+      const r = perProduct[sleutel];
       const n = k.aantal || b.gasten || 0;
-      perProduct[sleutel].perDag[b.datum] = (perProduct[sleutel].perDag[b.datum] || 0) + n;
-      perProduct[sleutel].totaal += n;
-      perProduct[sleutel].boekingen.add(b.id);
+      r.perDag[b.datum] = (r.perDag[b.datum] || 0) + n;
+      r.totaal += n;
+      if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); }
     }
   }
-  const prodOverlap = Object.values(perProduct).filter((r) => r.boekingen.size > 1).sort((a, b) => b.totaal - a.totaal);
+  const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
+  const springNaar = (p) => {
+    setWeekDicht((o) => ({ ...o, [maandagVan(p.datum)]: false }));
+    setDagDicht((o) => ({ ...o, [p.datum]: false }));
+    setTimeout(() => { const el = document.getElementById("partij-" + p.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 110);
+  };
 
   return (
     <div>
@@ -10357,11 +10500,29 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
             </thead>
             <tbody>
               {prodOverlap.map((r) => (
-                <tr key={r.sleutel} style={{ borderTop: "1px solid " + T.line }}>
-                  <td className="py-2 pr-2 ink">{r.naam}<span className="mute text-[12px]"> · {r.boekingen.size} partijen</span></td>
-                  {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
-                  <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
-                </tr>
+                <React.Fragment key={r.sleutel}>
+                  <tr style={{ borderTop: "1px solid " + T.line }}>
+                    <td className="py-2 pr-2 ink">
+                      <span onClick={() => setSomRij(somRij === r.sleutel ? null : r.sleutel)} style={{ cursor: "pointer" }}>{r.naam}</span>
+                      <span className="mute text-[12px]"> · {r.partijen.length} partijen</span>
+                    </td>
+                    {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                    <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}</td>
+                  </tr>
+                  {somRij === r.sleutel && (
+                    <tr>
+                      <td colSpan={somSet.length + 2} className="pb-2">
+                        <div className="flex flex-wrap gap-1.5 pl-1">
+                          {r.partijen.map((p) => (
+                            <button key={p.id} onClick={() => springNaar(p)} className="ff rounded-lg px-2 py-1 text-[12px]" style={{ background: "#f2f0e6", border: "1px solid " + T.line }}>
+                              {p.naam} <span className="mute">· {kolKop(p.datum)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>}
@@ -10390,22 +10551,23 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 tijdTekst={tijdVan(b)} gastenTekst={gastenVan(b)}
                 catVan={catVan} stift={null} markering={GEEN_MARKERING} zetMark={() => {}}
                 canEdit={canEdit} magExtra={true} extra={bkxVan(b)}
-                aangepast={((koppeling[boekingSleutel(b.naam)] || []).length > 0 && (b.regels || []).length > 0) || !!bkxVan(b)}
+                aangepast={((leesLaag(koppeling, boekingSleutel, b, "") || []).length > 0 && (b.regels || []).length > 0) || !!bkxVan(b)}
                 nootOpenStandaard={true}
-                invulStatus={null} magInvullen={canEdit} recepten={recepten}
+                invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true}
+                autoBewerk={nieuwBewerk && nieuwBewerk.id === b.id}
                 invullingVan={(miceId) => prodKoppeling[miceId] || null}
                 onInvulling={canEdit ? (miceId, inv) => onProdKoppel(miceId, inv) : null}
                 onInvullen={null}
                 onOpslaan={(regels, velden) => {
-                  onKoppel(b.naam, regels);
+                  onKoppel(b, regels);
                   if (velden) {
                     const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
                       && !((velden.recepten || []).length)
                       && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === tijd(b.start_tijd);
-                    onBkExtra(b.naam, leeg ? null : velden);
+                    onBkExtra(b, leeg ? null : velden);
                   }
                 }}
-                onHerstel={() => { onKoppel(b.naam, []); onBkExtra(b.naam, null); }}
+                onHerstel={() => { onKoppel(b, []); onBkExtra(b, null); }}
                 onOpenRecipe={onOpenRecipe} log={b.log}
                 randKleur={statusRand(b.status)} statusTekst={statusNL(b.status)}
                 tel={b.tel} contact={b.contact} zaal={b.zaal}
