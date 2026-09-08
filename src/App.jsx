@@ -10345,7 +10345,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       .sort((a, c) => String(c.datum).localeCompare(String(a.datum)));
     for (const x of eerder) {
       const e = (leesLaag(koppeling, boekingSleutel, x, "inv|") || []).find((y) => String(y.miceId) === String(miceId));
-      if (e && (e.onderdelen || []).length) return e.onderdelen.map((o) => ({ ...o }));
+      if (e && (e.onderdelen || []).length) return e.onderdelen.map((o) => ({ ...o, hoeveelheid: "" }));
     }
     return null;
   };
@@ -10412,33 +10412,12 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       + dagen.map(dagBlok).join("") + "</body></html>");
   };
 
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div>
-          <div className="serif ink text-xl leading-tight">Mise en place</div>
-          <div className="text-[12.5px] mute">{weekLabel}</div>
-        </div>
-        <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
-      </div>
-
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
-        <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Deze week</button>
-        <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={14} /></button>
-        <span className="flex-1" />
-        <span className="text-[11.5px] mute">Optelsom</span>
-        {[2, 3, 4, 7].map((n) => (
-          <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
-            style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n} dagen</button>
-        ))}
-      </div>
-
-      {!partijen.length && <Empty label="Geen partijen in deze week." />}
-
-      {partijen.length > 0 && (
+  // De optelsomtabel staat direct boven de eerste dag vanaf vandaag met partijen.
+  const somAnker = dagen.find((d) => d >= vandaag && partijen.some((b) => b.datum === d)) || null;
+  const somKaart = partijen.length > 0 && somSet.length > 0 ? (
         <div className="card p-3 mb-4">
-          <button onClick={() => setSomOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
+          <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
+            style={{ margin: -12, marginBottom: somOpen ? 6 : -12, padding: 12, width: "calc(100% + 24px)" }}>
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
             Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}
           </button>
@@ -10509,13 +10488,41 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
             </div>
           )}
         </div>
-      )}
+      ) : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div>
+          <div className="serif ink text-xl leading-tight">Mise en place</div>
+          <div className="text-[12.5px] mute">{weekLabel}</div>
+        </div>
+        <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
+        <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Deze week</button>
+        <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={14} /></button>
+        <span className="flex-1" />
+        <span className="text-[11.5px] mute">Optelsom</span>
+        {[2, 3, 4, 7].map((n) => (
+          <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
+            style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n} dagen</button>
+        ))}
+      </div>
+
+      {!partijen.length && <Empty label="Geen partijen in deze week." />}
+
+      {somAnker == null && somKaart}
 
       {dagen.map((d) => {
         const items = partijen.filter((b) => b.datum === d);
         if (!items.length) return null;
         return (
-          <div key={d} className="mb-4">
+          <React.Fragment key={d}>
+            {d === somAnker && somKaart}
+            <div className="mb-4">
             <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
               <span className="serif ink font-bold text-xl leading-tight">{dagKop(d)}</span>
@@ -10551,7 +10558,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                 );
               })}
             </div>}
-          </div>
+            </div>
+          </React.Fragment>
         );
       })}
 
@@ -10726,7 +10734,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
       .sort((a, c) => String(c.datum).localeCompare(String(a.datum)));
     for (const x of eerder) {
       const e = (leesLaag(koppeling, boekingSleutel, x, "inv|") || []).find((y) => String(y.miceId) === String(miceId));
-      if (e && (e.onderdelen || []).length) return e.onderdelen.map((o) => ({ ...o }));
+      if (e && (e.onderdelen || []).length) return e.onderdelen.map((o) => ({ ...o, hoeveelheid: "" }));
     }
     return null;
   };
@@ -10799,7 +10807,8 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
 
       {prodOverlap.length > 0 && (
         <div className="card p-3 mb-4">
-          <button onClick={() => setSomOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
+          <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
+            style={{ margin: -12, marginBottom: somOpen ? 6 : -12, padding: 12, width: "calc(100% + 24px)" }}>
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
             Samen in meerdere partijen — komende 7 dagen
           </button>
