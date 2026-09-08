@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -4786,15 +4786,15 @@ function App() {
   const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: T.paper, color: "#33352c" }}>
+    <div className="min-h-screen flex" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"} />
+      <ZijBalk chef={chefMode} section={current.screen === "list" ? section : null}
+        onKies={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }}
+        onHome={goHome}
+        onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }}
+        onInstellingen={() => push({ screen: "settings" })} />
 
-      <main className="flex-1 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28">
-        {!FORM_SCREENS.has(current.screen) && (
-          <SectionNav chef={chefMode} section={current.screen === "list" ? section : null}
-            setSection={(s) => { setSection(s); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }} />
-        )}
+      <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
         {current.screen === "list" && (
           <div {...swipe}>
             {/* Pas tonen als de teamdata geladen is: anders knippert de banner
@@ -7042,6 +7042,39 @@ function useSwipeSections(section, setSection) {
     if (ni >= 0 && ni < SECTIONS.length) setSection(SECTIONS[ni].id);
   };
   return { onTouchStart: onStart, onTouchEnd: onEnd };
+}
+
+// Verticale navigatie links: vaste volgorde, gelijke knopbreedte, icoon
+// boven tekst. Vervangt de kopbalk en de horizontale sectiebalk.
+function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen }) {
+  const per = {}; for (const x of SECTIONS) per[x.id] = x;
+  const items = [
+    { id: "__home", label: "Home", icon: <Home size={22} />, doe: onHome },
+    { id: "mep", label: "Mise en place", icon: <BookOpen size={22} />, doe: onMep },
+    per.gerechten, per.recepten, per.fermentatie, per.smaak,
+    { ...per.technieken, icon: <ClipboardList size={22} /> },
+    per.schoonmaak, per.voorraad,
+    ...(chef ? [
+      { id: "boekingen", label: "Boekingen", icon: <CalendarDays size={22} /> },
+      { id: "assortiment", label: "Calculaties", icon: <Receipt size={22} /> },
+    ] : []),
+    { id: "__instellingen", label: "Instellingen", icon: <Settings size={22} />, doe: onInstellingen },
+  ].filter(Boolean);
+  return (
+    <nav className="sticky top-0 self-start h-screen overflow-y-auto no-scrollbar shrink-0 flex flex-col gap-1 py-2 px-1.5"
+      style={{ width: "5.2rem", background: T.paper, borderRight: "1px solid " + T.line }}>
+      {items.map((it) => {
+        const actief = section === it.id;
+        return (
+          <button key={it.id} onClick={() => (it.doe ? it.doe() : onKies(it.id))}
+            className={"ff w-full flex flex-col items-center gap-0.5 rounded-2xl py-2 text-[10px] font-medium leading-tight " + (actief ? "pillon" : "pill")}>
+            {it.icon}
+            <span className="text-center">{it.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
 }
 
 function SectionNav({ section, setSection, chef }) {
@@ -9713,14 +9746,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   return (
     <div className="card p-3" style={{ border: "3px solid " + randKleur }}>
       <div className="flex items-center gap-2">
-        <span className="serif ink font-bold text-[17px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
+        <span className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{b.naam || "Zonder naam"}</span>
         {statusTekst && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
-        <span className="text-[13px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
+        <span className="text-[14px] font-semibold shrink-0" style={{ color: "#44502f" }}>{tijdTekst || "—"} · {gastenTekst}p{bezorging ? " · bezorging" : ""}</span>
         <button onClick={printPartij} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Deze partij printen"><Printer size={17} /></button>
         {canEdit && !bewerk && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
       </div>
       {(tel || zaal) && (
-        <div className="text-[12.5px] mt-0.5">
+        <div className="text-[13.5px] mt-0.5">
           {zaal ? <span className="font-bold ink">{zaal}</span> : null}{zaal && tel ? <span className="mute"> · </span> : null}
           {tel ? <a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline mute">{(contact ? contact + " · " : "") + tel}</a> : null}
         </div>
@@ -9729,7 +9762,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       {!bewerk && (
         <>
           {toonKeuzes.length > 0 && (
-            <div className="text-[13px] mt-1 space-y-0.5">
+            <div className="text-[14.5px] mt-1 space-y-1">
               {toonKeuzes.map((k, i) => {
                 const od = k.miceId ? onderdelenVan(k.miceId) : null;
                 const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "");
@@ -9751,10 +9784,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               })}
             </div>
           )}
-          {!toonKeuzes.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vereist nog culinaire invulling.</div>}
-          {toonKeuzes.length > 0 && !mepRegels.length && <div className="text-[12px] mt-1" style={{ color: "#8a2f28" }}>Vereist nog culinaire invulling.</div>}
+          {!toonKeuzes.length && <div className="text-[13px] mt-1" style={{ color: "#8a2f28" }}>Geen producten uit MICE en niets gekozen — vereist nog culinaire invulling.</div>}
+          {toonKeuzes.length > 0 && !mepRegels.length && <div className="text-[13px] mt-1" style={{ color: "#8a2f28" }}>Vereist nog culinaire invulling.</div>}
           {allergie.length > 0 && (
-            <div className="mt-1.5 text-[13px] font-bold" style={{ color: "#b3261e" }}>
+            <div className="mt-1.5 text-[14.5px] font-bold" style={{ color: "#b3261e" }}>
               {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
             </div>
           )}
@@ -9770,14 +9803,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           <div className="mt-1.5">
             {noot ? (
               <>
-                <button onClick={() => setNootOpen((o) => !o)} className="ff text-[12px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
+                <button onClick={() => setNootOpen((o) => !o)} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
                 {nootOpen && (
-                  <p className="text-[12px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
+                  <p className="text-[13px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
                     <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
                   </p>
                 )}
               </>
-            ) : <span className="text-[12px] mute">Geen notitie</span>}
+            ) : <span className="text-[13px] mute">Geen notitie</span>}
           </div>
           <BoekingLog log={log} />
         </>
@@ -9894,7 +9927,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
-  const [somDagen, setSomDagen] = useState(2);
+  const [somDagen, setSomDagen] = useState(7); // standaard een hele week
+  const [somOpen, setSomOpen] = useState(true);
   const [stift, setStift] = useState(null);
   const [melding, setMelding] = useState("");
   const meldTijd = React.useRef(0);
@@ -10019,7 +10053,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={14} /></button>
         <span className="flex-1" />
         <span className="text-[11.5px] mute">Optelsom</span>
-        {[2, 3, 4].map((n) => (
+        {[2, 3, 4, 7].map((n) => (
           <button key={n} onClick={() => setSomDagen(n)} className="ff rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
             style={{ background: somDagen === n ? T.green : "transparent", color: somDagen === n ? "#fbf9f2" : undefined, border: "1px solid " + (somDagen === n ? T.green : T.line) }}>{n} dagen</button>
         ))}
@@ -10029,8 +10063,11 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
       {overlap.length > 0 && (
         <div className="card p-3 mb-4">
-          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
-          <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
+          <button onClick={() => setSomOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
+            {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
+            Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}
+          </button>
+          {somOpen && <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-1.5 pr-2">Bereiding</th>
@@ -10051,7 +10088,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>}
         </div>
       )}
 
@@ -10060,12 +10097,12 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         if (!items.length) return null;
         return (
           <div key={d} className="mb-4">
-            <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "1px solid " + T.line }}>
+            <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
               <span className="serif ink font-bold text-xl leading-tight">{dagKop(d)}</span>
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
             </button>
-            {!isDicht(d) && <div className="grid gap-2 items-start md:grid-cols-2 xl:grid-cols-3">
+            {!isDicht(d) && <div className="grid gap-2.5 items-start md:grid-cols-2">
               {items.map((b) => {
                 const sl = boekingSleutel(b.naam);
                 return (
@@ -10242,6 +10279,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const [weekDicht, setWeekDicht] = useState({});
   const isWeekDicht = (w) => (weekDicht[w] != null ? weekDicht[w] : w > maandagVan(vandaag)); // eerste week open, rest dicht
   const somDagen = 7; // optelsom kijkt altijd een week vooruit
+  const [somOpen, setSomOpen] = useState(true);
 
   const lijst = (boekingen || [])
     .filter((b) => b.datum >= vandaag && b.datum <= tot)
@@ -10305,8 +10343,11 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
 
       {prodOverlap.length > 0 && (
         <div className="card p-3 mb-4">
-          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen in meerdere partijen — komende 7 dagen</div>
-          <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
+          <button onClick={() => setSomOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">
+            {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
+            Samen in meerdere partijen — komende 7 dagen
+          </button>
+          {somOpen && <table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-1.5 pr-2">Product</th>
@@ -10323,7 +10364,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>}
         </div>
       )}
 
@@ -10338,11 +10379,11 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
           </button>
           {!isWeekDicht(wk.week) && wk.dagen.map((dag) => (
         <div key={dag.datum} className="mb-5">
-          <button onClick={() => setDagDicht((o) => ({ ...o, [dag.datum]: !isDicht(dag.datum) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5">
+          <button onClick={() => setDagDicht((o) => ({ ...o, [dag.datum]: !isDicht(dag.datum) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
             {isDicht(dag.datum) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
             <span className="serif ink font-bold text-xl leading-tight">{dagNaam(dag.datum)}</span>
           </button>
-          {!isDicht(dag.datum) && <div className="grid gap-2 items-start md:grid-cols-2 xl:grid-cols-3">
+          {!isDicht(dag.datum) && <div className="grid gap-2.5 items-start md:grid-cols-2">
             {dag.items.map((b) => (
               <PartijKaart key={b.id} b={b} keuzes={gekozen(b)} mepRegels={mepVan(b)}
                 allergie={allergieEff(b)} noot={nootEff(b)}
@@ -11545,7 +11586,7 @@ function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
   // Blijft bij het scrollen in beeld (net onder de header, h-14 = 56px), zodat
   // annuleren en opslaan op lange formulieren altijd binnen handbereik zijn.
   return (
-    <div className="sticky z-10 -mx-4 px-4 flex items-center justify-between pt-4 pb-3" style={{ top: "56px", background: T.paper, borderBottom: "1px solid " + T.line, marginBottom: "0.75rem" }}>
+    <div className="sticky z-10 -mx-4 px-4 flex items-center justify-between pt-4 pb-3" style={{ top: 0, background: T.paper, borderBottom: "1px solid " + T.line, marginBottom: "0.75rem" }}>
       <button onClick={onCancel} className="ff inline-flex items-center gap-1 text-sm mute hover:opacity-70"><X size={16} /> Annuleren</button>
       <span className="serif ink text-lg">{title}</span>
       <button onClick={onSave} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><Check size={16} /> {saveLabel}</button>
