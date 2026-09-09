@@ -10181,6 +10181,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 // potlood zet de kaart zelf om in invoervelden — geen popup.
 function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
+  const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -10258,36 +10259,39 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       + "</body></html>");
   };
 
-  // Eén klik: partij-etiket (102 x 38 mm). Alles schaalt samen zodat het
-  // ALTIJD op één sticker past: eerst de inforegels zo groot mogelijk (met
-  // plafond), daarna groeit de naam tot de resterende ruimte vol is. Past het
-  // niet, dan schaalt alles kleiner — er komt nooit een tweede sticker uit.
-  const printPartijEtiket = () => {
+  // Partij-etiket (102 x 38 mm), aangestuurd vanuit de popup. Alles schaalt
+  // samen zodat het altijd op één sticker past; optionele productnaam bovenaan
+  // (zelfde formaat als de partijnaam), partijnaam onderstreept, contact klein.
+  const printPartijEtiket = (f) => {
     const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const datumRij = [datumKop, tijdTekst || ""].filter(Boolean).join(" · ");
     const rijen = [
-      gastenTekst + " gasten",
-      bezorging ? "Bezorging" + (zaal ? " · " + zaal : "") : (zaal || ""),
-      [contact, tel].filter(Boolean).join(" · "),
-    ].filter((r) => String(r).trim());
-    const naamTxt = String(naamTekst || b.naam || "Zonder naam");
+      { t: f.datum, c: "rij datum" },
+      { t: f.gasten, c: "rij" },
+      { t: f.locatie, c: "rij" },
+      { t: f.contact, c: "rij klein" },
+    ].filter((r) => String(r.t || "").trim());
+    const naamTxt = String(f.naam || "").trim() || "Zonder naam";
+    const productTxt = String(f.product || "").trim();
     printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
       "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
       "html,body{margin:0;padding:0}" +
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
       ".vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:1.5mm;overflow:hidden;text-align:center;display:flex;flex-direction:column;justify-content:center}" +
-      "#naam{font-weight:bold;line-height:1.05;word-wrap:break-word;margin:0 0 0.6mm 0}" +
+      "#naam{font-weight:bold;line-height:1.08;word-wrap:break-word;margin:0 0 0.6mm 0}" +
+      ".pnaam{text-decoration:underline;text-underline-offset:2px}" +
       "#rest{font-weight:bold;line-height:1.22}" +
       ".rij{margin:0}" +
       ".datum{font-size:1.25em;line-height:1.2}" +
+      ".klein{font-size:0.85em;line-height:1.18}" +
       "</style></head><body>" +
       '<div class="vul">' +
-      '<div id="naam">' + esc(naamTxt) + "</div>" +
-      '<div id="rest">' +
-      (datumRij ? '<div class="rij datum">' + esc(datumRij) + "</div>" : "") +
-      rijen.map((r) => '<div class="rij">' + esc(r) + "</div>").join("") +
-      "</div></div>" +
+      '<div id="naam">' +
+      (productTxt ? "<div>" + esc(productTxt) + "</div>" : "") +
+      '<div class="pnaam">' + esc(naamTxt) + "</div>" +
+      "</div>" +
+      '<div id="rest">' + rijen.map((r) => '<div class="' + r.c + '">' + esc(r.t) + "</div>").join("") + "</div>" +
+      "</div>" +
       "<scr" + `ipt>(function(){
       var vul=document.querySelector(".vul"),naam=document.getElementById("naam"),rest=document.getElementById("rest");
       function past(){return vul.scrollHeight<=vul.clientHeight&&vul.scrollWidth<=vul.clientWidth;}
@@ -10300,6 +10304,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     })();</scr` + "ipt>" +
       "</body></html>");
   };
+  // Voorinvulling voor de etiketpopup met de gegevens van deze partij.
+  const etiketVoorstel = () => ({
+    product: "",
+    naam: String(naamTekst || b.naam || "Zonder naam"),
+    datum: [datumKop, tijdTekst || ""].filter(Boolean).join(" · "),
+    gasten: gastenTekst ? gastenTekst + " gasten" : "",
+    locatie: bezorging ? "Bezorging" + (zaal ? " · " + zaal : "") : (zaal || ""),
+    contact: [contact, tel].filter(Boolean).join(" · "),
+  });
 
   const startBewerk = () => {
     setRegels(keuzesS.map((k) => ({ ...k })));
@@ -10393,7 +10406,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         {!bewerk && (
           <>
             <button onClick={() => { setInfoOpen(true); if (onSluitStift) onSluitStift(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
-            <button onClick={printPartijEtiket} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Etiket printen"><Tag size={17} /></button>
+            <button onClick={() => setEtiketOpen(etiketVoorstel())} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Etiket printen"><Tag size={17} /></button>
             {canEdit && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
           </>
         )}
@@ -10617,6 +10630,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             </div>
           )}
           {geschVoor != null && <InvulGeschPopup miceId={geschVoor} lijst={invulGesch || []} onSluit={() => setGeschVoor(null)} />}
+          {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
           {kies && (
             <ProductKiezer boeking={b} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
               onSluit={() => setKies(false)}
@@ -11332,6 +11346,37 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Popup voor het partij-etiket: vooringevuld met de partijgegevens, alles
+// aanpasbaar, met een optionele productnaam die bovenaan de sticker komt.
+function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
+  const [f, setF] = useState(voorstel);
+  const zet = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const veld = (label, k, ph) => (
+    <Field label={label}><input className="input px-3 py-2 w-full text-sm" value={f[k] || ""} onChange={zet(k)} placeholder={ph || ""} /></Field>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
+      <div className="w-full max-w-md rounded-2xl p-5" style={{ background: T.paper, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="serif ink text-xl leading-tight">Partij-etiket</div>
+          <button onClick={onSluit} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
+        </div>
+        {veld("Productnaam — komt bovenaan het etiket", "product", "bv. Pompoensoep (leeg = niet op het etiket)")}
+        {veld("Partijnaam", "naam")}
+        {veld("Dag en tijd", "datum")}
+        {veld("Gasten", "gasten")}
+        {veld("Locatie", "locatie")}
+        {veld("Contact en telefoon", "contact")}
+        <p className="text-[12px] mute mb-3">Lege velden komen niet op het etiket. Alles schaalt vanzelf zodat het op één sticker past.</p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+          <button onClick={() => onPrint(f)} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-1.5"><Printer size={15} /> Printen</button>
+        </div>
+      </div>
     </div>
   );
 }
