@@ -2854,6 +2854,9 @@ function App() {
   };
   // Geschiedenis van invullingen per MICE-product; nieuwste vooraan.
   const [invulGeschiedenis, setInvulGeschiedenis] = useState([]);
+  // Let op: geen [live] in de deps — die const staat verderop in de App-body
+  // en zou bij het renderen een use-before-init geven. Binnen het effect is
+  // hij wel al geïnitialiseerd (effecten draaien na de render).
   useEffect(() => {
     if (!live) return;
     (async () => {
@@ -2862,7 +2865,7 @@ function App() {
         if (data) setInvulGeschiedenis(data);
       } catch (e) {}
     })();
-  }, [live]);
+  }, []);
   // Culinaire invulling van een MICE-product: een eigen product uit de
   // calculaties, een recept, of vrije tekst.
   const saveProdKoppeling = async (miceId, inv) => {
