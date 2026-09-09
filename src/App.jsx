@@ -7471,9 +7471,9 @@ function RecipeList({ recipes, openCounts, stock, search, setSearch, onOpen }) {
       </div>
       {bedoeldeJe && <div className="rounded-xl p-3 mb-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{q}" — bedoelde je:</div>}
       <div className="text-right text-xs mute mb-2">{sorted.length} {sorted.length === 1 ? "recept" : "recepten"}</div>
-      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
+      <div className="md:columns-2 md:gap-2.5">
         {visible.map((r) => (
-          <button key={r.id} onClick={() => onOpen(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
+          <button key={r.id} onClick={() => onOpen(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3 mb-2.5 break-inside-avoid">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink font-bold text-lg leading-tight truncate">{r.name}</span>
@@ -7628,9 +7628,9 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
       </div>
       {bedoeldeJe && <div className="rounded-xl p-3 mb-2 text-[13px]" style={{ background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{query}" — bedoelde je:</div>}
       <div className="text-right text-xs mute mb-2">{fermentRecipes.length} recepten</div>
-      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
+      <div className="md:columns-2 md:gap-2.5">
         {fermentRecipes.slice(0, limit).map((r) => (
-          <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3">
+          <button key={r.id} onClick={() => onOpenRecipe(r.id)} className="card cardh ff w-full text-left p-4 flex items-center gap-3 mb-2.5 break-inside-avoid">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="serif ink font-bold text-lg leading-tight truncate">{r.name}</span>
@@ -7910,7 +7910,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
       <div className="text-right text-xs mute mb-2">{shown.length} producten</div>
-      <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
+      <TweeKolommen ruimte="space-y-2">
         {shown.map((p) => (
           <div key={p.name} ref={(el) => { cardRefs.current[p.name] = el; }} className="card overflow-hidden">
             <button onClick={() => setOpen(open === p.name ? null : p.name)} className="ff w-full flex items-center justify-between px-4 py-3 text-left">
@@ -7954,7 +7954,7 @@ function FlavorList({ pairings, canEdit, onSave, onReset, onSearchRecipes, openN
           </div>
         ))}
         {shown.length === 0 && <Empty label="Geen combinatie gevonden." />}
-      </div>
+      </TweeKolommen>
     </div>
   );
 }
@@ -8183,11 +8183,15 @@ const TECH_NOTES_SEED = {
   ],
 };
 
-// De kooktabel rekent zelf: vul in hoeveel gegaard je wil, lees af hoeveel
-// droog product je nodig hebt.
+// De kooktabel rekent zelf: vul een aantal personen en een portie (gegaard,
+// per persoon) in — of direct een gewenst gegaard gewicht — en lees af
+// hoeveel droog product je nodig hebt.
 function KookTabel({ rijen }) {
+  const [aant, setAant] = useState({});
+  const [portie, setPortie] = useState({});
   const [wens, setWens] = useState({});
   const kg = (n) => (n >= 1 ? String(Math.round(n * 100) / 100).replace(".", ",") + " kg" : Math.round(n * 1000) + " g");
+  const num = (o, k) => eurNum(o[k]);
   return (
     <div className="overflow-x-auto -mx-1 px-1">
       <table className="w-full text-[13px]" style={{ borderCollapse: "collapse" }}>
@@ -8195,29 +8199,49 @@ function KookTabel({ rijen }) {
           <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
             <th className="text-left py-1.5 pr-2">Product</th>
             <th className="text-left py-1.5 pr-2">Factor</th>
+            <th className="text-left py-1.5 pr-2">Aantal</th>
+            <th className="text-left py-1.5 pr-2">Portie</th>
             <th className="text-left py-1.5 pr-2">Gewenst gegaard</th>
-            <th className="text-left py-1.5 pr-2">Nodig droog</th>
-            <th className="text-left py-1.5">Opmerking</th>
+            <th className="text-left py-1.5">Nodig droog</th>
           </tr>
         </thead>
         <tbody>
           {rijen.map((r, i) => {
             const factor = eurNum(r.factor);
-            const gewenst = eurNum(wens[r.product]);
-            const nodig = factor && factor > 0 && gewenst !== null ? gewenst / factor : null;
+            const n = num(aant, r.product);
+            const g = num(portie, r.product);
+            const direct = num(wens, r.product);
+            // Aantal x portie gaat voor; anders het direct ingevulde gewicht.
+            const gegaard = n && g ? (n * g) / 1000 : direct;
+            const nodig = factor && factor > 0 && gegaard !== null && gegaard > 0 ? gegaard / factor : null;
+            const zet = (setter) => (e) => setter((w) => ({ ...w, [r.product]: e.target.value.replace(/[^0-9.,]/g, "") }));
             return (
-              <tr key={i} className="align-middle" style={{ borderTop: "1px solid " + T.line }}>
+              <tr key={i} className="align-middle" style={{ borderTop: "1px solid " + T.line }} title={r.opmerking || ""}>
                 <td className="py-1.5 pr-2 ink">{r.product}</td>
                 <td className="py-1.5 pr-2 mute">{r.factor}</td>
                 <td className="py-1.5 pr-2">
-                  <div className="relative" style={{ width: "6.5rem" }}>
-                    <input type="text" inputMode="decimal" className="input px-2 py-1.5 w-full text-[13px] pr-7" value={wens[r.product] || ""}
-                      onChange={(e) => setWens((w) => ({ ...w, [r.product]: e.target.value.replace(/[^0-9.,]/g, "") }))} placeholder="bv. 5" />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">kg</span>
+                  <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-[13px]" style={{ width: "3.6rem" }} value={aant[r.product] || ""}
+                    onChange={zet(setAant)} placeholder="28" />
+                </td>
+                <td className="py-1.5 pr-2">
+                  <div className="relative" style={{ width: "5rem" }}>
+                    <input type="text" inputMode="decimal" className="input px-2 py-1.5 w-full text-[13px] pr-6" value={portie[r.product] || ""}
+                      onChange={zet(setPortie)} placeholder="80" />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">g</span>
                   </div>
                 </td>
-                <td className="py-1.5 pr-2 font-semibold" style={{ color: nodig === null ? "#a5a394" : "#44502f" }}>{nodig === null ? "—" : kg(nodig)}</td>
-                <td className="py-1.5 mute">{r.opmerking || ""}</td>
+                <td className="py-1.5 pr-2">
+                  {n && g
+                    ? <span className="font-medium acc whitespace-nowrap">{kg((n * g) / 1000)}</span>
+                    : (
+                      <div className="relative" style={{ width: "6.5rem" }}>
+                        <input type="text" inputMode="decimal" className="input px-2 py-1.5 w-full text-[13px] pr-7" value={wens[r.product] || ""}
+                          onChange={zet(setWens)} placeholder="bv. 5" />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">kg</span>
+                      </div>
+                    )}
+                </td>
+                <td className="py-1.5 font-semibold whitespace-nowrap" style={{ color: nodig === null ? "#a5a394" : "#44502f" }}>{nodig === null ? "\u2014" : kg(nodig)}</td>
               </tr>
             );
           })}
@@ -9465,7 +9489,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
       </div>
       {openHuidig && shown.length === 0 && <Empty label="Nog niets op voorraad dit jaar. Voeg voorraad toe met de knop rechtsonder, of via een recept of afgeronde batch." />}
       {open !== null && <div className="fixed inset-0 z-10" onClick={() => setOpen(null)} />}
-      {openHuidig && <div className="space-y-2.5 md:space-y-0 md:columns-2 md:gap-2.5 md:[&>*]:mb-2.5 md:[&>*]:break-inside-avoid">{shown.map(kaart)}</div>}
+      {openHuidig && <TweeKolommen>{shown.map(kaart)}</TweeKolommen>}
       {openHuidig && emptyItems.length > 0 && (
         <div className="mt-5">
           <button onClick={() => setOpenEmpty((o) => !o)} className="ff inline-flex items-center gap-1.5 mb-1.5">
@@ -9963,18 +9987,18 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 
   // Eén klik: partij-etiket (102 x 38 mm) met de naam zo groot als past.
   const printPartijEtiket = () => {
+    const datumRij = [datumKop, tijdTekst || ""].filter(Boolean).join(" · ");
     const rijen = [
       gastenTekst + " gasten",
-      [datumKop, tijdTekst || ""].filter(Boolean).join(" · "),
       bezorging ? "Bezorging" + (zaal ? " · " + zaal : "") : (zaal || ""),
       [contact, tel].filter(Boolean).join(" · "),
     ].filter((r) => String(r).trim());
     const mm = (pt, lh) => pt * 0.3528 * lh;
     const naamTxt = String(naamTekst || b.naam || "Zonder naam");
-    const beschikbaar = LABEL_MM.h - 3 - rijen.length * mm(12, 1.3) - 1;
+    const beschikbaar = LABEL_MM.h - 3 - (datumRij ? mm(15, 1.25) + 0.5 : 0) - rijen.length * mm(12, 1.3) - 1;
     const breedte = LABEL_MM.w - 6;
     let naamPt = 12;
-    for (let f = 46; f >= 12; f--) {
+    for (let f = 34; f >= 12; f--) {
       const perRegel = Math.max(1, Math.floor(breedte / (0.55 * f * 0.3528)));
       const regelsNodig = Math.max(1, Math.ceil(naamTxt.length / perRegel));
       if (regelsNodig * mm(f, 1.1) <= beschikbaar) { naamPt = f; break; }
@@ -9986,10 +10010,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
       ".wrap{position:absolute;top:3mm;left:3mm;right:3mm;text-align:center}" +
       ".naam{font-weight:bold;font-size:" + naamPt + "pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
+      ".datum{font-weight:bold;font-size:15pt;line-height:1.25;margin:0 0 0.5mm 0}" +
       ".rij{font-weight:bold;font-size:12pt;line-height:1.3;margin:0}" +
       "</style></head><body>" +
       '<div class="wrap">' +
       '<div class="naam">' + pEsc(naamTxt) + "</div>" +
+      (datumRij ? '<div class="datum">' + pEsc(datumRij) + "</div>" : "") +
       rijen.map((r) => '<div class="rij">' + pEsc(r) + "</div>").join("") +
       "</div></body></html>");
   };
@@ -10665,7 +10691,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
       <div className="serif ink text-lg leading-tight mb-2">Werkwijze</div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
       {nothing && <Empty label="Niets gevonden in de technieken." />}
-      <div className="space-y-2.5 md:space-y-0 md:grid md:grid-cols-2 md:gap-2.5 md:items-start">
+      <TweeKolommen>
         <TechCard title="Jam & confituur" intro="Met 2:1 geleisuiker — per kg schoongemaakt fruit" open={isOpen("jam", jam.length)} onToggle={() => toggle("jam")}>
           {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("jam")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
           <TechTable head={["Fruit", "Pectine", "Geleisuiker 2:1", "Extra pectine", "Citroenzuur"]}
@@ -10746,7 +10772,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
             </TechCard>
           );
         })}
-      </div>
+      </TweeKolommen>
     </div>
   );
 }
@@ -12096,6 +12122,8 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
         </div>
       )}
 
+      <div className="md:grid md:grid-cols-2 md:gap-x-6 md:items-start">
+      <div className="min-w-0">
       <div className="flex items-center gap-2 mt-6 mb-1 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-widest acc">Hoeveelheid</span>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -12157,11 +12185,15 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
           {recipe.fermentMethod && FERMENT_TARGETS[recipe.fermentMethod] && <> {FERMENT_TARGETS[recipe.fermentMethod].note}</>}
         </div>
       )}
+      </div>
 
+      <div className="min-w-0">
       <SectionTitle>Bereiding</SectionTitle>
       <ol className="space-y-2.5">
         {recipe.steps.map((s, i) => (<li key={i} className="flex gap-3"><span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-0.5" style={{ background: T.green, color: T.paper }}>{i + 1}</span><span className="leading-relaxed" style={{ color: "#3b3d33" }}>{s}</span></li>))}
       </ol>
+      </div>
+      </div>
     </div>
   );
 }
@@ -12182,6 +12214,26 @@ function criticalValues(r) {
 }
 
 function SectionTitle({ children }) { return <h2 className="text-[12.5px] font-semibold uppercase tracking-widest acc mt-7 mb-2.5">{children}</h2>; }
+// Twee vaste kolommen die elk onafhankelijk vollopen. Anders dan CSS columns
+// wisselen kaarten niet van kolom bij het uitklappen, en anders dan een
+// rijenraster vallen er geen gaten onder korte kaarten. Onder md: 1 kolom.
+function TweeKolommen({ children, ruimte = "space-y-2.5", gap = "gap-2.5" }) {
+  const alles = React.Children.toArray(children);
+  const [breed, setBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
+  useEffect(() => {
+    const m = window.matchMedia("(min-width: 768px)");
+    const f = () => setBreed(m.matches);
+    try { m.addEventListener("change", f); } catch (e) { m.addListener(f); }
+    return () => { try { m.removeEventListener("change", f); } catch (e) { m.removeListener(f); } };
+  }, []);
+  if (!breed) return <div className={ruimte}>{alles}</div>;
+  return (
+    <div className={"grid grid-cols-2 items-start " + gap}>
+      <div className={ruimte}>{alles.filter((_, i) => i % 2 === 0)}</div>
+      <div className={ruimte}>{alles.filter((_, i) => i % 2 === 1)}</div>
+    </div>
+  );
+}
 function Chip({ children }) { return <span className="chip inline-flex items-center rounded-full text-xs font-medium px-2.5 py-1">{children}</span>; }
 function Empty({ label }) { return <div className="text-center text-sm mute card py-10 px-4" style={{ borderStyle: "dashed" }}>{label}</div>; }
 function Field({ label, children }) { return <label className="block mb-4"><span className="block text-sm font-medium ink mb-1.5">{label}</span>{children}</label>; }
