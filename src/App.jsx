@@ -5155,7 +5155,8 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : section === "boekingen" ? "Boeking" : "Batch"}
         </button>
       )}
-      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"} />}
+      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
+        tabellen={techTableRows} canEdit={canEdit} onEditTable={(t) => push({ screen: "techTableForm", table: t })} />}
       {user && canEdit && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
           className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab || section === "mep" ? "bottom-[5.25rem]" : "bottom-6")}
@@ -5211,8 +5212,10 @@ function App() {
   );
 }
 
-// Zwevende rekenmachine, beschikbaar op elke pagina.
-function CalcWidget({ open, onOpen, onClose, raised }) {
+// Zwevende rekenmachine, beschikbaar op elke pagina. Via de knoppen Verlies
+// en Koken opent een popup met de bijbehorende rekentabel.
+function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTable }) {
+  const [tabel, setTabel] = useState(null); // null | "verlies" | "koken"
   const [expr, setExpr] = useState("");
   const [result, setResult] = useState("");
   // Veilige evaluatie: alleen cijfers en rekenkundige tekens.
@@ -5241,7 +5244,11 @@ function CalcWidget({ open, onOpen, onClose, raised }) {
         <div className={"fixed right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3 " + (raised ? "bottom-[9.25rem]" : "bottom-24")} style={{ background: T.paper, border: "1px solid " + T.line }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
-            <button onClick={onClose} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
+            <span className="flex items-center gap-1">
+              <button onClick={() => setTabel("verlies")} className="ff pill rounded-full px-2 py-0.5 text-[11.5px] font-medium">Verlies</button>
+              <button onClick={() => setTabel("koken")} className="ff pill rounded-full px-2 py-0.5 text-[11.5px] font-medium">Koken</button>
+              <button onClick={onClose} className="ff mute hover:opacity-70 ml-1" title="Sluiten"><X size={16} /></button>
+            </span>
           </div>
           <div className="rounded-xl px-3 py-1.5 mb-1.5 text-right" style={{ background: "#eef1e6", minHeight: "2.6rem" }}>
             <div className="ink text-lg leading-tight break-all">{expr || "0"}</div>
@@ -5255,6 +5262,23 @@ function CalcWidget({ open, onOpen, onClose, raised }) {
               </button>
             ))}
             <button onClick={() => tap("⌫")} className="ff pill rounded-lg py-1.5 text-sm font-medium col-span-4 mt-0.5 inline-flex items-center justify-center gap-1"><ArrowLeft size={14} /> Wis laatste</button>
+          </div>
+        </div>
+      )}
+      {tabel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: "rgba(40,42,30,0.45)" }} onClick={() => setTabel(null)}>
+          <div className="rounded-2xl shadow-xl p-4 w-full max-w-3xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">{tabel === "verlies" ? "Snij- en vochtverlies bij roosteren" : "Zwaarder door koken"}</span>
+              <span className="flex items-center gap-2">
+                {canEdit && <button onClick={() => { setTabel(null); onEditTable(tabel === "verlies" ? "roosteren" : "koken"); }} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button>}
+                <button onClick={() => setTabel(null)} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
+              </span>
+            </div>
+            {tabel === "verlies"
+              ? <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
+                  rows={((tabellen && tabellen.roosteren) || []).map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
+              : <KookTabel rijen={(tabellen && tabellen.koken) || []} />}
           </div>
         </div>
       )}
@@ -10671,9 +10695,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   const hit = (t) => softMatch(t, q);
   const jam = searching ? tableRows.jam.filter((r) => hit(r.fruit)) : tableRows.jam;
   const ice = searching ? tableRows.ijs.filter((r) => hit(r.soort)) : tableRows.ijs;
-  const roast = searching ? tableRows.roosteren.filter((r) => hit(r.groente) || hit(r.type)) : tableRows.roosteren;
   const maten = searching ? (tableRows.maten || []).filter((r) => hit(r.naam)) : (tableRows.maten || []);
-  const koken = searching ? (tableRows.koken || []).filter((r) => hit(r.product)) : (tableRows.koken || []);
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
   // Bij zoeken klapt alleen de tabel open die een treffer heeft.
   const isOpen = (key, count) => (searching ? count > 0 : !!openCards[key]);
@@ -10704,19 +10726,6 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
           <TechTable head={["Soort", "Totaal suiker", "Aandeel glucose", "Aandachtspunt"]}
             rows={ice.map((r) => [r.soort, r.suiker, r.glucose, r.extra])} />
           <TechNotes label="Lezen als volgt" notes={n("ijs")} canEdit={canEdit} onSave={(lines) => onSaveNotes("ijs", lines)} />
-        </TechCard>
-
-        <TechCard title="Snij- en vochtverlies bij roosteren" intro="Van onbewerkt naar schoongemaakt naar geroosterd" open={isOpen("roosteren", roast.length)} onToggle={() => toggle("roosteren")}>
-          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("roosteren")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
-          <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
-            rows={roast.map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
-          <TechNotes label="Zo gebruik je de tabel" notes={n("roosteren")} canEdit={canEdit} onSave={(lines) => onSaveNotes("roosteren", lines)} />
-        </TechCard>
-
-        <TechCard title="Zwaarder door koken" intro="Rijst, pasta en aardappel: van droog naar gekookt" open={isOpen("koken", koken.length)} onToggle={() => toggle("koken")}>
-          {canEdit && <div className="flex justify-end mb-1"><button onClick={() => onEditTable("koken")} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70"><Pencil size={12} /> Waarden bewerken</button></div>}
-          <KookTabel rijen={koken} />
-          <TechNotes label="Zo gebruik je de tabel" notes={n("koken")} canEdit={canEdit} onSave={(lines) => onSaveNotes("koken", lines)} />
         </TechCard>
 
         <TechCard title="Gewichten per lepel en stuk" intro="Waarmee de app lepels, stuks en centimeters omrekent" open={isOpen("maten", maten.length)} onToggle={() => toggle("maten")}>
