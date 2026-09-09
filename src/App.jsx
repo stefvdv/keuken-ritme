@@ -7434,9 +7434,10 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen, invulGesch })
         <button onClick={() => setSortMode("nieuw")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "nieuw" ? "pillon" : "pill")}>Laatst toegevoegd</button>
         <button onClick={() => setSortMode("az")} className={"ff shrink-0 rounded-full px-2.5 py-1 font-medium " + (sortMode === "az" ? "pillon" : "pill")}>A–Z</button>
       </div>
-      <div className="text-right text-xs mute mb-2">{shown.length} {shown.length === 1 ? "gerecht" : "gerechten"}</div>
       <div className="md:grid md:grid-cols-2 md:gap-4 md:items-start">
-      <div className="space-y-2.5 min-w-0">
+      <div className="min-w-0">
+      <div className="text-right text-xs mute mb-2">{shown.length} {shown.length === 1 ? "gerecht" : "gerechten"}</div>
+      <div className="space-y-2.5">
         {shown.map((d) => (
           <button key={d.id} onClick={() => onOpen(d.id)} className="card cardh ff w-full text-left p-4 flex items-start gap-3">
             <div className="flex-1 min-w-0">
@@ -7454,6 +7455,7 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen, invulGesch })
           </button>
         ))}
         {shown.length === 0 && <Empty label="Geen gerechten gevonden." />}
+      </div>
       </div>
       <InvulGeschKolom lijst={invulGesch || []} />
       </div>
@@ -10852,7 +10854,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="text-[12.5px] mute">{weekLabel}</div>
+        <div>
+          <div className="serif ink text-xl leading-tight hidden md:block">Mise en place</div>
+          <div className="text-[12.5px] mute">{weekLabel}</div>
+        </div>
         <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
       </div>
 
@@ -10950,6 +10955,7 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
   const nothing = searching && jam.length === 0 && ice.length === 0 && maten.length === 0;
   return (
     <div className="mt-8">
+      <div className="serif ink text-lg leading-tight mb-2 hidden md:block">Werkwijze</div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
       {nothing && <Empty label="Niets gevonden in de technieken." />}
       <TweeKolommen>
@@ -11347,7 +11353,7 @@ function InvulGeschKolom({ lijst }) {
   const dt = (t) => { try { const d = new Date(t); return d.toLocaleDateString("nl-NL", { day: "numeric", month: "short" }); } catch (e) { return ""; } };
   return (
     <div className="min-w-0">
-      <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-2">Partij-invullingen</div>
+      <div className="text-right text-xs mute mb-2">{(lijst || []).length} {(lijst || []).length === 1 ? "invulling" : "invullingen"}</div>
       {!groepen.length && <Empty label="Nog geen partij-invullingen bewaard. Geef bij een boeking of op de mep een invulling; die verschijnt hier per productcategorie." />}
       {groepen.map((gr) => (
         <div key={gr.cat} className="mb-4">
