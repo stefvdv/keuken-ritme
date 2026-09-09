@@ -5089,6 +5089,12 @@ function App() {
   const [wijzDicht, setWijzDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:wijzigingen") === kitchenDate(); } catch (e) { return false; } });
   const [bezorgDicht, setBezorgDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:bezorgmateriaal") === kitchenDate(); } catch (e) { return false; } });
   const [meldingenOpen, setMeldingenOpen] = useState(false);
+  const [wijzAfgerond, setWijzAfgerond] = useState(() => {
+    try { const m = JSON.parse(localStorage.getItem("ritme:wijz-afgerond") || "{}"); return m[kitchenDate()] || {}; } catch (e) { return {}; }
+  });
+  useEffect(() => { try { localStorage.setItem("ritme:wijz-afgerond", JSON.stringify({ [kitchenDate()]: wijzAfgerond })); } catch (e) {} }, [wijzAfgerond]);
+  const rondWijzAf = (id) => setWijzAfgerond((m) => ({ ...m, [id]: true }));
+  const [mepSpringNaar, setMepSpringNaar] = useState(null); // { id, datum } van een boeking om op de mep in beeld te brengen
 
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
@@ -5200,6 +5206,7 @@ function App() {
     const wijzGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString(); })();
     const wijzItems = [];
     (boekingen || []).forEach((b) => {
+      if (wijzAfgerond[b.id]) return;
       const w = [];
       (b.log || []).forEach((e) => { if (String(e.t || "") >= wijzGrens) (e.w || []).forEach((x) => w.push(String(x))); });
       if (w.length) wijzItems.push({ b, w });
@@ -5208,11 +5215,16 @@ function App() {
     if (!wijzDicht && wijzItems.length) meldingCategorieen.push({
       id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />,
       content: (
-        <div className="space-y-2 text-sm">
+        <div className="space-y-2.5 text-sm">
           {wijzItems.map(({ b, w }) => (
-            <div key={b.id}>
-              <div className="font-medium">{b.naam || "Partij"} <span className="opacity-70">· {wijzLabel(b.datum)}</span></div>
-              <ul className="mt-0.5 space-y-0.5">{w.map((x, i) => <li key={i} className="flex items-start gap-1.5"><Check size={13} className="shrink-0 mt-0.5" /><span className="flex-1">{x}</span></li>)}</ul>
+            <div key={b.id} className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <button onClick={() => { setMeldingenOpen(false); resetTo({ screen: "list" }); setSection("mep"); setMepSpringNaar({ id: b.id, datum: b.datum }); }}
+                  className="ff underline font-medium text-left">{b.naam || "Partij"}</button>
+                <span className="opacity-70"> · {wijzLabel(b.datum)}</span>
+                <ul className="mt-0.5 space-y-0.5">{w.map((x, i) => <li key={i} className="flex items-start gap-1.5"><Check size={13} className="shrink-0 mt-0.5" /><span className="flex-1">{x}</span></li>)}</ul>
+              </div>
+              <button onClick={() => rondWijzAf(b.id)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Deze partij afronden — verdwijnt uit de melding">Afronden</button>
             </div>
           ))}
         </div>
@@ -5297,6 +5309,7 @@ function App() {
               <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij}
+                springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -5565,7 +5578,7 @@ function Wordmark({ size = "small", onHome, titel, meldingen = 0 }) {
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
       <span className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}>
         <FarmhouseIcon size={26} style={{ color: T.paper }} />
-        {meldingen > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+        {meldingen > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
       </span>
       <span className={"serif ink text-base leading-none truncate" + (titel ? " font-bold" : "")}>{titel || "In het ritme van het land"}</span>
     </Tag>
@@ -7547,7 +7560,7 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen, melding
     { id: "__home", label: "Home", icon: (
       <span className="relative inline-flex">
         <Home size={22} />
-        {meldingen > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-0.5 rounded-full flex items-center justify-center text-[9.5px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+        {meldingen > 0 && <span className="absolute -top-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
       </span>
     ), doe: onHome },
     { id: "mep", label: "Mise en place", icon: <ClipboardList size={22} />, doe: onMep },
@@ -11025,7 +11038,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar }) {
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
@@ -11154,6 +11167,13 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     setDagDicht((o) => ({ ...o, [p.datum]: false }));
     setTimeout(() => { const el = document.getElementById("partij-" + p.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 90);
   };
+  // Van buitenaf aangeroepen (bv. vanuit de boekingen-melding): naar een
+  // specifieke partij springen zodra die binnenkomt.
+  useEffect(() => {
+    if (!springNaarPartij) return;
+    springNaar(springNaarPartij);
+    if (onSprongKlaar) onSprongKlaar();
+  }, [springNaarPartij]);
 
   const dagKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()]; };
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
@@ -13973,13 +13993,13 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
 
       {compleetLijst.length > 0 && (
         <>
-          <button onClick={() => setToonCompleet((v) => !v)} className="ff mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+          <button onClick={() => setToonCompleet((v) => !v)} className="ff block mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
             {toonCompleet ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Afgerond ({compleetLijst.length})
           </button>
           {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} initieelOpen={false} />)}</div>}
         </>
       )}
-      <button onClick={() => setToonGeschiedenis((v) => !v)} className="ff mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+      <button onClick={() => setToonGeschiedenis((v) => !v)} className="ff block mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
         {toonGeschiedenis ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Geschiedenis ({geschiedenis.length})
       </button>
       {toonGeschiedenis && (
