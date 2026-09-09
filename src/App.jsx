@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -2890,6 +2890,47 @@ function App() {
       }
     } catch (e) {}
   };
+  // Bezorgmateriaal: welke spullen gingen mee met een bezorging, en wat is
+  // daarvan teruggekomen. Nieuwste bovenaan.
+  const [bezorgLijst, setBezorgLijst] = useState([]);
+  useEffect(() => {
+    if (!live) return;
+    (async () => {
+      try {
+        const { data } = await supabase.from("bezorgmateriaal").select("*").order("created_at", { ascending: false }).limit(1000);
+        if (data) setBezorgLijst(data);
+      } catch (e) {}
+    })();
+  }, []);
+  // Nieuwe bezorging registreren: materialen die meegaan met een partij.
+  const saveBezorgRegistratie = async (reg) => {
+    const rij = {
+      boeking_id: String(reg.boekingId), boeking_naam: reg.boekingNaam || "", boeking_datum: reg.boekingDatum || "",
+      materialen: reg.materialen || [], teruggenomen: [], notitie: reg.notitie || "", door: user || "",
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+    if (live) {
+      const { data, error } = await supabase.from("bezorgmateriaal").insert(rij).select().single();
+      if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst bezorgmateriaal.sql in Supabase."); return; }
+      setBezorgLijst((l) => [data, ...l]);
+    } else {
+      setBezorgLijst((l) => [{ ...rij, id: -Date.now() }, ...l]);
+    }
+    flash("Bezorging geregistreerd");
+  };
+  // Terugname invullen: nieuwe teruggenomen-regels komen bovenop wat er al
+  // was (nooit overschrijven), zodat gedeeltelijke retouren blijven kloppen.
+  const boekBezorgTerugname = async (id, nieuweRegels) => {
+    const huidige = bezorgLijst.find((r) => r.id === id);
+    if (!huidige || !nieuweRegels || !nieuweRegels.length) return;
+    const teruggenomen = [...(huidige.teruggenomen || []), ...nieuweRegels];
+    setBezorgLijst((l) => l.map((r) => (r.id === id ? { ...r, teruggenomen } : r)));
+    if (live) { try { await supabase.from("bezorgmateriaal").update({ teruggenomen, updated_at: new Date().toISOString() }).eq("id", id); } catch (e) {} }
+  };
+  const verwijderBezorgRegistratie = async (id) => {
+    setBezorgLijst((l) => l.filter((r) => r.id !== id));
+    if (live) { try { await supabase.from("bezorgmateriaal").delete().eq("id", id); } catch (e) {} }
+  };
   // Categorieën uit de MICE-productexport (Excel) inlezen. De API geeft geen
   // categorie mee, de export wel: kolom "Identificatienummer product" is onze
   // groep_id, kolom "Categorie" de naam. Eén keer per seizoen bijwerken volstaat.
@@ -5141,6 +5182,7 @@ function App() {
               <BoekingenList boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling} invulGesch={invulGeschiedenis}
+                bezorgLijst={bezorgLijst} onOpenBezorg={(id) => push({ screen: "bezorgmateriaal", focus: id })}
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
@@ -5204,7 +5246,7 @@ function App() {
           editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -5219,6 +5261,9 @@ function App() {
           } else flash("Chef-modus aan — geen dubbele artikelen gevonden");
           return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
+        {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen} bezorgLijst={bezorgLijst} canEdit={canEdit}
+          onSave={saveBezorgRegistratie} onTerug={boekBezorgTerugname} onDelete={canEdit ? verwijderBezorgRegistratie : null}
+          onBack={goBack} focusId={current.focus != null ? current.focus : null} />}
       </main>
       </div>
 
@@ -7227,7 +7272,7 @@ function MiceVerkenner() {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -7271,6 +7316,9 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
         {onOpenGerechten && (
           <button onClick={onOpenGerechten} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Utensils size={15} /> Gerechten-pagina openen (testperiode)</button>
+        )}
+        {onOpenBezorg && (
+          <button onClick={onOpenBezorg} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Package size={15} /> Bezorgmateriaal beheren</button>
         )}
         {chefMode && onResetBoekingen && (
           <button onClick={onResetBoekingen} disabled={boekingenLaden} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
@@ -10178,6 +10226,63 @@ function WijzigingenBanner({ boekingen, dagen = 3 }) {
   );
 }
 
+// Openstaande retouren van bezorgmateriaal: welke spullen zijn nog niet
+// terug van welke partij. Zelfde balk-stijl als WijzigingenBanner; elke regel
+// is een onderstreepte link naar de betreffende registratie op de
+// bezorgmateriaal-pagina.
+function bezorgOpenstaand(reg) {
+  const per = {};
+  for (const m of reg.materialen || []) per[m.naam] = (per[m.naam] || 0) + (Number(m.aantal) || 0);
+  for (const m of reg.teruggenomen || []) per[m.naam] = (per[m.naam] || 0) - (Number(m.aantal) || 0);
+  return Object.entries(per).filter(([, n]) => n > 0.0001).map(([naam, aantal]) => ({ naam, aantal }));
+}
+function BezorgBanner({ bezorgLijst, onOpen }) {
+  const [dicht, setDicht] = useState(true);
+  const sluitKey = "ritme:banner-dicht:bezorgmateriaal";
+  const [weg, setWeg] = useState(() => { try { return localStorage.getItem(sluitKey) === kitchenDate(); } catch (e) { return false; } });
+  const items = React.useMemo(() => {
+    return (bezorgLijst || [])
+      .map((r) => ({ r, open: bezorgOpenstaand(r) }))
+      .filter((x) => x.open.length)
+      .sort((a, b) => String(a.r.boeking_datum || "").localeCompare(String(b.r.boeking_datum || "")));
+  }, [bezorgLijst]);
+  if (weg || !items.length) return null;
+  const dismiss = () => { setWeg(true); try { localStorage.setItem(sluitKey, kitchenDate()); } catch (e) {} };
+  const dLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
+  const samenvat = (open) => open.map((o) => o.aantal + "× " + o.naam).join(", ");
+  const stijl = { background: "#f3ecdc", border: "1px solid #e4d6b8", color: "#6a5326" };
+  if (dicht) return (
+    <div onClick={() => setDicht(false)} className="rounded-xl px-4 py-3 mb-4 flex items-center gap-2 cursor-pointer" style={stijl} title="Uitklappen">
+      <div className="font-semibold flex items-center gap-1.5 text-sm flex-1 min-w-0 truncate"><Package size={15} /> {items.length === 1 ? "1 bezorging nog niet volledig terug" : items.length + " bezorgingen nog niet volledig terug"}</div>
+      <ChevronDown size={16} className="shrink-0" />
+      <button onClick={(e) => { e.stopPropagation(); dismiss(); }} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Verberg tot 02:00 vannacht"><X size={16} /></button>
+    </div>
+  );
+  return (
+    <div className="rounded-xl p-4 mb-4" style={stijl}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div onClick={() => setDicht(true)} className="font-semibold flex items-center gap-1.5 text-sm cursor-pointer" title="Inklappen"><Package size={15} /> {items.length === 1 ? "1 bezorging nog niet volledig terug" : items.length + " bezorgingen nog niet volledig terug"}</div>
+          <ul className="mt-1.5 space-y-1 text-sm">
+            {items.map(({ r, open }) => (
+              <li key={r.id} className="flex items-start gap-1.5">
+                <Package size={13} className="shrink-0 mt-0.5" />
+                <button onClick={() => onOpen(r.id)} className="ff underline text-left flex-1">
+                  {(r.boeking_naam || "Partij") + " · " + dLabel(r.boeking_datum) + " — " + samenvat(open)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex shrink-0 gap-0.5">
+          <button onClick={() => setDicht(true)} className="ff rounded-lg p-1 hover:opacity-70" title="Inklappen"><ChevronUp size={16} /></button>
+          <button onClick={dismiss} className="ff rounded-lg p-1 hover:opacity-70" title="Verberg tot 02:00 vannacht"><X size={16} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BoekingLog({ log }) {
   const [open, setOpen] = useState(false);
   const heeft = log && log.length > 0;
@@ -10494,9 +10599,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <div><span className="mute">Gasten: </span><span className="ink">{gastenTekst}{bezorging ? " · bezorging" : ""}</span></div>
               {statusTekst && <div><span className="mute">Status: </span><span style={{ color: "#a05a00" }}>{statusTekst}</span></div>}
               {zaal && <div><span className="mute">Locatie: </span><span className="ink font-semibold">{zaal}</span></div>}
-              {bezorging && adres && (
+              {adres && (
                 <div>
-                  <span className="mute">Bezorgadres: </span>
+                  <span className="mute">{bezorging ? "Bezorgadres" : "Adres"}: </span>
                   {/* Alleen op telefoon klikbaar naar de ingestelde navigatie-app; op laptop/tablet blijft het platte tekst. */}
                   <span className="ink font-semibold hidden md:inline">{adres}</span>
                   <a href={navHref(adres)} className="ff underline ink font-semibold md:hidden">{adres}</a>
@@ -11154,7 +11259,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onWisInv }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onWisInv }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
@@ -11277,6 +11382,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     <div>
       <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
       <WijzigingenBanner boekingen={boekingen} />
+      {onOpenBezorg && <BezorgBanner bezorgLijst={bezorgLijst} onOpen={onOpenBezorg} />}
 
       <div className="-mx-4 px-4" style={somOpen ? {} : { position: "sticky", top: plakTop, zIndex: 20, background: T.paper }}>
       {prodOverlap.length > 0 && (
@@ -13425,6 +13531,210 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Eén openstaande (of afgeronde) bezorgregistratie, met inline formulier om
+// een terugname te boeken. initieelOpen klapt de kaart uit vanuit een link
+// in de BezorgBanner (via focusId op het scherm eromheen).
+function BezorgKaart({ reg, canEdit, onTerug, onDelete, initieelOpen }) {
+  const open = bezorgOpenstaand(reg);
+  const [uit, setUit] = useState(!!initieelOpen);
+  const [waarden, setWaarden] = useState(() => {
+    const w = {}; open.forEach((o) => { w[o.naam] = String(o.aantal).replace(".", ","); }); return w;
+  });
+  const dLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }); } catch (e) { return d || ""; } };
+  const verwerk = () => {
+    const regels = open.map((o) => ({ naam: o.naam, aantal: Math.min(eurNum(waarden[o.naam]) || 0, o.aantal) })).filter((r) => r.aantal > 0);
+    if (!regels.length) return;
+    onTerug(reg.id, regels);
+    setUit(false);
+  };
+  return (
+    <div id={"bezorg-" + reg.id} className="card p-3" style={{ scrollMarginTop: "0.75rem" }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold ink truncate">{reg.boeking_naam || "Zonder naam"}</div>
+          <div className="text-[12.5px] mute">{dLabel(reg.boeking_datum)}</div>
+        </div>
+        {open.length > 0
+          ? <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>Nog terug</span>
+          : <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#e7ecdd", color: "#44502f" }}>Compleet</span>}
+      </div>
+      <div className="mt-2 text-[13.5px] space-y-0.5">
+        <div className="mute">Meegegeven: {(reg.materialen || []).map((m) => m.aantal + "× " + m.naam).join(", ") || "—"}</div>
+        {(reg.teruggenomen || []).length > 0 && <div className="mute">Al terug: {(reg.teruggenomen || []).reduce((acc, m) => { acc[m.naam] = (acc[m.naam] || 0) + (Number(m.aantal) || 0); return acc; }, Object.create(null)) && Object.entries((reg.teruggenomen || []).reduce((acc, m) => { acc[m.naam] = (acc[m.naam] || 0) + (Number(m.aantal) || 0); return acc; }, {})).map(([n, a]) => a + "× " + n).join(", ")}</div>}
+        {open.length > 0 && <div className="font-medium" style={{ color: "#a05a00" }}>Nog niet terug: {open.map((o) => o.aantal + "× " + o.naam).join(", ")}</div>}
+      </div>
+      {canEdit && open.length > 0 && (
+        uit ? (
+          <div className="mt-3 pt-3 space-y-2" style={{ borderTop: "1px solid " + T.line }}>
+            <div className="text-[12.5px] font-medium ink">Wat is er teruggekomen?</div>
+            {open.map((o) => (
+              <div key={o.naam} className="flex items-center gap-2">
+                <span className="text-sm flex-1 min-w-0 truncate">{o.naam}</span>
+                <input type="text" inputMode="decimal" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }}
+                  value={waarden[o.naam] || ""} onChange={(e) => setWaarden((w) => ({ ...w, [o.naam]: e.target.value.replace(/[^0-9,.]/g, "") }))} />
+                <span className="text-[11.5px] mute shrink-0">/ {o.aantal}</span>
+              </div>
+            ))}
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setUit(false)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+              <button onClick={verwerk} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Terugname boeken</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setUit(true)} className="ff mt-2 inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Check size={14} /> Terugname invullen</button>
+        )
+      )}
+      {canEdit && onDelete && (
+        <button onClick={() => { if (window.confirm("Deze registratie verwijderen?")) onDelete(reg.id); }} className="ff mt-2 ml-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>
+      )}
+    </div>
+  );
+}
+
+// Bezorgmateriaal-pagina: registreer wat er meegaat met een bezorging en houd
+// bij wat er nog terug moet komen. Bereikbaar via Instellingen, of via een
+// link in de melding op de boekingenpagina (met focusId naar één registratie).
+function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDelete, onBack, focusId }) {
+  const vandaag = localDate();
+  const [nieuwOpen, setNieuwOpen] = useState(false);
+  const [gekozen, setGekozen] = useState(null); // { id, naam, datum }
+  const [andereZoek, setAndereZoek] = useState("");
+  const [andereOpen, setAndereOpen] = useState(false);
+  const [rijen, setRijen] = useState([{ naam: "", aantal: "" }]);
+  const [notitie, setNotitie] = useState("");
+
+  const vandaagBoekingen = React.useMemo(() =>
+    (boekingen || []).filter((b) => b.datum === vandaag).sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || ""))),
+    [boekingen, vandaag]);
+  const zoekResultaten = React.useMemo(() => {
+    const q = zonderAccent(andereZoek).toLowerCase().trim();
+    if (!q) return [];
+    return (boekingen || [])
+      .filter((b) => zonderAccent(b.naam || "").toLowerCase().includes(q))
+      .sort((a, b) => String(b.datum || "").localeCompare(String(a.datum || "")))
+      .slice(0, 20);
+  }, [boekingen, andereZoek]);
+
+  const materiaalNamen = React.useMemo(() => {
+    const set = new Set();
+    (bezorgLijst || []).forEach((r) => (r.materialen || []).forEach((m) => m.naam && set.add(m.naam)));
+    return [...set].sort((a, b) => a.localeCompare(b, "nl"));
+  }, [bezorgLijst]);
+
+  const kiesPartij = (b) => { setGekozen({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); setAndereOpen(false); setAndereZoek(""); };
+  const setRij = (i, veld, w) => setRijen((rs) => rs.map((r, j) => (j === i ? { ...r, [veld]: w } : r)));
+  const voegRijToe = () => setRijen((rs) => [...rs, { naam: "", aantal: "" }]);
+  const wegRij = (i) => setRijen((rs) => (rs.length <= 1 ? [{ naam: "", aantal: "" }] : rs.filter((_, j) => j !== i)));
+
+  const opslaan = () => {
+    if (!gekozen) { alert("Kies eerst bij welke partij dit hoort."); return; }
+    const materialen = rijen.map((r) => ({ naam: String(r.naam || "").trim(), aantal: eurNum(r.aantal) || 0 })).filter((r) => r.naam && r.aantal > 0);
+    if (!materialen.length) { alert("Vul minstens één materiaal met een aantal in."); return; }
+    onSave({ boekingId: gekozen.id, boekingNaam: gekozen.naam, boekingDatum: gekozen.datum, materialen, notitie });
+    setGekozen(null); setRijen([{ naam: "", aantal: "" }]); setNotitie(""); setNieuwOpen(false);
+  };
+
+  // Bij openen vanuit de melding: naar de juiste kaart scrollen.
+  useEffect(() => {
+    if (focusId == null) return;
+    const t = setTimeout(() => { const el = document.getElementById("bezorg-" + focusId); if (el) el.scrollIntoView({ block: "center" }); }, 130);
+    return () => clearTimeout(t);
+  }, [focusId]);
+
+  const openLijst = (bezorgLijst || []).map((r) => ({ r, open: bezorgOpenstaand(r) }))
+    .filter((x) => x.open.length).sort((a, b) => String(a.r.boeking_datum || "").localeCompare(String(b.r.boeking_datum || "")));
+  const compleetLijst = (bezorgLijst || []).filter((r) => !bezorgOpenstaand(r).length)
+    .sort((a, b) => String(b.boeking_datum || "").localeCompare(String(a.boeking_datum || "")));
+  const [toonCompleet, setToonCompleet] = useState(false);
+
+  return (
+    <div>
+      <BackBar onBack={onBack} />
+      <h1 className="serif ink text-3xl leading-tight">Bezorgmateriaal</h1>
+      <p className="text-sm mute mt-1">Wat ging er mee met een bezorging, en wat moet er nog terugkomen? Registreer hieronder een nieuwe bezorging; hierboven zie je wat er nog openstaat.</p>
+
+      {canEdit && (
+        <div className="card p-4 mt-4">
+          {!nieuwOpen ? (
+            <button onClick={() => setNieuwOpen(true)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Plus size={15} /> Nieuwe bezorging registreren</button>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <span className="block text-sm font-medium ink mb-1.5">Partij</span>
+                {gekozen ? (
+                  <div className="flex items-center justify-between gap-2 card p-2.5">
+                    <span className="text-sm ink truncate">{gekozen.naam} <span className="mute">· {fmtDMY(gekozen.datum)}</span></span>
+                    <button onClick={() => setGekozen(null)} className="ff text-[12.5px] font-medium acc hover:opacity-70 shrink-0">Wijzig</button>
+                  </div>
+                ) : (
+                  <>
+                    {vandaagBoekingen.length > 0 && !andereOpen && (
+                      <div className="space-y-1.5">
+                        {vandaagBoekingen.map((b) => (
+                          <button key={b.id} onClick={() => kiesPartij(b)} className="ff card cardh w-full text-left px-3 py-2 text-sm">{b.naam || "Zonder naam"} <span className="mute">· {b.gasten || 0} pers. · {String(b.start_tijd || "").slice(11, 16)}</span></button>
+                        ))}
+                      </div>
+                    )}
+                    {!andereOpen ? (
+                      <button onClick={() => setAndereOpen(true)} className="ff mt-1.5 text-[12.5px] font-medium acc hover:opacity-70">Andere partij of dag kiezen…</button>
+                    ) : (
+                      <div className="mt-1.5">
+                        <input autoFocus className="input px-3 py-2 w-full text-sm" value={andereZoek} onChange={(e) => setAndereZoek(e.target.value)} placeholder="Zoek op naam van de partij" />
+                        {zoekResultaten.length > 0 && (
+                          <div className="mt-1.5 space-y-1 max-h-56 overflow-y-auto">
+                            {zoekResultaten.map((b) => (
+                              <button key={b.id} onClick={() => kiesPartij(b)} className="ff card cardh w-full text-left px-3 py-2 text-sm">{b.naam || "Zonder naam"} <span className="mute">· {fmtDMY(b.datum)}</span></button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div>
+                <span className="block text-sm font-medium ink mb-1.5">Materialen</span>
+                <div className="space-y-2">
+                  {rijen.map((r, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0"><ComboInput value={r.naam} onChange={(w) => setRij(i, "naam", w)} options={materiaalNamen} placeholder="bv. Tupperware bak groot" /></div>
+                      <input type="text" inputMode="numeric" className="input px-2 py-2 text-sm text-right" style={{ width: "4.5rem" }} value={r.aantal} onChange={(e) => setRij(i, "aantal", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" />
+                      <button onClick={() => wegRij(i)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={15} /></button>
+                    </div>
+                  ))}
+                </div>
+                <AddRow onClick={voegRijToe} label="Materiaal toevoegen" />
+              </div>
+
+              <Field label="Notitie (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
+
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setNieuwOpen(false); setGekozen(null); setRijen([{ naam: "", aantal: "" }]); setNotitie(""); }} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+                <button onClick={opslaan} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Opslaan</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <SectionTitle>Nog terug te halen ({openLijst.length})</SectionTitle>
+      {openLijst.length === 0
+        ? <Empty label="Alle bezorgmateriaal is terug." />
+        : <div className="space-y-2.5">{openLijst.map(({ r }) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} initieelOpen={r.id === focusId} />)}</div>}
+
+      {compleetLijst.length > 0 && (
+        <>
+          <button onClick={() => setToonCompleet((v) => !v)} className="ff mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+            {toonCompleet ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Afgerond ({compleetLijst.length})
+          </button>
+          {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} initieelOpen={false} />)}</div>}
+        </>
       )}
     </div>
   );
