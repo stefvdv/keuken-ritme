@@ -3981,11 +3981,18 @@ function App() {
   // Elke schermwissel (formulier, detail, terug) begint bovenaan de pagina.
   // scrollRestoration uit en een tweede scroll na de render: anders zet de
   // browser bij pushState/popstate de oude scrollpositie terug.
-  useEffect(() => { try { window.history.scrollRestoration = "manual"; } catch (e) {} }, []);
   useEffect(() => {
-    try { window.scrollTo(0, 0); } catch (e) {}
-    const t = setTimeout(() => { try { window.scrollTo(0, 0); } catch (e) {} }, 60);
-    return () => clearTimeout(t);
+    try { window.history.scrollRestoration = "manual"; } catch (e) {}
+    // Scroll-anchoring uit: Chrome schuift anders na de render terug naar
+    // het "anker" van de vorige pagina.
+    try { document.documentElement.style.overflowAnchor = "none"; } catch (e) {}
+  }, []);
+  useEffect(() => {
+    const naarBoven = () => { try { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) {} };
+    naarBoven();
+    const t1 = setTimeout(naarBoven, 60);
+    const t2 = setTimeout(naarBoven, 250);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [current, section]);
   // Op formulieren geen navigatiebalk: één tik zou anders je invoer weggooien.
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
@@ -10344,7 +10351,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       const balk = document.querySelector(".top-14");
       const off = (balk ? Math.round(balk.getBoundingClientRect().height) + 56 : 56) + 8;
       window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - off));
-    }, 130);
+    }, 350);
     return () => clearTimeout(t);
   }, []);
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
@@ -10862,7 +10869,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   }, []);
   // Bij openen de week van vandaag in beeld zetten.
   useEffect(() => {
-    const t = setTimeout(() => { const el = document.getElementById("bkdag-" + vandaag); if (el) el.scrollIntoView({ block: "center" }); }, 130);
+    const t = setTimeout(() => { const el = document.getElementById("bkdag-" + vandaag); if (el) el.scrollIntoView({ block: "center" }); }, 350);
     return () => clearTimeout(t);
   }, []);
 
