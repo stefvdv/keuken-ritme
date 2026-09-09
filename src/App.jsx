@@ -5083,6 +5083,13 @@ function App() {
     if (!checkForDate && cleaningLogs.some((l) => (l.taskId === DAY_DONE_ID || l.taskId === DAY_OFF_ID) && String(l.doneDate).slice(0, 10) === key)) { setCheckOpen(false); setCheckBanner(false); }
   }, [cleaningLogs, checkOpen, checkBanner]);
 
+  // Deze drie horen bij het meldingencentrum en moeten vóór elke vroege
+  // return staan — anders wisselt het aantal hooks tussen wel/niet
+  // ingelogd en crasht React ("Rendered more hooks...").
+  const [wijzDicht, setWijzDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:wijzigingen") === kitchenDate(); } catch (e) { return false; } });
+  const [bezorgDicht, setBezorgDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:bezorgmateriaal") === kitchenDate(); } catch (e) { return false; } });
+  const [meldingenOpen, setMeldingenOpen] = useState(false);
+
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
   const fabAction = () => {
@@ -5099,8 +5106,6 @@ function App() {
   const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
   // ---------- Meldingencentrum: alle "aandacht nodig"-signalen op één plek ----------
-  const [wijzDicht, setWijzDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:wijzigingen") === kitchenDate(); } catch (e) { return false; } });
-  const [bezorgDicht, setBezorgDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:bezorgmateriaal") === kitchenDate(); } catch (e) { return false; } });
   const dismissWijz = () => { setWijzDicht(true); try { localStorage.setItem("ritme:banner-dicht:wijzigingen", kitchenDate()); } catch (e) {} };
   const dismissBezorg = () => { setBezorgDicht(true); try { localStorage.setItem("ritme:banner-dicht:bezorgmateriaal", kitchenDate()); } catch (e) {} };
   const meldingCategorieen = [];
@@ -5236,7 +5241,6 @@ function App() {
       onAfronden: dismissBezorg,
     });
   }
-  const [meldingenOpen, setMeldingenOpen] = useState(false);
   const klikHome = () => {
     if (meldingCategorieen.length && !meldingenOpen) { setMeldingenOpen(true); return; }
     setMeldingenOpen(false);
