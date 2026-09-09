@@ -3979,7 +3979,14 @@ function App() {
   const goBack = () => { if (stack.length > 1) { try { window.history.back(); } catch (e) { back(); } } };
   const goHome = () => { resetTo({ screen: "list" }); setSection("home"); };
   // Elke schermwissel (formulier, detail, terug) begint bovenaan de pagina.
-  useEffect(() => { try { window.scrollTo(0, 0); } catch (e) {} }, [current, section]);
+  // scrollRestoration uit en een tweede scroll na de render: anders zet de
+  // browser bij pushState/popstate de oude scrollpositie terug.
+  useEffect(() => { try { window.history.scrollRestoration = "manual"; } catch (e) {} }, []);
+  useEffect(() => {
+    try { window.scrollTo(0, 0); } catch (e) {}
+    const t = setTimeout(() => { try { window.scrollTo(0, 0); } catch (e) {} }, 60);
+    return () => clearTimeout(t);
+  }, [current, section]);
   // Op formulieren geen navigatiebalk: één tik zou anders je invoer weggooien.
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
@@ -7579,7 +7586,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
         </div>
       </div>
       {showActive && (active.length > 0
-        ? <div className="grid grid-cols-2 gap-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>
+        ? <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">{active.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>
         : <Empty label="Nog geen actieve batches." />)}
       {done.length > 0 && <>
         <button onClick={() => setOpenDone((o) => !o)} className="ff mt-5 mb-2 flex items-center gap-1">
@@ -7593,7 +7600,7 @@ function FermentList({ batches, recipes, stock, canEdit, onToggleDone, onDeleteB
                 <span className="inline-flex items-center gap-1 text-[13px] font-semibold ink">{openMonths[gr.k] ? <ChevronUp size={13} className="acc" /> : <ChevronDown size={13} className="acc" />} <span className="capitalize">{gr.label}</span></span>
                 <span className="text-[11.5px] mute">{gr.list.length} {gr.list.length === 1 ? "batch" : "batches"}</span>
               </button>
-              {openMonths[gr.k] && <div className="grid grid-cols-2 gap-2.5">{gr.list.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>}
+              {openMonths[gr.k] && <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">{gr.list.map((b) => <BatchCard key={b.id} b={b} canEdit={canEdit} onToggleDone={onToggleDone} onDelete={onDeleteBatch} onEdit={onEditBatch} onOpenLog={onOpenLog} onAck={onAck} onExtend={onExtend} />)}</div>}
             </div>
           ))}
         </div>}
@@ -10036,8 +10043,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
-          ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
-          : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
+          ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 w-full md:w-auto md:flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
+          : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 w-full md:w-auto md:flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
 
         {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
         {statusTekst && !bewerk && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
