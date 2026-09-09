@@ -7601,7 +7601,17 @@ function FermentList({ batches, recipes, stock, openCounts, canEdit, onToggleDon
     const t = new Date(String(b.startDate || "").slice(0, 10) + "T12:00:00").getTime();
     return isNaN(t) ? Infinity : t + (Number(b.days) || 0) * 86400000;
   };
-  const active = batches.filter((b) => !b.done).sort((a, b) => endTs(a) - endTs(b));
+  // Volgorde (minste dagen te gaan eerst) wordt bij het openen van de pagina
+  // vastgelegd: +1 dag laat de kaart niet meteen verspringen. Pas na een
+  // bezoek aan een andere pagina en terug wordt er opnieuw gesorteerd.
+  const volgorde = React.useRef(null);
+  const active = React.useMemo(() => {
+    const vers = batches.filter((b) => !b.done).sort((a, b) => endTs(a) - endTs(b));
+    if (!volgorde.current) { volgorde.current = vers.map((b) => b.id); return vers; }
+    const rang = new Map(volgorde.current.map((id, i) => [id, i]));
+    // Nieuwe batches (nog niet in de vastgelegde volgorde) komen achteraan.
+    return [...vers].sort((a, b) => (rang.has(a.id) ? rang.get(a.id) : 1e9 + vers.indexOf(a)) - (rang.has(b.id) ? rang.get(b.id) : 1e9 + vers.indexOf(b)));
+  }, [batches]);
   const done = batches.filter((b) => b.done).sort((a, b) => {
     const fa = String(a.finishedDate || ""), fb = String(b.finishedDate || "");
     return fa < fb ? 1 : fa > fb ? -1 : 0;
@@ -10248,39 +10258,47 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       + "</body></html>");
   };
 
-  // Eén klik: partij-etiket (102 x 38 mm) met de naam zo groot als past.
+  // Eén klik: partij-etiket (102 x 38 mm). Alles schaalt samen zodat het
+  // ALTIJD op één sticker past: eerst de inforegels zo groot mogelijk (met
+  // plafond), daarna groeit de naam tot de resterende ruimte vol is. Past het
+  // niet, dan schaalt alles kleiner — er komt nooit een tweede sticker uit.
   const printPartijEtiket = () => {
+    const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const datumRij = [datumKop, tijdTekst || ""].filter(Boolean).join(" · ");
     const rijen = [
       gastenTekst + " gasten",
       bezorging ? "Bezorging" + (zaal ? " · " + zaal : "") : (zaal || ""),
       [contact, tel].filter(Boolean).join(" · "),
     ].filter((r) => String(r).trim());
-    const mm = (pt, lh) => pt * 0.3528 * lh;
     const naamTxt = String(naamTekst || b.naam || "Zonder naam");
-    const beschikbaar = LABEL_MM.h - 3 - (datumRij ? mm(15, 1.25) + 0.5 : 0) - rijen.length * mm(12, 1.3) - 1;
-    const breedte = LABEL_MM.w - 6;
-    let naamPt = 12;
-    for (let f = 34; f >= 12; f--) {
-      const perRegel = Math.max(1, Math.floor(breedte / (0.55 * f * 0.3528)));
-      const regelsNodig = Math.max(1, Math.ceil(naamTxt.length / perRegel));
-      if (regelsNodig * mm(f, 1.1) <= beschikbaar) { naamPt = f; break; }
-    }
     printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
       "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
       "html,body{margin:0;padding:0}" +
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
-      ".wrap{position:absolute;top:3mm;left:3mm;right:3mm;text-align:center}" +
-      ".naam{font-weight:bold;font-size:" + naamPt + "pt;line-height:1.1;margin:0 0 1mm 0;word-wrap:break-word}" +
-      ".datum{font-weight:bold;font-size:15pt;line-height:1.25;margin:0 0 0.5mm 0}" +
-      ".rij{font-weight:bold;font-size:12pt;line-height:1.3;margin:0}" +
+      ".vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:1.5mm;overflow:hidden;text-align:center;display:flex;flex-direction:column;justify-content:center}" +
+      "#naam{font-weight:bold;line-height:1.05;word-wrap:break-word;margin:0 0 0.6mm 0}" +
+      "#rest{font-weight:bold;line-height:1.22}" +
+      ".rij{margin:0}" +
+      ".datum{font-size:1.25em;line-height:1.2}" +
       "</style></head><body>" +
-      '<div class="wrap">' +
-      '<div class="naam">' + pEsc(naamTxt) + "</div>" +
-      (datumRij ? '<div class="datum">' + pEsc(datumRij) + "</div>" : "") +
-      rijen.map((r) => '<div class="rij">' + pEsc(r) + "</div>").join("") +
-      "</div></body></html>");
+      '<div class="vul">' +
+      '<div id="naam">' + esc(naamTxt) + "</div>" +
+      '<div id="rest">' +
+      (datumRij ? '<div class="rij datum">' + esc(datumRij) + "</div>" : "") +
+      rijen.map((r) => '<div class="rij">' + esc(r) + "</div>").join("") +
+      "</div></div>" +
+      "<scr" + `ipt>(function(){
+      var vul=document.querySelector(".vul"),naam=document.getElementById("naam"),rest=document.getElementById("rest");
+      function past(){return vul.scrollHeight<=vul.clientHeight&&vul.scrollWidth<=vul.clientWidth;}
+      var lo=4,hi=22;
+      while(hi-lo>0.5){var m=(lo+hi)/2;rest.style.fontSize=m+"px";naam.style.fontSize=(m*1.4)+"px";if(past()){lo=m;}else{hi=m;}}
+      rest.style.fontSize=lo+"px";naam.style.fontSize=(lo*1.4)+"px";
+      var nlo=lo*1.4,nhi=150;
+      while(nhi-nlo>0.5){var m2=(nlo+nhi)/2;naam.style.fontSize=m2+"px";if(past()){nlo=m2;}else{nhi=m2;}}
+      naam.style.fontSize=nlo+"px";
+    })();</scr` + "ipt>" +
+      "</body></html>");
   };
 
   const startBewerk = () => {
@@ -10303,7 +10321,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     if (onSluitStift) onSluitStift();
   };
   const zetR = (i, veld, w) => setRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
-  const zetO = (mid, j, veld, w) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, [veld]: w } : x)) }));
+  const zetO = (mid, j, veld, w) => setInv((m) => {
+    const rs = (m[mid] || []).length ? (m[mid] || []).slice() : [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }];
+    if (rs[j]) rs[j] = { ...rs[j], [veld]: w };
+    return { ...m, [mid]: rs };
+  });
   const koppelRecept = (mid, j, sg) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, recipeId: sg.recipeId || null, productId: sg.productId || null, receptNaam: sg.naam } : x)) }));
   const ontkoppel = (mid, j) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, recipeId: null, productId: null, receptNaam: "" } : x)) }));
   const [koppelRij, setKoppelRij] = useState(""); // rij waarvoor handmatig een recept gezocht wordt
@@ -10317,7 +10339,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     .filter((r) => r.tekst).map((r) => (r.aantal ? r.aantal + "x " : "") + r.tekst).join("\n");
   const zetAl = (i, veld, w) => setAlRijen((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
   const plusO = (mid, na) => setInv((m) => { const rs = (m[mid] || []).slice(); rs.splice(na == null ? rs.length : na, 0, { hoeveelheid: "", naam: "", recipeId: null, productId: null }); return { ...m, [mid]: rs }; });
-  const wegO = (mid, j) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).filter((_, jj) => jj !== j) }));
+  const wegO = (mid, j) => setInv((m) => {
+    const rs = m[mid] || [];
+    if (rs.length <= 1) return { ...m, [mid]: [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }] };
+    return { ...m, [mid]: rs.filter((_, jj) => jj !== j) };
+  });
   const opslaan = () => {
     const schoon = regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim());
     onOpslaan(schoon, magExtra ? { ...velden, allergie: alTekst(alRijen), naam: magNaamStatus ? velden.naam : "", status: magNaamStatus ? velden.status : "" } : null);
@@ -10361,7 +10387,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             {bezorging
               ? <span title="Bezorging" className="inline-flex"><Truck size={22} /></span>
               : zaal ? <span title={zaal} className="inline-flex"><Home size={22} /></span> : null}
-            <span>{(tijdTekst || "—") + " · " + gastenTekst + "p"}</span>
+            <span>{(tijdTekst || "—") + " · " + gastenTekst + " pers."}</span>
           </span>
         )}
         {!bewerk && (
@@ -10481,7 +10507,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     )}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
                   </div>
-                  {(inv[mid] || []).map((o, j) => {
+                  {((inv[mid] && inv[mid].length ? inv[mid] : [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }])).map((o, j) => {
                     const sleutel = mid + ":" + j;
                     return (
                       <div key={j}>
@@ -10907,7 +10933,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     }}
                     onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten" inSom={inSom}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
-                    randKleur={statusRand(statusVan(b))} statusTekst={statusNL(statusVan(b))}
+                    randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal}
                     miceProducten={miceProducten} producten={producten} />
                 );
@@ -11257,7 +11283,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                     {items.map((b) => (
                       <button key={b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
-                        <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)}p · {tijdVan(b) || "—"}</span>
+                        <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)} pers. · {tijdVan(b) || "—"}</span>
                       </button>
                     ))}
                   </div>
