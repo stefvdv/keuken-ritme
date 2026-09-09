@@ -5276,8 +5276,7 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
               </span>
             </div>
             {tabel === "verlies"
-              ? <TechTable head={["Groente", "Type", "Snijverlies", "Vochtverlies", "Schoon voor 1 kg", "Onbewerkt voor 1 kg"]}
-                  rows={((tabellen && tabellen.roosteren) || []).map((r) => [r.groente, r.type, r.snij, r.verlies, r.schoon, r.onbewerkt])} />
+              ? <VerliesTabel rijen={(tabellen && tabellen.roosteren) || []} />
               : <KookTabel rijen={(tabellen && tabellen.koken) || []} />}
           </div>
         </div>
@@ -8206,6 +8205,69 @@ const TECH_NOTES_SEED = {
     "Weeg een keer per seizoen na en pas de waarden aan; jonge tuingroente bevat meer vocht.",
   ],
 };
+
+// De verliestabel rekent zelf: vul aantal personen en portie (geroosterd,
+// per persoon) in en lees af hoeveel gegaard, schoongemaakt en onbewerkt
+// product je nodig hebt (via de verhoudingen per 1 kg).
+function VerliesTabel({ rijen }) {
+  const [aant, setAant] = useState({});
+  const [portie, setPortie] = useState({});
+  const kg = (n) => (n >= 1 ? String(Math.round(n * 100) / 100).replace(".", ",") + " kg" : Math.round(n * 1000) + " g");
+  const per1kg = (t) => eurNum(String(t == null ? "" : t).replace(/[^0-9.,]/g, ""));
+  const sleutel = (r, i) => (r.groente || "") + "|" + (r.type || "") + "|" + i;
+  return (
+    <div className="overflow-x-auto -mx-1 px-1">
+      <table className="w-full text-[13px]" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
+            <th className="text-left py-1.5 pr-2">Groente</th>
+            <th className="text-left py-1.5 pr-2">Type</th>
+            <th className="text-left py-1.5 pr-2">Snijverlies</th>
+            <th className="text-left py-1.5 pr-2">Vochtverlies</th>
+            <th className="text-left py-1.5 pr-2">Aantal</th>
+            <th className="text-left py-1.5 pr-2">Portie</th>
+            <th className="text-left py-1.5 pr-2">Nodig gegaard</th>
+            <th className="text-left py-1.5 pr-2">Schoon</th>
+            <th className="text-left py-1.5">Onbewerkt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rijen.map((r, i) => {
+            const k = sleutel(r, i);
+            const n = eurNum(aant[k]);
+            const g = eurNum(portie[k]);
+            const gegaard = n && g ? (n * g) / 1000 : null;
+            const schoon1 = per1kg(r.schoon);
+            const onbew1 = per1kg(r.onbewerkt);
+            const zet = (setter) => (e) => setter((w) => ({ ...w, [k]: e.target.value.replace(/[^0-9.,]/g, "") }));
+            return (
+              <tr key={i} className="align-middle" style={{ borderTop: "1px solid " + T.line }}>
+                <td className="py-1.5 pr-2 ink">{r.groente}</td>
+                <td className="py-1.5 pr-2 mute whitespace-nowrap">{r.type}</td>
+                <td className="py-1.5 pr-2 mute">{r.snij}</td>
+                <td className="py-1.5 pr-2 mute">{r.verlies}</td>
+                <td className="py-1.5 pr-2">
+                  <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-[13px]" style={{ width: "3.6rem" }} value={aant[k] || ""}
+                    onChange={zet(setAant)} placeholder="28" />
+                </td>
+                <td className="py-1.5 pr-2">
+                  <div className="relative" style={{ width: "5rem" }}>
+                    <input type="text" inputMode="decimal" className="input px-2 py-1.5 w-full text-[13px] pr-6" value={portie[k] || ""}
+                      onChange={zet(setPortie)} placeholder="80" />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">g</span>
+                  </div>
+                </td>
+                <td className="py-1.5 pr-2 font-semibold whitespace-nowrap" style={{ color: gegaard === null ? "#a5a394" : "#44502f" }}>{gegaard === null ? "\u2014" : kg(gegaard)}</td>
+                <td className="py-1.5 pr-2 whitespace-nowrap">{gegaard !== null && schoon1 ? <span className="font-semibold" style={{ color: "#44502f" }}>{kg(gegaard * schoon1)}</span> : <span className="mute">{r.schoon}</span>}</td>
+                <td className="py-1.5 whitespace-nowrap">{gegaard !== null && onbew1 ? <span className="font-semibold" style={{ color: "#44502f" }}>{kg(gegaard * onbew1)}</span> : <span className="mute">{r.onbewerkt}</span>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 // De kooktabel rekent zelf: vul een aantal personen en een portie (gegaard,
 // per persoon) in — of direct een gewenst gegaard gewicht — en lees af
