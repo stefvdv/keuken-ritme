@@ -2821,6 +2821,7 @@ function App() {
   const [spellingUit, setSpellingUit] = useState([]); // namen die bewust afwijken en niet gecorrigeerd worden
   const [naamAlias, setNaamAlias] = useState({}); // zelf samengevoegde namen: variant -> hoofdnaam
   const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
+  const [materiaalInventaris, setMateriaalInventaris] = useState([]); // gedeelde lijst bezorgmateriaal
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
@@ -2918,12 +2919,14 @@ function App() {
     }
     flash("Bezorging geregistreerd");
   };
-  // Terugname invullen: nieuwe teruggenomen-regels komen bovenop wat er al
-  // was (nooit overschrijven), zodat gedeeltelijke retouren blijven kloppen.
-  const boekBezorgTerugname = async (id, nieuweRegels) => {
+  // Terugname invullen: elke keer komt er een nieuwe gebeurtenis bij (nooit
+  // overschrijven), met tijdstip, wie het invulde en een eigen notitie —
+  // samen vormen ze straks de geschiedenis onderaan de pagina.
+  const boekBezorgTerugname = async (id, event) => {
     const huidige = bezorgLijst.find((r) => r.id === id);
-    if (!huidige || !nieuweRegels || !nieuweRegels.length) return;
-    const teruggenomen = [...(huidige.teruggenomen || []), ...nieuweRegels];
+    if (!huidige || !event || !event.regels || !event.regels.length) return;
+    const gebeurtenis = { datum: new Date().toISOString(), door: user || "", notitie: event.notitie || "", regels: event.regels };
+    const teruggenomen = [...(huidige.teruggenomen || []), gebeurtenis];
     setBezorgLijst((l) => l.map((r) => (r.id === id ? { ...r, teruggenomen } : r)));
     if (live) { try { await supabase.from("bezorgmateriaal").update({ teruggenomen, updated_at: new Date().toISOString() }).eq("id", id); } catch (e) {} }
   };
@@ -3320,6 +3323,15 @@ function App() {
     if (live) {
       const { error } = await supabase.from("app_settings").upsert({ key: "verpakkingsvormen", value: { namen: uit }, updated_at: new Date().toISOString() });
       if (error) flash("Vorm alleen op dit apparaat bewaard");
+    }
+  };
+  // Gedeelde materialenlijst voor bezorgingen (kratten, bakken, dozen...).
+  const saveMateriaalInventaris = async (lijst) => {
+    const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"));
+    setMateriaalInventaris(uit);
+    if (live) {
+      const { error } = await supabase.from("app_settings").upsert({ key: "bezorg_materialen", value: { namen: uit }, updated_at: new Date().toISOString() });
+      if (error) flash("Materiaal alleen op dit apparaat bewaard");
     }
   };
   const [bdArtikelen, setBdArtikelen] = useState([]);
@@ -3915,7 +3927,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval"]),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "bezorg_materialen"]),
       supabase.from("mice_events").select("*").order("datum", { ascending: true }),
       supabase.from("mice_koppeling").select("*"),
       supabase.from("mice_producten").select("*").order("naam", { ascending: true }),
@@ -3978,6 +3990,8 @@ function App() {
     if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
     const hiRow = (cs && cs.data && cs.data.find((r) => r.key === "haccp_interval")) || null;
     if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
+    const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
+    if (bmRow && bmRow.value && Array.isArray(bmRow.value.namen)) setMateriaalInventaris(bmRow.value.namen);
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
     if (mev && !mev.error) setBoekingen(mev.data || []);
     if (mko && !mko.error) {
@@ -5262,6 +5276,7 @@ function App() {
           return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
         {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen} bezorgLijst={bezorgLijst} canEdit={canEdit}
+          materiaalInventaris={materiaalInventaris} onSaveInventaris={canEdit ? saveMateriaalInventaris : null}
           onSave={saveBezorgRegistratie} onTerug={boekBezorgTerugname} onDelete={canEdit ? verwijderBezorgRegistratie : null}
           onBack={goBack} focusId={current.focus != null ? current.focus : null} />}
       </main>
@@ -5284,9 +5299,9 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : section === "boekingen" ? "Boeking" : "Batch"}
         </button>
       )}
-      {user && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
+      {user && current.screen !== "bezorgmateriaal" && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
         tabellen={techTableRows} canEdit={canEdit} onEditTable={(t) => push({ screen: "techTableForm", table: t })} />}
-      {user && canEdit && (
+      {user && canEdit && current.screen !== "bezorgmateriaal" && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
           className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab || section === "mep" ? "bottom-[5.25rem]" : "bottom-6")}
           style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
@@ -7317,9 +7332,6 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         {onOpenGerechten && (
           <button onClick={onOpenGerechten} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Utensils size={15} /> Gerechten-pagina openen (testperiode)</button>
         )}
-        {onOpenBezorg && (
-          <button onClick={onOpenBezorg} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Package size={15} /> Bezorgmateriaal beheren</button>
-        )}
         {chefMode && onResetBoekingen && (
           <button onClick={onResetBoekingen} disabled={boekingenLaden} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
             {boekingenLaden ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
@@ -7333,6 +7345,16 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
             onOk={(code) => { if (onChef(true, code)) setChefOpen(false); else setChefFout("Die code klopt niet."); }} />
         )}
       </div>
+
+      {onOpenBezorg && (
+        <>
+          <SectionTitle>Bezorgmateriaal</SectionTitle>
+          <div className="card p-4">
+            <p className="text-sm mute mb-3">Houd bij wat er met bezorgingen meegaat en wat er nog terug moet komen.</p>
+            <button onClick={onOpenBezorg} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Package size={16} /> Bezorgmateriaal beheren</button>
+          </div>
+        </>
+      )}
 
       <SectionTitle>Backup</SectionTitle>
       <div className="card p-4">
@@ -10233,8 +10255,19 @@ function WijzigingenBanner({ boekingen, dagen = 3 }) {
 function bezorgOpenstaand(reg) {
   const per = {};
   for (const m of reg.materialen || []) per[m.naam] = (per[m.naam] || 0) + (Number(m.aantal) || 0);
-  for (const m of reg.teruggenomen || []) per[m.naam] = (per[m.naam] || 0) - (Number(m.aantal) || 0);
-  return Object.entries(per).filter(([, n]) => n > 0.0001).map(([naam, aantal]) => ({ naam, aantal }));
+  for (const regel of bezorgTerugnameRegels(reg)) per[regel.naam] = (per[regel.naam] || 0) - (Number(regel.aantal) || 0);
+  return Object.entries(per).filter(([, n]) => n > 0.0001).map(([naam, aantal]) => ({ naam, aantal })).sort((a, b) => a.naam.localeCompare(b.naam, "nl"));
+}
+// teruggenomen is een lijst van gebeurtenissen ({ datum, door, notitie, regels }).
+// Oudere registraties kunnen nog de platte vorm ({ naam, aantal }) hebben; die
+// wordt hier ook herkend, zodat niets verloren gaat.
+function bezorgTerugnameRegels(reg) {
+  const uit = [];
+  for (const t of reg.teruggenomen || []) {
+    if (t && Array.isArray(t.regels)) uit.push(...t.regels);
+    else if (t && t.naam != null) uit.push(t);
+  }
+  return uit;
 }
 function BezorgBanner({ bezorgLijst, onOpen }) {
   const [dicht, setDicht] = useState(true);
@@ -13539,22 +13572,36 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
 // Eén openstaande (of afgeronde) bezorgregistratie, met inline formulier om
 // een terugname te boeken. initieelOpen klapt de kaart uit vanuit een link
 // in de BezorgBanner (via focusId op het scherm eromheen).
-function BezorgKaart({ reg, canEdit, onTerug, onDelete, initieelOpen }) {
+function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, initieelOpen }) {
   const open = bezorgOpenstaand(reg);
+  const terugRegels = bezorgTerugnameRegels(reg);
   const [uit, setUit] = useState(!!initieelOpen);
   const [waarden, setWaarden] = useState(() => {
     const w = {}; open.forEach((o) => { w[o.naam] = String(o.aantal).replace(".", ","); }); return w;
   });
+  // Extra materiaal dat niet in de oorspronkelijke bezorging stond — voor
+  // als het invullen van de bezorging zelf niet klopte.
+  const [extraRijen, setExtraRijen] = useState([{ naam: "", aantal: "" }]);
+  const [notitie, setNotitie] = useState("");
   const dLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }); } catch (e) { return d || ""; } };
+  const zetExtra = (i, veld, w) => setExtraRijen((rs) => rs.map((r, j) => (j === i ? { ...r, [veld]: w } : r)));
+  const voegExtraToe = () => setExtraRijen((rs) => [...rs, { naam: "", aantal: "" }]);
+  const wegExtra = (i) => setExtraRijen((rs) => (rs.length <= 1 ? [{ naam: "", aantal: "" }] : rs.filter((_, j) => j !== i)));
+  const alTerug = React.useMemo(() => {
+    const per = {}; terugRegels.forEach((m) => { per[m.naam] = (per[m.naam] || 0) + (Number(m.aantal) || 0); });
+    return Object.entries(per).sort((a, b) => a[0].localeCompare(b[0], "nl")).map(([n, a]) => a + "\u00d7 " + n).join(", ");
+  }, [terugRegels]);
   const verwerk = () => {
-    const regels = open.map((o) => ({ naam: o.naam, aantal: Math.min(eurNum(waarden[o.naam]) || 0, o.aantal) })).filter((r) => r.aantal > 0);
+    const uitOpen = open.map((o) => ({ naam: o.naam, aantal: Math.min(eurNum(waarden[o.naam]) || 0, o.aantal) })).filter((r) => r.aantal > 0);
+    const uitExtra = extraRijen.map((r) => ({ naam: String(r.naam || "").trim(), aantal: eurNum(r.aantal) || 0 })).filter((r) => r.naam && r.aantal > 0);
+    const regels = [...uitOpen, ...uitExtra];
     if (!regels.length) return;
-    onTerug(reg.id, regels);
-    setUit(false);
+    onTerug(reg.id, { regels, notitie });
+    setUit(false); setExtraRijen([{ naam: "", aantal: "" }]); setNotitie("");
   };
   return (
     <div id={"bezorg-" + reg.id} className="card p-3" style={{ scrollMarginTop: "0.75rem" }}>
-      <div className="flex items-start justify-between gap-2">
+      <button type="button" onClick={() => canEdit && open.length > 0 && setUit((v) => !v)} className="ff w-full text-left flex items-start justify-between gap-2" disabled={!canEdit || !open.length}>
         <div className="min-w-0">
           <div className="font-semibold ink truncate">{reg.boeking_naam || "Zonder naam"}</div>
           <div className="text-[12.5px] mute">{dLabel(reg.boeking_datum)}</div>
@@ -13562,35 +13609,49 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, initieelOpen }) {
         {open.length > 0
           ? <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>Nog terug</span>
           : <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#e7ecdd", color: "#44502f" }}>Compleet</span>}
-      </div>
+      </button>
       <div className="mt-2 text-[13.5px] space-y-0.5">
-        <div className="mute">Meegegeven: {(reg.materialen || []).map((m) => m.aantal + "× " + m.naam).join(", ") || "—"}</div>
-        {(reg.teruggenomen || []).length > 0 && <div className="mute">Al terug: {(reg.teruggenomen || []).reduce((acc, m) => { acc[m.naam] = (acc[m.naam] || 0) + (Number(m.aantal) || 0); return acc; }, Object.create(null)) && Object.entries((reg.teruggenomen || []).reduce((acc, m) => { acc[m.naam] = (acc[m.naam] || 0) + (Number(m.aantal) || 0); return acc; }, {})).map(([n, a]) => a + "× " + n).join(", ")}</div>}
-        {open.length > 0 && <div className="font-medium" style={{ color: "#a05a00" }}>Nog niet terug: {open.map((o) => o.aantal + "× " + o.naam).join(", ")}</div>}
+        <div className="mute">Meegegeven: {(reg.materialen || []).map((m) => m.aantal + "\u00d7 " + m.naam).join(", ") || "\u2014"}</div>
+        {alTerug && <div className="mute">Al terug: {alTerug}</div>}
+        {open.length > 0 && <div className="font-medium" style={{ color: "#a05a00" }}>Nog niet terug: {open.map((o) => o.aantal + "\u00d7 " + o.naam).join(", ")}</div>}
       </div>
-      {canEdit && open.length > 0 && (
-        uit ? (
-          <div className="mt-3 pt-3 space-y-2" style={{ borderTop: "1px solid " + T.line }}>
-            <div className="text-[12.5px] font-medium ink">Wat is er teruggekomen?</div>
-            {open.map((o) => (
-              <div key={o.naam} className="flex items-center gap-2">
-                <span className="text-sm flex-1 min-w-0 truncate">{o.naam}</span>
-                <input type="text" inputMode="decimal" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }}
-                  value={waarden[o.naam] || ""} onChange={(e) => setWaarden((w) => ({ ...w, [o.naam]: e.target.value.replace(/[^0-9,.]/g, "") }))} />
-                <span className="text-[11.5px] mute shrink-0">/ {o.aantal}</span>
-              </div>
-            ))}
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={() => setUit(false)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
-              <button onClick={verwerk} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Terugname boeken</button>
+      {canEdit && open.length > 0 && uit && (
+        <div className="mt-3 pt-3 space-y-3" style={{ borderTop: "1px solid " + T.line }}>
+          <div>
+            <div className="text-[12.5px] font-medium ink mb-1.5">Wat is er teruggekomen?</div>
+            <div className="space-y-2">
+              {open.map((o) => (
+                <div key={o.naam} className="flex items-center gap-2">
+                  <span className="text-sm flex-1 min-w-0 truncate">{o.naam}</span>
+                  <input type="text" inputMode="decimal" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }}
+                    value={waarden[o.naam] || ""} onChange={(e) => setWaarden((w) => ({ ...w, [o.naam]: e.target.value.replace(/[^0-9,.]/g, "") }))} />
+                  <span className="text-[11.5px] mute shrink-0">/ {o.aantal}</span>
+                </div>
+              ))}
             </div>
           </div>
-        ) : (
-          <button onClick={() => setUit(true)} className="ff mt-2 inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Check size={14} /> Terugname invullen</button>
-        )
+          <div>
+            <div className="text-[12.5px] font-medium ink mb-1.5">Stond er nog iets anders bij? (optioneel)</div>
+            <div className="space-y-2">
+              {extraRijen.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0"><ComboInput value={r.naam} onChange={(w) => zetExtra(i, "naam", w)} options={materiaalNamen} placeholder="Materiaal" /></div>
+                  <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }} value={r.aantal} onChange={(e) => zetExtra(i, "aantal", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" />
+                  <button onClick={() => wegExtra(i)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <AddRow onClick={voegExtraToe} label="Materiaal toevoegen" />
+          </div>
+          <Field label="Opmerking bij deze terugname (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. \u00e9\u00e9n bak beschadigd" /></Field>
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => setUit(false)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+            <button onClick={verwerk} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Terugname boeken</button>
+          </div>
+        </div>
       )}
       {canEdit && onDelete && (
-        <button onClick={() => { if (window.confirm("Deze registratie verwijderen?")) onDelete(reg.id); }} className="ff mt-2 ml-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>
+        <button onClick={() => { if (window.confirm("Deze registratie verwijderen?")) onDelete(reg.id); }} className="ff mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>
       )}
     </div>
   );
@@ -13599,34 +13660,36 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, initieelOpen }) {
 // Bezorgmateriaal-pagina: registreer wat er meegaat met een bezorging en houd
 // bij wat er nog terug moet komen. Bereikbaar via Instellingen, of via een
 // link in de melding op de boekingenpagina (met focusId naar één registratie).
-function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDelete, onBack, focusId }) {
+function BezorgScreen({ boekingen, bezorgLijst, materiaalInventaris, onSaveInventaris, canEdit, onSave, onTerug, onDelete, onBack, focusId }) {
   const vandaag = localDate();
   const [nieuwOpen, setNieuwOpen] = useState(false);
   const [gekozen, setGekozen] = useState(null); // { id, naam, datum }
-  const [andereZoek, setAndereZoek] = useState("");
-  const [andereOpen, setAndereOpen] = useState(false);
+  const [zoek, setZoek] = useState("");
   const [rijen, setRijen] = useState([{ naam: "", aantal: "" }]);
   const [notitie, setNotitie] = useState("");
 
+  // Één doorlopende, zoekbare dropdown: Vandaag apart van Ouder (op
+  // datum aflopend gesorteerd — nieuw boven, oud onder). Zonder zoekterm
+  // toont "ouder" de meest recente boekingen; typen doorzoekt alles.
+  const partijQuery = zonderAccent(zoek).toLowerCase().trim();
+  const matchtPartij = (b) => !partijQuery || zonderAccent(b.naam || "").toLowerCase().includes(partijQuery);
   const vandaagBoekingen = React.useMemo(() =>
-    (boekingen || []).filter((b) => b.datum === vandaag).sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || ""))),
-    [boekingen, vandaag]);
-  const zoekResultaten = React.useMemo(() => {
-    const q = zonderAccent(andereZoek).toLowerCase().trim();
-    if (!q) return [];
-    return (boekingen || [])
-      .filter((b) => zonderAccent(b.naam || "").toLowerCase().includes(q))
+    (boekingen || []).filter((b) => b.datum === vandaag && matchtPartij(b)).sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || ""))),
+    [boekingen, vandaag, partijQuery]);
+  const ouderBoekingen = React.useMemo(() =>
+    (boekingen || []).filter((b) => b.datum !== vandaag && matchtPartij(b))
       .sort((a, b) => String(b.datum || "").localeCompare(String(a.datum || "")))
-      .slice(0, 20);
-  }, [boekingen, andereZoek]);
+      .slice(0, partijQuery ? 60 : 30),
+    [boekingen, vandaag, partijQuery]);
 
   const materiaalNamen = React.useMemo(() => {
-    const set = new Set();
+    const set = new Set(materiaalInventaris || []);
     (bezorgLijst || []).forEach((r) => (r.materialen || []).forEach((m) => m.naam && set.add(m.naam)));
     return [...set].sort((a, b) => a.localeCompare(b, "nl"));
-  }, [bezorgLijst]);
+  }, [bezorgLijst, materiaalInventaris]);
+  const [nieuwMateriaalOpen, setNieuwMateriaalOpen] = useState(false);
 
-  const kiesPartij = (b) => { setGekozen({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); setAndereOpen(false); setAndereZoek(""); };
+  const kiesPartij = (b) => { setGekozen({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); setZoek(""); };
   const setRij = (i, veld, w) => setRijen((rs) => rs.map((r, j) => (j === i ? { ...r, [veld]: w } : r)));
   const voegRijToe = () => setRijen((rs) => [...rs, { naam: "", aantal: "" }]);
   const wegRij = (i) => setRijen((rs) => (rs.length <= 1 ? [{ naam: "", aantal: "" }] : rs.filter((_, j) => j !== i)));
@@ -13652,18 +13715,31 @@ function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDele
     .sort((a, b) => String(b.boeking_datum || "").localeCompare(String(a.boeking_datum || "")));
   const [toonCompleet, setToonCompleet] = useState(false);
 
+  const [toonInventaris, setToonInventaris] = useState(false);
+  const [toonGeschiedenis, setToonGeschiedenis] = useState(false);
+  const geschiedenis = React.useMemo(() => {
+    const uit = [];
+    (bezorgLijst || []).forEach((r) => {
+      uit.push({ soort: "bezorgd", tijd: r.created_at, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: r.door, regels: r.materialen || [], notitie: r.notitie || "" });
+      (r.teruggenomen || []).forEach((t) => {
+        if (t && Array.isArray(t.regels)) uit.push({ soort: "opgehaald", tijd: t.datum, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: t.door, regels: t.regels, notitie: t.notitie || "" });
+        else if (t && t.naam != null) uit.push({ soort: "opgehaald", tijd: r.updated_at || r.created_at, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: r.door, regels: [t], notitie: "" });
+      });
+    });
+    return uit.sort((a, b) => String(b.tijd || "").localeCompare(String(a.tijd || "")));
+  }, [bezorgLijst]);
+  const gTijd = (t) => { try { return new Date(t).toLocaleDateString("nl-NL", { day: "numeric", month: "short" }) + " \u00b7 " + new Date(t).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
+  const openFormulier = () => { setNieuwOpen(true); setTimeout(() => { const el = document.getElementById("bezorg-nieuw"); if (el) el.scrollIntoView({ block: "start" }); }, 60); };
   return (
     <div>
       <BackBar onBack={onBack} />
       <h1 className="serif ink text-3xl leading-tight">Bezorgmateriaal</h1>
       <p className="text-sm mute mt-1">Wat ging er mee met een bezorging, en wat moet er nog terugkomen? Registreer hieronder een nieuwe bezorging; hierboven zie je wat er nog openstaat.</p>
 
-      {canEdit && (
-        <div className="card p-4 mt-4">
-          {!nieuwOpen ? (
-            <button onClick={() => setNieuwOpen(true)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Plus size={15} /> Nieuwe bezorging registreren</button>
-          ) : (
+      {canEdit && nieuwOpen && (
+        <div id="bezorg-nieuw" className="card p-4 mt-4" style={{ scrollMarginTop: "0.75rem" }}>
             <div className="space-y-3">
+              <div className="serif ink text-lg leading-tight">Nieuwe bezorging</div>
               <div>
                 <span className="block text-sm font-medium ink mb-1.5">Partij</span>
                 {gekozen ? (
@@ -13672,29 +13748,28 @@ function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDele
                     <button onClick={() => setGekozen(null)} className="ff text-[12.5px] font-medium acc hover:opacity-70 shrink-0">Wijzig</button>
                   </div>
                 ) : (
-                  <>
-                    {vandaagBoekingen.length > 0 && !andereOpen && (
-                      <div className="space-y-1.5">
-                        {vandaagBoekingen.map((b) => (
-                          <button key={b.id} onClick={() => kiesPartij(b)} className="ff card cardh w-full text-left px-3 py-2 text-sm">{b.naam || "Zonder naam"} <span className="mute">· {b.gasten || 0} pers. · {String(b.start_tijd || "").slice(11, 16)}</span></button>
-                        ))}
-                      </div>
-                    )}
-                    {!andereOpen ? (
-                      <button onClick={() => setAndereOpen(true)} className="ff mt-1.5 text-[12.5px] font-medium acc hover:opacity-70">Andere partij of dag kiezen…</button>
-                    ) : (
-                      <div className="mt-1.5">
-                        <input autoFocus className="input px-3 py-2 w-full text-sm" value={andereZoek} onChange={(e) => setAndereZoek(e.target.value)} placeholder="Zoek op naam van de partij" />
-                        {zoekResultaten.length > 0 && (
-                          <div className="mt-1.5 space-y-1 max-h-56 overflow-y-auto">
-                            {zoekResultaten.map((b) => (
-                              <button key={b.id} onClick={() => kiesPartij(b)} className="ff card cardh w-full text-left px-3 py-2 text-sm">{b.naam || "Zonder naam"} <span className="mute">· {fmtDMY(b.datum)}</span></button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
+                  <div>
+                    <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een partij op naam…" />
+                    <div className="mt-1.5 rounded-xl overflow-y-auto" style={{ maxHeight: "18rem", border: "1px solid " + T.line }}>
+                      {vandaagBoekingen.length > 0 && (
+                        <>
+                          <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Vandaag</div>
+                          {vandaagBoekingen.map((b) => (
+                            <button key={b.id} onClick={() => kiesPartij(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className="mute">· {b.gasten || 0} pers. · {String(b.start_tijd || "").slice(11, 16)}</span></button>
+                          ))}
+                        </>
+                      )}
+                      {ouderBoekingen.length > 0 && (
+                        <>
+                          <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Ouder</div>
+                          {ouderBoekingen.map((b) => (
+                            <button key={b.id} onClick={() => kiesPartij(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className="mute">· {fmtDMY(b.datum)}</span></button>
+                          ))}
+                        </>
+                      )}
+                      {vandaagBoekingen.length === 0 && ouderBoekingen.length === 0 && <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -13709,7 +13784,10 @@ function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDele
                     </div>
                   ))}
                 </div>
-                <AddRow onClick={voegRijToe} label="Materiaal toevoegen" />
+                <div className="flex items-center gap-3 flex-wrap">
+                  <AddRow onClick={voegRijToe} label="Materiaal toevoegen" />
+                  {onSaveInventaris && <button onClick={() => setNieuwMateriaalOpen(true)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Package size={15} /> Nieuw materiaal in inventaris</button>}
+                </div>
               </div>
 
               <Field label="Notitie (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
@@ -13719,6 +13797,23 @@ function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDele
                 <button onClick={opslaan} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Opslaan</button>
               </div>
             </div>
+        </div>
+      )}
+
+      {onSaveInventaris && (materiaalInventaris || []).length > 0 && (
+        <div className="mt-4">
+          <button onClick={() => setToonInventaris((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+            {toonInventaris ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Inventaris ({materiaalInventaris.length})
+          </button>
+          {toonInventaris && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {materiaalInventaris.map((naam) => (
+                <span key={naam} className="ff inline-flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-1 text-[12.5px]" style={{ border: "1px solid " + T.line }}>
+                  {naam}
+                  <button onClick={() => onSaveInventaris(materiaalInventaris.filter((n) => n !== naam))} className="hover:opacity-70" style={{ color: "#8a4a3a" }} title="Verwijderen uit inventaris"><X size={12} /></button>
+                </span>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -13726,15 +13821,49 @@ function BezorgScreen({ boekingen, bezorgLijst, canEdit, onSave, onTerug, onDele
       <SectionTitle>Nog terug te halen ({openLijst.length})</SectionTitle>
       {openLijst.length === 0
         ? <Empty label="Alle bezorgmateriaal is terug." />
-        : <div className="space-y-2.5">{openLijst.map(({ r }) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} initieelOpen={r.id === focusId} />)}</div>}
+        : <div className="space-y-2.5">{openLijst.map(({ r }) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} initieelOpen={r.id === focusId} />)}</div>}
 
       {compleetLijst.length > 0 && (
         <>
           <button onClick={() => setToonCompleet((v) => !v)} className="ff mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
             {toonCompleet ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Afgerond ({compleetLijst.length})
           </button>
-          {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} initieelOpen={false} />)}</div>}
+          {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} initieelOpen={false} />)}</div>}
         </>
+      )}
+      <button onClick={() => setToonGeschiedenis((v) => !v)} className="ff mt-6 mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+        {toonGeschiedenis ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Geschiedenis ({geschiedenis.length})
+      </button>
+      {toonGeschiedenis && (
+        geschiedenis.length === 0 ? <Empty label="Nog geen bezorgingen of terugnames geregistreerd." /> : (
+          <div className="space-y-2">
+            {geschiedenis.map((g, i) => (
+              <button key={i} onClick={() => { const el = document.getElementById("bezorg-" + g.regId); if (el) el.scrollIntoView({ block: "center" }); }}
+                className="ff card w-full text-left p-3 flex items-start gap-2.5 hover:opacity-80">
+                {g.soort === "bezorgd" ? <Truck size={15} className="shrink-0 mt-0.5 acc" /> : <Check size={15} className="shrink-0 mt-0.5" style={{ color: "#44502f" }} />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm">
+                    <span className="font-medium ink">{g.soort === "bezorgd" ? "Bezorgd" : "Opgehaald"}</span>
+                    <span className="mute"> \u00b7 {g.boeking || "Zonder naam"} \u00b7 {fmtDMY(g.datum)}</span>
+                  </div>
+                  <div className="text-[13px] mute">{(g.regels || []).map((m) => m.aantal + "\u00d7 " + m.naam).join(", ") || "\u2014"}</div>
+                  {g.notitie && <div className="text-[12.5px] italic mute mt-0.5">{g.notitie}</div>}
+                </div>
+                <div className="text-[11px] mute shrink-0 text-right">{gTijd(g.tijd)}{g.door ? <div>{g.door}</div> : null}</div>
+              </button>
+            ))}
+          </div>
+        )
+      )}
+      {nieuwMateriaalOpen && (
+        <PromptModal titel="Nieuw materiaal" label="Naam" placeholder="bv. Tupperware bak groot"
+          okLabel="Toevoegen" onCancel={() => setNieuwMateriaalOpen(false)}
+          onOk={(naam) => { onSaveInventaris([...(materiaalInventaris || []), naam]); setNieuwMateriaalOpen(false); }} />
+      )}
+      {canEdit && !nieuwOpen && (
+        <button onClick={openFormulier} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
+          <Plus size={19} /> Bezorging
+        </button>
       )}
     </div>
   );
