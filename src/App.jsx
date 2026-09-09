@@ -8212,6 +8212,7 @@ const TECH_NOTES_SEED = {
 function VerliesTabel({ rijen }) {
   const [aant, setAant] = useState({});
   const [portie, setPortie] = useState({});
+  const [wens, setWens] = useState({});
   const kg = (n) => (n >= 1 ? String(Math.round(n * 100) / 100).replace(".", ",") + " kg" : Math.round(n * 1000) + " g");
   const per1kg = (t) => eurNum(String(t == null ? "" : t).replace(/[^0-9.,]/g, ""));
   const sleutel = (r, i) => (r.groente || "") + "|" + (r.type || "") + "|" + i;
@@ -8236,7 +8237,9 @@ function VerliesTabel({ rijen }) {
             const k = sleutel(r, i);
             const n = eurNum(aant[k]);
             const g = eurNum(portie[k]);
-            const gegaard = n && g ? (n * g) / 1000 : null;
+            // Aantal x portie gaat voor; anders het direct ingevulde gewicht.
+            const direct = eurNum(wens[k]);
+            const gegaard = n && g ? (n * g) / 1000 : (direct && direct > 0 ? direct : null);
             const schoon1 = per1kg(r.schoon);
             const onbew1 = per1kg(r.onbewerkt);
             const zet = (setter) => (e) => setter((w) => ({ ...w, [k]: e.target.value.replace(/[^0-9.,]/g, "") }));
@@ -8257,7 +8260,17 @@ function VerliesTabel({ rijen }) {
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">g</span>
                   </div>
                 </td>
-                <td className="py-1.5 pr-2 font-semibold whitespace-nowrap" style={{ color: gegaard === null ? "#a5a394" : "#44502f" }}>{gegaard === null ? "\u2014" : kg(gegaard)}</td>
+                <td className="py-1.5 pr-2">
+                  {n && g
+                    ? <span className="font-semibold whitespace-nowrap" style={{ color: "#44502f" }}>{kg(gegaard)}</span>
+                    : (
+                      <div className="relative" style={{ width: "6.5rem" }}>
+                        <input type="text" inputMode="decimal" className="input px-2 py-1.5 w-full text-[13px] pr-7" value={wens[k] || ""}
+                          onChange={zet(setWens)} placeholder="bv. 5" />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] mute">kg</span>
+                      </div>
+                    )}
+                </td>
                 <td className="py-1.5 pr-2 whitespace-nowrap">{gegaard !== null && schoon1 ? <span className="font-semibold" style={{ color: "#44502f" }}>{kg(gegaard * schoon1)}</span> : <span className="mute">{r.schoon}</span>}</td>
                 <td className="py-1.5 whitespace-nowrap">{gegaard !== null && onbew1 ? <span className="font-semibold" style={{ color: "#44502f" }}>{kg(gegaard * onbew1)}</span> : <span className="mute">{r.onbewerkt}</span>}</td>
               </tr>
