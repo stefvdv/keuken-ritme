@@ -2947,7 +2947,12 @@ function App() {
     try {
       const rk = await fetch("/api/mice?path=clients");
       const jk = await rk.json();
-      for (const c of (jk && jk.data && jk.data.data) || []) klant[c.id] = { tel: String(c.phone || c.phone_2 || "").trim(), naam: c.name || "" };
+      for (const c of (jk && jk.data && jk.data.data) || []) klant[c.id] = {
+        tel: String(c.phone || c.phone_2 || "").trim(),
+        naam: c.name || "",
+        // Adresvelden verschillen per inrichting; pak wat er is.
+        adres: [String(c.address || c.street || "").trim(), String(c.zip_code || c.zipcode || c.postal_code || "").trim(), String(c.city || c.place || "").trim()].filter(Boolean).join(", "),
+      };
     } catch (e) {}
     for (let pagina = 1; pagina <= 30; pagina++) {
       let lijst = [];
@@ -2983,6 +2988,7 @@ function App() {
           dieet: eigenVeld(e, "dieetwensen"),
           tel: (klant[e.client_id] || {}).tel || "",
           contact: (klant[e.client_id] || {}).naam || "",
+          adres: (klant[e.client_id] || {}).adres || "",
           id: e.id, naam: e.name || "", datum,
           start_tijd: e.datetime_start || null, eind_tijd: e.datetime_end || null,
           gasten: Number(e.guests) || 0, status: e.status || "",
@@ -3161,7 +3167,7 @@ function App() {
     const rij = {
       id: -Date.now(), naam: "Nieuwe boeking", datum,
       start_tijd: datum + "T12:00:00", eind_tijd: "", gasten: 0, status: "confirmed",
-      zaal: "", bericht: "", regels: [], dieet: "", tel: "", contact: "", log: [],
+      zaal: "", adres: "", bericht: "", regels: [], dieet: "", tel: "", contact: "", log: [],
       opgehaald_op: new Date().toISOString(),
     };
     if (live) { try { await supabase.from("mice_events").upsert([rij]); } catch (e) {} }
@@ -10179,7 +10185,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
@@ -10310,7 +10316,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     naam: String(naamTekst || b.naam || "Zonder naam"),
     datum: [datumKop, tijdTekst || ""].filter(Boolean).join(" · "),
     gasten: gastenTekst ? gastenTekst + " gasten" : "",
-    locatie: bezorging ? "Bezorging" + (zaal ? " · " + zaal : "") : (zaal || ""),
+    locatie: bezorging ? "Bezorging" + (adres ? " · " + adres : (zaal ? " · " + zaal : "")) : (zaal || ""),
     contact: [contact, tel].filter(Boolean).join(" · "),
   });
 
@@ -10398,7 +10404,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         {!bewerk && (
           <span className="text-[14px] font-semibold shrink-0 inline-flex items-center gap-1" style={{ color: "#44502f" }}>
             {bezorging
-              ? <span title="Bezorging" className="inline-flex"><Truck size={22} /></span>
+              ? <span title={"Bezorging" + (adres ? " · " + adres : "")} className="inline-flex"><Truck size={22} /></span>
               : zaal ? <span title={zaal} className="inline-flex"><Home size={22} /></span> : null}
             <span>{(tijdTekst || "—") + " · " + gastenTekst + " pers."}</span>
           </span>
@@ -10427,6 +10433,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <div><span className="mute">Gasten: </span><span className="ink">{gastenTekst}{bezorging ? " · bezorging" : ""}</span></div>
               {statusTekst && <div><span className="mute">Status: </span><span style={{ color: "#a05a00" }}>{statusTekst}</span></div>}
               {zaal && <div><span className="mute">Locatie: </span><span className="ink font-semibold">{zaal}</span></div>}
+              {bezorging && adres && <div><span className="mute">Bezorgadres: </span><span className="ink font-semibold">{adres}</span></div>}
               {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
               {tel && <div><span className="mute">Telefoon: </span><a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline ink">{tel}</a></div>}
             </div>
@@ -10948,7 +10955,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten" inSom={inSom}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
-                    tel={b.tel} contact={b.contact} zaal={b.zaal}
+                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres}
                     miceProducten={miceProducten} producten={producten} />
                 );
               })}
@@ -11341,7 +11348,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
-              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal}
+              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal} adres={detailBoeking.adres}
               miceProducten={miceProducten} producten={producten} />
           </div>
         </div>
