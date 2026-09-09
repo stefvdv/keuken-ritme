@@ -5122,16 +5122,27 @@ function App() {
   const [mepSpringNaar, setMepSpringNaar] = useState(null); // { id, datum } van een boeking om op de mep in beeld te brengen
 
   const laatsteHomeKlik = React.useRef(0);
-  // Welke meldingen zijn afgerond, gedeeld over alle apparaten (i.p.v.
-  // per-apparaat in localStorage). Elke dag begint leeg.
-  const [afgerondSet, setAfgerondSet] = useState(() => new Set());
+  // Welke meldingen zijn afgerond. Eerst lokaal (localStorage) zodat het
+  // altijd meteen blijft staan na een refresh, ook als Supabase om wat voor
+  // reden dan ook niet meewerkt; daarna vult Supabase aan/overschrijft zodra
+  // dat lukt, zodat het ook over apparaten synchroniseert. Elke keukendag
+  // begint leeg.
+  const AFGEROND_KEY = "ritme:meldingen-afgerond";
+  const [afgerondSet, setAfgerondSet] = useState(() => {
+    try {
+      const ruw = JSON.parse(localStorage.getItem(AFGEROND_KEY) || "{}");
+      return new Set(ruw[kitchenDate()] || []);
+    } catch (e) { return new Set(); }
+  });
+  const bewaarAfgerondLokaal = (set) => { try { localStorage.setItem(AFGEROND_KEY, JSON.stringify({ [kitchenDate()]: [...set] })); } catch (e) {} };
   useEffect(() => {
     if (!live) return;
     const laad = async () => {
       try {
-        const { data } = await supabase.from("melding_afgerond").select("sleutel").eq("dag", kitchenDate());
-        if (data) setAfgerondSet(new Set(data.map((r) => r.sleutel)));
-      } catch (e) {}
+        const { data, error } = await supabase.from("melding_afgerond").select("sleutel").eq("dag", kitchenDate());
+        if (error) { console.error("melding_afgerond laden mislukt — is melding_afgerond.sql al gedraaid in Supabase?", error.message); return; }
+        if (data) setAfgerondSet((s) => { const nieuw = new Set([...s, ...data.map((r) => r.sleutel)]); bewaarAfgerondLokaal(nieuw); return nieuw; });
+      } catch (e) { console.error("melding_afgerond laden mislukt:", e); }
     };
     laad();
     const ch = supabase.channel("melding-afgerond")
@@ -5156,11 +5167,15 @@ function App() {
   const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
   // ---------- Meldingencentrum: alle "aandacht nodig"-signalen op één plek ----------
-  // Een melding afronden: meteen lokaal verbergen, en wegschrijven zodat
-  // andere apparaten hem via het realtime-abonnement ook meteen kwijtraken.
+  // Een melding afronden: meteen lokaal bewaren (blijft dus altijd staan na
+  // een refresh), en wegschrijven naar Supabase zodat andere apparaten hem
+  // via het realtime-abonnement ook kwijtraken.
   const rondAf = async (sleutel) => {
-    setAfgerondSet((s) => new Set([...s, sleutel]));
-    if (live) { try { await supabase.from("melding_afgerond").upsert({ sleutel, dag: kitchenDate(), door: (user && user.name) || "" }, { onConflict: "sleutel,dag" }); } catch (e) {} }
+    setAfgerondSet((s) => { const nieuw = new Set([...s, sleutel]); bewaarAfgerondLokaal(nieuw); return nieuw; });
+    if (live) {
+      const { error } = await supabase.from("melding_afgerond").upsert({ sleutel, dag: kitchenDate(), door: (user && user.name) || "" }, { onConflict: "sleutel,dag" });
+      if (error) console.error("melding_afgerond opslaan mislukt — is melding_afgerond.sql al gedraaid in Supabase?", error.message);
+    }
   };
   const meldingCategorieen = [];
   if (canEdit && loaded) {
@@ -10675,8 +10690,15 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
             </div>
           )}
           {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
-          {toonEmail && klant_email && <div><span className="mute">E-mail: </span><a href={"mailto:" + klant_email} className="ff underline ink">{klant_email}</a></div>}
-          {tel && <div><span className="mute">Telefoon: </span><a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline ink">{tel}</a></div>}
+          {toonEmail && klant_email && <div><span className="mute">E-mail: </span><span className="ink">{klant_email}</span></div>}
+          {tel && (
+            <div>
+              <span className="mute">Telefoon: </span>
+              {/* Alleen op telefoon klikbaar; op laptop/tablet blijft het platte tekst. */}
+              <span className="ink hidden md:inline">{tel}</span>
+              <a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline ink md:hidden">{tel}</a>
+            </div>
+          )}
         </div>
         <div className="flex justify-end mt-3">
           <button onClick={onSluit} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Sluiten</button>
@@ -14177,6 +14199,7 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
   const wegItem = (idx) => onOpslaan(items.filter((_, j) => j !== idx), null);
   const voegItemToe = (cat) => onOpslaan([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
   const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) onOpslaan(null, [...categorieen, naam]); setNieuweCatOpen(false); };
+  const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : "1fr 4.5rem 1fr";
   return (
     <div className="space-y-4">
       {categorieen.map((cat) => {
@@ -14185,34 +14208,35 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
         return (
           <div key={cat}>
             <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc underline mb-2">{cat}</h3>
-            {!bewerk ? (
-              rijen.length ? (
-                <ul className="space-y-0.5 text-sm">
-                  {rijen.map((i, j) => (
-                    <li key={j} className="ink">
-                      {i.naam}
-                      {i.hoeveelheid ? <span className="mute"> · {i.hoeveelheid}× in huis</span> : null}
-                      {i.opmerking ? <span className="mute italic"> — {i.opmerking}</span> : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="text-[12.5px] mute">Nog niets in deze categorie.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {rijen.map((i) => {
-                  const idx = items.indexOf(i);
-                  return (
-                    <div key={idx} className="flex items-center gap-2">
-                      <input className="input px-2.5 py-1.5 text-sm flex-1 min-w-0" value={i.naam} onChange={(e) => zetItem(idx, "naam", e.target.value)} placeholder="Naam" />
-                      <input type="text" inputMode="numeric" className="input px-2.5 py-1.5 text-sm text-right" style={{ width: "4.5rem" }} value={i.hoeveelheid || ""} onChange={(e) => zetItem(idx, "hoeveelheid", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" title="Hoeveel er in huis zijn" />
-                      <input className="input px-2.5 py-1.5 text-sm flex-1 min-w-0" value={i.opmerking || ""} onChange={(e) => zetItem(idx, "opmerking", e.target.value)} placeholder="Opmerking (optioneel)" />
-                      <button onClick={() => wegItem(idx)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
+            {rijen.length ? (
+              <div className="card overflow-hidden">
+                <div className="grid gap-x-3 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide acc" style={{ gridTemplateColumns: kolommen, borderBottom: "1px solid " + T.line }}>
+                  <span>Naam</span><span className="text-right">Aantal</span><span>Opmerking</span>{bewerk && <span></span>}
+                </div>
+                {!bewerk ? (
+                  rijen.map((i, j) => (
+                    <div key={j} className={"grid gap-x-3 items-center px-3.5 py-2 text-sm " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen }}>
+                      <span className="ink truncate">{i.naam}</span>
+                      <span className="mute text-right">{i.hoeveelheid || "—"}</span>
+                      <span className="mute italic truncate">{i.opmerking || ""}</span>
                     </div>
-                  );
-                })}
-                <AddRow onClick={() => voegItemToe(cat)} label={"Materiaal toevoegen aan " + cat} />
+                  ))
+                ) : (
+                  rijen.map((i, j) => {
+                    const idx = items.indexOf(i);
+                    return (
+                      <div key={idx} className={"grid gap-x-2 items-center px-3.5 py-2 " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen }}>
+                        <input className="input px-2 py-1.5 text-sm min-w-0" value={i.naam} onChange={(e) => zetItem(idx, "naam", e.target.value)} placeholder="Naam" />
+                        <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" value={i.hoeveelheid || ""} onChange={(e) => zetItem(idx, "hoeveelheid", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" title="Hoeveel er in huis zijn" />
+                        <input className="input px-2 py-1.5 text-sm min-w-0" value={i.opmerking || ""} onChange={(e) => zetItem(idx, "opmerking", e.target.value)} placeholder="Opmerking" />
+                        <button onClick={() => wegItem(idx)} className="ff justify-self-end hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-            )}
+            ) : <p className="text-[12.5px] mute">Nog niets in deze categorie.</p>}
+            {bewerk && <div className="mt-2"><AddRow onClick={() => voegItemToe(cat)} label={"Materiaal toevoegen aan " + cat} /></div>}
           </div>
         );
       })}
