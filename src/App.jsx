@@ -10417,6 +10417,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           </>
         )}
       </div>
+      {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
       {infoOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={() => setInfoOpen(false)}>
           <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
@@ -10630,7 +10631,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             </div>
           )}
           {geschVoor != null && <InvulGeschPopup miceId={geschVoor} lijst={invulGesch || []} onSluit={() => setGeschVoor(null)} />}
-          {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
           {kies && (
             <ProductKiezer boeking={b} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
               onSluit={() => setKies(false)}
@@ -11355,26 +11355,46 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
 function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
   const [f, setF] = useState(voorstel);
   const zet = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const veld = (label, k, ph) => (
-    <Field label={label}><input className="input px-3 py-2 w-full text-sm" value={f[k] || ""} onChange={zet(k)} placeholder={ph || ""} /></Field>
+  // Enter in een veld sluit de cursor (ook leeg); Enter daarbuiten print.
+  useEffect(() => {
+    const toets = (e) => {
+      if (e.key !== "Enter") return;
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) { e.preventDefault(); el.blur(); return; }
+      e.preventDefault(); onPrint(f);
+    };
+    window.addEventListener("keydown", toets, true);
+    return () => window.removeEventListener("keydown", toets, true);
+  }, [f, onPrint]);
+  const veld = (label, k, ph, extra) => (
+    <label className="block min-w-0">
+      <span className="block text-xs font-medium ink mb-1">{label}</span>
+      <input className="input px-2.5 py-1.5 w-full text-sm" value={f[k] || ""} onChange={zet(k)} placeholder={ph || ""} {...(extra || {})} />
+    </label>
   );
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
-      <div className="w-full max-w-md rounded-2xl p-5" style={{ background: T.paper, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="serif ink text-xl leading-tight">Partij-etiket</div>
+      <div className="w-full max-w-md rounded-2xl p-4" style={{ background: T.paper, maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="serif ink text-lg leading-tight">Partij-etiket</div>
           <button onClick={onSluit} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
         </div>
-        {veld("Productnaam — komt bovenaan het etiket", "product", "bv. Pompoensoep (leeg = niet op het etiket)")}
-        {veld("Partijnaam", "naam")}
-        {veld("Dag en tijd", "datum")}
-        {veld("Gasten", "gasten")}
-        {veld("Locatie", "locatie")}
-        {veld("Contact en telefoon", "contact")}
-        <p className="text-[12px] mute mb-3">Lege velden komen niet op het etiket. Alles schaalt vanzelf zodat het op één sticker past.</p>
-        <div className="flex justify-end gap-2">
-          <button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
-          <button onClick={() => onPrint(f)} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-1.5"><Printer size={15} /> Printen</button>
+        <div className="space-y-2">
+          {veld("Productnaam — bovenaan het etiket", "product", "leeg = niet op het etiket", { autoFocus: true })}
+          {veld("Partijnaam", "naam")}
+          <div className="grid grid-cols-2 gap-2">
+            {veld("Dag en tijd", "datum")}
+            {veld("Gasten", "gasten")}
+            {veld("Locatie", "locatie")}
+            {veld("Contact en telefoon", "contact")}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-3">
+          <span className="text-[11.5px] mute">Enter = veld sluiten, nog een Enter = printen.</span>
+          <span className="flex gap-2 shrink-0">
+            <button onClick={onSluit} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+            <button onClick={() => onPrint(f)} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold inline-flex items-center gap-1.5"><Printer size={15} /> Printen</button>
+          </span>
         </div>
       </div>
     </div>
