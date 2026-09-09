@@ -3068,9 +3068,26 @@ function App() {
       for (const b of Object.values(perId)) rijen.push(b);
     }
     if (live) {
+      // Nieuwe kolommen (adres, klant, ...) bestaan pas na het draaien van de
+      // bijbehorende SQL. Ontbreekt zo'n kolom, dan slaat de upsert dat veld
+      // over en probeert het opnieuw — zo blokkeert een vergeten migratie
+      // niet de hele sync.
+      let velden = rijen.length ? Object.keys(rijen[0]) : [];
       for (let i = 0; i < rijen.length; i += 100) {
-        const { error } = await supabase.from("mice_events").upsert(rijen.slice(i, i + 100));
-        if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase."); return 0; }
+        let brok = rijen.slice(i, i + 100);
+        for (let poging = 0; poging < velden.length; poging++) {
+          const stuur = brok.map((r) => { const x = {}; for (const k of velden) x[k] = r[k]; return x; });
+          const { error } = await supabase.from("mice_events").upsert(stuur);
+          if (!error) break;
+          const mColumn = String(error.message || "").match(/column "?(\w+)"? .*does not exist/i);
+          if (mColumn && velden.includes(mColumn[1])) {
+            velden = velden.filter((v) => v !== mColumn[1]);
+            flash("Kolom \"" + mColumn[1] + "\" ontbreekt nog in Supabase \u2014 sync gaat door zonder dat veld");
+            continue;
+          }
+          alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase.");
+          return 0;
+        }
       }
     }
     // Bewaartermijn: boekingen ouder dan twee maanden gaan weg, zodat de
@@ -3162,6 +3179,7 @@ function App() {
   };
   const saveKoppeling = (b, producten) => saveKoppelingSleutel("id|" + b.id, producten);
   // Eigen boeking (niet uit MICE): negatief id zodat het nooit botst met MICE.
+  const [boekingenLaden, setBoekingenLaden] = useState(false); // zichtbare voortgang bij handmatige sync/reset
   const [nieuwBoekingOpen, setNieuwBoekingOpen] = useState(false);
   const [nieuwBoekingDatum, setNieuwBoekingDatum] = useState(() => localDate());
   const [nieuwBewerk, setNieuwBewerk] = useState(null); // { id } → kaart opent in bewerkstand
@@ -3171,6 +3189,7 @@ function App() {
   const resetBoekingen = async () => {
     if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?")) return;
     const ookInvulling = window.confirm("Ook de culinaire invullingen (product → gerecht) wissen?\n\nOK = ja, ook invullingen weg. Annuleren = invullingen bewaren.");
+    setBoekingenLaden(true);
     if (live) {
       try { await supabase.from("mice_koppeling").delete().neq("sleutel", ""); } catch (e) {}
       try { await supabase.from("mice_events").delete().neq("id", 0); } catch (e) {}
@@ -3186,6 +3205,8 @@ function App() {
       flash((n || 0) + " boekingen opnieuw geladen uit MICE");
     } catch (e) {
       alert("Opnieuw laden mislukt: " + (e && e.message ? e.message : e) + "\n\nProbeer het nog eens via deze knop.");
+    } finally {
+      setBoekingenLaden(false);
     }
   };
   const maakEigenBoeking = async (datum) => {
@@ -5183,7 +5204,7 @@ function App() {
           editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -7197,7 +7218,7 @@ function MiceVerkenner() {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, onOpenGerechten, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -7243,7 +7264,10 @@ function SettingsScreen({ onBack, onResetBoekingen, onOpenGerechten, installed, 
           <button onClick={onOpenGerechten} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Utensils size={15} /> Gerechten-pagina openen (testperiode)</button>
         )}
         {chefMode && onResetBoekingen && (
-          <button onClick={onResetBoekingen} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><RotateCcw size={15} /> Boekingen resetten en opnieuw uit MICE laden</button>
+          <button onClick={onResetBoekingen} disabled={boekingenLaden} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
+            {boekingenLaden ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+            {boekingenLaden ? "Bezig met laden uit MICE\u2026" : "Boekingen resetten en opnieuw uit MICE laden"}
+          </button>
         )}
         {chefOpen && (
           <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefFout}
