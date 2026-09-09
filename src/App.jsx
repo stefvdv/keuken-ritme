@@ -5140,7 +5140,7 @@ function App() {
     const laad = async () => {
       try {
         const { data, error } = await supabase.from("melding_afgerond").select("sleutel").eq("dag", kitchenDate());
-        if (error) { console.error("melding_afgerond laden mislukt — is melding_afgerond.sql al gedraaid in Supabase?", error.message); return; }
+        if (error) { console.error("melding_afgerond laden mislukt:", error.message); flash("Meldingen niet gesynchroniseerd (" + error.message + ")"); return; }
         if (data) setAfgerondSet((s) => { const nieuw = new Set([...s, ...data.map((r) => r.sleutel)]); bewaarAfgerondLokaal(nieuw); return nieuw; });
       } catch (e) { console.error("melding_afgerond laden mislukt:", e); }
     };
@@ -5167,14 +5167,20 @@ function App() {
   const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
   // ---------- Meldingencentrum: alle "aandacht nodig"-signalen op één plek ----------
-  // Een melding afronden: meteen lokaal bewaren (blijft dus altijd staan na
-  // een refresh), en wegschrijven naar Supabase zodat andere apparaten hem
-  // via het realtime-abonnement ook kwijtraken.
-  const rondAf = async (sleutel) => {
+  // Een melding afronden, alleen op dit apparaat (gebruikt voor Boekingen —
+  // die wijzigingen zijn per apparaat/persoon relevant, niet gedeeld).
+  const rondAfLokaal = (sleutel) => {
     setAfgerondSet((s) => { const nieuw = new Set([...s, sleutel]); bewaarAfgerondLokaal(nieuw); return nieuw; });
+  };
+  // Een melding afronden én synchroniseren: meteen lokaal bewaren (blijft dus
+  // altijd staan na een refresh), en wegschrijven naar Supabase zodat andere
+  // apparaten hem via het realtime-abonnement ook kwijtraken. Gebruikt voor
+  // alles behalve Boekingen.
+  const rondAf = async (sleutel) => {
+    rondAfLokaal(sleutel);
     if (live) {
       const { error } = await supabase.from("melding_afgerond").upsert({ sleutel, dag: kitchenDate(), door: (user && user.name) || "" }, { onConflict: "sleutel,dag" });
-      if (error) console.error("melding_afgerond opslaan mislukt — is melding_afgerond.sql al gedraaid in Supabase?", error.message);
+      if (error) { console.error("melding_afgerond opslaan mislukt:", error.message); flash("Niet gesynchroniseerd naar andere apparaten (" + error.message + ")"); }
     }
   };
   const meldingCategorieen = [];
@@ -5280,11 +5286,11 @@ function App() {
       content: (
         <div className="space-y-2.5 text-sm">
           {wijzItems.map(({ b, w }) => (
-            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondAf("wijzigingen:" + b.id)} />
+            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondAfLokaal("wijzigingen:" + b.id)} />
           ))}
         </div>
       ),
-      onAfronden: () => rondAf("wijzigingen:__alles__"),
+      onAfronden: () => rondAfLokaal("wijzigingen:__alles__"), // Boekingen synchroniseert bewust niet tussen apparaten
     });
 
     // Bezorgmateriaal: wat staat er nog open om op te halen.
