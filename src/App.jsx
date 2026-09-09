@@ -2929,6 +2929,11 @@ function App() {
     flash(geraakt + " producten van een categorie voorzien");
   };
   const boekingSleutel = (naam) => zonderAccent(String(naam || "")).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  // Handmatige adresaanvulling per klant, alleen gebruikt als MICE zelf
+  // (nog) geen afleveradres of klantadres teruggeeft. Levert MICE dat
+  // later alsnog aan, dan wint dat automatisch — deze lijst overschrijft
+  // nooit een adres dat uit MICE komt.
+  const KLANT_ADRES_OVERRIDE = { "metaal kathedraal": "Rijksstraatweg 20, Utrecht" };
 
   // Boekingen bij MICE ophalen en in Supabase zetten. Alleen de velden die de
   // keuken nodig heeft; gastgegevens laten we staan waar ze staan.
@@ -3001,7 +3006,7 @@ function App() {
           // Het bezorgadres van deze boeking gaat voor: MICE laat dat soms per
           // boeking invullen ("afleveradres") wanneer het klantadres zelf
           // onvolledig is (bv. alleen een woonplaats).
-          adres: eigenVeld(e, "afleveradres") || (klant[e.client_id] || {}).adres || "",
+          adres: eigenVeld(e, "afleveradres") || (klant[e.client_id] || {}).adres || KLANT_ADRES_OVERRIDE[boekingSleutel((klant[e.client_id] || {}).naam)] || "",
           id: e.id, naam: e.name || "", datum,
           start_tijd: e.datetime_start || null, eind_tijd: e.datetime_end || null,
           gasten: Number(e.guests) || 0, status: e.status || "",
@@ -5782,6 +5787,15 @@ const pasOverlayToe = (rows) => {
 let PRIJSLIJST = { arts: [], cache: new Map() };
 const zetPrijslijst = (arts) => { PRIJSLIJST = { arts: Array.isArray(arts) ? arts : [], cache: new Map() }; };
 const zonderAccent = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+// Navigatielink naar een adres: op iOS opent Apple Maps (geo: wordt daar door
+// Safari genegeerd), op Android/overig gaat het via geo: naar de ingestelde
+// standaard-navigatie-app.
+const navHref = (adres) => {
+  const tekst = String(adres || "").trim();
+  if (!tekst) return "#";
+  const isIOS = (() => { try { return /iPad|iPhone|iPod/.test(navigator.userAgent || ""); } catch (e) { return false; } })();
+  return isIOS ? "https://maps.apple.com/?q=" + encodeURIComponent(tekst) : "geo:0,0?q=" + encodeURIComponent(tekst);
+};
 const PRIJS_STOP = ["de", "het", "een", "van", "per", "vers", "verse", "bio", "biologisch", "biologische", "ca", "stuks", "stuk", "gram", "gr", "kg", "ml", "liter", "doos", "bak", "zak", "pot", "krat"];
 const prijsWoorden = (s) => zonderAccent(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ")
   .filter((w) => w.length > 1 && !/^\d+$/.test(w) && PRIJS_STOP.indexOf(w) < 0);
@@ -10232,7 +10246,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
@@ -10480,9 +10494,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <div><span className="mute">Gasten: </span><span className="ink">{gastenTekst}{bezorging ? " · bezorging" : ""}</span></div>
               {statusTekst && <div><span className="mute">Status: </span><span style={{ color: "#a05a00" }}>{statusTekst}</span></div>}
               {zaal && <div><span className="mute">Locatie: </span><span className="ink font-semibold">{zaal}</span></div>}
-              {bezorging && adres && <div><span className="mute">Bezorgadres: </span><span className="ink font-semibold">{adres}</span></div>}
+              {bezorging && adres && (
+                <div>
+                  <span className="mute">Bezorgadres: </span>
+                  {/* Alleen op telefoon klikbaar naar de ingestelde navigatie-app; op laptop/tablet blijft het platte tekst. */}
+                  <span className="ink font-semibold hidden md:inline">{adres}</span>
+                  <a href={navHref(adres)} className="ff underline ink font-semibold md:hidden">{adres}</a>
+                </div>
+              )}
               {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
-              {klant_email && <div><span className="mute">E-mail: </span><a href={"mailto:" + klant_email} className="ff underline ink">{klant_email}</a></div>}
+              {toonEmail && klant_email && <div><span className="mute">E-mail: </span><a href={"mailto:" + klant_email} className="ff underline ink">{klant_email}</a></div>}
               {tel && <div><span className="mute">Telefoon: </span><a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline ink">{tel}</a></div>}
             </div>
             <div className="flex justify-end mt-3">
@@ -11003,7 +11024,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten" inSom={inSom}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
-                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres} klant_email={b.klant_email}
+                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres} klant_email={b.klant_email} toonEmail={false}
                     miceProducten={miceProducten} producten={producten} />
                 );
               })}
