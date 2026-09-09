@@ -2956,6 +2956,13 @@ function App() {
           if (a && typeof a === "object") return [[a.street || a.address || "", a.house_number || a.number || ""].map((x) => String(x).trim()).filter(Boolean).join(" "), String(a.zip_code || a.zipcode || a.postal_code || "").trim(), String(a.city || a.place || "").trim()].filter(Boolean).join(", ");
           return [String(c.address || c.street || "").trim(), String(c.zip_code || c.zipcode || c.postal_code || "").trim(), String(c.city || c.place || "").trim()].filter(Boolean).join(", ");
         })(),
+        // Contactpersoon los van de klantnaam (bv. een zakelijke klant met een
+        // vast aanspreekpunt); veldnaam varieert per MICE-inrichting.
+        contactNaam: (() => {
+          const lijst = c.contacts || c.contact_persons || c.contactpersons;
+          if (Array.isArray(lijst) && lijst.length) { const p = lijst.find((x) => x && (x.is_primary || x.primary)) || lijst[0]; return (p && p.name) || ""; }
+          return c.contact_name || "";
+        })(),
       };
     } catch (e) {}
     for (let pagina = 1; pagina <= 30; pagina++) {
@@ -2980,6 +2987,19 @@ function App() {
         };
         pakProducten(e.products, "", "");
         for (const a of e.activities || []) pakProducten(a.products, a.name || "", String(a.datetime_start || "").slice(11, 16));
+        // Contactpersoon (indien apart van de klantnaam bekend); MICE zet dit
+        // wisselend op het event of op de klant. Onbekend? Dan de klantnaam.
+        const contactPersoon = (() => {
+          const kandidaten = [
+            e.contact_name, e.contactperson, e.contact_person,
+            e.primary_contact && e.primary_contact.name,
+            e.contact && e.contact.name,
+            Array.isArray(e.contacts) && e.contacts.length ? (e.contacts.find((c) => c && (c.is_primary || c.primary)) || e.contacts[0]).name : null,
+            (klant[e.client_id] || {}).contactNaam,
+          ];
+          for (const k of kandidaten) if (k && String(k).trim()) return String(k).trim();
+          return "";
+        })();
         // Eigen veld "dieetwensen": MICE levert eigen velden in wisselende vorm.
         const eigenVeld = (ev, naam) => {
           for (const bron of [ev.extra_fields, ev.custom_attributes]) {
@@ -2992,7 +3012,8 @@ function App() {
           regels,
           dieet: eigenVeld(e, "dieetwensen"),
           tel: (klant[e.client_id] || {}).tel || "",
-          contact: (klant[e.client_id] || {}).naam || "",
+          contact: contactPersoon || (klant[e.client_id] || {}).naam || "",
+          klant: (klant[e.client_id] || {}).naam || "",
           adres: (klant[e.client_id] || {}).adres || "",
           id: e.id, naam: e.name || "", datum,
           start_tijd: e.datetime_start || null, eind_tijd: e.datetime_end || null,
@@ -3172,7 +3193,7 @@ function App() {
     const rij = {
       id: -Date.now(), naam: "Nieuwe boeking", datum,
       start_tijd: datum + "T12:00:00", eind_tijd: "", gasten: 0, status: "confirmed",
-      zaal: "", adres: "", bericht: "", regels: [], dieet: "", tel: "", contact: "", log: [],
+      zaal: "", adres: "", bericht: "", regels: [], dieet: "", tel: "", contact: "", klant: "", log: [],
       opgehaald_op: new Date().toISOString(),
     };
     if (live) { try { await supabase.from("mice_events").upsert([rij]); } catch (e) {} }
@@ -10192,7 +10213,7 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 }
 // Eén partijkaart, gedeeld door de mise-en-place en de boekingpagina. Het
 // potlood zet de kaart zelf om in invoervelden — geen popup.
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
@@ -10441,7 +10462,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               {statusTekst && <div><span className="mute">Status: </span><span style={{ color: "#a05a00" }}>{statusTekst}</span></div>}
               {zaal && <div><span className="mute">Locatie: </span><span className="ink font-semibold">{zaal}</span></div>}
               {bezorging && adres && <div><span className="mute">Bezorgadres: </span><span className="ink font-semibold">{adres}</span></div>}
-              {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
+              {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}{klant && klant !== contact ? " (" + klant + ")" : ""}</span></div>}
               {tel && <div><span className="mute">Telefoon: </span><a href={"tel:" + String(tel).replace(/[^+0-9]/g, "")} className="ff underline ink">{tel}</a></div>}
             </div>
             <div className="flex justify-end mt-3">
@@ -10962,7 +10983,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten" inSom={inSom}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
-                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres}
+                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres} klant={b.klant}
                     miceProducten={miceProducten} producten={producten} />
                 );
               })}
@@ -11355,7 +11376,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
-              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal} adres={detailBoeking.adres}
+              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal} adres={detailBoeking.adres} klant={detailBoeking.klant}
               miceProducten={miceProducten} producten={producten} />
           </div>
         </div>
@@ -11370,12 +11391,15 @@ function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
   const [f, setF] = useState(voorstel);
   const zet = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   // Enter in een veld sluit de cursor (ook leeg); Enter daarbuiten print.
+  // stopPropagation is nodig: anders vangt de globale sneltoets (Enter opent
+  // het vrije etiket) dezelfde toetsaanslag ook nog eens op en verschijnt
+  // dat venster bovenop dit venster.
   useEffect(() => {
     const toets = (e) => {
       if (e.key !== "Enter") return;
       const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) { e.preventDefault(); el.blur(); return; }
-      e.preventDefault(); onPrint(f);
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) { e.preventDefault(); e.stopPropagation(); el.blur(); return; }
+      e.preventDefault(); e.stopPropagation(); onPrint(f);
     };
     window.addEventListener("keydown", toets, true);
     return () => window.removeEventListener("keydown", toets, true);
