@@ -2950,15 +2950,20 @@ function App() {
       for (const c of (jk && jk.data && jk.data.data) || []) klant[c.id] = {
         tel: String(c.phone || c.phone_2 || "").trim(),
         naam: c.name || "",
-        // Adresvelden verschillen per inrichting; pak wat er is.
-        adres: [String(c.address || c.street || "").trim(), String(c.zip_code || c.zipcode || c.postal_code || "").trim(), String(c.city || c.place || "").trim()].filter(Boolean).join(", "),
+        // Adresvelden verschillen per inrichting; pak wat er is (ook genest).
+        adres: (() => {
+          const a = c.address;
+          if (a && typeof a === "object") return [[a.street || a.address || "", a.house_number || a.number || ""].map((x) => String(x).trim()).filter(Boolean).join(" "), String(a.zip_code || a.zipcode || a.postal_code || "").trim(), String(a.city || a.place || "").trim()].filter(Boolean).join(", ");
+          return [String(c.address || c.street || "").trim(), String(c.zip_code || c.zipcode || c.postal_code || "").trim(), String(c.city || c.place || "").trim()].filter(Boolean).join(", ");
+        })(),
       };
     } catch (e) {}
     for (let pagina = 1; pagina <= 30; pagina++) {
       let lijst = [];
+      let j = null;
       try {
         const r = await fetch("/api/mice?path=events&page=" + pagina + "&per_page=100&include_products=1&include_packages=1&include_activities=1");
-        const j = await r.json();
+        j = await r.json();
         lijst = (j && j.data && j.data.data) || [];
       } catch (e) { break; } // haperende pagina: bewaren wat we al hebben
       if (!lijst.length) break;
@@ -8639,7 +8644,7 @@ function parseAmountFlex(text) {
   if (eh === "dl") return { g: n * 100 };
   if (eh === "cl") return { g: n * 10 };
   if (eh === "g" || eh === "gr" || eh === "gram" || eh === "ml") return { g: n };
-  return { count: n }; // st, x of kaal getal
+  return { count: n, bare: !eh }; // st, x of kaal getal (bare = geen eenheid getypt)
 }
 
 // Op-maat rekenen: naar een doelopbrengst (C) of naar wat er van een ingrediënt
@@ -8664,10 +8669,12 @@ function MaatModal({ recipe, onApply, onClose }) {
   const rekenIngredient = () => {
     const ing = ings[ingIdx];
     if (!ing) return;
-    const heb = parseAmountFlex(beschikbaar);
+    let heb = parseAmountFlex(beschikbaar);
     const nodig = parseAmountFlex(ing.amount);
     if (!heb) { setFout("Vul in hoeveel je hebt, bv. 33,6 kg of 8 st."); return; }
     if (!nodig) { setFout("De hoeveelheid van \"" + ing.item + "\" (" + (ing.amount || "leeg") + ") is niet als getal te lezen."); return; }
+    // Kaal getal getypt (geen eenheid) — volgt de eenheid van het recept.
+    if (heb.bare && nodig.g != null) heb = { g: heb.count };
     let f = null;
     if (heb.g != null && nodig.g != null) f = heb.g / nodig.g;
     else if (heb.count != null && nodig.count != null) f = heb.count / nodig.count;
@@ -12970,6 +12977,8 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           </Field>
         );
       })()}
+      <div className="md:grid md:grid-cols-2 md:gap-x-6 md:items-start">
+      <div className="min-w-0">
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="text-sm font-medium ink">Ingrediënten</span>
         {(() => {
@@ -13091,6 +13100,9 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
         );
       })()}
       <AddRow onClick={() => setIngredients((a) => [...a, { item: "", amount: "" }])} label="Ingrediënt toevoegen" />
+      </div>
+
+      <div className="min-w-0">
       {uitleg !== null && ingredients[uitleg] && (
         <PrijsUitleg ing={ingredients[uitleg]} leveranciers={leveranciersLijst}
           onKiesArtikel={(code) => setIng(uitleg, "artikelCode", code)}
@@ -13125,6 +13137,8 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
         </div>))}
       </div>
       <AddRow onClick={() => setSteps((a) => [...a, ""])} label="Stap toevoegen" />
+      </div>
+      </div>
     </div>
   );
 }
