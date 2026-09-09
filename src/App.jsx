@@ -572,6 +572,9 @@ const HACCP_UNITS = [
 const CALIB_TOLERANCE = 1;
 // Hoe vaak de koeling gemeten moet worden. Instelbaar; standaard om de dag.
 const HACCP_INTERVAL_STANDAARD = 2;
+// Standaard categorieën voor de bezorgmateriaal-inventaris; tijdens bewerken
+// kunnen er eigen categorieën bij.
+const BEZORG_CATEGORIEEN_DEFAULT = ["Servies", "Bestek", "Glaswerk", "Serveer materialen", "Decoratie", "Overige"];
 let HACCP_INTERVAL = HACCP_INTERVAL_STANDAARD;
 const zetHaccpInterval = (n) => { const x = Number(n); HACCP_INTERVAL = x > 0 ? x : HACCP_INTERVAL_STANDAARD; };
 // De dagen waarop gemeten had moeten worden en waarop niets staat. Telt terug
@@ -2821,7 +2824,8 @@ function App() {
   const [spellingUit, setSpellingUit] = useState([]); // namen die bewust afwijken en niet gecorrigeerd worden
   const [naamAlias, setNaamAlias] = useState({}); // zelf samengevoegde namen: variant -> hoofdnaam
   const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
-  const [materiaalInventaris, setMateriaalInventaris] = useState([]); // gedeelde lijst bezorgmateriaal
+  const [materiaalItems, setMateriaalItems] = useState([]); // [{ naam, categorie, opmerking }]
+  const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
@@ -2918,6 +2922,7 @@ function App() {
       setBezorgLijst((l) => [{ ...rij, id: -Date.now() }, ...l]);
     }
     flash("Bezorging geregistreerd");
+    materiaalAutoToevoegen((reg.materialen || []).map((m) => m.naam));
   };
   // Terugname invullen: elke keer komt er een nieuwe gebeurtenis bij (nooit
   // overschrijven), met tijdstip, wie het invulde en een eigen notitie —
@@ -2929,6 +2934,7 @@ function App() {
     const teruggenomen = [...(huidige.teruggenomen || []), gebeurtenis];
     setBezorgLijst((l) => l.map((r) => (r.id === id ? { ...r, teruggenomen } : r)));
     if (live) { try { await supabase.from("bezorgmateriaal").update({ teruggenomen, updated_at: new Date().toISOString() }).eq("id", id); } catch (e) {} }
+    materiaalAutoToevoegen(event.regels.map((r) => r.naam));
   };
   const verwijderBezorgRegistratie = async (id) => {
     setBezorgLijst((l) => l.filter((r) => r.id !== id));
@@ -3326,13 +3332,24 @@ function App() {
     }
   };
   // Gedeelde materialenlijst voor bezorgingen (kratten, bakken, dozen...).
-  const saveMateriaalInventaris = async (lijst) => {
-    const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"));
-    setMateriaalInventaris(uit);
+  const saveInventaris = async (nieuweItems, nieuweCategorieen) => {
+    const items = nieuweItems != null ? nieuweItems : materiaalItems;
+    const categorieen = nieuweCategorieen != null ? nieuweCategorieen : materiaalCategorieen;
+    setMateriaalItems(items); setMateriaalCategorieen(categorieen);
     if (live) {
-      const { error } = await supabase.from("app_settings").upsert({ key: "bezorg_materialen", value: { namen: uit }, updated_at: new Date().toISOString() });
+      const { error } = await supabase.from("app_settings").upsert({ key: "bezorg_materialen", value: { items, categorieen }, updated_at: new Date().toISOString() });
       if (error) flash("Materiaal alleen op dit apparaat bewaard");
     }
+  };
+  // Materiaal dat bij het invullen van een bezorging of terugname wordt
+  // getypt maar nog niet in de inventaris staat, komt er automatisch bij
+  // (onder "Overige"), zodat de lijst vanzelf meegroeit.
+  const materiaalAutoToevoegen = (namen) => {
+    const bekend = new Set(materiaalItems.map((i) => zonderAccent(i.naam).toLowerCase().trim()));
+    const nieuw = [...new Set((namen || []).map((n) => String(n || "").trim()).filter(Boolean))]
+      .filter((n) => !bekend.has(zonderAccent(n).toLowerCase().trim()));
+    if (!nieuw.length) return;
+    saveInventaris([...materiaalItems, ...nieuw.map((n) => ({ naam: n, categorie: "Overige", opmerking: "" }))], null);
   };
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
@@ -3991,7 +4008,11 @@ function App() {
     const hiRow = (cs && cs.data && cs.data.find((r) => r.key === "haccp_interval")) || null;
     if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
     const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
-    if (bmRow && bmRow.value && Array.isArray(bmRow.value.namen)) setMateriaalInventaris(bmRow.value.namen);
+    if (bmRow && bmRow.value) {
+      if (Array.isArray(bmRow.value.items)) setMateriaalItems(bmRow.value.items);
+      else if (Array.isArray(bmRow.value.namen)) setMateriaalItems(bmRow.value.namen.map((n) => ({ naam: n, categorie: "Overige", opmerking: "" }))); // migratie oude vorm
+      if (Array.isArray(bmRow.value.categorieen) && bmRow.value.categorieen.length) setMateriaalCategorieen(bmRow.value.categorieen);
+    }
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
     if (mev && !mev.error) setBoekingen(mev.data || []);
     if (mko && !mko.error) {
@@ -5077,19 +5098,167 @@ function App() {
   };
   const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
+  // ---------- Meldingencentrum: alle "aandacht nodig"-signalen op één plek ----------
+  const [wijzDicht, setWijzDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:wijzigingen") === kitchenDate(); } catch (e) { return false; } });
+  const [bezorgDicht, setBezorgDicht] = useState(() => { try { return localStorage.getItem("ritme:banner-dicht:bezorgmateriaal") === kitchenDate(); } catch (e) { return false; } });
+  const dismissWijz = () => { setWijzDicht(true); try { localStorage.setItem("ritme:banner-dicht:wijzigingen", kitchenDate()); } catch (e) {} };
+  const dismissBezorg = () => { setBezorgDicht(true); try { localStorage.setItem("ritme:banner-dicht:bezorgmateriaal", kitchenDate()); } catch (e) {} };
+  const meldingCategorieen = [];
+  if (canEdit && loaded) {
+    // HACCP: kookbanners (garing, terugkoelen), temperaturen en leveringscontrole.
+    const haccpMeldingen = (() => {
+      const nu = new Date();
+      const uit = [];
+      const garingDezeWeek = haccpRecords.some((r) => r.kind === "bereiding" && weekKey(r.date) === weekKey(localDate()));
+      for (const ses of cookSessions) {
+        if (kitchenDate(new Date(ses.at)) !== kitchenDate()) continue;
+        const koelKlaar = haccpRecords.some((r) => r.kind === "terugkoelen" && r.date === localDate() && naamMatch(r.product, ses.name));
+        if (koelKlaar) continue;
+        const garingKlaar = ses.garingAt || garingDezeWeek;
+        if (!garingKlaar && binnenWerkdag(nu) && !cookDismiss[ses.id + ":g"]) {
+          uit.push({ id: ses.id + ":g", title: "Garing", text: 'Je werkt met "' + ses.name + '". Vul de garingscontrole (kerntemperatuur) in.', actionLabel: "Invullen", onAction: () => { setMeldingenOpen(false); push({ screen: "haccpRecordForm", recordKind: "bereiding", editing: null, prefill: { gerecht: ses.name } }); }, onDismiss: () => dismissCook(ses.id + ":g") });
+        }
+        const basis = ses.garingAt || ses.at;
+        for (const uur of [5, 3]) {
+          const t = new Date(basis + uur * 3600000);
+          if (nu >= t && binnenWerkdag(t) && !cookDismiss[ses.id + ":" + uur]) {
+            uit.push({ id: ses.id + ":" + uur, title: "Terugkoelen (" + uur + " uur)", text: '"' + ses.name + '" staat ' + uur + ' uur sinds de ' + (ses.garingAt ? "garing" : "start") + '. Is het gemaakt? Check de temperatuur' + (uur === 5 ? " — die moet nu ≤ 7 °C zijn" : "") + ' en leg de terugkoeling vast.', actionLabel: "Invullen", onAction: () => { setMeldingenOpen(false); push({ screen: "haccpRecordForm", recordKind: "terugkoelen", editing: null, prefill: { product: ses.name } }); }, onDismiss: () => dismissCook(ses.id + ":" + uur) });
+            break;
+          }
+        }
+      }
+      if (haccpDue(haccpLogs) && nu.getHours() >= WORKDAY_START && nu.getHours() < 12 && !cookDismiss["temps"]) {
+        const gemist = gemisteMetingen(haccpLogs);
+        uit.push({ id: "temps", title: "Temperaturen", text: "Meet de koelcel, koelwerkbank, vrieskast en vriescel — " + intervalLabel(HACCP_INTERVAL) + " aan de beurt." + (gemist.length ? " Er staan nog " + gemist.length + " gemiste metingen open." : ""), actionLabel: "Invullen", onAction: () => { setMeldingenOpen(false); push({ screen: "haccpForm", editing: null }); }, onDismiss: () => dismissCook("temps") });
+      }
+      const dow = nu.getDay();
+      if ((dow === 2 || dow === 5) && binnenWerkdag(nu) && !cookDismiss["levering"] && !haccpRecords.some((r) => r.kind === "levering" && r.date === localDate())) {
+        uit.push({ id: "levering", title: "Levering", text: "Leveringsdag — check de temperatuur van de gekoelde leveringen bij ontvangst.", actionLabel: "Invullen", onAction: () => { setMeldingenOpen(false); push({ screen: "haccpRecordForm", recordKind: "levering", editing: null, prefill: null }); }, onDismiss: () => dismissCook("levering") });
+      }
+      return uit;
+    })();
+    if (haccpMeldingen.length) meldingCategorieen.push({
+      id: "haccp", label: "HACCP", icon: <Thermometer size={15} />,
+      content: (
+        <ul className="space-y-2.5 text-sm">
+          {haccpMeldingen.map((m) => (
+            <li key={m.id} className="flex items-start gap-2">
+              <Thermometer size={14} className="shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0"><span className="font-medium">{m.title}:</span> {m.text}</div>
+              <button onClick={m.onAction} className="ff shrink-0 rounded-md px-2 py-1 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }}>{m.actionLabel}</button>
+            </li>
+          ))}
+        </ul>
+      ),
+      onAfronden: () => haccpMeldingen.forEach((m) => m.onDismiss()),
+    });
+
+    // Fermentatie: klaar om af te ronden, of actie/meting nodig.
+    const { ready: fermReady, items: fermItems } = collectNotices(batches);
+    if (fermReady.length || fermItems.length) meldingCategorieen.push({
+      id: "fermentatie", label: "Fermentatie", icon: <FlaskConical size={15} />,
+      content: (
+        <ul className="space-y-2.5 text-sm">
+          {fermReady.map(({ b, day }) => (
+            <li key={b.id} className="flex items-start gap-1.5">
+              <Check size={14} className="shrink-0 mt-0.5" />
+              <span className="flex-1"><span className="font-medium">{b.product}</span> is klaar — dag {day}/{b.days}</span>
+              <div className="flex flex-wrap justify-end gap-1 shrink-0">
+                <button onClick={() => extendBatch(b.id)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Nog niet klaar — een dag erbij">+1 dag</button>
+                <button onClick={() => toggleBatchDone(b.id)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#44502f", color: "#fbf9f2" }} title="Batch afronden en de eindmeting invullen">Afronden</button>
+              </div>
+            </li>
+          ))}
+          {fermItems.map(({ b, day, label, needMeasure }) => (
+            <li key={b.id + "__item"} className="flex items-start gap-1.5">
+              <FlaskConical size={14} className="shrink-0 mt-0.5" />
+              <span className="flex-1"><span className="font-medium">{b.product}</span> aandacht: {[label, needMeasure ? "meting" : null].filter(Boolean).join(" en ")} — dag {day}/{b.days}</span>
+              <div className="flex flex-wrap justify-end gap-1 shrink-0">
+                {label && <button onClick={() => ackAction(b.id, label)} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Handeling gedaan — verberg tot morgen">Afvinken</button>}
+                {needMeasure && <button onClick={() => { setMeldingenOpen(false); setMeasureFor(b.id); }} className="ff rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Meting invullen voor deze batch">Meten</button>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ),
+      onAfronden: () => setDismissedNotices((d) => ({ ...d, [kitchenDate()]: true })),
+    });
+
+    // Schoonmaak: tijd om de dag af te tekenen.
+    if (checkBanner) meldingCategorieen.push({
+      id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={15} />,
+      content: <p className="text-sm">Het is {String(CHECK_HOUR).padStart(2, "0")}:{String(CHECK_MIN).padStart(2, "0")} geweest — tijd om de schoonmaak van vandaag af te tekenen.<br /><button onClick={() => { setMeldingenOpen(false); setCheckOpen(true); }} className="ff mt-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }}>Aftekenen</button></p>,
+      onAfronden: dismissCheckBanner,
+    });
+
+    // Boekingen: wat is er de afgelopen dagen aan partijen gewijzigd.
+    const wijzGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString(); })();
+    const wijzItems = [];
+    (boekingen || []).forEach((b) => {
+      const w = [];
+      (b.log || []).forEach((e) => { if (String(e.t || "") >= wijzGrens) (e.w || []).forEach((x) => w.push(String(x))); });
+      if (w.length) wijzItems.push({ b, w });
+    });
+    const wijzLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
+    if (!wijzDicht && wijzItems.length) meldingCategorieen.push({
+      id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />,
+      content: (
+        <div className="space-y-2 text-sm">
+          {wijzItems.map(({ b, w }) => (
+            <div key={b.id}>
+              <div className="font-medium">{b.naam || "Partij"} <span className="opacity-70">· {wijzLabel(b.datum)}</span></div>
+              <ul className="mt-0.5 space-y-0.5">{w.map((x, i) => <li key={i} className="flex items-start gap-1.5"><Check size={13} className="shrink-0 mt-0.5" /><span className="flex-1">{x}</span></li>)}</ul>
+            </div>
+          ))}
+        </div>
+      ),
+      onAfronden: dismissWijz,
+    });
+
+    // Bezorgmateriaal: wat staat er nog open om op te halen.
+    const bezorgItems = (bezorgLijst || []).map((r) => ({ r, open: bezorgOpenstaand(r) })).filter((x) => x.open.length)
+      .sort((a, b) => String(a.r.boeking_datum || "").localeCompare(String(b.r.boeking_datum || "")));
+    const bezorgSamenvat = (open) => open.map((o) => o.aantal + "× " + o.naam).join(", ");
+    if (!bezorgDicht && bezorgItems.length) meldingCategorieen.push({
+      id: "materiaal", label: "Materiaalbeheer", icon: <Package size={15} />,
+      content: (
+        <ul className="space-y-1.5 text-sm">
+          {bezorgItems.map(({ r, open }) => (
+            <li key={r.id} className="flex items-start gap-1.5">
+              <Package size={13} className="shrink-0 mt-0.5" />
+              <button onClick={() => { setMeldingenOpen(false); push({ screen: "bezorgmateriaal", focus: r.id }); }} className="ff underline text-left flex-1">
+                {(r.boeking_naam || "Partij") + " · " + wijzLabel(r.boeking_datum) + " — " + bezorgSamenvat(open)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ),
+      onAfronden: dismissBezorg,
+    });
+  }
+  const [meldingenOpen, setMeldingenOpen] = useState(false);
+  const klikHome = () => {
+    if (meldingCategorieen.length && !meldingenOpen) { setMeldingenOpen(true); return; }
+    setMeldingenOpen(false);
+    goHome();
+  };
+
   return (
     <div className="min-h-screen flex" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
       <ZijBalk chef={chefMode} section={current.screen === "list" ? section : null}
         onKies={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }}
-        onHome={goHome}
+        onHome={klikHome}
         onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }}
-        onInstellingen={() => push({ screen: "settings" })} />
+        onInstellingen={() => push({ screen: "settings" })} meldingen={meldingCategorieen.length} />
+
+      {meldingenOpen && meldingCategorieen.length > 0 && <MeldingenBalk categorieen={meldingCategorieen} onSluiten={() => setMeldingenOpen(false)} />}
 
       <div className="flex-1 min-w-0 flex flex-col">
       <div className="md:hidden">
-        <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"}
-          titel={section === "home" ? null : ({ mep: "Mise en place", boekingen: "Boekingen", assortiment: "Calculaties" }[section] || (SECTIONS.find((x) => x.id === section) || {}).label || null)} />
+        <Header user={user} onHome={klikHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"}
+          titel={section === "home" ? null : ({ mep: "Mise en place", boekingen: "Boekingen", assortiment: "Calculaties" }[section] || (SECTIONS.find((x) => x.id === section) || {}).label || null)}
+          meldingen={meldingCategorieen.length} />
       </div>
 
       <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
@@ -5101,64 +5270,6 @@ function App() {
         </div>
         {current.screen === "list" && (
           <div {...swipe}>
-            {/* Pas tonen als de teamdata geladen is: anders knippert de banner
-                bij elke refresh kort op basis van de lokale startdata. */}
-            {canEdit && loaded && (() => {
-              // HACCP-kookbanners: garing invullen, en op 3/5 uur de terugkoelcheck.
-              const nu = new Date();
-              const uit = [];
-              const garingDezeWeek = haccpRecords.some((r) => r.kind === "bereiding" && weekKey(r.date) === weekKey(localDate()));
-              for (const ses of cookSessions) {
-                if (kitchenDate(new Date(ses.at)) !== kitchenDate()) continue;
-                const koelKlaar = haccpRecords.some((r) => r.kind === "terugkoelen" && r.date === localDate() && naamMatch(r.product, ses.name));
-                if (koelKlaar) continue;
-                const garingKlaar = ses.garingAt || garingDezeWeek;
-                if (!garingKlaar && binnenWerkdag(nu) && !cookDismiss[ses.id + ":g"]) {
-                  uit.push(<ReminderBanner key={ses.id + "g"} icon={<Thermometer size={15} />} title="HACCP · garing"
-                    text={'Je werkt met "' + ses.name + '". Vul de garingscontrole (kerntemperatuur) in.'}
-                    actionLabel="Invullen" onAction={() => push({ screen: "haccpRecordForm", recordKind: "bereiding", editing: null, prefill: { gerecht: ses.name } })}
-                    onDismiss={() => dismissCook(ses.id + ":g")} />);
-                }
-                const basis = ses.garingAt || ses.at;
-                for (const uur of [5, 3]) {
-                  const t = new Date(basis + uur * 3600000);
-                  if (nu >= t && binnenWerkdag(t) && !cookDismiss[ses.id + ":" + uur]) {
-                    uit.push(<ReminderBanner key={ses.id + "k" + uur} icon={<Thermometer size={15} />} title={"HACCP · terugkoelen (" + uur + " uur)"}
-                      text={'"' + ses.name + '" staat ' + uur + ' uur sinds de ' + (ses.garingAt ? "garing" : "start") + '. Is het gemaakt? Check de temperatuur' + (uur === 5 ? " — die moet nu ≤ 7 °C zijn" : "") + ' en leg de terugkoeling vast.'}
-                      actionLabel="Invullen" onAction={() => push({ screen: "haccpRecordForm", recordKind: "terugkoelen", editing: null, prefill: { product: ses.name } })}
-                      onDismiss={() => dismissCook(ses.id + ":" + uur)} />);
-                    break; // toon alleen de verst gevorderde fase
-                  }
-                }
-              }
-              // Temperaturen: 's ochtends, en alleen als het interval verstreken is.
-              if (haccpDue(haccpLogs) && nu.getHours() >= WORKDAY_START && nu.getHours() < 12 && !cookDismiss["temps"]) {
-                const gemist = gemisteMetingen(haccpLogs);
-                uit.push(<ReminderBanner key="temps" icon={<Thermometer size={15} />} title="HACCP · temperaturen"
-                  text={"Meet de koelcel, koelwerkbank, vrieskast en vriescel — " + intervalLabel(HACCP_INTERVAL) + " aan de beurt."
-                    + (gemist.length ? " Er staan nog " + gemist.length + " gemiste metingen open." : "")}
-                  actionLabel="Invullen" onAction={() => push({ screen: "haccpForm", editing: null })}
-                  onDismiss={() => dismissCook("temps")} />);
-              }
-              // Leveringsbanner: dinsdag en vrijdag, zolang er vandaag nog geen leveringscontrole is.
-              const dow = nu.getDay();
-              if ((dow === 2 || dow === 5) && binnenWerkdag(nu) && !cookDismiss["levering"] && !haccpRecords.some((r) => r.kind === "levering" && r.date === localDate())) {
-                uit.push(<ReminderBanner key="lev" icon={<Thermometer size={15} />} title="HACCP · levering"
-                  text="Leveringsdag — check de temperatuur van de gekoelde leveringen bij ontvangst."
-                  actionLabel="Invullen" onAction={() => push({ screen: "haccpRecordForm", recordKind: "levering", editing: null, prefill: null })}
-                  onDismiss={() => dismissCook("levering")} />);
-              }
-              return uit;
-            })()}
-            {canEdit && loaded && !dismissedNotices[noticeKey] && (
-              <NoticeBanner batches={batches} canAck={canEdit} onAck={ackAction} onMeasure={(id) => setMeasureFor(id)}
-                onFinish={(id) => toggleBatchDone(id)} onExtend={(id) => extendBatch(id)} onOpen={() => setSection("fermentatie")} onDismiss={() => setDismissedNotices((d) => ({ ...d, [noticeKey]: true }))} />
-            )}
-            {canEdit && checkBanner && (
-              <ReminderBanner groep="Schoonmaak" icon={<Sparkles size={15} />} title="Schoonmaakcontrole"
-                text={"Het is " + String(CHECK_HOUR).padStart(2, "0") + ":" + String(CHECK_MIN).padStart(2, "0") + " geweest — tijd om de schoonmaak van vandaag af te tekenen."}
-                actionLabel="Aftekenen" onAction={() => setCheckOpen(true)} onDismiss={dismissCheckBanner} />
-            )}
             {section === "home" && <HomeScreen stock={stock} recipes={recipes} batches={batches} dishes={dishes} onOpenRecipe={openRecipe} onOpenDish={(id) => push({ screen: "dishDetail", id })} onGoSection={(sec) => setSection(sec)} />}
             {section === "gerechten" && <DishList dishes={dishes} recipeById={recipeById} search={search} setSearch={setSearch} invulGesch={invulGeschiedenis} onOpen={(id) => push({ screen: "dishDetail", id })} />}
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} stock={stock} search={search} setSearch={setSearch} onOpen={openRecipe} />}
@@ -5276,7 +5387,7 @@ function App() {
           return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
         {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen} bezorgLijst={bezorgLijst} canEdit={canEdit}
-          materiaalInventaris={materiaalInventaris} onSaveInventaris={canEdit ? saveMateriaalInventaris : null}
+          materiaalItems={materiaalItems} materiaalCategorieen={materiaalCategorieen} onSaveInventaris={canEdit ? saveInventaris : null}
           onSave={saveBezorgRegistratie} onTerug={boekBezorgTerugname} onDelete={canEdit ? verwijderBezorgRegistratie : null}
           onBack={goBack} focusId={current.focus != null ? current.focus : null} />}
       </main>
@@ -5435,7 +5546,7 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
   );
 }
 
-function Wordmark({ size = "small", onHome, titel }) {
+function Wordmark({ size = "small", onHome, titel, meldingen = 0 }) {
   if (size === "large") return (
     <div className="text-center">
       <div className="text-[12.5px] font-semibold tracking-widest uppercase acc mb-3">Wilde Wortels · Landgoed de Beug</div>
@@ -5448,7 +5559,10 @@ function Wordmark({ size = "small", onHome, titel }) {
   const Tag = onHome ? "button" : "div";
   return (
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
-      <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}><FarmhouseIcon size={26} style={{ color: T.paper }} /></span>
+      <span className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}>
+        <FarmhouseIcon size={26} style={{ color: T.paper }} />
+        {meldingen > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+      </span>
       <span className={"serif ink text-base leading-none truncate" + (titel ? " font-bold" : "")}>{titel || "In het ritme van het land"}</span>
     </Tag>
   );
@@ -5792,12 +5906,12 @@ function Login({ onPick, live }) {
     </div>
   );
 }
-function Header({ user, onHome, onOpenSettings, onMep, mepActief, titel }) {
+function Header({ user, onHome, onOpenSettings, onMep, mepActief, titel, meldingen = 0 }) {
   return (
     <header className="sticky top-0 z-40 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl lg:max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <Wordmark onHome={onHome} titel={titel} />
+          <Wordmark onHome={onHome} titel={titel} meldingen={meldingen} />
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
           {onMep && (
@@ -7423,10 +7537,15 @@ function useSwipeSections(section, setSection) {
 
 // Verticale navigatie links: vaste volgorde, gelijke knopbreedte, icoon
 // boven tekst. Vervangt de kopbalk en de horizontale sectiebalk.
-function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen }) {
+function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen, meldingen = 0 }) {
   const per = {}; for (const x of SECTIONS) per[x.id] = x;
   const items = [
-    { id: "__home", label: "Home", icon: <Home size={22} />, doe: onHome },
+    { id: "__home", label: "Home", icon: (
+      <span className="relative inline-flex">
+        <Home size={22} />
+        {meldingen > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-0.5 rounded-full flex items-center justify-center text-[9.5px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+      </span>
+    ), doe: onHome },
     { id: "mep", label: "Mise en place", icon: <ClipboardList size={22} />, doe: onMep },
     per.gerechten, per.recepten, per.fermentatie, per.smaak,
     per.technieken,
@@ -10198,6 +10317,54 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
 // Banner zoals de fermentatie-aandacht: welke partijen zijn de afgelopen
 // dagen veranderd (aantallen, producten, tijden, allergenen) en wat precies.
 // Start ingeklapt; de hele balk klapt in en uit, het kruisje verbergt tot 02:00.
+// Meldingencentrum: één plek voor alle "aandacht nodig"-signalen (HACCP,
+// fermentatie, schoonmaak, boekingswijzigingen, bezorgmateriaal), bereikbaar
+// via de Home-knop in plaats van losse banners overal verspreid. Klap open
+// vanaf de Home-knop naar rechts over de huidige pagina heen; per categorie
+// een pil die naar onder uitklapt, met de balk zelf blijft staan.
+function MeldingenBalk({ categorieen, onSluiten }) {
+  const [open, setOpen] = useState(null); // id van de uitgeklapte categorie
+  const [breed, setBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
+  useEffect(() => {
+    const m = window.matchMedia("(min-width: 768px)");
+    const f = () => setBreed(m.matches);
+    try { m.addEventListener("change", f); } catch (e) { m.addListener(f); }
+    return () => { try { m.removeEventListener("change", f); } catch (e) { m.removeListener(f); } };
+  }, []);
+  const ref = React.useRef(null);
+  useEffect(() => {
+    const klik = (e) => { if (ref.current && !ref.current.contains(e.target)) onSluiten(); };
+    const toets = (e) => { if (e.key === "Escape") onSluiten(); };
+    document.addEventListener("mousedown", klik, true);
+    document.addEventListener("keydown", toets, true);
+    return () => { document.removeEventListener("mousedown", klik, true); document.removeEventListener("keydown", toets, true); };
+  }, [onSluiten]);
+  const huidige = categorieen.find((c) => c.id === open) || null;
+  return (
+    <div ref={ref} className="fixed z-50 shadow-xl overflow-y-auto"
+      style={{ top: breed ? 0 : "3.5rem", left: breed ? "5.2rem" : 0, right: 0, maxHeight: breed ? "100vh" : "calc(100vh - 3.5rem)", background: T.paper, borderBottom: "1px solid " + T.line, borderRight: breed ? "1px solid " + T.line : "none" }}>
+      <div className="flex flex-wrap items-center gap-1.5 p-3" style={{ borderBottom: huidige ? "1px solid " + T.line : "none" }}>
+        {categorieen.map((c) => (
+          <button key={c.id} onClick={() => setOpen((o) => (o === c.id ? null : c.id))}
+            className={"ff inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium " + (open === c.id ? "pillon" : "pill")}>
+            {c.icon} {c.label}
+          </button>
+        ))}
+        <button onClick={onSluiten} className="ff mute hover:opacity-70 ml-auto shrink-0 p-1" title="Sluiten"><X size={17} /></button>
+      </div>
+      {huidige && (
+        <div className="p-3.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>
+          {huidige.content}
+          <div className="flex justify-end gap-2 mt-3 pt-3" style={{ borderTop: "1px solid #e4d6b8" }}>
+            <button onClick={() => setOpen(null)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }}>Bewaar voor later</button>
+            <button onClick={() => { huidige.onAfronden(); setOpen(null); }} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Afronden</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WijzigingenBanner({ boekingen, dagen = 3 }) {
   const [dicht, setDicht] = useState(true);
   const sluitKey = "ritme:banner-dicht:wijzigingen";
@@ -10473,7 +10640,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       { t: f.datum, c: "rij datum" },
       { t: f.gasten, c: "rij" },
       { t: f.locatie, c: "rij" },
-      { t: f.contact, c: "rij klein" },
     ].filter((r) => String(r.t || "").trim());
     const naamTxt = String(f.naam || "").trim() || "Zonder naam";
     const productTxt = String(f.product || "").trim();
@@ -10516,7 +10682,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     datum: [datumKop, tijdTekst || ""].filter(Boolean).join(" · "),
     gasten: gastenTekst ? gastenTekst + " gasten" : "",
     locatie: bezorging ? "Bezorging" + (adres ? " · " + adres : (zaal ? " · " + zaal : "")) : (zaal || ""),
-    contact: [contact, tel].filter(Boolean).join(" · "),
   });
 
   const startBewerk = () => {
@@ -11028,7 +11193,6 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
   // De optelsomtabel staat direct boven de eerste dag vanaf vandaag met partijen.
   const somAnker = dagen.find((d) => d >= vandaag && partijen.some((b) => b.datum === d)) || null;
-  const wijzBanner = <WijzigingenBanner boekingen={boekingen} />;
   const somKaart = partijen.length > 0 && somSet.length > 0 ? (
         <div id="som-kaart" className="card p-3 mb-4">
           <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
@@ -11123,14 +11287,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
       {!partijen.length && <Empty label="Geen partijen in deze week." />}
 
-      {somAnker == null && <React.Fragment>{wijzBanner}{somKaart}</React.Fragment>}
+      {somAnker == null && somKaart}
 
       {dagen.map((d) => {
         const items = partijen.filter((b) => b.datum === d);
         if (!items.length) return null;
         return (
           <React.Fragment key={d}>
-            {d === somAnker && <React.Fragment>{wijzBanner}{somKaart}</React.Fragment>}
+            {d === somAnker && somKaart}
             <div className="mb-4">
             <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
@@ -11414,8 +11578,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   return (
     <div>
       <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
-      <WijzigingenBanner boekingen={boekingen} />
-      {onOpenBezorg && <BezorgBanner bezorgLijst={bezorgLijst} onOpen={onOpenBezorg} />}
 
       <div className="-mx-4 px-4" style={somOpen ? {} : { position: "sticky", top: plakTop, zIndex: 20, background: T.paper }}>
       {prodOverlap.length > 0 && (
@@ -11603,9 +11765,8 @@ function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
           <div className="grid grid-cols-2 gap-2">
             {veld("Dag en tijd", "datum")}
             {veld("Gasten", "gasten")}
-            {veld("Locatie", "locatie")}
-            {veld("Contact en telefoon", "contact")}
           </div>
+          {veld("Locatie", "locatie")}
         </div>
         <div className="flex items-center justify-between gap-2 mt-3">
           <span className="text-[11.5px] mute">Enter = veld sluiten, nog een Enter = printen.</span>
@@ -13660,7 +13821,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, initieel
 // Bezorgmateriaal-pagina: registreer wat er meegaat met een bezorging en houd
 // bij wat er nog terug moet komen. Bereikbaar via Instellingen, of via een
 // link in de melding op de boekingenpagina (met focusId naar één registratie).
-function BezorgScreen({ boekingen, bezorgLijst, materiaalInventaris, onSaveInventaris, canEdit, onSave, onTerug, onDelete, onBack, focusId }) {
+function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategorieen, onSaveInventaris, canEdit, onSave, onTerug, onDelete, onBack, focusId }) {
   const vandaag = localDate();
   const [nieuwOpen, setNieuwOpen] = useState(false);
   const [gekozen, setGekozen] = useState(null); // { id, naam, datum }
@@ -13683,11 +13844,12 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalInventaris, onSaveInven
     [boekingen, vandaag, partijQuery]);
 
   const materiaalNamen = React.useMemo(() => {
-    const set = new Set(materiaalInventaris || []);
+    const set = new Set((materiaalItems || []).map((i) => i.naam));
     (bezorgLijst || []).forEach((r) => (r.materialen || []).forEach((m) => m.naam && set.add(m.naam)));
     return [...set].sort((a, b) => a.localeCompare(b, "nl"));
-  }, [bezorgLijst, materiaalInventaris]);
+  }, [bezorgLijst, materiaalItems]);
   const [nieuwMateriaalOpen, setNieuwMateriaalOpen] = useState(false);
+  const [inventarisBewerk, setInventarisBewerk] = useState(false);
 
   const kiesPartij = (b) => { setGekozen({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); setZoek(""); };
   const setRij = (i, veld, w) => setRijen((rs) => rs.map((r, j) => (j === i ? { ...r, [veld]: w } : r)));
@@ -13800,24 +13962,6 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalInventaris, onSaveInven
         </div>
       )}
 
-      {onSaveInventaris && (materiaalInventaris || []).length > 0 && (
-        <div className="mt-4">
-          <button onClick={() => setToonInventaris((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
-            {toonInventaris ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Inventaris ({materiaalInventaris.length})
-          </button>
-          {toonInventaris && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {materiaalInventaris.map((naam) => (
-                <span key={naam} className="ff inline-flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-1 text-[12.5px]" style={{ border: "1px solid " + T.line }}>
-                  {naam}
-                  <button onClick={() => onSaveInventaris(materiaalInventaris.filter((n) => n !== naam))} className="hover:opacity-70" style={{ color: "#8a4a3a" }} title="Verwijderen uit inventaris"><X size={12} /></button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       <SectionTitle>Nog terug te halen ({openLijst.length})</SectionTitle>
       {openLijst.length === 0
         ? <Empty label="Alle bezorgmateriaal is terug." />
@@ -13855,15 +13999,86 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalInventaris, onSaveInven
           </div>
         )
       )}
+      {onSaveInventaris && (
+        <>
+          <div className="flex items-center justify-between gap-2 mt-6 mb-2">
+            <button onClick={() => setToonInventaris((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+              {toonInventaris ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Inventaris ({materiaalItems.length})
+            </button>
+            {toonInventaris && (
+              <button onClick={() => setInventarisBewerk((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70">
+                <Pencil size={13} /> {inventarisBewerk ? "Klaar" : "Bewerken"}
+              </button>
+            )}
+          </div>
+          {toonInventaris && (
+            <InventarisBeheer categorieen={materiaalCategorieen} items={materiaalItems} bewerk={inventarisBewerk} onOpslaan={onSaveInventaris} />
+          )}
+        </>
+      )}
       {nieuwMateriaalOpen && (
         <PromptModal titel="Nieuw materiaal" label="Naam" placeholder="bv. Tupperware bak groot"
+          hint="Komt eerst onder Overige terecht; de juiste categorie kies je bij Inventaris → Bewerken."
           okLabel="Toevoegen" onCancel={() => setNieuwMateriaalOpen(false)}
-          onOk={(naam) => { onSaveInventaris([...(materiaalInventaris || []), naam]); setNieuwMateriaalOpen(false); }} />
+          onOk={(naam) => { onSaveInventaris([...materiaalItems, { naam, categorie: "Overige", opmerking: "" }], null); setNieuwMateriaalOpen(false); }} />
       )}
       {canEdit && !nieuwOpen && (
         <button onClick={openFormulier} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> Bezorging
         </button>
+      )}
+    </div>
+  );
+}
+
+// Inventarisbeheer: per categorie een groep; in leesstand een simpele lijst,
+// in bewerkstand aanpasbare regels plus de mogelijkheid een nieuwe categorie
+// toe te voegen. Wijzigingen worden meteen bewaard (geen aparte opslaanknop).
+function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
+  const [nieuweCatOpen, setNieuweCatOpen] = useState(false);
+  const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat);
+  const zetItem = (idx, veld, w) => onOpslaan(items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)), null);
+  const wegItem = (idx) => onOpslaan(items.filter((_, j) => j !== idx), null);
+  const voegItemToe = (cat) => onOpslaan([...items, { naam: "", categorie: cat, opmerking: "" }], null);
+  const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) onOpslaan(null, [...categorieen, naam]); setNieuweCatOpen(false); };
+  return (
+    <div className="space-y-4">
+      {categorieen.map((cat) => {
+        const rijen = perCat(cat);
+        if (!bewerk && !rijen.length) return null;
+        return (
+          <div key={cat}>
+            <Eyebrow>{cat}</Eyebrow>
+            {!bewerk ? (
+              rijen.length ? (
+                <ul className="space-y-0.5 text-sm">
+                  {rijen.map((i, j) => <li key={j} className="ink">{i.naam}{i.opmerking ? <span className="mute italic"> — {i.opmerking}</span> : null}</li>)}
+                </ul>
+              ) : <p className="text-[12.5px] mute">Nog niets in deze categorie.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {rijen.map((i) => {
+                  const idx = items.indexOf(i);
+                  return (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input className="input px-2.5 py-1.5 text-sm flex-1 min-w-0" value={i.naam} onChange={(e) => zetItem(idx, "naam", e.target.value)} placeholder="Naam" />
+                      <input className="input px-2.5 py-1.5 text-sm flex-1 min-w-0" value={i.opmerking || ""} onChange={(e) => zetItem(idx, "opmerking", e.target.value)} placeholder="Opmerking (optioneel)" />
+                      <button onClick={() => wegItem(idx)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
+                    </div>
+                  );
+                })}
+                <AddRow onClick={() => voegItemToe(cat)} label={"Materiaal toevoegen aan " + cat} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {bewerk && (
+        !nieuweCatOpen ? (
+          <button onClick={() => setNieuweCatOpen(true)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Plus size={15} /> Nieuwe categorie</button>
+        ) : (
+          <PromptModal titel="Nieuwe categorie" label="Naam" placeholder="bv. Linnengoed" okLabel="Toevoegen" onCancel={() => setNieuweCatOpen(false)} onOk={voegCatToe} />
+        )
       )}
     </div>
   );
