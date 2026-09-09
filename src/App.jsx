@@ -2998,7 +2998,10 @@ function App() {
           contact: (klant[e.client_id] || {}).naam || "",
           klant: (klant[e.client_id] || {}).naam || "",
           klant_email: (klant[e.client_id] || {}).email || "",
-          adres: (klant[e.client_id] || {}).adres || "",
+          // Het bezorgadres van deze boeking gaat voor: MICE laat dat soms per
+          // boeking invullen ("afleveradres") wanneer het klantadres zelf
+          // onvolledig is (bv. alleen een woonplaats).
+          adres: eigenVeld(e, "afleveradres") || (klant[e.client_id] || {}).adres || "",
           id: e.id, naam: e.name || "", datum,
           start_tijd: e.datetime_start || null, eind_tijd: e.datetime_end || null,
           gasten: Number(e.guests) || 0, status: e.status || "",
