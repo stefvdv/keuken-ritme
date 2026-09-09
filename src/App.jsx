@@ -4980,7 +4980,8 @@ function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
       <div className="md:hidden">
-        <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"} />
+        <Header user={user} onHome={goHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={section === "mep"}
+          titel={section === "home" ? null : ({ mep: "Mise en place", boekingen: "Boekingen", assortiment: "Calculaties" }[section] || (SECTIONS.find((x) => x.id === section) || {}).label || null)} />
       </div>
 
       <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
@@ -5321,7 +5322,7 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
   );
 }
 
-function Wordmark({ size = "small", onHome }) {
+function Wordmark({ size = "small", onHome, titel }) {
   if (size === "large") return (
     <div className="text-center">
       <div className="text-[12.5px] font-semibold tracking-widest uppercase acc mb-3">Wilde Wortels · Landgoed de Beug</div>
@@ -5335,7 +5336,7 @@ function Wordmark({ size = "small", onHome }) {
   return (
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
       <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}><FarmhouseIcon size={26} style={{ color: T.paper }} /></span>
-      <span className="serif ink text-base leading-none truncate">In het ritme van het land</span>
+      <span className={"serif ink text-base leading-none truncate" + (titel ? " font-bold" : "")}>{titel || "In het ritme van het land"}</span>
     </Tag>
   );
 }
@@ -5678,12 +5679,12 @@ function Login({ onPick, live }) {
     </div>
   );
 }
-function Header({ user, onHome, onOpenSettings, onMep, mepActief }) {
+function Header({ user, onHome, onOpenSettings, onMep, mepActief, titel }) {
   return (
     <header className="sticky top-0 z-40 backdrop-blur" style={{ background: "rgba(242,240,232,0.9)", borderBottom: "1px solid " + T.line }}>
       <div className="w-full max-w-2xl lg:max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <Wordmark onHome={onHome} />
+          <Wordmark onHome={onHome} titel={titel} />
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
           {onMep && (
@@ -10851,10 +10852,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div>
-          <div className="serif ink text-xl leading-tight">Mise en place</div>
-          <div className="text-[12.5px] mute">{weekLabel}</div>
-        </div>
+        <div className="text-[12.5px] mute">{weekLabel}</div>
         <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
       </div>
 
@@ -10949,10 +10947,9 @@ function TechniquesList({ notes, canEdit, onSaveNotes, werkDocs, fermentRows, ta
     if (onFocusDone) onFocusDone();
   }, [focusKey]);
   const n = (k) => (notes && notes[k]) || TECH_NOTES_SEED[k];
-  const nothing = searching && jam.length === 0 && ice.length === 0 && roast.length === 0 && maten.length === 0 && koken.length === 0;
+  const nothing = searching && jam.length === 0 && ice.length === 0 && maten.length === 0;
   return (
     <div className="mt-8">
-      <div className="serif ink text-lg leading-tight mb-2">Werkwijze</div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek een fruitsoort, groente of bereiding" />
       {nothing && <Empty label="Niets gevonden in de technieken." />}
       <TweeKolommen>
