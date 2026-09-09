@@ -5293,8 +5293,13 @@ function App() {
       onAfronden: () => rondAfLokaal("wijzigingen:__alles__"), // Boekingen synchroniseert bewust niet tussen apparaten
     });
 
-    // Bezorgmateriaal: wat staat er nog open om op te halen.
-    const bezorgItems = (bezorgLijst || []).map((r) => ({ r, open: bezorgOpenstaand(r) })).filter((x) => x.open.length)
+    // Bezorgmateriaal: wat staat er nog open om op te halen — pas als
+    // melding zodra de bezorging minstens 18 uur geleden is aangemaakt, zodat
+    // er eerst gewoon tijd is om het normaal op te halen.
+    const bezorgGrens = Date.now() - 18 * 3600000;
+    const bezorgItems = (bezorgLijst || [])
+      .filter((r) => new Date(r.created_at).getTime() <= bezorgGrens)
+      .map((r) => ({ r, open: bezorgOpenstaand(r) })).filter((x) => x.open.length)
       .sort((a, b) => String(a.r.boeking_datum || "").localeCompare(String(b.r.boeking_datum || "")));
     const bezorgSamenvat = (open) => open.map((o) => o.aantal + "× " + o.naam).join(", ");
     if (!afgerondSet.has("materiaal:__alles__") && bezorgItems.length) meldingCategorieen.push({
