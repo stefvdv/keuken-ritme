@@ -2910,9 +2910,28 @@ function App() {
   }, []);
   // Nieuwe bezorging registreren: materialen die meegaan met een partij.
   const saveBezorgRegistratie = async (reg) => {
+    // Staat er voor deze partij al een niet-afgeronde registratie open, dan
+    // vullen we die aan in plaats van een nieuwe aan te maken — de
+    // geschiedenis toont dit expliciet als "aangepast".
+    const bestaande = bezorgLijst.find((r) => String(r.boeking_id) === String(reg.boekingId) && bezorgOpenstaand(r).length > 0);
+    if (bestaande) {
+      const materialen = [...(bestaande.materialen || [])];
+      (reg.materialen || []).forEach((m) => {
+        const idx = materialen.findIndex((x) => x.naam === m.naam);
+        if (idx >= 0) materialen[idx] = { ...materialen[idx], aantal: (Number(materialen[idx].aantal) || 0) + (Number(m.aantal) || 0) };
+        else materialen.push(m);
+      });
+      const aanvulling = { datum: new Date().toISOString(), door: reg.door || (user && user.name) || "", materialen: reg.materialen || [], notitie: reg.notitie || "" };
+      const aanvullingen = [...(bestaande.aanvullingen || []), aanvulling];
+      setBezorgLijst((l) => l.map((r) => (r.id === bestaande.id ? { ...r, materialen, aanvullingen } : r)));
+      if (live) { try { await supabase.from("bezorgmateriaal").update({ materialen, aanvullingen, updated_at: new Date().toISOString() }).eq("id", bestaande.id); } catch (e) {} }
+      flash("Toegevoegd aan bestaande bezorging voor deze partij");
+      materiaalAutoToevoegen((reg.materialen || []).map((m) => m.naam));
+      return;
+    }
     const rij = {
       boeking_id: String(reg.boekingId), boeking_naam: reg.boekingNaam || "", boeking_datum: reg.boekingDatum || "",
-      materialen: reg.materialen || [], teruggenomen: [], notitie: reg.notitie || "", door: reg.door || (user && user.name) || "",
+      materialen: reg.materialen || [], teruggenomen: [], aanvullingen: [], notitie: reg.notitie || "", door: reg.door || (user && user.name) || "",
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     if (live) {
@@ -3360,7 +3379,7 @@ function App() {
     const nieuw = [...new Set((namen || []).map((n) => String(n || "").trim()).filter(Boolean))]
       .filter((n) => !bekend.has(zonderAccent(n).toLowerCase().trim()));
     if (!nieuw.length) return;
-    saveInventaris([...materiaalItems, ...nieuw.map((n) => ({ naam: n, categorie: "Overige", opmerking: "" }))], null);
+    saveInventaris([...materiaalItems, ...nieuw.map((n) => ({ naam: n, categorie: "Overige", opmerking: "", hoeveelheid: "" }))], null);
   };
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
@@ -4021,7 +4040,7 @@ function App() {
     const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
     if (bmRow && bmRow.value) {
       if (Array.isArray(bmRow.value.items)) setMateriaalItems(bmRow.value.items);
-      else if (Array.isArray(bmRow.value.namen)) setMateriaalItems(bmRow.value.namen.map((n) => ({ naam: n, categorie: "Overige", opmerking: "" }))); // migratie oude vorm
+      else if (Array.isArray(bmRow.value.namen)) setMateriaalItems(bmRow.value.namen.map((n) => ({ naam: n, categorie: "Overige", opmerking: "", hoeveelheid: "" }))); // migratie oude vorm
       if (Array.isArray(bmRow.value.categorieen) && bmRow.value.categorieen.length) setMateriaalCategorieen(bmRow.value.categorieen);
     }
     const tnRow = (cs && cs.data && cs.data.find((r) => r.key === "team_namen")) || null;
@@ -5141,7 +5160,7 @@ function App() {
   // andere apparaten hem via het realtime-abonnement ook meteen kwijtraken.
   const rondAf = async (sleutel) => {
     setAfgerondSet((s) => new Set([...s, sleutel]));
-    if (live) { try { await supabase.from("melding_afgerond").upsert({ sleutel, dag: kitchenDate(), door: (user && user.name) || "" }); } catch (e) {} }
+    if (live) { try { await supabase.from("melding_afgerond").upsert({ sleutel, dag: kitchenDate(), door: (user && user.name) || "" }, { onConflict: "sleutel,dag" }); } catch (e) {} }
   };
   const meldingCategorieen = [];
   if (canEdit && loaded) {
@@ -5246,15 +5265,7 @@ function App() {
       content: (
         <div className="space-y-2.5 text-sm">
           {wijzItems.map(({ b, w }) => (
-            <div key={b.id} className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <button onClick={() => { setMeldingenOpen(false); resetTo({ screen: "list" }); setSection("mep"); setMepSpringNaar({ id: b.id, datum: b.datum }); }}
-                  className="ff underline font-medium text-left">{b.naam || "Partij"}</button>
-                <span className="opacity-70"> · {wijzLabel(b.datum)}</span>
-                <ul className="mt-0.5 space-y-0.5">{w.map((x, i) => <li key={i} className="flex items-start gap-1.5"><Check size={13} className="shrink-0 mt-0.5" /><span className="flex-1">{x}</span></li>)}</ul>
-              </div>
-              <button onClick={() => rondAf("wijzigingen:" + b.id)} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Deze partij afronden — verdwijnt uit de melding, op elk apparaat">Afronden</button>
-            </div>
+            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondAf("wijzigingen:" + b.id)} />
           ))}
         </div>
       ),
@@ -5270,12 +5281,8 @@ function App() {
       content: (
         <ul className="space-y-1.5 text-sm">
           {bezorgItems.map(({ r, open }) => (
-            <li key={r.id} className="flex items-start gap-1.5">
-              <Package size={13} className="shrink-0 mt-0.5" />
-              <button onClick={() => { setMeldingenOpen(false); push({ screen: "bezorgmateriaal", focus: r.id }); }} className="ff underline text-left flex-1">
-                {(r.boeking_naam || "Partij") + " · " + wijzLabel(r.boeking_datum) + " — " + bezorgSamenvat(open)}
-              </button>
-            </li>
+            <MateriaalMeldingRegel key={r.id} r={r} open={open} wijzLabel={wijzLabel} bezorgSamenvat={bezorgSamenvat}
+              boeking={(boekingen || []).find((b) => String(b.id) === String(r.boeking_id)) || null} />
           ))}
         </ul>
       ),
@@ -5975,8 +5982,8 @@ function Header({ user, onHome, onOpenSettings, onMep, mepActief, instellingenAc
               <BookOpen size={15} /> Mise en place
             </button>
           )}
-          <button onClick={onOpenSettings} className={"ff inline-flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 text-[12.5px] font-medium shrink-0 " + (instellingenActief ? "pillon" : "pill")} title="Instellingen">
-            <Settings size={15} /> Instellingen
+          <button onClick={onOpenSettings} className={"ff inline-flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5 text-[12.5px] font-medium shrink-0 " + (instellingenActief ? "pillon" : "pill")} title="Extras">
+            <Settings size={15} /> Extras
           </button>
         </div>
       </div>
@@ -7468,7 +7475,7 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
   return (
     <div>
       <BackBar onBack={onBack} />
-      <h1 className="serif ink text-3xl leading-tight">Instellingen</h1>
+      <h1 className="serif ink text-3xl leading-tight">Extras</h1>
 
       {onOpenBezorg && (
         <>
@@ -7612,7 +7619,7 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen, melding
       { id: "boekingen", label: "Boekingen", icon: <CalendarDays size={22} /> },
       { id: "assortiment", label: "Calculaties", icon: <Receipt size={22} /> },
     ] : []),
-    { id: "__instellingen", label: "Instellingen", icon: <Settings size={22} />, doe: onInstellingen },
+    { id: "__instellingen", label: "Extras", icon: <Settings size={22} />, doe: onInstellingen },
   ].filter(Boolean);
   return (
     <nav className="hidden md:flex sticky top-0 self-start h-screen overflow-y-auto no-scrollbar shrink-0 flex-col gap-1 py-2 px-1.5"
@@ -10380,6 +10387,44 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
 // via de Home-knop in plaats van losse banners overal verspreid. Klap open
 // vanaf de Home-knop naar rechts over de huidige pagina heen; per categorie
 // een pil die naar onder uitklapt, met de balk zelf blijft staan.
+// Eén regel in de boekingen-melding: standaard ingeklapt, klik op de naam
+// toont wat er gewijzigd is (geen navigatie meer naar de mep).
+function WijzigingMeldingRegel({ b, w, wijzLabel, onAfronden }) {
+  const [uit, setUit] = useState(false);
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <button onClick={() => setUit((v) => !v)} className="ff underline font-medium text-left">{b.naam || "Partij"}</button>
+        <span className="opacity-70"> · {wijzLabel(b.datum)}</span>
+        {uit && <ul className="mt-0.5 space-y-0.5">{w.map((x, i) => <li key={i} className="flex items-start gap-1.5"><Check size={13} className="shrink-0 mt-0.5" /><span className="flex-1">{x}</span></li>)}</ul>}
+      </div>
+      <button onClick={onAfronden} className="ff shrink-0 rounded-md px-1.5 py-0.5 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }} title="Deze partij afronden — verdwijnt uit de melding, op elk apparaat">Afronden</button>
+    </div>
+  );
+}
+
+// Eén regel in de materiaalbeheer-melding: standaard ingeklapt, klik op de
+// naam toont wat er nog terug moet komen én het klikbare adres.
+function MateriaalMeldingRegel({ r, open, boeking, wijzLabel, bezorgSamenvat }) {
+  const [uit, setUit] = useState(false);
+  return (
+    <li className="flex items-start gap-1.5">
+      <Package size={13} className="shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <button onClick={() => setUit((v) => !v)} className="ff underline text-left">
+          {(r.boeking_naam || "Partij") + " · " + wijzLabel(r.boeking_datum)}
+        </button>
+        {uit && (
+          <div className="mt-0.5">
+            <div>Nog op te halen: {bezorgSamenvat(open)}</div>
+            {boeking && boeking.adres && <a href={navHref(boeking.adres)} className="ff underline">{boeking.adres}</a>}
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
 function MeldingenBalk({ categorieen, onSluiten }) {
   const [open, setOpen] = useState(null); // id van de uitgeklapte categorie
   const [breed, setBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
@@ -13973,6 +14018,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
     const uit = [];
     (bezorgLijst || []).forEach((r) => {
       uit.push({ soort: "bezorgd", tijd: r.created_at, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: r.door, regels: r.materialen || [], notitie: r.notitie || "" });
+      (r.aanvullingen || []).forEach((a) => uit.push({ soort: "aangepast", tijd: a.datum, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: a.door, regels: a.materialen || [], notitie: a.notitie || "" }));
       (r.teruggenomen || []).forEach((t) => {
         if (t && Array.isArray(t.regels)) uit.push({ soort: "opgehaald", tijd: t.datum, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: t.door, regels: t.regels, notitie: t.notitie || "" });
         else if (t && t.naam != null) uit.push({ soort: "opgehaald", tijd: r.updated_at || r.created_at, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: r.door, regels: [t], notitie: "" });
@@ -14074,16 +14120,16 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
             {geschiedenis.map((g, i) => (
               <button key={i} onClick={() => { const el = document.getElementById("bezorg-" + g.regId); if (el) el.scrollIntoView({ block: "center" }); }}
                 className="ff card w-full text-left p-3 flex items-start gap-2.5 hover:opacity-80">
-                {g.soort === "bezorgd" ? <Truck size={15} className="shrink-0 mt-0.5 acc" /> : <Check size={15} className="shrink-0 mt-0.5" style={{ color: "#44502f" }} />}
+                {g.soort === "bezorgd" ? <Truck size={15} className="shrink-0 mt-0.5 acc" /> : g.soort === "aangepast" ? <Pencil size={15} className="shrink-0 mt-0.5" style={{ color: "#a05a00" }} /> : <Check size={15} className="shrink-0 mt-0.5" style={{ color: "#44502f" }} />}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm">
-                    <span className="font-medium ink">{g.soort === "bezorgd" ? "Bezorgd" : "Opgehaald"}</span>
+                    <span className="font-medium ink">{g.soort === "bezorgd" ? "Bezorgd" : g.soort === "aangepast" ? "Aangepast" : "Opgehaald"}</span>
                     <span className="mute"> · {g.boeking || "Zonder naam"} · {fmtDMY(g.datum)}</span>
                   </div>
                   <div className="text-[13px] mute">{(g.regels || []).map((m) => m.aantal + "\u00d7 " + m.naam).join(", ") || "\u2014"}</div>
                   {g.notitie && <div className="text-[12.5px] italic mute mt-0.5">{g.notitie}</div>}
                 </div>
-                <div className="text-[11px] mute shrink-0 text-right">{gTijd(g.tijd)}{g.door ? <div>{g.door}</div> : null}</div>
+                <div className="text-[11px] mute shrink-0 text-right">{gTijd(g.tijd)}{g.door ? <div>{String(g.door)}</div> : null}</div>
               </button>
             ))}
           </div>
@@ -14110,7 +14156,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
         <PromptModal titel="Nieuw materiaal" label="Naam" placeholder="bv. Tupperware bak groot"
           hint="Komt eerst onder Overige terecht; de juiste categorie kies je bij Inventaris → Bewerken."
           okLabel="Toevoegen" onCancel={() => setNieuwMateriaalOpen(false)}
-          onOk={(naam) => { onSaveInventaris([...materiaalItems, { naam, categorie: "Overige", opmerking: "" }], null); setNieuwMateriaalOpen(false); }} />
+          onOk={(naam) => { onSaveInventaris([...materiaalItems, { naam, categorie: "Overige", opmerking: "", hoeveelheid: "" }], null); setNieuwMateriaalOpen(false); }} />
       )}
       {canEdit && !nieuwOpen && (
         <button onClick={openFormulier} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
@@ -14129,7 +14175,7 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
   const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat);
   const zetItem = (idx, veld, w) => onOpslaan(items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)), null);
   const wegItem = (idx) => onOpslaan(items.filter((_, j) => j !== idx), null);
-  const voegItemToe = (cat) => onOpslaan([...items, { naam: "", categorie: cat, opmerking: "" }], null);
+  const voegItemToe = (cat) => onOpslaan([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
   const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) onOpslaan(null, [...categorieen, naam]); setNieuweCatOpen(false); };
   return (
     <div className="space-y-4">
@@ -14138,11 +14184,17 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
         if (!bewerk && !rijen.length) return null;
         return (
           <div key={cat}>
-            <Eyebrow>{cat}</Eyebrow>
+            <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc underline mb-2">{cat}</h3>
             {!bewerk ? (
               rijen.length ? (
                 <ul className="space-y-0.5 text-sm">
-                  {rijen.map((i, j) => <li key={j} className="ink">{i.naam}{i.opmerking ? <span className="mute italic"> — {i.opmerking}</span> : null}</li>)}
+                  {rijen.map((i, j) => (
+                    <li key={j} className="ink">
+                      {i.naam}
+                      {i.hoeveelheid ? <span className="mute"> · {i.hoeveelheid}× in huis</span> : null}
+                      {i.opmerking ? <span className="mute italic"> — {i.opmerking}</span> : null}
+                    </li>
+                  ))}
                 </ul>
               ) : <p className="text-[12.5px] mute">Nog niets in deze categorie.</p>
             ) : (
@@ -14152,6 +14204,7 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
                   return (
                     <div key={idx} className="flex items-center gap-2">
                       <input className="input px-2.5 py-1.5 text-sm flex-1 min-w-0" value={i.naam} onChange={(e) => zetItem(idx, "naam", e.target.value)} placeholder="Naam" />
+                      <input type="text" inputMode="numeric" className="input px-2.5 py-1.5 text-sm text-right" style={{ width: "4.5rem" }} value={i.hoeveelheid || ""} onChange={(e) => zetItem(idx, "hoeveelheid", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" title="Hoeveel er in huis zijn" />
                       <input className="input px-2.5 py-1.5 text-sm flex-1 min-w-0" value={i.opmerking || ""} onChange={(e) => zetItem(idx, "opmerking", e.target.value)} placeholder="Opmerking (optioneel)" />
                       <button onClick={() => wegItem(idx)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
                     </div>
