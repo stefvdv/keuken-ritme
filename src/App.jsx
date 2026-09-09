@@ -5324,11 +5324,27 @@ function App() {
     setMeldingenOpen(false);
     goHome();
   };
+  // Op een detailscherm (een gerecht, recept, batch...) moet de bijbehorende
+  // sectieknop actief blijven staan, alsof je nog op de lijst zelf zit.
+  const screenSectie = (cur) => {
+    const kaart = {
+      dishDetail: "gerechten", dishForm: "gerechten",
+      recipeDetail: "recepten", recipeForm: "recepten",
+      batchEindmeting: "fermentatie", batchForm: "fermentatie", batchLog: "fermentatie", fermentGuideForm: "fermentatie",
+      calcItemForm: "assortiment", assortimentForm: "assortiment",
+      cleaningForm: "schoonmaak", haccpForm: "schoonmaak", haccpRecordForm: "schoonmaak",
+      techTableForm: "technieken", werkDocForm: "technieken",
+      voorraadForm: "voorraad",
+    };
+    if (cur.screen === "settings" || cur.screen === "bezorgmateriaal") return "__instellingen";
+    return kaart[cur.screen] || null;
+  };
+  const actieveSectie = current.screen === "list" ? section : screenSectie(current);
 
   return (
     <div className="min-h-screen flex" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <ZijBalk chef={chefMode} section={current.screen === "list" ? section : null}
+      <ZijBalk chef={chefMode} section={actieveSectie}
         onKies={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }}
         onHome={klikHome}
         onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }}
@@ -5338,7 +5354,7 @@ function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
       <div className="md:hidden">
-        <Header user={user} onHome={klikHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={current.screen === "list" && section === "mep"} instellingenActief={current.screen === "settings"}
+        <Header user={user} onHome={klikHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={actieveSectie === "mep"} instellingenActief={actieveSectie === "__instellingen"}
           titel={current.screen !== "list" ? null : (section === "home" ? null : ({ mep: "Mise en place", boekingen: "Boekingen", assortiment: "Calculaties" }[section] || (SECTIONS.find((x) => x.id === section) || {}).label || null))}
           meldingen={meldingCategorieen.length} />
       </div>
@@ -5346,7 +5362,7 @@ function App() {
       <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
         <div className="md:hidden">
           {!FORM_SCREENS.has(current.screen) && (
-            <SectionNav chef={chefMode} section={current.screen === "list" ? section : null}
+            <SectionNav chef={chefMode} section={actieveSectie}
               setSection={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }} />
           )}
         </div>
@@ -5493,9 +5509,9 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : section === "boekingen" ? "Boeking" : "Batch"}
         </button>
       )}
-      {user && current.screen !== "bezorgmateriaal" && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
+      {user && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && section === "boekingen") && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
         tabellen={techTableRows} canEdit={canEdit} onEditTable={(t) => push({ screen: "techTableForm", table: t })} />}
-      {user && canEdit && current.screen !== "bezorgmateriaal" && (
+      {user && canEdit && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && (section === "boekingen" || section === "assortiment")) && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
           className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab || section === "mep" ? "bottom-[5.25rem]" : "bottom-6")}
           style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
@@ -7761,6 +7777,7 @@ const COURSE_FILTERS = ["Alle", ...DISH_COURSES];
 function DishList({ dishes, recipeById, search, setSearch, onOpen, invulGesch }) {
   const [courseF, setCourseF] = useState("Alle");
   const [sortMode, setSortMode] = useState("seizoen");
+  const [toonInvulMobiel, setToonInvulMobiel] = useState(false);
   const q = search.trim().toLowerCase();
   let shown = dishes.filter((d) => softMatchAny([d.name, d.course, d.description], q));
   if (courseF !== "Alle") shown = shown.filter((d) => d.course.toLowerCase().includes(courseF.toLowerCase()));
@@ -7770,6 +7787,14 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen, invulGesch })
     : bySeasonThenName(a.season, a.name, b.season, b.name));
   return (
     <div>
+      {/* Alleen op telefoon: partij-invulling bovenaan, standaard ingeklapt. Op
+          laptop/tablet staat dit al als eigen kolom naast de gerechtenlijst. */}
+      <div className="md:hidden mb-3">
+        <button onClick={() => setToonInvulMobiel((v) => !v)} className="ff flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+          {toonInvulMobiel ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Partij-invulling ({(invulGesch || []).length})
+        </button>
+        {toonInvulMobiel && <div className="mt-2"><InvulGeschKolom lijst={invulGesch || []} /></div>}
+      </div>
       <div className="flex gap-2 items-start">
         <div className="flex-1 min-w-0" style={{ flex: "1 1 55%" }}><SearchBar value={search} onChange={setSearch} placeholder="Zoek gerechten" /></div>
         <AppSelect value={courseF} onChange={setCourseF} options={COURSE_FILTERS} className="input px-2.5 py-2.5 text-sm mt-4 mb-3 self-stretch" style={{ flex: "0 0 45%", width: "45%", maxWidth: "16rem" }} title="Filter op gang" />
@@ -7802,7 +7827,7 @@ function DishList({ dishes, recipeById, search, setSearch, onOpen, invulGesch })
         {shown.length === 0 && <Empty label="Geen gerechten gevonden." />}
       </div>
       </div>
-      <InvulGeschKolom lijst={invulGesch || []} />
+      <div className="hidden md:block"><InvulGeschKolom lijst={invulGesch || []} /></div>
       </div>
     </div>
   );
@@ -11682,6 +11707,26 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   }
   const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
   const springNaar = (p) => { setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); };
+  // Live zoeken naar een partij op naam, met sprong naar de kaart (evt. na
+  // maandwissel) en een korte donkere rand-highlight.
+  const [zoekOpen, setZoekOpen] = useState(false);
+  const [zoekQuery, setZoekQuery] = useState("");
+  const [highlightId, setHighlightId] = useState(null);
+  const zoekResultaten = React.useMemo(() => {
+    const q = zonderAccent(zoekQuery).toLowerCase().trim();
+    if (!q) return [];
+    return (boekingen || [])
+      .filter((b) => zonderAccent(b.naam || "").toLowerCase().includes(q))
+      .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")))
+      .slice(0, 30);
+  }, [boekingen, zoekQuery]);
+  const springNaarZoek = (b) => {
+    setZoekOpen(false); setZoekQuery("");
+    setMaand(String(b.datum).slice(0, 7));
+    setHighlightId(b.id);
+    setTimeout(() => { const el = document.getElementById("boeking-chip-" + b.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 80);
+    setTimeout(() => setHighlightId((h) => (h === b.id ? null : h)), 2080);
+  };
 
   // Maandraster: weken als rijen, maandag t/m zondag.
   const [jr, mnd] = maand.split("-").map(Number);
@@ -11717,8 +11762,20 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     const zh = (el) => (el && el.offsetParent !== null ? Math.round(el.getBoundingClientRect().height) : 0);
     const meet = () => setPlakTop(zh(document.querySelector("header")) + zh(document.querySelector(".top-14")));
     meet();
+    // Niet alleen bij een venster-resize opnieuw meten, maar ook zodra de
+    // kop- of tabbalk zelf van hoogte verandert (bv. doordat de knoppenrij
+    // anders omslaat) — anders blijft de plakhoogte een verouderde waarde
+    // gebruiken en ontstaat er een lege strook boven de balken.
+    let ro = null;
+    try {
+      ro = new ResizeObserver(meet);
+      const h = document.querySelector("header"), t = document.querySelector(".top-14");
+      if (h) ro.observe(h);
+      if (t) ro.observe(t);
+    } catch (e) {}
+    const t2 = setTimeout(meet, 300); // vangnet voor late lettertype/lay-outverschuivingen
     window.addEventListener("resize", meet);
-    return () => window.removeEventListener("resize", meet);
+    return () => { window.removeEventListener("resize", meet); if (ro) ro.disconnect(); clearTimeout(t2); };
   }, []);
   // Bij openen de week van vandaag in beeld zetten.
   useEffect(() => {
@@ -11779,15 +11836,32 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-2 py-1.5">
+      <div className="flex items-center gap-2 mb-2 py-1.5 relative">
         <button onClick={() => schuifMaand(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={15} /></button>
         <span className="serif ink font-bold text-xl leading-tight capitalize">{maandLabel}</span>
         <button onClick={() => schuifMaand(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={15} /></button>
+        <button onClick={() => setZoekOpen((v) => !v)} className={"ff rounded-lg px-2 py-1.5 " + (zoekOpen ? "btnp" : "btno")} title="Zoek een partij"><Search size={15} /></button>
         <button onClick={() => setMaand(vandaag.slice(0, 7))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Vandaag</button>
         {verwijderd.length > 0 && (
           <button onClick={() => setPrullenOpen((o) => !o)} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium inline-flex items-center gap-1.5">
             <Trash2 size={13} /> Verwijderd ({verwijderd.length})
           </button>
+        )}
+        {zoekOpen && (
+          <div className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl shadow-lg p-2.5" style={{ background: T.paper, border: "1px solid " + T.line }}>
+            <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoekQuery} onChange={(e) => setZoekQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && zoekResultaten.length) springNaarZoek(zoekResultaten[0]); if (e.key === "Escape") setZoekOpen(false); }}
+              placeholder="Zoek op naam van de partij…" />
+            {zoekQuery.trim() && (
+              <div className="mt-1.5 rounded-lg overflow-y-auto" style={{ maxHeight: "16rem", border: "1px solid " + T.line }}>
+                {zoekResultaten.length ? zoekResultaten.map((b) => (
+                  <button key={b.id} onClick={() => springNaarZoek(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>
+                    {b.naam || "Zonder naam"} <span className="mute">· {fmtDMY(b.datum)}</span>
+                  </button>
+                )) : <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
+              </div>
+            )}
+          </div>
         )}
       </div>
       </div>
@@ -11825,7 +11899,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   </div>
                   <div className="space-y-0.5">
                     {items.map((b) => (
-                      <button key={b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2" }}>
+                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
                         <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)} pers. · {tijdVan(b) || "—"}</span>
                       </button>
@@ -14046,20 +14120,6 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const [toonCompleet, setToonCompleet] = useState(false);
 
   const [toonInventaris, setToonInventaris] = useState(false);
-  const [toonGeschiedenis, setToonGeschiedenis] = useState(false);
-  const geschiedenis = React.useMemo(() => {
-    const uit = [];
-    (bezorgLijst || []).forEach((r) => {
-      uit.push({ soort: "bezorgd", tijd: r.created_at, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: r.door, regels: r.materialen || [], notitie: r.notitie || "" });
-      (r.aanvullingen || []).forEach((a) => uit.push({ soort: "aangepast", tijd: a.datum, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: a.door, regels: a.materialen || [], notitie: a.notitie || "" }));
-      (r.teruggenomen || []).forEach((t) => {
-        if (t && Array.isArray(t.regels)) uit.push({ soort: "opgehaald", tijd: t.datum, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: t.door, regels: t.regels, notitie: t.notitie || "" });
-        else if (t && t.naam != null) uit.push({ soort: "opgehaald", tijd: r.updated_at || r.created_at, regId: r.id, boeking: r.boeking_naam, datum: r.boeking_datum, door: r.door, regels: [t], notitie: "" });
-      });
-    });
-    return uit.sort((a, b) => String(b.tijd || "").localeCompare(String(a.tijd || "")));
-  }, [bezorgLijst]);
-  const gTijd = (t) => { try { return new Date(t).toLocaleDateString("nl-NL", { day: "numeric", month: "short" }) + " \u00b7 " + new Date(t).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
   const openFormulier = () => { setNieuwOpen(true); setTimeout(() => { const el = document.getElementById("bezorg-nieuw"); if (el) el.scrollIntoView({ block: "start" }); }, 60); };
   return (
     <div>
@@ -14143,30 +14203,6 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
           </button>
           {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} boekingen={boekingen} onAskName={onAskName} initieelOpen={false} />)}</div>}
         </>
-      )}
-      <button onClick={() => setToonGeschiedenis((v) => !v)} className="ff flex mt-6 mb-2 items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
-        {toonGeschiedenis ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Geschiedenis ({geschiedenis.length})
-      </button>
-      {toonGeschiedenis && (
-        geschiedenis.length === 0 ? <Empty label="Nog geen bezorgingen of terugnames geregistreerd." /> : (
-          <div className="space-y-2">
-            {geschiedenis.map((g, i) => (
-              <button key={i} onClick={() => { const el = document.getElementById("bezorg-" + g.regId); if (el) el.scrollIntoView({ block: "center" }); }}
-                className="ff card w-full text-left p-3 flex items-start gap-2.5 hover:opacity-80">
-                {g.soort === "bezorgd" ? <Truck size={15} className="shrink-0 mt-0.5 acc" /> : g.soort === "aangepast" ? <Pencil size={15} className="shrink-0 mt-0.5" style={{ color: "#a05a00" }} /> : <Check size={15} className="shrink-0 mt-0.5" style={{ color: "#44502f" }} />}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm">
-                    <span className="font-medium ink">{g.soort === "bezorgd" ? "Bezorgd" : g.soort === "aangepast" ? "Aangepast" : "Opgehaald"}</span>
-                    <span className="mute"> · {g.boeking || "Zonder naam"} · {fmtDMY(g.datum)}</span>
-                  </div>
-                  <div className="text-[13px] mute">{(g.regels || []).map((m) => m.aantal + "\u00d7 " + m.naam).join(", ") || "\u2014"}</div>
-                  {g.notitie && <div className="text-[12.5px] italic mute mt-0.5">{g.notitie}</div>}
-                </div>
-                <div className="text-[11px] mute shrink-0 text-right">{gTijd(g.tijd)}{g.door ? <div>{String(g.door)}</div> : null}</div>
-              </button>
-            ))}
-          </div>
-        )
       )}
       {onSaveInventaris && (
         <>
