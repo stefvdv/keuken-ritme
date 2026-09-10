@@ -5122,6 +5122,23 @@ function App() {
   const [mepSpringNaar, setMepSpringNaar] = useState(null); // { id, datum } van een boeking om op de mep in beeld te brengen
 
   const laatsteHomeKlik = React.useRef(0);
+  // Per-partij "Afronden" bij Boekingen mag NIET elke nacht resetten (in
+  // tegenstelling tot de andere meldingen) — anders komt een al afgehandelde
+  // wijziging de volgende dag terug zolang hij nog binnen het 3-dagen-venster
+  // valt. Dit onthoudt per partij welke specifieke set wijzigingen al is
+  // afgerond (vingerafdruk van de inhoud), permanent, tot er iets nieuws bijkomt.
+  const WIJZ_PERMANENT_KEY = "ritme:wijzigingen-afgerond-permanent";
+  const [wijzAfgerondPermanent, setWijzAfgerondPermanent] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(WIJZ_PERMANENT_KEY) || "[]")); } catch (e) { return new Set(); }
+  });
+  const rondWijzPartijAf = (sleutel) => {
+    setWijzAfgerondPermanent((s) => {
+      const nieuw = new Set([...s, sleutel]);
+      const lijst = [...nieuw].slice(-500); // niet onbeperkt laten groeien
+      try { localStorage.setItem(WIJZ_PERMANENT_KEY, JSON.stringify(lijst)); } catch (e) {}
+      return new Set(lijst);
+    });
+  };
   // Welke meldingen zijn afgerond. Eerst lokaal (localStorage) zodat het
   // altijd meteen blijft staan na een refresh, ook als Supabase om wat voor
   // reden dan ook niet meewerkt; daarna vult Supabase aan/overschrijft zodra
@@ -5275,22 +5292,24 @@ function App() {
     const wijzGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString(); })();
     const wijzItems = [];
     (boekingen || []).forEach((b) => {
-      if (afgerondSet.has("wijzigingen:" + b.id)) return;
       const w = [];
       (b.log || []).forEach((e) => { if (String(e.t || "") >= wijzGrens) (e.w || []).forEach((x) => w.push(String(x))); });
-      if (w.length) wijzItems.push({ b, w });
+      if (!w.length) return;
+      const vingerafdruk = "wijzigingen:" + b.id + ":" + w.join("|");
+      if (wijzAfgerondPermanent.has(vingerafdruk)) return;
+      wijzItems.push({ b, w, vingerafdruk });
     });
     const wijzLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
-    if (!afgerondSet.has("wijzigingen:__alles__") && wijzItems.length) meldingCategorieen.push({
+    if (wijzItems.length) meldingCategorieen.push({
       id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />,
       content: (
         <div className="space-y-2.5 text-sm">
-          {wijzItems.map(({ b, w }) => (
-            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondAfLokaal("wijzigingen:" + b.id)} />
+          {wijzItems.map(({ b, w, vingerafdruk }) => (
+            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondWijzPartijAf(vingerafdruk)} />
           ))}
         </div>
       ),
-      onAfronden: () => rondAfLokaal("wijzigingen:__alles__"), // Boekingen synchroniseert bewust niet tussen apparaten
+      onAfronden: () => wijzItems.forEach((it) => rondWijzPartijAf(it.vingerafdruk)), // Boekingen synchroniseert bewust niet tussen apparaten, en blijft permanent afgerond
     });
 
     // Bezorgmateriaal: wat staat er nog open om op te halen — pas als
@@ -11761,40 +11780,31 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const maandLabel = MAANDEN[mnd - 1] + " " + jr;
   const schuifMaand = (n) => { const x = new Date(jr, mnd - 1 + n, 1, 12); setMaand(localDate(x).slice(0, 7)); };
 
-  // De maandbalk plakt onder de vaste kop- en tabbalk; hoogte bij openen gemeten.
-  const [plakTop, setPlakTop] = useState(122);
+  // "position: sticky" bleek op mobiel niet altijd te plakken (mogelijk door
+  // de globale overflow-x:hidden op html/body). Op desktop/tablet werkt de
+  // gewone sticky-CSS al prima (daar staan kop-/tabbalk toch al niet in de
+  // weg), dus die blijft ongewijzigd; alleen op telefoon wordt hier zelf
+  // bepaald wanneer de balk voorbij zijn plek scrolt, met een sentinel-element
+  // erboven en position:fixed tegen de bovenrand.
+  const [breed, setBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
   useEffect(() => {
-    // Op desktop zijn kop- en tabbalk verborgen (md:hidden): dan is de plakhoogte 0.
-    const zh = (el) => (el && el.offsetParent !== null ? Math.round(el.getBoundingClientRect().height) : 0);
-    const meet = () => setPlakTop(zh(document.querySelector("header")) + zh(document.querySelector(".top-14")));
-    meet();
-    let ro = null;
-    try {
-      ro = new ResizeObserver(meet);
-      const h = document.querySelector("header"), t = document.querySelector(".top-14");
-      if (h) ro.observe(h);
-      if (t) ro.observe(t);
-    } catch (e) {}
-    const t2 = setTimeout(meet, 300);
-    window.addEventListener("resize", meet);
-    return () => { window.removeEventListener("resize", meet); if (ro) ro.disconnect(); clearTimeout(t2); };
+    const m = window.matchMedia("(min-width: 768px)");
+    const f = () => setBreed(m.matches);
+    try { m.addEventListener("change", f); } catch (e) { m.addListener(f); }
+    return () => { try { m.removeEventListener("change", f); } catch (e) { m.removeListener(f); } };
   }, []);
-  // "position: sticky" bleek op sommige mobiele combinaties niet te plakken
-  // (waarschijnlijk door de globale overflow-x:hidden op html/body, die de
-  // browser dwingt zelf een scrolcontext te kiezen). Daarom hier zelf bepalen
-  // wanneer de balk voorbij zijn plek scrolt, met een sentinel-element erboven
-  // en position:fixed — dat werkt altijd, ongeacht CSS-eigenaardigheden.
   const [balkVast, setBalkVast] = useState(false);
   const [balkHoogte, setBalkHoogte] = useState(0);
   const sentinelRef = React.useRef(null);
   const balkRef = React.useRef(null);
   useEffect(() => {
+    if (breed) { setBalkVast(false); return; } // desktop/tablet: gewone sticky-CSS regelt dit zelf
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
-    const obs = new IntersectionObserver(([entry]) => setBalkVast(!entry.isIntersecting), { rootMargin: "-" + (plakTop + 1) + "px 0px 0px 0px", threshold: 0 });
+    const obs = new IntersectionObserver(([entry]) => setBalkVast(!entry.isIntersecting), { rootMargin: "-1px 0px 0px 0px", threshold: 0 });
     obs.observe(sentinel);
     return () => obs.disconnect();
-  }, [plakTop]);
+  }, [breed]);
   useEffect(() => {
     if (balkRef.current) setBalkHoogte(balkRef.current.offsetHeight);
   }, [prodOverlap.length, verwijderd.length]);
@@ -11812,7 +11822,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
 
       <div ref={sentinelRef} style={{ height: 1 }} />
       {balkVast && !somOpen && <div style={{ height: balkHoogte }} />}
-      <div ref={balkRef} className="-mx-4 px-4" style={somOpen || !balkVast ? {} : { position: "fixed", top: plakTop, left: 0, right: 0, zIndex: 20, background: T.paper, maxWidth: "42rem", margin: "0 auto", paddingLeft: "1rem", paddingRight: "1rem" }}>
+      <div ref={balkRef} className="-mx-4 px-4" style={somOpen ? {} : breed ? { position: "sticky", top: 0, zIndex: 20, background: T.paper } : (balkVast ? { position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, background: T.paper, maxWidth: "42rem", margin: "0 auto", paddingLeft: "1rem", paddingRight: "1rem" } : {})}>
       {prodOverlap.length > 0 && (
         <div className="card p-3 mb-4">
           <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
