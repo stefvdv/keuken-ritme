@@ -14303,10 +14303,10 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
                 </div>
                 {!bewerk ? (
                   rijen.map((i, j) => (
-                    <div key={j} className={"grid gap-x-3 items-center px-3.5 py-2 text-sm " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen }}>
-                      <span className="ink truncate">{i.naam}</span>
+                    <div key={j} className={"grid gap-x-3 items-start px-3.5 py-2 text-sm " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen }}>
+                      <span className="ink break-words">{i.naam}</span>
                       <span className="mute text-right">{i.hoeveelheid || "—"}</span>
-                      <span className="mute italic truncate">{i.opmerking || ""}</span>
+                      <span className="mute italic break-words">{i.opmerking || ""}</span>
                     </div>
                   ))
                 ) : (
