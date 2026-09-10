@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Highlighter, Bold, Eraser
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Bold, Underline
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-10e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-10f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -11248,7 +11248,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 
 // Groot gedeeld notitiepapiertje op de mep-pagina. Vrij typen, met vet en
 // markeerstift; opslaan gebeurt vanzelf (kort na het typen en bij sluiten).
-function MepNotitiePopup({ html, onSave, onClose }) {
+function MepNotitiePopup({ html, onSave, onClose, stift }) {
   const vak = React.useRef(null);
   const timer = React.useRef(null);
   const laatst = React.useRef(html);
@@ -11265,10 +11265,19 @@ function MepNotitiePopup({ html, onSave, onClose }) {
   const getypt = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(bewaar, 800); };
   const sluit = () => { if (timer.current) clearTimeout(timer.current); bewaar(); onClose(); };
   const cmd = (naam, waarde) => { try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); getypt(); };
-  const markeer = () => {
+  // De stift van de mep-pagina werkt ook hier: stift aan, tekst selecteren →
+  // de selectie krijgt die kleur. Zelfde kleur nog eens = markering weer weg.
+  const hexNaarRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return "rgb(" + ((n >> 16) & 255) + ", " + ((n >> 8) & 255) + ", " + (n & 255) + ")"; };
+  const stiftSelectie = () => {
+    if (!stift) return;
+    const k = MARKEER_KLEUREN.find((x) => x.naam === stift);
+    if (!k) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !vak.current || !vak.current.contains(sel.anchorNode)) return;
     let nu = ""; try { nu = String(document.queryCommandValue("hiliteColor") || ""); } catch (e) {}
-    const geel = /246,\s*226,\s*122|f6e27a/i.test(nu);
-    cmd("hiliteColor", geel ? "transparent" : "#f6e27a");
+    const zelfde = nu && (nu.toLowerCase() === k.kleur.toLowerCase() || nu.replace(/\s/g, "") === hexNaarRgb(k.kleur).replace(/\s/g, ""));
+    cmd("hiliteColor", zelfde ? "transparent" : k.kleur);
+    try { sel.removeAllRanges(); } catch (e) {}
   };
   const Knop = ({ doe, titel, children }) => (
     <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={doe} className="ff inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold hover:opacity-70" style={{ border: "1px solid " + T.line, background: "#fff" }} title={titel}>{children}</button>
@@ -11280,16 +11289,15 @@ function MepNotitiePopup({ html, onSave, onClose }) {
           <div className="serif ink text-xl leading-tight">Notities</div>
           <div className="flex items-center gap-1.5">
             <Knop doe={() => cmd("bold")} titel="Dikgedrukt (Ctrl+B)"><Bold size={14} /> Vet</Knop>
-            <Knop doe={markeer} titel="Markeerstift aan/uit over de selectie"><Highlighter size={14} /> Markeren</Knop>
-            <Knop doe={() => cmd("removeFormat")} titel="Opmaak van de selectie wissen"><Eraser size={14} /></Knop>
+            <Knop doe={() => cmd("underline")} titel="Onderstreept (Ctrl+U)"><Underline size={14} /></Knop>
             <button onClick={sluit} className="ff mute hover:opacity-70 ml-1" title="Sluiten (wordt bewaard)"><X size={18} /></button>
           </div>
         </div>
         <div ref={vak} contentEditable suppressContentEditableWarning
-          onInput={getypt} onBlur={bewaar}
+          onInput={getypt} onBlur={bewaar} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie}
           className="flex-1 overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap" }} />
-        <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard</div>
+        <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
       </div>
     </div>
   );
@@ -11439,24 +11447,37 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ");
 
   const printen = () => {
-    const rij = (r) => "<tr><td>" + pEsc(r.naam) + "</td>" + somSet.map((d) => "<td class='n'>" + (r.perDag[d] ? fmtPorties(r.perDag[d]) : "") + "</td>").join("") + "<td class='n tot'>" + fmtPorties(r.totaal) + (r.gram ? "<br><span style='font-weight:600;color:#6a6550'>" + fmtGram(r.gram) + "</span>" : "") + "</td></tr>";
+    // Print alleen wat op de mep-kaarten staat: per partij een kopregel
+    // (naam, aantal, tijd, locatie, allergie in rood — komma-gescheiden op
+    // één regel), daarna per product de invulling, en onderaan de huur.
+    const isHuur = (k) => {
+      const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase();
+      return /materiaal|huur/.test(cat) || /huur|chafing/i.test(zonderAccent(String(k.naam || "")).toLowerCase());
+    };
+    const onderdeelNaam = (o) => String(o.naam || "").trim() || o.receptNaam || (o.recipeId && ((recipeById(o.recipeId) || {}).name || "recept")) || "";
     const dagBlok = (d) => {
       const items = partijen.filter((b) => b.datum === d);
       if (!items.length) return "";
       return "<h2>" + pEsc(dagKop(d)) + "</h2>" + items.map((b) => {
         const al = allergieEff(b);
-        const st = statusNL(b.status);
-        const regelTxt = (k) => {
-          const vert = k.miceId && prodKoppeling ? prodKoppeling[k.miceId] : null;
-          const naam = vert && (vert.productId || vert.recipeId || vert.tekst) && vert.naam ? vert.naam : k.naam;
-          return (k.aantal || gastenVan(b)) + "× " + naam;
-        };
-        const pr = sorteerEetmoment(gekozen(b), catVan).filter((k) => !/bezorg/i.test(String(k.naam || ""))).map((k) => "<div class='pr'>" + pEsc(regelTxt(k)) + "</div>").join("");
         const bez = gekozen(b).some((k) => /bezorg/i.test(String(k.naam || "")));
-        return "<div class='p'><div class='pt'>" + pEsc(b.naam || "Zonder naam") + (st ? " <span class='st'>[" + pEsc(st) + "]</span>" : "") + " <span class='mut'>" + (tijdVan(b) || "tijd onbekend") + " · " + gastenVan(b) + " gasten" + (bez ? " · bezorging" : "") + (b.tel ? " · " + pEsc((b.contact ? b.contact + " " : "") + b.tel) : "") + "</span></div>"
-          + pr
-          + (al.length ? "<div class='al'>" + al.map(pEsc).join("<br>") + "</div>" : "")
-          + "</div>";
+        const loc = bez ? "Bezorging" + (b.adres ? " · " + b.adres : (b.zaal ? " · " + b.zaal : "")) : (b.zaal || "");
+        const kopDelen = [naamVan(b) || "Zonder naam", gastenVan(b) + " pers.", tijdVan(b) || "tijd onbekend", loc].filter(Boolean);
+        const kop = "<div class='pt'>" + kopDelen.map(pEsc).join(", ") + (al.length ? ", <span class='al'>" + al.map(pEsc).join(", ") + "</span>" : "") + "</div>";
+        const keuzes = sorteerEetmoment(gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isKeukenRegel(k, catVan)), catVan);
+        const eten = keuzes.filter((k) => !isHuur(k));
+        const huur = keuzes.filter(isHuur);
+        const blok = (k) => {
+          const inv = k.miceId ? invVoor(b, k.miceId) : null;
+          const naam = inv && inv.naam && (inv.onderdelen || []).length ? inv.naam : k.naam;
+          const od = ((inv && inv.onderdelen) || []).filter((o) => onderdeelNaam(o));
+          const regels = od.map((o) => "<div class='inv'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + onderdeelNaam(o)) + "</div>").join("");
+          return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + naam) + "</div>" + regels + "</div>";
+        };
+        const huurHtml = huur.length
+          ? "<div class='blok'><div class='mepkop'>Materiaalhuur</div>" + huur.map((k) => "<div class='inv'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam) + "</div>").join("") + "</div>"
+          : "";
+        return "<div class='p'>" + kop + eten.map(blok).join("") + huurHtml + "</div>";
       }).join("");
     };
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
@@ -11465,12 +11486,11 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
       + "td{padding:1.4mm 1mm;border-bottom:1px solid #e6e3d8}td.n{text-align:right;width:11mm}td.tot{font-weight:700;border-left:1px solid #ccc}"
-      + ".p{margin-bottom:4mm;break-inside:avoid;page-break-inside:avoid}.pt{font-weight:700}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
-      + ".pr{font-weight:700;margin:.5mm 0}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
+      + ".p{margin-bottom:5mm;break-inside:avoid;page-break-inside:avoid}.pt{font-weight:700;margin-bottom:1.5mm}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
+      + ".blok{margin:0 0 2.5mm}.pr{font-weight:700;margin:0 0 .4mm}.inv{padding-left:4mm}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
       + ".m{display:flex;justify-content:space-between;max-width:90mm;border-bottom:1px solid #eee}.m b{color:#44502f}"
       + ".al{color:#b3261e;margin-top:1mm;font-weight:700}"
       + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
-      + (overlap.length ? "<table><thead><tr><th>Samen maken (" + somSet.length + " dagen)</th>" + somSet.map((d) => "<th class='n'>" + pEsc(kolKop(d)) + "</th>").join("") + "<th class='n'>Totaal</th></tr></thead><tbody>" + overlapActief.map(rij).join("") + "</tbody></table>" : "")
       + dagen.map(dagBlok).join("") + "</body></html>");
   };
 
@@ -11560,14 +11580,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           <div className="text-[12.5px] mute">{weekLabel}</div>
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setNotitieOpen(true)} className="btno ff relative rounded-lg px-2.5 py-2" title="Notities — gedeeld papiertje van de keuken">
-            <StickyNote size={16} />
-            {heeftNotitie && !notitieOpen && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
+            <StickyNote size={16} /> Notities
+            {heeftNotitie && !notitieOpen && <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
           <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
         </div>
       </div>
-      {notitieOpen && <MepNotitiePopup html={notitie || ""} onSave={onNotitie} onClose={() => setNotitieOpen(false)} />}
+      {notitieOpen && <MepNotitiePopup html={notitie || ""} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift} />}
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
