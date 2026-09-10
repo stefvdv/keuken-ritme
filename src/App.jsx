@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-10f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5162,12 +5162,23 @@ function App() {
   const bewaarAfgerondLokaal = (set) => { try { localStorage.setItem(AFGEROND_KEY, JSON.stringify({ [kitchenDate()]: [...set] })); } catch (e) {} };
   useEffect(() => {
     if (!live) return;
-    const laad = async () => {
+    const laad = async (poging = 0) => {
+      // Bij het opstarten kan de eerste query mislukken doordat de verbinding
+      // nog wakker wordt; die krijgt een stille herkansing na 4 seconden en
+      // pas als die ook faalt komt er een toast.
       try {
         const { data, error } = await supabase.from("melding_afgerond").select("sleutel").eq("dag", kitchenDate());
-        if (error) { console.error("melding_afgerond laden mislukt:", error.message); flash("Meldingen niet gesynchroniseerd (" + error.message + ")"); return; }
+        if (error) {
+          console.error("melding_afgerond laden mislukt:", error.message);
+          if (poging < 1) { setTimeout(() => laad(poging + 1), 4000); return; }
+          flash("Meldingen niet gesynchroniseerd (" + error.message + ")");
+          return;
+        }
         if (data) setAfgerondSet((s) => { const nieuw = new Set([...s, ...data.map((r) => r.sleutel)]); bewaarAfgerondLokaal(nieuw); return nieuw; });
-      } catch (e) { console.error("melding_afgerond laden mislukt:", e); }
+      } catch (e) {
+        console.error("melding_afgerond laden mislukt:", e);
+        if (poging < 1) setTimeout(() => laad(poging + 1), 4000);
+      }
     };
     laad();
     const ch = supabase.channel("melding-afgerond")
@@ -5347,8 +5358,8 @@ function App() {
     const dubbelklik = nu - laatsteHomeKlik.current < 400;
     laatsteHomeKlik.current = nu;
     if (dubbelklik) { setMeldingenOpen(false); goHome(); return; } // dubbelklik negeert de meldingsbalk altijd
-    if (meldingCategorieen.length && !meldingenOpen) { setMeldingenOpen(true); return; }
-    setMeldingenOpen(false);
+    if (meldingenOpen) { setMeldingenOpen(false); return; } // open balk: klik sluit alleen, blijf waar je bent
+    if (meldingCategorieen.length) { setMeldingenOpen(true); return; }
     goHome();
   };
   // Op een detailscherm (een gerecht, recept, batch...) moet de bijbehorende
@@ -5688,7 +5699,7 @@ function Wordmark({ size = "small", onHome, titel, meldingen = 0 }) {
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
       <span className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}>
         <FarmhouseIcon size={26} style={{ color: T.paper }} />
-        {meldingen > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+        {meldingen > 0 && <span className="absolute -bottom-1.5 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
       </span>
       <span className={"serif ink text-base leading-none truncate" + (titel ? " font-bold" : "")}>{titel || "In het ritme van het land"}</span>
     </Tag>
@@ -7678,7 +7689,7 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen, melding
     { id: "__home", label: "Home", icon: (
       <span className="relative inline-flex">
         <Home size={22} />
-        {meldingen > 0 && <span className="absolute -top-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+        {meldingen > 0 && <span className="absolute -bottom-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
       </span>
     ), doe: onHome },
     { id: "mep", label: "Mise en place", icon: <ClipboardList size={22} />, doe: onMep },
@@ -11264,7 +11275,31 @@ function MepNotitiePopup({ html, onSave, onClose, stift }) {
   const bewaar = () => { const h = pak(); if (h !== laatst.current) { laatst.current = h; onSave(h); } };
   const getypt = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(bewaar, 800); };
   const sluit = () => { if (timer.current) clearTimeout(timer.current); bewaar(); onClose(); };
-  const cmd = (naam, waarde) => { try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); getypt(); };
+  const sluitRef = React.useRef(sluit); sluitRef.current = sluit;
+  // Terugknop van het toestel en Escape sluiten het papiertje (met opslaan).
+  useEffect(() => {
+    const terug = () => sluitRef.current();
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
+    try { window.history.pushState({ app: "ritme", notitie: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", terug);
+    window.addEventListener("keydown", toets, true);
+    return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
+  }, []);
+  // Bijhouden of vet/onderstreept aan staat op de cursorplek, voor de knoppen.
+  const [fmt, setFmt] = useState({ vet: false, onder: false });
+  const checkFmt = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !vak.current || !vak.current.contains(sel.anchorNode)) return;
+    let v = false, o = false;
+    try { v = document.queryCommandState("bold"); } catch (e) {}
+    try { o = document.queryCommandState("underline"); } catch (e) {}
+    setFmt((f) => (f.vet === v && f.onder === o ? f : { vet: v, onder: o }));
+  };
+  useEffect(() => {
+    document.addEventListener("selectionchange", checkFmt);
+    return () => document.removeEventListener("selectionchange", checkFmt);
+  }, []);
+  const cmd = (naam, waarde) => { try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); checkFmt(); getypt(); };
   // De stift van de mep-pagina werkt ook hier: stift aan, tekst selecteren →
   // de selectie krijgt die kleur. Zelfde kleur nog eens = markering weer weg.
   const hexNaarRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return "rgb(" + ((n >> 16) & 255) + ", " + ((n >> 8) & 255) + ", " + (n & 255) + ")"; };
@@ -11279,8 +11314,9 @@ function MepNotitiePopup({ html, onSave, onClose, stift }) {
     cmd("hiliteColor", zelfde ? "transparent" : k.kleur);
     try { sel.removeAllRanges(); } catch (e) {}
   };
-  const Knop = ({ doe, titel, children }) => (
-    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={doe} className="ff inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold hover:opacity-70" style={{ border: "1px solid " + T.line, background: "#fff" }} title={titel}>{children}</button>
+  const Knop = ({ doe, titel, actief, children }) => (
+    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={doe} className="ff inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold hover:opacity-70"
+      style={actief ? { border: "1px solid " + T.green, background: T.green, color: T.paper } : { border: "1px solid " + T.line, background: "#fff" }} title={titel}>{children}</button>
   );
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) sluit(); }}>
@@ -11288,8 +11324,8 @@ function MepNotitiePopup({ html, onSave, onClose, stift }) {
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="serif ink text-xl leading-tight">Notities</div>
           <div className="flex items-center gap-1.5">
-            <Knop doe={() => cmd("bold")} titel="Dikgedrukt (Ctrl+B)"><Bold size={14} /> Vet</Knop>
-            <Knop doe={() => cmd("underline")} titel="Onderstreept (Ctrl+U)"><Underline size={14} /></Knop>
+            <Knop doe={() => cmd("bold")} actief={fmt.vet} titel="Dikgedrukt (Ctrl+B)"><Bold size={14} /> Vet</Knop>
+            <Knop doe={() => cmd("underline")} actief={fmt.onder} titel="Onderstreept (Ctrl+U)"><Underline size={14} /> Onderstreept</Knop>
             <button onClick={sluit} className="ff mute hover:opacity-70 ml-1" title="Sluiten (wordt bewaard)"><X size={18} /></button>
           </div>
         </div>
@@ -11582,7 +11618,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         <div className="flex items-center gap-1.5">
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} /> Notities
-            {heeftNotitie && !notitieOpen && <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
+            {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
           <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
         </div>
