@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-03m"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-10a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -9272,17 +9272,19 @@ function printCustomLabel(f) {
   if (bijnaLeeg) {
     const fmtD = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd + "-" + m + "-" + y; };
     const regels = [f.prod ? "Gemaakt: " + fmtD(f.prod) : "", f.tht ? "T.H.T. " + fmtD(f.tht) : ""].filter(Boolean);
-    const voet = regels.length ? '<div class="voet">' + esc(regels.join("  ·  ")) + "</div>" : "";
+    // Zonder naam vullen de datums zelf de sticker; met naam staan ze klein onderin.
+    const grootTekst = f.name ? f.name : regels.join("\n");
+    const voet = f.name && regels.length ? '<div class="voet">' + esc(regels.join("  ·  ")) + "</div>" : "";
     printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
       "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
       "html,body{margin:0;padding:0}" +
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
       '.vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:' + (regels.length ? "6mm" : "1.5mm") + ';display:flex;align-items:center;justify-content:center;overflow:hidden}' +
-      "#groot{font-weight:bold;line-height:1.05;text-align:center;word-wrap:break-word;max-width:100%}" +
+      "#groot{font-weight:bold;line-height:1.15;text-align:center;word-wrap:break-word;max-width:100%;white-space:pre-line}" +
       ".voet{position:absolute;left:2.5mm;right:2.5mm;bottom:1.2mm;font-weight:bold;font-size:9pt;text-align:center}" +
       "</style></head><body>" +
-      '<div class="vul"><div id="groot">' + esc(f.name) + "</div></div>" + voet +
+      '<div class="vul"><div id="groot">' + esc(grootTekst) + "</div></div>" + voet +
       "<scr" + 'ipt>(function(){var t=document.getElementById("groot"),b=t.parentElement,lo=8,hi=140;while(hi-lo>1){var m=(lo+hi)>>1;t.style.fontSize=m+"px";if(t.scrollWidth<=b.clientWidth&&t.scrollHeight<=b.clientHeight){lo=m;}else{hi=m;}}t.style.fontSize=lo+"px";})();</scr' + "ipt>" +
       "</body></html>");
     return;
@@ -9302,7 +9304,7 @@ function printCustomLabel(f) {
     ".klein{font-size:0.85em;line-height:1.18;word-wrap:break-word}" +
     "</style></head><body>" +
     '<div class="vul">' +
-    '<div id="naam">' + esc(f.name) + "</div>" +
+    (f.name ? '<div id="naam">' + esc(f.name) + "</div>" : "") +
     '<div id="rest">' +
     (inhoud ? '<div class="rij">' + esc(inhoud) + "</div>" : "") +
     (f.prod ? '<div class="rij">Gemaakt: ' + esc(fmtDMY(f.prod)) + "</div>" : "") +
@@ -9314,12 +9316,14 @@ function printCustomLabel(f) {
     "<scr" + `ipt>(function(){
       var vul=document.querySelector(".vul"),naam=document.getElementById("naam"),rest=document.getElementById("rest");
       function past(){return vul.scrollHeight<=vul.clientHeight&&vul.scrollWidth<=vul.clientWidth;}
-      var lo=5,hi=24; // basisgrootte infoRegels (px), met plafond
-      while(hi-lo>0.5){var m=(lo+hi)/2;rest.style.fontSize=m+"px";naam.style.fontSize=(m*1.4)+"px";if(past()){lo=m;}else{hi=m;}}
-      rest.style.fontSize=lo+"px";naam.style.fontSize=(lo*1.4)+"px";
+      var plafond=naam?24:48; // zonder naam mogen de infoRegels zelf groter worden
+      var lo=5,hi=plafond;
+      while(hi-lo>0.5){var m=(lo+hi)/2;rest.style.fontSize=m+"px";if(naam)naam.style.fontSize=(m*1.4)+"px";if(past()){lo=m;}else{hi=m;}}
+      rest.style.fontSize=lo+"px";
+      if(naam){naam.style.fontSize=(lo*1.4)+"px";
       var nlo=lo*1.4,nhi=150; // naam vult de resterende ruimte
       while(nhi-nlo>0.5){var m2=(nlo+nhi)/2;naam.style.fontSize=m2+"px";if(past()){nlo=m2;}else{nhi=m2;}}
-      naam.style.fontSize=nlo+"px";
+      naam.style.fontSize=nlo+"px";}
     })();</scr` + "ipt>" +
     "</body></html>");
 }
@@ -9382,8 +9386,12 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const sugg = !picked && name.trim().length >= 2 ? (recipes || []).filter((r) => softMatchAny([r.name], name)).slice(0, 6) : [];
   const [suggIdx, setSuggIdx] = useState(-1); // pijltjesmarkering in de suggestielijst
   const verplichtOk = () => {
-    if (!name.trim()) { alert("Vul een productnaam in."); return false; }
-    return true; // datums zijn vrij: soms is een etiket alleen tekst
+    // Naam is niet verplicht: een etiket met alleen een datum is prima.
+    // Alleen een volledig leeg etiket houden we tegen.
+    if (!name.trim() && !prod && !tht && !ready && !gram.trim() && !note.trim() && !allergens.length) {
+      alert("Vul iets in voor het etiket."); return false;
+    }
+    return true;
   };
   // Enter zonder cursor in een veld: printen. Deze luisteraar draait in de
   // capture-fase, dus vóór het veld zichzelf verlaat — anders zou dezelfde druk
