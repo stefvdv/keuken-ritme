@@ -11712,14 +11712,20 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const [zoekOpen, setZoekOpen] = useState(false);
   const [zoekQuery, setZoekQuery] = useState("");
   const [highlightId, setHighlightId] = useState(null);
-  const zoekResultaten = React.useMemo(() => {
+  const zoekResultatenLijst = React.useMemo(() => {
     const q = zonderAccent(zoekQuery).toLowerCase().trim();
-    if (!q) return [];
     return (boekingen || [])
-      .filter((b) => zonderAccent(b.naam || "").toLowerCase().includes(q))
-      .sort((a, b) => String(a.datum || "").localeCompare(String(b.datum || "")))
-      .slice(0, 30);
+      .filter((b) => !q || zonderAccent(b.naam || "").toLowerCase().includes(q))
+      .sort((a, b) => String(b.datum || "").localeCompare(String(a.datum || ""))); // aflopend: nieuw boven, oud onder
   }, [boekingen, zoekQuery]);
+  // In drie groepen ingedeeld — nieuw (toekomst) bovenaan, oud (verleden)
+  // onderaan, met "vandaag" ertussenin waar de lijst standaard op scrolt.
+  const zoekGroep = (d) => (d > vandaag ? "nieuw" : d === vandaag ? "vandaag" : "oud");
+  const zoekDagLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
+  const zoekVandaagRef = React.useRef(null);
+  useEffect(() => {
+    if (zoekOpen) setTimeout(() => { if (zoekVandaagRef.current) zoekVandaagRef.current.scrollIntoView({ block: "center" }); }, 30);
+  }, [zoekOpen]);
   const springNaarZoek = (b) => {
     setZoekOpen(false); setZoekQuery("");
     setMaand(String(b.datum).slice(0, 7));
@@ -11762,10 +11768,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     const zh = (el) => (el && el.offsetParent !== null ? Math.round(el.getBoundingClientRect().height) : 0);
     const meet = () => setPlakTop(zh(document.querySelector("header")) + zh(document.querySelector(".top-14")));
     meet();
-    // Niet alleen bij een venster-resize opnieuw meten, maar ook zodra de
-    // kop- of tabbalk zelf van hoogte verandert (bv. doordat de knoppenrij
-    // anders omslaat) — anders blijft de plakhoogte een verouderde waarde
-    // gebruiken en ontstaat er een lege strook boven de balken.
     let ro = null;
     try {
       ro = new ResizeObserver(meet);
@@ -11773,10 +11775,29 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
       if (h) ro.observe(h);
       if (t) ro.observe(t);
     } catch (e) {}
-    const t2 = setTimeout(meet, 300); // vangnet voor late lettertype/lay-outverschuivingen
+    const t2 = setTimeout(meet, 300);
     window.addEventListener("resize", meet);
     return () => { window.removeEventListener("resize", meet); if (ro) ro.disconnect(); clearTimeout(t2); };
   }, []);
+  // "position: sticky" bleek op sommige mobiele combinaties niet te plakken
+  // (waarschijnlijk door de globale overflow-x:hidden op html/body, die de
+  // browser dwingt zelf een scrolcontext te kiezen). Daarom hier zelf bepalen
+  // wanneer de balk voorbij zijn plek scrolt, met een sentinel-element erboven
+  // en position:fixed — dat werkt altijd, ongeacht CSS-eigenaardigheden.
+  const [balkVast, setBalkVast] = useState(false);
+  const [balkHoogte, setBalkHoogte] = useState(0);
+  const sentinelRef = React.useRef(null);
+  const balkRef = React.useRef(null);
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const obs = new IntersectionObserver(([entry]) => setBalkVast(!entry.isIntersecting), { rootMargin: "-" + (plakTop + 1) + "px 0px 0px 0px", threshold: 0 });
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [plakTop]);
+  useEffect(() => {
+    if (balkRef.current) setBalkHoogte(balkRef.current.offsetHeight);
+  }, [prodOverlap.length, verwijderd.length]);
   // Bij openen de week van vandaag in beeld zetten.
   useEffect(() => {
     const t = setTimeout(() => { const el = document.getElementById("bkdag-" + vandaag); if (el) el.scrollIntoView({ block: "center" }); }, 350);
@@ -11789,7 +11810,9 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     <div>
       <p className="text-sm mute mb-3">Boekingen en bestelde producten komen automatisch uit MICE. Geef een product één keer een invulling met een gerecht uit de calculaties; de koks zien op de mise-en-place wat er gemaakt moet worden.</p>
 
-      <div className="-mx-4 px-4" style={somOpen ? {} : { position: "sticky", top: plakTop, zIndex: 20, background: T.paper }}>
+      <div ref={sentinelRef} style={{ height: 1 }} />
+      {balkVast && !somOpen && <div style={{ height: balkHoogte }} />}
+      <div ref={balkRef} className="-mx-4 px-4" style={somOpen || !balkVast ? {} : { position: "fixed", top: plakTop, left: 0, right: 0, zIndex: 20, background: T.paper, maxWidth: "42rem", margin: "0 auto", paddingLeft: "1rem", paddingRight: "1rem" }}>
       {prodOverlap.length > 0 && (
         <div className="card p-3 mb-4">
           <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
@@ -11850,17 +11873,25 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         {zoekOpen && (
           <div className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl shadow-lg p-2.5" style={{ background: T.paper, border: "1px solid " + T.line }}>
             <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoekQuery} onChange={(e) => setZoekQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && zoekResultaten.length) springNaarZoek(zoekResultaten[0]); if (e.key === "Escape") setZoekOpen(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && zoekResultatenLijst.length) springNaarZoek(zoekResultatenLijst[0]); if (e.key === "Escape") setZoekOpen(false); }}
               placeholder="Zoek op naam van de partij…" />
-            {zoekQuery.trim() && (
-              <div className="mt-1.5 rounded-lg overflow-y-auto" style={{ maxHeight: "16rem", border: "1px solid " + T.line }}>
-                {zoekResultaten.length ? zoekResultaten.map((b) => (
-                  <button key={b.id} onClick={() => springNaarZoek(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>
-                    {b.naam || "Zonder naam"} <span className="mute">· {fmtDMY(b.datum)}</span>
-                  </button>
-                )) : <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
-              </div>
-            )}
+            <div className="mt-1.5 rounded-lg overflow-y-auto" style={{ maxHeight: "16rem", border: "1px solid " + T.line }}>
+              {zoekResultatenLijst.length ? zoekResultatenLijst.map((b, i) => {
+                const groep = zoekGroep(b.datum);
+                const vorigeGroep = i > 0 ? zoekGroep(zoekResultatenLijst[i - 1].datum) : null;
+                const kopLabel = { nieuw: "Nieuw", vandaag: "Vandaag", oud: "Oud" }[groep];
+                return (
+                  <React.Fragment key={b.id}>
+                    {groep !== vorigeGroep && (
+                      <div ref={groep === "vandaag" ? zoekVandaagRef : null} className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>{kopLabel}</div>
+                    )}
+                    <button onClick={() => springNaarZoek(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>
+                      {b.naam || "Zonder naam"} <span className="mute">· {zoekDagLabel(b.datum)} · {gastenVan(b)} pers.</span>
+                    </button>
+                  </React.Fragment>
+                );
+              }) : <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
+            </div>
           </div>
         )}
       </div>
