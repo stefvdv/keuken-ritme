@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Highlighter, Bold, Eraser
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-10a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-10e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2829,6 +2829,12 @@ function App() {
   const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
+  // Gedeeld notitiepapiertje op de mep-pagina; synchroniseert via app_settings.
+  const [mepNotitie, setMepNotitie] = useState("");
+  const bewaarMepNotitie = async (html) => {
+    setMepNotitie(html);
+    if (live) { try { await supabase.from("app_settings").upsert({ key: "mep_notitie", value: { html }, updated_at: new Date().toISOString() }); } catch (e) {} }
+  };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
   const [miceProducten, setMiceProducten] = useState([]); // catalogus uit MICE
   const [prodKoppeling, setProdKoppeling] = useState({}); // MICE-product -> ons product
@@ -3974,7 +3980,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "bezorg_materialen", "team_namen"]),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "bezorg_materialen", "team_namen", "mep_notitie"]),
       supabase.from("mice_events").select("*").order("datum", { ascending: true }),
       supabase.from("mice_koppeling").select("*"),
       supabase.from("mice_producten").select("*").order("naam", { ascending: true }),
@@ -4045,6 +4051,8 @@ function App() {
     }
     const tnRow = (cs && cs.data && cs.data.find((r) => r.key === "team_namen")) || null;
     if (tnRow && tnRow.value && Array.isArray(tnRow.value.namen)) setExtraNamen(tnRow.value.namen);
+    const mnRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_notitie")) || null;
+    if (mnRow && mnRow.value && typeof mnRow.value.html === "string") setMepNotitie(mnRow.value.html);
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
     if (mev && !mev.error) setBoekingen(mev.data || []);
     if (mko && !mko.error) {
@@ -5411,6 +5419,7 @@ function App() {
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -9272,6 +9281,24 @@ function printCustomLabel(f) {
   if (bijnaLeeg) {
     const fmtD = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-"); return dd + "-" + m + "-" + y; };
     const regels = [f.prod ? "Gemaakt: " + fmtD(f.prod) : "", f.tht ? "T.H.T. " + fmtD(f.tht) : ""].filter(Boolean);
+    // Alleen één datum en geen naam: twee keer dezelfde datum naast elkaar,
+    // verticaal gecentreerd — de sticker wordt doormidden gescheurd (besparing).
+    if (!f.name && regels.length === 1) {
+      const tekst = esc(regels[0]);
+      printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+        "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
+        "html,body{margin:0;padding:0}" +
+        "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden}" +
+        "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+        ".duo{display:flex;width:100%;height:100%}" +
+        ".helft{flex:1 1 50%;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:1.5mm 2mm;box-sizing:border-box}" +
+        ".helft div{font-weight:bold;line-height:1.1;text-align:center;word-wrap:break-word;max-width:100%}" +
+        "</style></head><body>" +
+        '<div class="duo"><div class="helft"><div id="g1">' + tekst + '</div></div><div class="helft"><div id="g2">' + tekst + "</div></div></div>" +
+        "<scr" + 'ipt>(function(){var a=document.getElementById("g1"),b=document.getElementById("g2"),ba=a.parentElement,bb=b.parentElement;function past(){return a.scrollWidth<=ba.clientWidth&&a.scrollHeight<=ba.clientHeight&&b.scrollWidth<=bb.clientWidth&&b.scrollHeight<=bb.clientHeight;}var lo=8,hi=120;while(hi-lo>1){var m=(lo+hi)>>1;a.style.fontSize=m+"px";b.style.fontSize=m+"px";if(past()){lo=m;}else{hi=m;}}a.style.fontSize=lo+"px";b.style.fontSize=lo+"px";})();</scr' + "ipt>" +
+        "</body></html>");
+      return;
+    }
     // Zonder naam vullen de datums zelf de sticker; met naam staan ze klein onderin.
     const grootTekst = f.name ? f.name : regels.join("\n");
     const voet = f.name && regels.length ? '<div class="voet">' + esc(regels.join("  ·  ")) + "</div>" : "";
@@ -11219,8 +11246,59 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar }) {
+// Groot gedeeld notitiepapiertje op de mep-pagina. Vrij typen, met vet en
+// markeerstift; opslaan gebeurt vanzelf (kort na het typen en bij sluiten).
+function MepNotitiePopup({ html, onSave, onClose }) {
+  const vak = React.useRef(null);
+  const timer = React.useRef(null);
+  const laatst = React.useRef(html);
+  useEffect(() => { if (vak.current) { vak.current.innerHTML = html || ""; vak.current.focus(); } }, []);
+  useEffect(() => {
+    if (!vak.current) return;
+    if ((html || "") === laatst.current) return; // geen echte wijziging van buiten
+    if (vak.current.innerHTML !== laatst.current) return; // hier staat onbewaard typwerk — niet overschrijven
+    laatst.current = html || "";
+    vak.current.innerHTML = html || "";
+  }, [html]);
+  const pak = () => (vak.current ? vak.current.innerHTML : laatst.current);
+  const bewaar = () => { const h = pak(); if (h !== laatst.current) { laatst.current = h; onSave(h); } };
+  const getypt = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(bewaar, 800); };
+  const sluit = () => { if (timer.current) clearTimeout(timer.current); bewaar(); onClose(); };
+  const cmd = (naam, waarde) => { try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); getypt(); };
+  const markeer = () => {
+    let nu = ""; try { nu = String(document.queryCommandValue("hiliteColor") || ""); } catch (e) {}
+    const geel = /246,\s*226,\s*122|f6e27a/i.test(nu);
+    cmd("hiliteColor", geel ? "transparent" : "#f6e27a");
+  };
+  const Knop = ({ doe, titel, children }) => (
+    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={doe} className="ff inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold hover:opacity-70" style={{ border: "1px solid " + T.line, background: "#fff" }} title={titel}>{children}</button>
+  );
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) sluit(); }}>
+      <div className="w-full max-w-2xl rounded-2xl p-4 flex flex-col shadow-xl" style={{ background: T.paper, height: "min(88vh, 700px)" }}>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="serif ink text-xl leading-tight">Notities</div>
+          <div className="flex items-center gap-1.5">
+            <Knop doe={() => cmd("bold")} titel="Dikgedrukt (Ctrl+B)"><Bold size={14} /> Vet</Knop>
+            <Knop doe={markeer} titel="Markeerstift aan/uit over de selectie"><Highlighter size={14} /> Markeren</Knop>
+            <Knop doe={() => cmd("removeFormat")} titel="Opmaak van de selectie wissen"><Eraser size={14} /></Knop>
+            <button onClick={sluit} className="ff mute hover:opacity-70 ml-1" title="Sluiten (wordt bewaard)"><X size={18} /></button>
+          </div>
+        </div>
+        <div ref={vak} contentEditable suppressContentEditableWarning
+          onInput={getypt} onBlur={bewaar}
+          className="flex-1 overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
+          style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap" }} />
+        <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard</div>
+      </div>
+    </div>
+  );
+}
+
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie }) {
   const vandaag = localDate();
+  const [notitieOpen, setNotitieOpen] = useState(false);
+  const heeftNotitie = String(notitie || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").trim().length > 0;
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
   const somDagen = 7; // optelsom altijd een hele week
@@ -11481,8 +11559,15 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           <div className="serif ink text-xl leading-tight hidden md:block">Mise en place</div>
           <div className="text-[12.5px] mute">{weekLabel}</div>
         </div>
-        <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative rounded-lg px-2.5 py-2" title="Notities — gedeeld papiertje van de keuken">
+            <StickyNote size={16} />
+            {heeftNotitie && !notitieOpen && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
+          </button>
+          <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
+        </div>
       </div>
+      {notitieOpen && <MepNotitiePopup html={notitie || ""} onSave={onNotitie} onClose={() => setNotitieOpen(false)} />}
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
@@ -13024,7 +13109,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
                           </div>
                         </div>
                         {canEdit && (vandaag
-                          ? <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium" style={{ color: T.green }}><Check size={13} /> {dagLog.doneBy}</span>
+                          ? <button onClick={() => onUndo && onUndo(dagLog.id)} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-1.5 py-1.5 text-xs font-medium hover:opacity-70" style={{ color: T.green }} title="Nog eens klikken haalt de aftekening weer weg (misklik)"><Check size={13} /> {dagLog.doneBy}</button>
                           : (x.t.id === TEMP_TASK_ID || HACCP_TASK_KIND[x.t.id])
                             ? <button onClick={() => (x.t.id === TEMP_TASK_ID ? onFillTemp() : onFillRecord(HACCP_TASK_KIND[x.t.id]))} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Invullen"><Thermometer size={14} /></button>
                             : <button onClick={() => onSign(x.t.id)} className="ff shrink-0 rounded-lg px-1.5 py-1.5 acc hover:opacity-70" title="Aftekenen — de app vraagt wie"><Check size={15} /></button>)}
