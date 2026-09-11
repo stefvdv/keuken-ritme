@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11o"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11q"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -11106,7 +11106,7 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
   );
 }
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
@@ -11353,20 +11353,48 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         <>
           {toonKeuzes.length > 0 && (
             <div className="text-[14.5px] mt-1 space-y-1">
-              {toonKeuzes.map((k, i) => {
+              {(() => {
+                // Groeperen per programmadeel (MICE-activity): kop met naam en
+                // tijd, witregel ertussen. Zonder programmadeel: geen kop.
+                const groepVan = (k) => {
+                  if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (r.act || r.tijd)) return { act: r.act || "", tijd: r.tijd || "" };
+                  return { act: "", tijd: "" };
+                };
+                const groepen = [];
+                for (const k of toonKeuzes) {
+                  const g = groepVan(k);
+                  const sl = g.tijd + "|" + g.act;
+                  let doel = groepen.find((x) => x.sl === sl);
+                  if (!doel) { doel = { sl, act: g.act, tijd: g.tijd, items: [] }; groepen.push(doel); }
+                  doel.items.push(k);
+                }
+                groepen.sort((a, c) => (a.tijd || "").localeCompare(c.tijd || ""));
+                return groepen.map((g, gi) => (
+                  <div key={g.sl} className={gi > 0 ? "pt-2" : ""}>
+                    {(g.act || g.tijd) && (
+                      <div className="font-bold ink">
+                        <MarkTekst tekst={[g.act, g.tijd].filter(Boolean).join(" ")} basis={"pg:" + b.id + ":" + g.sl} stift={stift} markering={markering} zetMark={zetMark} />
+                      </div>
+                    )}
+                    {g.items.map((k, i) => {
                 const od = k.miceId ? onderdelenVan(k.miceId) : null;
-                const tijdK = tijdenVoorKeuze(b, k);
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + (tijdK ? " · " + tijdK : "") + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId);
+                // Op de mep vervangt de invulling de productnaam: is er een
+                // invulling, dan verdwijnt de productregel en staan de
+                // invullingsregels er direct (zonder inspringing).
+                const zonderKop = invulVervangt && od && od.length > 0;
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId);
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
                 return (
                   <div key={i}>
-                    <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
-                      <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
-                    </div>
+                    {!zonderKop && (
+                      <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
+                        <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
+                      </div>
+                    )}
                     {od && od.map((o, j) => (
-                      <div key={j} className="ink pl-3">
+                      <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
                         <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + fmtGram(p * n2) + " (" + Math.round(p) + " g p.p.)" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
                         {o.recipeId && !stift && (
                           <button onClick={() => onOpenRecipe(o.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
@@ -11377,7 +11405,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     ))}
                   </div>
                 );
-              })}
+                    })}
+                  </div>
+                ));
+              })()}
             </div>
           )}
           {allergie.length > 0 && (
@@ -12199,7 +12230,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
               {items.map((b) => {
                 const sl = boekingSleutel(b.naam);
                 return (
-                  <PartijKaart key={b.id} b={b} invulGesch={invulGesch} naamTekst={naamVan(b)} keuzes={gekozen(b)} mepRegels={mepTellen(mepVan(b))}
+                  <PartijKaart key={b.id} b={b} invulVervangt invulGesch={invulGesch} naamTekst={naamVan(b)} keuzes={gekozen(b)} mepRegels={mepTellen(mepVan(b))}
                     allergie={allergieEff(b)} noot={nootEff(b)} tijdTekst={tijdVan(b)} gastenTekst={gastenVan(b)}
                     catVan={catVan} stift={stift} markering={markering} zetMark={zetMark}
                     canEdit={true} magExtra={true} extra={extraVan(b)}
@@ -12237,12 +12268,12 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           <div className="text-[12.5px] mute">{weekLabel}</div>
         </div>
         <div className="flex items-center gap-1.5">
-          {onOpenBestellijst && <button onClick={onOpenBestellijst} className="btno ff inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} /> Bestellijst</button>}
-          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
-            <StickyNote size={16} /> Notities
-            {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
+          {onOpenBestellijst && <button onClick={onOpenBestellijst} className="btno ff inline-flex items-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 py-2 md:px-[18px] md:py-3 text-[13px] md:text-[19px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={24} className="hidden md:block" /> Bestellijst</button>}
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 py-2 md:px-[18px] md:py-3 text-[13px] md:text-[19px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
+            <StickyNote size={16} className="md:hidden" /><StickyNote size={24} className="hidden md:block" /> Notities
+            {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
-          <button onClick={printen} className="btno ff rounded-lg px-2.5 py-2" title="Printen als A4"><Printer size={16} /></button>
+          <button onClick={printen} className="btno ff rounded-lg md:rounded-xl px-2.5 py-2 md:px-[15px] md:py-3" title="Printen als A4"><Printer size={16} className="md:hidden" /><Printer size={24} className="hidden md:block" /></button>
         </div>
       </div>
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
