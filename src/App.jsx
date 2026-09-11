@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11o"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -7615,8 +7615,8 @@ function MiceVerkenner() {
 // bovenaan onder "Te bestellen". Sortering binnen een lijst: vaakst besteld
 // eerst. Alles (aantallen, telling en de notitie) synchroniseert via Supabase.
 function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
-  const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [] };
-  const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])] } : { ...leeg });
+  const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [], verborgen: [] };
+  const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])], verborgen: [...(d.verborgen || [])] } : { ...leeg });
   const [st, setSt] = useState(() => naarObj(data));
   const [zoek, setZoek] = useState("");
   const [open, setOpen] = useState({}); // per lijst open/dicht
@@ -7650,10 +7650,9 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
       per.get(lev).push({ sleutel: "a:" + a.code, naam: a.omschrijving || a.code, sub: [a.inhoud, a.categorie].filter(Boolean).join(" · ") });
     }
     const uit = [...per.entries()].sort((x, y) => x[0].localeCompare(y[0], "nl")).map(([naam, items]) => ({ naam, items }));
-    if ((calcItems || []).length) uit.push({ naam: "Eigen items", items: calcItems.map((it) => ({ sleutel: "i:" + it.id, naam: it.name, sub: "" })) });
     if ((st.eigenProducten || []).length) uit.push({ naam: "Zelf toegevoegd", items: st.eigenProducten.map((e) => ({ sleutel: "e:" + e.id, naam: e.naam, sub: [e.inhoud, e.prijs].filter(Boolean).join(" \u00b7 "), eigenId: e.id })) });
     return uit;
-  }, [bdArtikelen, calcItems, st.eigenProducten]);
+  }, [bdArtikelen, st.eigenProducten]);
 
   const zetAantal = (sleutel, tekst) => {
     setSt((s) => {
@@ -7701,6 +7700,22 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
     });
     getypt();
   };
+  // Een lijstproduct van de bestellijst halen: alleen hier verborgen, de
+  // calculatielijsten blijven ongemoeid. Terugzetten kan onderaan de pagina.
+  const verbergProduct = (r) => {
+    if (!window.confirm('"' + r.naam + '" van de bestellijst halen? (Blijft gewoon in de calculaties staan; onderaan terug te zetten.)')) return;
+    setSt((s) => {
+      const aantallen = { ...s.aantallen }; delete aantallen[r.sleutel];
+      const n = { ...s, aantallen, verborgen: [...new Set([...(s.verborgen || []), r.sleutel])] };
+      stRef.current = n;
+      return n;
+    });
+    getypt();
+  };
+  const zetTerug = (sleutel) => {
+    setSt((s) => { const n = { ...s, verborgen: (s.verborgen || []).filter((x) => x !== sleutel) }; stRef.current = n; return n; });
+    getypt();
+  };
   const leegmaken = () => {
     if (!window.confirm("Alle ingevulde aantallen leegmaken? (De notitie en de besteltelling blijven staan.)")) return;
     setSt((s) => { const n = { ...s, aantallen: {} }; stRef.current = n; return n; });
@@ -7711,16 +7726,24 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
   const past = (r) => !q || r.naam.toLowerCase().includes(q) || (r.sub || "").toLowerCase().includes(q);
   const sorteer = (items) => [...items].sort((a, b) => ((st.telling[b.sleutel] || 0) - (st.telling[a.sleutel] || 0)) || a.naam.localeCompare(b.naam, "nl"));
   const alle = React.useMemo(() => { const m = new Map(); for (const l of lijsten) for (const r of l.items) m.set(r.sleutel, { ...r, lijst: l.naam }); return m; }, [lijsten]);
-  const gevuld = Object.keys(st.aantallen).map((k) => alle.get(k)).filter(Boolean).sort((a, b) => a.lijst.localeCompare(b.lijst, "nl") || a.naam.localeCompare(b.naam, "nl"));
+  const verborgenSet = new Set(st.verborgen || []);
+  const gevuld = Object.keys(st.aantallen).map((k) => alle.get(k)).filter((r) => r && !verborgenSet.has(r.sleutel)).sort((a, b) => a.lijst.localeCompare(b.lijst, "nl") || a.naam.localeCompare(b.naam, "nl"));
+  const verborgenLijst = (st.verborgen || []).map((k) => alle.get(k)).filter(Boolean);
 
-  const Rij = ({ r, toonLijst }) => (
-    <div className="flex items-center gap-2 px-3 py-2">
+  // Gewone functie (geen inline component): een per render nieuw component-
+  // type hermount de input en gooide de focus na elke toetsaanslag weg.
+  const rij = (r, toonLijst) => (
+    <div key={r.sleutel} className="flex items-center gap-2 px-3 py-2">
       <div className="min-w-0 flex-1">
         <div className="text-sm ink truncate">{r.naam}</div>
         {(r.sub || toonLijst) ? <div className="text-[11.5px] mute truncate">{[toonLijst ? r.lijst : "", r.sub].filter(Boolean).join(" \u00b7 ")}</div> : null}
       </div>
-      {r.eigenId && <button onClick={() => { const p = (st.eigenProducten || []).find((x) => x.id === r.eigenId); if (p) setVorm({ ...p }); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={14} /></button>}
-      {r.eigenId && <button onClick={() => wegEigen(r.eigenId)} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>}
+      {r.eigenId
+        ? <>
+            <button onClick={() => { const p = (st.eigenProducten || []).find((x) => x.id === r.eigenId); if (p) setVorm({ ...p }); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={14} /></button>
+            <button onClick={() => wegEigen(r.eigenId)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={14} /></button>
+          </>
+        : <button onClick={() => verbergProduct(r)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Van de bestellijst halen (blijft in de calculaties)"><Trash2 size={14} /></button>}
       <input className="input px-2.5 py-1.5 text-sm text-right shrink-0" style={{ width: "6.5rem" }} value={st.aantallen[r.sleutel] || ""} onChange={(e) => zetAantal(r.sleutel, e.target.value)} placeholder="aantal" />
     </div>
   );
@@ -7743,7 +7766,7 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
         <>
           <SectionTitle>Te bestellen · {gevuld.length}</SectionTitle>
           <div className="card divide-y mb-3" style={{ borderColor: T.line }}>
-            {gevuld.map((r) => <Rij key={r.sleutel} r={r} toonLijst />)}
+            {gevuld.map((r) => rij(r, true))}
           </div>
         </>
       )}
@@ -7767,7 +7790,7 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
       )}
       {!vorm && <button onClick={() => setVorm({ naam: "", inhoud: "", prijs: "", opmerking: "" })} className="btno ff inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium mb-3"><Plus size={15} /> Product toevoegen</button>}
       {lijsten.map((l) => {
-        const items = sorteer(l.items.filter(past));
+        const items = sorteer(l.items.filter((x) => !verborgenSet.has(x.sleutel)).filter(past));
         if (q && !items.length) return null;
         const isOpen = q ? true : !!open[l.naam];
         return (
@@ -7779,12 +7802,28 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
             </button>
             {isOpen && (
               <div className="card divide-y" style={{ borderColor: T.line }}>
-                {items.length ? items.map((r) => <Rij key={r.sleutel} r={{ ...r, lijst: l.naam }} />) : <div className="px-3 py-2 text-sm mute">Niets gevonden.</div>}
+                {items.length ? items.map((r) => rij({ ...r, lijst: l.naam }, false)) : <div className="px-3 py-2 text-sm mute">Niets gevonden.</div>}
               </div>
             )}
           </div>
         );
       })}
+      {verborgenLijst.length > 0 && (
+        <div className="mt-4">
+          <SectionTitle>Van de lijst gehaald · {verborgenLijst.length}</SectionTitle>
+          <div className="card divide-y" style={{ borderColor: T.line }}>
+            {verborgenLijst.map((r) => (
+              <div key={r.sleutel} className="flex items-center gap-2 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm mute truncate">{r.naam}</div>
+                  <div className="text-[11.5px] mute truncate">{r.lijst}</div>
+                </div>
+                <button onClick={() => zetTerug(r.sleutel)} className="ff shrink-0 text-[12.5px] font-semibold underline acc">Terugzetten</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9636,10 +9675,10 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   };
   const plusDag = (cur, set) => schuifDag(cur, set, 1);
   // Snelkeuze: THT een aantal maanden na de productiedatum.
-  const zetThtMaanden = (mnd) => {
+  const zetThtDagen = (dgn) => {
     const dt = new Date((prod || today) + "T12:00:00");
     if (isNaN(dt)) return;
-    dt.setMonth(dt.getMonth() + mnd);
+    dt.setDate(dt.getDate() + dgn);
     setTht(dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"));
   };
   // Aantal dagen t.o.v. de productiedatum, voor de teller boven de +/− knoppen.
@@ -9785,9 +9824,10 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
             <div className="flex items-center justify-between gap-1 mb-1">
               <div className="text-xs font-bold ink shrink-0">T.H.T.</div>
               <div className="flex items-center gap-1 min-w-0">
-                <button type="button" onClick={() => zetThtMaanden(1)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">1 mnd</button>
-                <button type="button" onClick={() => zetThtMaanden(6)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">½ jr</button>
-                <button type="button" onClick={() => zetThtMaanden(12)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">1 jr</button>
+                <button type="button" onClick={() => zetThtDagen(10)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">10 dgn</button>
+                <button type="button" onClick={() => zetThtDagen(30)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">1 mnd</button>
+                <button type="button" onClick={() => zetThtDagen(182)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">½ jr</button>
+                <button type="button" onClick={() => zetThtDagen(365)} className="ff pill rounded-full px-1.5 py-0.5 text-[10.5px] font-medium shrink-0">1 jr</button>
                 {dagenVanaf(tht) != null && <div className="text-[11px] font-semibold acc shrink-0">{dagenVanaf(tht)} {dagenVanaf(tht) === 1 ? "dag" : "dagen"}</div>}
               </div>
             </div>
@@ -10019,6 +10059,17 @@ const statusRand = (st) => {
   return "#3b6ea5";
 };
 const STATUS_OPTIES = [["confirmed", "bevestigd"], ["option", "in optie"], ["option_expired", "optie verlopen"], ["cancelled", "geannuleerd"], ["request", "aanvraag"]];
+const tijdenVoorKeuze = (b, k) => {
+  if (k && k.tijd) return String(k.tijd);
+  if (!k || !k.miceId) return "";
+  const uniek = [];
+  for (const r of (b && b.regels) || []) {
+    if (String(r.id) !== String(k.miceId)) continue;
+    const t = String(r.tijd || "").trim();
+    if (t && !uniek.includes(t)) uniek.push(t);
+  }
+  return uniek.sort().join(" & ");
+};
 const autoKeuzesUitBoeking = (b) => {
   const per = {};
   for (const r of (b && b.regels) || []) {
@@ -11304,7 +11355,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             <div className="text-[14.5px] mt-1 space-y-1">
               {toonKeuzes.map((k, i) => {
                 const od = k.miceId ? onderdelenVan(k.miceId) : null;
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId);
+                const tijdK = tijdenVoorKeuze(b, k);
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + (tijdK ? " · " + tijdK : "") + (!od && catVan && catVan[k.miceId] ? " · " + catVan[k.miceId] : "") + prijsVan(k.miceId);
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
@@ -12029,7 +12081,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           const naam = inv && inv.naam && (inv.onderdelen || []).length ? inv.naam : k.naam;
           const od = ((inv && inv.onderdelen) || []).filter((o) => onderdeelNaam(o));
           const regels = od.map((o) => "<div class='inv'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + onderdeelNaam(o)) + "</div>").join("");
-          return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + naam) + "</div>" + regels + "</div>";
+          const tijdK = tijdenVoorKeuze(b, k);
+          return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + naam + (tijdK ? " · " + tijdK : "")) + "</div>" + regels + "</div>";
         };
         const huurHtml = huur.length
           ? "<div class='blok'><div class='mepkop'>Materiaalhuur</div>" + huur.map((k) => "<div class='inv'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam) + "</div>").join("") + "</div>"
