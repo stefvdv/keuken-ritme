@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11q"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11r"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5436,7 +5436,6 @@ function App() {
       voorraadForm: "voorraad",
     };
     if (cur.screen === "settings" || cur.screen === "bezorgmateriaal") return "__instellingen";
-    if (cur.screen === "bestellijst") return "mep";
     return kaart[cur.screen] || null;
   };
   const actieveSectie = current.screen === "list" ? section : screenSectie(current);
@@ -5492,7 +5491,7 @@ function App() {
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onOpenBestellijst={() => push({ screen: "bestellijst" })}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -5571,7 +5570,6 @@ function App() {
           editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
-        {current.screen === "bestellijst" && <BestelScherm bdArtikelen={bdArtikelen} calcItems={calcItems} data={bestelLijst} onSave={bewaarBestelLijst} onBack={goBack} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
@@ -7614,7 +7612,7 @@ function MiceVerkenner() {
 // pagina. Per product een invulvakje voor het aantal; ingevulde regels komen
 // bovenaan onder "Te bestellen". Sortering binnen een lijst: vaakst besteld
 // eerst. Alles (aantallen, telling en de notitie) synchroniseert via Supabase.
-function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
+function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
   const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [], verborgen: [] };
   const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])], verborgen: [...(d.verborgen || [])] } : { ...leeg });
   const [st, setSt] = useState(() => naarObj(data));
@@ -7632,6 +7630,16 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
   };
   const getypt = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(bewaar, 800); };
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); bewaar(); }, []);
+  const sluit = () => { if (timer.current) clearTimeout(timer.current); bewaar(); onClose(); };
+  const sluitRef = React.useRef(sluit); sluitRef.current = sluit;
+  useEffect(() => {
+    const terug = () => sluitRef.current();
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
+    try { window.history.pushState({ app: "ritme", bestel: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", terug);
+    window.addEventListener("keydown", toets, true);
+    return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
+  }, []);
   // Wijzigingen van collega's overnemen zolang hier niets onbewaards staat.
   useEffect(() => {
     const binnen = JSON.stringify(naarObj(data));
@@ -7749,13 +7757,17 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
   );
 
   return (
-    <div>
-      <BackBar onBack={onBack} />
-      <div className="flex items-end justify-between gap-2">
-        <h1 className="serif ink text-3xl leading-tight">Bestellijst</h1>
-        {gevuld.length > 0 && <button onClick={leegmaken} className="btno ff shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-medium mb-0.5">Leegmaken</button>}
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) sluit(); }}>
+      <div className="w-full max-w-2xl rounded-2xl p-4 flex flex-col shadow-xl overflow-hidden" style={{ background: T.paper, height: "min(90vh, 760px)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="serif ink text-xl leading-tight">Bestellijst</h1>
+        <div className="flex items-center gap-1.5">
+          {gevuld.length > 0 && <button onClick={leegmaken} className="btno ff shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-medium">Leegmaken</button>}
+          <button onClick={sluit} className="ff mute hover:opacity-70 ml-1" title="Sluiten (wordt bewaard)"><X size={18} /></button>
+        </div>
       </div>
-      <p className="text-sm mute mt-1 mb-3">Alle ingeladen lijsten bij elkaar. Vul in wat er besteld moet worden; ingevulde regels komen bovenaan. Gedeeld met het hele team.</p>
+      <p className="text-[12.5px] mute mt-0.5 mb-2">Vul in wat er besteld moet worden; ingevulde regels komen bovenaan. Gedeeld met het hele team.</p>
+      <div className="flex-1 overflow-y-auto -mx-1 px-1">
       <div className="relative mb-2">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
         <input className="input pl-9 pr-3 py-2.5 w-full text-sm" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een product" />
@@ -7824,6 +7836,8 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
           </div>
         </div>
       )}
+      </div>
+      </div>
     </div>
   );
 }
@@ -11932,10 +11946,11 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onOpenBestellijst }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
+  const [bestelOpen, setBestelOpen] = useState(false);
   const heeftNotitie = (() => {
     const html = notitie && Array.isArray(notitie.bladen) ? notitie.bladen.map((b) => b.html || "").join(" ") : (notitie && notitie.html) || (typeof notitie === "string" ? notitie : "");
     return String(html).replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").trim().length > 0;
@@ -12268,14 +12283,15 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           <div className="text-[12.5px] mute">{weekLabel}</div>
         </div>
         <div className="flex items-center gap-1.5">
-          {onOpenBestellijst && <button onClick={onOpenBestellijst} className="btno ff inline-flex items-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 py-2 md:px-[18px] md:py-3 text-[13px] md:text-[19px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={24} className="hidden md:block" /> Bestellijst</button>}
-          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 md:gap-2 rounded-lg md:rounded-xl px-3 py-2 md:px-[18px] md:py-3 text-[13px] md:text-[19px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
-            <StickyNote size={16} className="md:hidden" /><StickyNote size={24} className="hidden md:block" /> Notities
+          <button onClick={() => setBestelOpen(true)} className="btno ff inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst</button>
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
+            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
             {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
-          <button onClick={printen} className="btno ff rounded-lg md:rounded-xl px-2.5 py-2 md:px-[15px] md:py-3" title="Printen als A4"><Printer size={16} className="md:hidden" /><Printer size={24} className="hidden md:block" /></button>
+          <button onClick={printen} className="btno ff rounded-lg md:rounded-xl px-2.5 py-2 md:px-3 md:py-2.5" title="Printen als A4"><Printer size={16} className="md:hidden" /><Printer size={20} className="hidden md:block" /></button>
         </div>
       </div>
+      {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
         recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName}
         onOpenPartij={(id) => {
