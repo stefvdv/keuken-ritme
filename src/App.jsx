@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11j"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5189,6 +5189,7 @@ function App() {
   const [mepSpringNaar, setMepSpringNaar] = useState(null); // { id, datum } van een boeking om op de mep in beeld te brengen
 
   const laatsteHomeKlik = React.useRef(0);
+  const balkNetDicht = React.useRef(0); // buitenklik sluit de meldingsbalk al vóór de homeklik afgaat
   // Per-partij "Afronden" bij Boekingen mag NIET elke nacht resetten (in
   // tegenstelling tot de andere meldingen) — anders komt een al afgehandelde
   // wijziging de volgende dag terug zolang hij nog binnen het 3-dagen-venster
@@ -5412,7 +5413,6 @@ function App() {
       onAfronden: () => rondAf("materiaal:__alles__"),
     });
   }
-  const balkNetDicht = React.useRef(0); // buitenklik sluit de balk al vóór de homeklik afgaat
   const sluitMeldingen = () => { balkNetDicht.current = Date.now(); setMeldingenOpen(false); };
   const klikHome = () => {
     const nu = Date.now();
