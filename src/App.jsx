@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11x"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11y"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -6051,7 +6051,7 @@ function PromptModal({ titel, label, hint, waarde, placeholder, wachtwoord, okLa
         {hint && <p className="text-xs mute mt-1 leading-relaxed">{hint}</p>}
         <div className="mt-3">
           {label && <div className="text-[11.5px] font-bold ink mb-1">{label}</div>}
-          <input ref={ref} type="text" name="invoer" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} className="input px-3 py-2.5 w-full text-[15px]" value={v} placeholder={placeholder || ""}
+          <input ref={ref} type={wachtwoord ? "password" : "text"} name="invoer" autoComplete={wachtwoord ? "new-password" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false} className="input px-3 py-2.5 w-full text-[15px]" value={v} placeholder={placeholder || ""}
             onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); bevestig(); } }} />
         </div>
         {fout && <p className="text-[12px] mt-1.5 font-medium" style={{ color: "#9a4a2f" }}>{fout}</p>}
@@ -6121,7 +6121,7 @@ function Login({ onPick, live }) {
         {live ? (
           <div className="card p-4">
             <label className="block text-sm font-medium ink mb-1.5 inline-flex items-center gap-1.5"><Lock size={14} /> Keukenwachtwoord</label>
-            <input type="text" name="keukencode" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} autoFocus className="input px-3 py-2.5" value={pw}
+            <input type="password" name="keukencode" autoComplete="new-password" autoCorrect="off" autoCapitalize="off" spellCheck={false} autoFocus className="input px-3 py-2.5" value={pw}
               onChange={(e) => setPw(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitPw(); }}
               placeholder="Eenmalig per apparaat" />
@@ -10147,6 +10147,33 @@ const eetRang = (t) => { const x = zonderAccent(String(t || "")).toLowerCase(); 
 const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRang((a.naam || "") + " " + ((catVan && catVan[a.miceId]) || "")) - eetRang((b.naam || "") + " " + ((catVan && catVan[b.miceId]) || "")));
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
+// De portie kan in gram, kilo, milli-/centi-/liters of stuks staan; de
+// optelsom rekent dan in dezelfde soort eenheid (met de gangbare afkortingen).
+const portieEenheid = (t) => {
+  const m = String(t || "").toLowerCase().match(/\d[\d.,]*\s*(kg|gram|gr|g|ml|cl|ltr|liter|l|stuks|stuk|stk|st)\b/);
+  return m ? m[1] : "g";
+};
+const fmtVolumeMl = (ml) => { const v = Math.round(Number(ml) || 0); return v >= 1000 ? (Math.round(v / 100) / 10).toLocaleString("nl-NL") + " l" : v.toLocaleString("nl-NL") + " ml"; };
+const portieTotaal = (portie, n) => {
+  const p = eersteGetal(portie);
+  if (!(p > 0) || !(n > 0)) return "";
+  const e = portieEenheid(portie);
+  if (e === "ml") return fmtVolumeMl(p * n);
+  if (e === "cl") return fmtVolumeMl(p * n * 10);
+  if (e === "l" || e === "ltr" || e === "liter") return fmtVolumeMl(p * n * 1000);
+  if (e === "st" || e === "stuk" || e === "stuks" || e === "stk") return Math.round(p * n).toLocaleString("nl-NL") + " st";
+  if (e === "kg") return fmtGram(p * n * 1000);
+  return fmtGram(p * n);
+};
+const portiePP = (portie) => {
+  const p = eersteGetal(portie);
+  if (!(p > 0)) return "";
+  const e = portieEenheid(portie);
+  const eh = (e === "ltr" || e === "liter") ? "l" : (e === "stuk" || e === "stuks" || e === "stk") ? "st" : (e === "gram" || e === "gr") ? "g" : e;
+  return (p % 1 ? String(p).replace(".", ",") : String(Math.round(p))) + " " + eh + " p.p.";
+};
+const portieIsGram = (t) => { const e = portieEenheid(t); return e === "g" || e === "gr" || e === "gram" || e === "kg"; };
+const portieGram = (t) => { const p = eersteGetal(t); if (!(p > 0) || !portieIsGram(t)) return 0; return portieEenheid(t) === "kg" ? p * 1000 : p; };
 // Eén keuze omzetten naar mep-regels via de culinaire invulling. Een invulling
 // kan uit meerdere onderdelen bestaan (recept, calc-product of vrije tekst),
 // elk met een eigen hoeveelheid; elk onderdeel telt los mee in de optelsom.
@@ -10156,7 +10183,7 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
   const perOnderdeel = (o) => {
     const n = o.hoeveelheid ? eersteGetal(o.hoeveelheid) : 0;
     const porties = n || aantal;
-    const gram = (eersteGetal(o.portie) || 0) * porties; // gr p.p. × aantal
+    const gram = portieGram(o.portie) * porties; // gr/kg p.p. × aantal (ml en stuks tellen hier niet mee)
     // Een recept is een bijlage: de getypte tekst is de invulling en telt.
     // Alleen zonder eigen tekst telt het recept zelf.
     if (o.recipeId && !String(o.naam || "").trim()) {
@@ -11240,7 +11267,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       rijen.push("<div class='pr'>" + pEsc((k.aantal || b.gasten) + "× " + k.naam) + "</div>");
       if (od) for (const o of od) {
         const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0;
-        rijen.push("<div class='pr sub'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (p > 0 && n2 > 0 ? " · " + fmtGram(p * n2) + " (" + Math.round(p) + " g p.p.)" : "")) + "</div>");
+        rijen.push("<div class='pr sub'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : "")) + "</div>");
       }
     }
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>" + pEsc(b.naam || "Partij") + "</title><style>"
@@ -11486,7 +11513,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     )}
                     {od && od.map((o, j) => (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
-                        <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + fmtGram(p * n2) + " (" + Math.round(p) + " g p.p.)" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
+                        <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
                         {!stift && (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam }] : [])).filter((bl) => bl.recipeId).map((bl, bi) => (
                           <button key={bi} onClick={() => onOpenRecipe(bl.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
                             {bl.naam || "recept"}
@@ -11607,7 +11634,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                           <button onClick={() => setGeschVoor(mid)} className="ff mute hover:opacity-60" title="Eerdere invullingen van dit product"><History size={15} /></button>
                           <button onClick={() => wegO(mid, j)} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
                         </div>
-                        {(() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>= {fmtGram(p * n2)} totaal</div> : null; })()}
+                        {(() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>= {portieTotaal(o.portie, n2)} totaal</div> : null; })()}
                         {bijlagenVan(o).map((bl, bi) => (
                           <div key={bi} className="pl-3 text-[12px] flex items-center gap-1" style={{ color: "#44502f" }}>
                             ⤷ {bl.naam || (bl.recipeId ? "recept" : "calculatie")}
