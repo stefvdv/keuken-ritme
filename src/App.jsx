@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11l"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5435,7 +5435,8 @@ function App() {
       techTableForm: "technieken", werkDocForm: "technieken",
       voorraadForm: "voorraad",
     };
-    if (cur.screen === "settings" || cur.screen === "bezorgmateriaal" || cur.screen === "bestellijst") return "__instellingen";
+    if (cur.screen === "settings" || cur.screen === "bezorgmateriaal") return "__instellingen";
+    if (cur.screen === "bestellijst") return "mep";
     return kaart[cur.screen] || null;
   };
   const actieveSectie = current.screen === "list" ? section : screenSectie(current);
@@ -5491,7 +5492,7 @@ function App() {
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onOpenBestellijst={() => push({ screen: "bestellijst" })}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -5571,7 +5572,7 @@ function App() {
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
         {current.screen === "bestellijst" && <BestelScherm bdArtikelen={bdArtikelen} calcItems={calcItems} data={bestelLijst} onSave={bewaarBestelLijst} onBack={goBack} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })} onOpenBestellingen={() => push({ screen: "bestellijst" })} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -7720,7 +7721,7 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
       </div>
       {r.eigenId && <button onClick={() => { const p = (st.eigenProducten || []).find((x) => x.id === r.eigenId); if (p) setVorm({ ...p }); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={14} /></button>}
       {r.eigenId && <button onClick={() => wegEigen(r.eigenId)} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>}
-      <input className="input px-2.5 py-1.5 w-24 text-sm text-right shrink-0" value={st.aantallen[r.sleutel] || ""} onChange={(e) => zetAantal(r.sleutel, e.target.value)} placeholder="aantal" />
+      <input className="input px-2.5 py-1.5 text-sm text-right shrink-0" style={{ width: "6.5rem" }} value={st.aantallen[r.sleutel] || ""} onChange={(e) => zetAantal(r.sleutel, e.target.value)} placeholder="aantal" />
     </div>
   );
 
@@ -7788,7 +7789,7 @@ function BestelScherm({ bdArtikelen, calcItems, data, onSave, onBack }) {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, onOpenBestellingen, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -7809,15 +7810,6 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         </>
       )}
 
-      {onOpenBestellingen && (
-        <>
-          <SectionTitle>Bestellingen</SectionTitle>
-          <div className="card p-4">
-            <p className="text-sm mute mb-3">Eén bestellijst uit alle ingeladen leverancierslijsten en eigen items. Vul in wat er besteld moet worden; de lijst is gedeeld met het hele team.</p>
-            <button onClick={onOpenBestellingen} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><ClipboardList size={16} /> Bestellijst openen</button>
-          </div>
-        </>
-      )}
 
       <SectionTitle>Chef</SectionTitle>
       <div className="card p-4">
@@ -9573,7 +9565,7 @@ function printCustomLabel(f) {
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
       '.vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:' + (regels.length ? "6mm" : "1.5mm") + ';display:flex;align-items:center;justify-content:center;overflow:hidden}' +
-      "#groot{font-weight:bold;line-height:1.15;text-align:center;word-wrap:break-word;max-width:100%;white-space:pre-line}" +
+      "#groot{font-weight:bold;line-height:1.15;text-align:center;overflow-wrap:normal;word-break:keep-all;max-width:100%;white-space:pre-line}" +
       ".voet{position:absolute;left:2.5mm;right:2.5mm;bottom:1.2mm;font-weight:bold;font-size:9pt;text-align:center}" +
       "</style></head><body>" +
       '<div class="vul"><div id="groot">' + esc(grootTekst) + "</div></div>" + voet +
@@ -9590,7 +9582,7 @@ function printCustomLabel(f) {
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
     "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
     ".vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:1.5mm;overflow:hidden;text-align:center;display:flex;flex-direction:column;justify-content:center}" +
-    "#naam{font-weight:bold;line-height:1.05;word-wrap:break-word;margin:0 0 0.6mm 0}" +
+    "#naam{font-weight:bold;line-height:1.05;overflow-wrap:normal;word-break:keep-all;margin:0 0 0.6mm 0}" +
     "#rest{font-weight:bold;line-height:1.22}" +
     ".rij{margin:0}" +
     ".klein{font-size:0.85em;line-height:1.18;word-wrap:break-word}" +
@@ -11161,7 +11153,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
       "*{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
       ".vul{position:absolute;top:1.5mm;left:2.5mm;right:2.5mm;bottom:1.5mm;overflow:hidden;text-align:center;display:flex;flex-direction:column;justify-content:center}" +
-      "#naam{font-weight:bold;line-height:1.08;word-wrap:break-word;margin:0 0 0.6mm 0}" +
+      "#naam{font-weight:bold;line-height:1.08;overflow-wrap:normal;word-break:keep-all;margin:0 0 0.6mm 0}" +
       ".pnaam{text-decoration:underline;text-underline-offset:2px}" +
       "#rest{font-weight:bold;line-height:1.22}" +
       ".rij{margin:0}" +
@@ -11857,7 +11849,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onOpenBestellijst }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
@@ -12192,6 +12184,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           <div className="text-[12.5px] mute">{weekLabel}</div>
         </div>
         <div className="flex items-center gap-1.5">
+          {onOpenBestellijst && <button onClick={onOpenBestellijst} className="btno ff inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} /> Bestellijst</button>}
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} /> Notities
             {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
