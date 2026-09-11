@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11s"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11u"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -11397,7 +11397,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 return groepen.map((g, gi) => (
                   <div key={g.sl} className={gi > 0 ? "pt-2" : ""}>
                     {(g.act || g.tijd) && (
-                      <div className="font-bold ink">
+                      <div className="font-bold ink underline" style={{ textUnderlineOffset: "3px", textDecorationThickness: "1.5px" }}>
                         <MarkTekst tekst={[g.act, g.tijd].filter(Boolean).join(" ")} basis={"pg:" + b.id + ":" + g.sl} stift={stift} markering={markering} zetMark={zetMark} />
                       </div>
                     )}
@@ -11786,10 +11786,22 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // Afvinkvakje: aangevinkt = regel doorgestreept; de stand gaat mee in de html.
     if (t && t.tagName === "INPUT" && t.classList.contains("nt-cb")) {
       if (t.checked) t.setAttribute("checked", ""); else t.removeAttribute("checked");
-      const blok = t.closest("li, div, p") || null;
+      const stijl = (el) => { el.style.textDecoration = t.checked ? "line-through" : ""; el.style.opacity = t.checked ? ".55" : ""; };
+      const blok = t.closest("li, p, div");
       if (blok && blok !== vak.current) {
-        blok.style.textDecoration = t.checked ? "line-through" : "";
-        blok.style.opacity = t.checked ? ".55" : "";
+        stijl(blok);
+      } else {
+        // Regel staat los in het vak: bestaande wikkel hergebruiken of de
+        // tekst tot de volgende regel (<br> of <div>) in een span wikkelen.
+        let wikkel = (t.nextSibling && t.nextSibling.nodeType === 1 && t.nextSibling.classList && t.nextSibling.classList.contains("nt-rij")) ? t.nextSibling : null;
+        if (!wikkel) {
+          wikkel = document.createElement("span");
+          wikkel.className = "nt-rij";
+          let n = t.nextSibling;
+          while (n && !(n.nodeType === 1 && (n.tagName === "BR" || n.tagName === "DIV"))) { const vlg = n.nextSibling; wikkel.appendChild(n); n = vlg; }
+          t.after(wikkel);
+        }
+        stijl(wikkel);
       }
       getypt();
       return;
