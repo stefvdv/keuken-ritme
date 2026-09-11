@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11u"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11v"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5201,6 +5201,15 @@ function App() {
 
   const laatsteHomeKlik = React.useRef(0);
   const balkNetDicht = React.useRef(0); // buitenklik sluit de meldingsbalk al vóór de homeklik afgaat
+  // Gedempte meldingcategorieën: tellen tot morgen 07:00 niet mee in de stip.
+  const [gedempt, setGedempt] = useState(() => { try { const j = JSON.parse(localStorage.getItem("ritme:meldingDemp") || "{}"); return j && typeof j === "object" ? j : {}; } catch (e) { return {}; } });
+  const dempMelding = (id) => {
+    const d = new Date();
+    if (d.getHours() >= 7) d.setDate(d.getDate() + 1);
+    d.setHours(7, 0, 0, 0); // gedempt tot de eerstvolgende 07:00
+    setGedempt((g) => { const n = { ...g, [id]: d.toISOString() }; try { localStorage.setItem("ritme:meldingDemp", JSON.stringify(n)); } catch (e) {} return n; });
+  };
+  const isGedempt = (id) => { const t = gedempt[id]; return !!t && new Date(t).getTime() > Date.now(); };
   // Per-partij "Afronden" bij Boekingen mag NIET elke nacht resetten (in
   // tegenstelling tot de andere meldingen) — anders komt een al afgehandelde
   // wijziging de volgende dag terug zolang hij nog binnen het 3-dagen-venster
@@ -5425,13 +5434,14 @@ function App() {
     });
   }
   const sluitMeldingen = () => { balkNetDicht.current = Date.now(); setMeldingenOpen(false); };
+  const actieveMeldingen = meldingCategorieen.filter((c) => !isGedempt(c.id));
   const klikHome = () => {
     const nu = Date.now();
     const dubbelklik = nu - laatsteHomeKlik.current < 400;
     laatsteHomeKlik.current = nu;
     if (dubbelklik) { sluitMeldingen(); goHome(); return; } // dubbelklik negeert de meldingsbalk altijd
     if (meldingenOpen || nu - balkNetDicht.current < 500) { sluitMeldingen(); return; } // sluiten, niet meteen heropenen
-    if (meldingCategorieen.length) { setMeldingenOpen(true); return; }
+    if (actieveMeldingen.length) { setMeldingenOpen(true); return; }
     goHome();
   };
   // Op een detailscherm (een gerecht, recept, batch...) moet de bijbehorende
@@ -5458,15 +5468,15 @@ function App() {
         onKies={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }}
         onHome={klikHome}
         onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }}
-        onInstellingen={() => push({ screen: "settings" })} meldingen={meldingCategorieen.length} />
+        onInstellingen={() => push({ screen: "settings" })} meldingen={actieveMeldingen.length} />
 
-      {meldingenOpen && meldingCategorieen.length > 0 && <MeldingenBalk categorieen={meldingCategorieen} onSluiten={sluitMeldingen} />}
+      {meldingenOpen && meldingCategorieen.length > 0 && <MeldingenBalk categorieen={meldingCategorieen} onSluiten={sluitMeldingen} isGedempt={isGedempt} onDempen={dempMelding} />}
 
       <div className="flex-1 min-w-0 flex flex-col">
       <div className="md:hidden">
         <Header user={user} onHome={klikHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={actieveSectie === "mep"} instellingenActief={actieveSectie === "__instellingen"}
           titel={current.screen !== "list" ? null : (section === "home" ? null : ({ mep: "Mise en place", boekingen: "Boekingen", assortiment: "Calculaties" }[section] || (SECTIONS.find((x) => x.id === section) || {}).label || null))}
-          meldingen={meldingCategorieen.length} />
+          meldingen={actieveMeldingen.length} />
       </div>
 
       <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
@@ -10863,7 +10873,7 @@ function MateriaalMeldingRegel({ r, open, boeking, wijzLabel, bezorgSamenvat }) 
   );
 }
 
-function MeldingenBalk({ categorieen, onSluiten }) {
+function MeldingenBalk({ categorieen, onSluiten, isGedempt, onDempen }) {
   const [open, setOpen] = useState(null); // id van de uitgeklapte categorie
   const [breed, setBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
   useEffect(() => {
@@ -10887,7 +10897,8 @@ function MeldingenBalk({ categorieen, onSluiten }) {
       <div className="flex flex-wrap items-center gap-1.5 p-3" style={{ borderBottom: huidige ? "1px solid " + T.line : "none" }}>
         {categorieen.map((c) => (
           <button key={c.id} onClick={() => setOpen((o) => (o === c.id ? null : c.id))}
-            className={"ff inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium " + (open === c.id ? "pillon" : "pill")}>
+            className={"ff inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium " + (open === c.id ? "pillon" : "pill") + (isGedempt && isGedempt(c.id) ? " opacity-50" : "")}
+            title={isGedempt && isGedempt(c.id) ? "Gedempt tot 07:00 — telt niet mee in de stip" : undefined}>
             {c.icon} {c.label}
           </button>
         ))}
@@ -10897,7 +10908,7 @@ function MeldingenBalk({ categorieen, onSluiten }) {
         <div className="p-3.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>
           {huidige.content}
           <div className="flex justify-end gap-2 mt-3 pt-3" style={{ borderTop: "1px solid #e4d6b8" }}>
-            <button onClick={() => setOpen(null)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }}>Bewaar voor later</button>
+            <button onClick={() => { if (onDempen) onDempen(huidige.id); setOpen(null); }} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }} title="Telt tot morgen 07:00 niet mee in de meldingsstip">Dempen</button>
             <button onClick={() => { huidige.onAfronden(); setOpen(null); }} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Afronden</button>
           </div>
         </div>
