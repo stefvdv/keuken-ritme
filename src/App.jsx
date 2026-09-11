@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11v"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11x"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2666,7 +2666,7 @@ function AppSelect({ value, onChange, options, className, style, title, placehol
     <>
       {knop}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setOpen(false); }}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} {...backdropSluiter(() => setOpen(false))}>
           <div className="w-full max-w-sm rounded-2xl p-2 shadow-xl" style={{ background: T.paper, maxHeight: "70vh", overflowY: "auto" }}>
             {title && <div className="text-xs mute px-3 pt-2 pb-1">{title}</div>}
             {lijst}
@@ -3348,11 +3348,17 @@ function App() {
   // Culinaire invulling per pártij (laag "inv|id|…"): bewerken op een kaart
   // raakt alleen die partij. Een lege set onderdelen maskeert bewust een
   // eventueel nog bestaande oude globale invulling van dat product.
-  const saveInvullingPartij = (b, miceId, inv) => {
-    const laag = (leesLaag(koppeling, boekingSleutel, b, "inv|") || []).filter((x) => String(x.miceId) !== String(miceId));
-    laag.push({ miceId, onderdelen: inv ? inv.onderdelen : [], naam: inv ? inv.naam : "" });
+  const saveInvullingenPartij = (b, wijzigingen) => {
+    // Alle gewijzigde producten in één keer in de laag zetten; losse
+    // aanroepen na elkaar overschreven elkaar via de verouderde state.
+    let laag = (leesLaag(koppeling, boekingSleutel, b, "inv|") || []);
+    for (const w of wijzigingen) {
+      laag = laag.filter((x) => String(x.miceId) !== String(w.miceId));
+      laag.push({ miceId: w.miceId, onderdelen: w.inv ? w.inv.onderdelen : [], naam: w.inv ? w.inv.naam : "" });
+    }
     return saveKoppelingSleutel("inv|id|" + b.id, laag);
   };
+  const saveInvullingPartij = (b, miceId, inv) => saveInvullingenPartij(b, [{ miceId, inv }]);
   const wisInvullingPartij = (b) => saveKoppelingSleutel("inv|id|" + b.id, []);
   // Verwijderen = verbergen met een terugzetlaag; de sync haalt MICE-partijen
   // anders gewoon opnieuw binnen.
@@ -5510,7 +5516,7 @@ function App() {
             {section === "mep" && (
               <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
-                prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij}
+                prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
                 notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -5531,7 +5537,7 @@ function App() {
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
-                onInvulPartij={saveInvullingPartij} onWisInv={wisInvullingPartij}
+                onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij} onWisInv={wisInvullingPartij}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -7778,7 +7784,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
   );
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) sluit(); }}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} {...backdropSluiter(() => sluit())}>
       <div className="w-full max-w-2xl rounded-2xl p-4 flex flex-col shadow-xl overflow-hidden" style={{ background: T.paper, height: "min(90vh, 760px)" }}>
       <div className="flex items-center justify-between gap-2">
         <h1 className="serif ink text-xl leading-tight">Bestellijst</h1>
@@ -9450,7 +9456,7 @@ function LabelPrintModal({ recipe, onClose }) {
   const enter = (e) => { if (e.key === "Enter") { e.preventDefault(); doPrint(); } };
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      {...backdropSluiter(() => onClose())}
       onKeyDown={(e) => {
         // Enter in een invoerveld sluit dat veld af; de volgende Enter print.
         if (e.key !== "Enter" || e.repeat) return;
@@ -9552,7 +9558,7 @@ function BatchLabelModal({ batch, onClose }) {
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} {...backdropSluiter(() => onClose())}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -9813,7 +9819,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     setAllergens(Array.isArray(vorige.allergens) ? vorige.allergens : []);
   };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.45)" }} {...backdropSluiter(() => onClose())}>
       <div className="w-full max-w-md rounded-2xl p-4" style={{ background: T.paper, maxHeight: "94vh", overflowY: "auto" }}>
         <div>
           <div className="flex items-center justify-between gap-2 mb-1">
@@ -10094,6 +10100,15 @@ const statusRand = (st) => {
   return "#3b6ea5";
 };
 const STATUS_OPTIES = [["confirmed", "bevestigd"], ["option", "in optie"], ["option_expired", "optie verlopen"], ["cancelled", "geannuleerd"], ["request", "aanvraag"]];
+// Overlay-sluiter die alleen sluit als de klik óók op de achtergrond begon:
+// een sleep-selectie die buiten het paneel eindigt, laat alles gewoon open.
+const backdropSluiter = (sluit) => {
+  let beginBackdrop = false;
+  return {
+    onMouseDown: (e) => { beginBackdrop = e.target === e.currentTarget; },
+    onClick: (e) => { const ok = beginBackdrop; beginBackdrop = false; if (ok && e.target === e.currentTarget) sluit(); },
+  };
+};
 const tijdenVoorKeuze = (b, k) => {
   if (k && k.tijd) return String(k.tijd);
   if (!k || !k.miceId) return "";
@@ -11142,7 +11157,7 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
   );
 }
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
@@ -11185,6 +11200,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     if (v.recipeId || v.productId || v.tekst) return [{ hoeveelheid: "", naam: v.naam || v.tekst || "", recipeId: v.recipeId || null, productId: v.productId || null }];
     return null;
   };
+  // Meerdere bereidingen in één regel: | , of / sluit een bereiding af,
+  // daarna zoekt de suggestielijst alleen op het nieuwe (laatste) stuk.
+  const segmentVan = (tekst) => String(tekst || "").split(/[|,\/]/).pop().trim();
+  const bijlagenVan = (o) => (o.bijlagen && o.bijlagen.length ? o.bijlagen : ((o.recipeId || o.productId) ? [{ recipeId: o.recipeId || null, productId: o.productId || null, naam: o.receptNaam || "" }] : []));
   const suggesties = (tekst) => {
     const q = String(tekst || "").trim();
     if (q.length < 2) return [];
@@ -11193,6 +11212,25 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     return [...rec, ...prod];
   };
   const focusNa = (sel) => setTimeout(() => { const el = document.querySelector(sel); if (el) el.focus(); }, 30);
+  // Vak focussen met de cursor aan het einde (of begin) van de tekst.
+  const veldFocus = (sel, eind = true) => {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    el.focus();
+    try { const pos = eind ? String(el.value || "").length : 0; el.setSelectionRange(pos, pos); } catch (e) {}
+    return true;
+  };
+  // Pijltoetsen: staat de cursor aan de rand van de tekst (of is het vak
+  // leeg), dan verhuist de focus naar het vak in die richting.
+  const pijlNav = (e, links, rechts, boven, onder) => {
+    const el = e.target;
+    let s0 = 0, s1 = 0, len = 0;
+    try { s0 = el.selectionStart; s1 = el.selectionEnd; len = String(el.value || "").length; } catch (e2) {}
+    if (e.key === "ArrowLeft" && s0 === 0 && s1 === 0 && links) { if (veldFocus(links, true)) e.preventDefault(); }
+    else if (e.key === "ArrowRight" && s0 === len && s1 === len && rechts) { if (veldFocus(rechts, false)) e.preventDefault(); }
+    else if (e.key === "ArrowUp" && boven) { if (veldFocus(boven, true)) e.preventDefault(); }
+    else if (e.key === "ArrowDown" && onder) { if (veldFocus(onder, true)) e.preventDefault(); }
+  };
 
   const datumKop = (() => { const x = new Date(String(b.datum) + "T12:00:00"); return isFinite(x) ? ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()] : ""; })();
   const printPartij = () => {
@@ -11300,8 +11338,20 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     if (rs[j]) rs[j] = { ...rs[j], [veld]: w };
     return { ...m, [mid]: rs };
   });
-  const koppelRecept = (mid, j, sg) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, recipeId: sg.recipeId || null, productId: sg.productId || null, receptNaam: sg.naam } : x)) }));
-  const ontkoppel = (mid, j) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => (jj === j ? { ...x, recipeId: null, productId: null, receptNaam: "" } : x)) }));
+  const koppelRecept = (mid, j, sg) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => {
+    if (jj !== j) return x;
+    const lijst = bijlagenVan(x);
+    if (lijst.some((bl) => (sg.recipeId && bl.recipeId === sg.recipeId) || (sg.productId && bl.productId === sg.productId))) return x; // al gekoppeld
+    const nieuw = [...lijst, { recipeId: sg.recipeId || null, productId: sg.productId || null, naam: sg.naam || "" }];
+    const eerste = nieuw[0];
+    return { ...x, bijlagen: nieuw, recipeId: eerste.recipeId, productId: eerste.productId, receptNaam: eerste.naam };
+  }) }));
+  const ontkoppel = (mid, j, idx) => setInv((m) => ({ ...m, [mid]: (m[mid] || []).map((x, jj) => {
+    if (jj !== j) return x;
+    const lijst = bijlagenVan(x).filter((_, ii) => (idx == null ? false : ii !== idx));
+    const eerste = lijst[0] || null;
+    return { ...x, bijlagen: lijst, recipeId: eerste ? eerste.recipeId : null, productId: eerste ? eerste.productId : null, receptNaam: eerste ? eerste.naam : "" };
+  }) }));
   const [koppelRij, setKoppelRij] = useState(""); // rij waarvoor handmatig een recept gezocht wordt
   const [koppelZoek, setKoppelZoek] = useState("");
   const [alRijen, setAlRijen] = useState([]); // allergenen: [aantal][inhoud] per rij
@@ -11321,15 +11371,20 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const opslaan = () => {
     const schoon = regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim());
     onOpslaan(schoon, magExtra ? { ...velden, allergie: alTekst(alRijen), naam: magNaamStatus ? velden.naam : "", status: magNaamStatus ? velden.status : "" } : null);
-    if (onInvulling) {
+    if (onInvulling || onInvullingBatch) {
+      const wijzigingen = [];
       for (const mid of Object.keys(inv)) {
-        const onderdelen = inv[mid].map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), portie: String(o.portie || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "" })).filter((o) => o.naam || o.recipeId);
+        const onderdelen = inv[mid].map((o) => ({ hoeveelheid: String(o.hoeveelheid || "").trim(), portie: String(o.portie || "").trim(), naam: String(o.naam || "").trim(), recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "", bijlagen: (o.bijlagen || []).length ? o.bijlagen : undefined })).filter((o) => o.naam || o.recipeId);
         // Alleen schrijven wat echt gewijzigd is: onaangeraakte producten
         // behouden hun bestaande (partij- of globale) invulling.
         const was = onderdelenVan(mid) || [];
-        const norm = (l) => JSON.stringify(l.map((o) => [String(o.hoeveelheid || ""), String(o.portie || ""), String(o.naam || ""), o.recipeId || null, o.productId || null]));
+        const norm = (l) => JSON.stringify(l.map((o) => [String(o.hoeveelheid || ""), String(o.portie || ""), String(o.naam || ""), o.recipeId || null, o.productId || null, (o.bijlagen || []).length]));
         if (norm(onderdelen) === norm(was)) continue;
-        onInvulling(mid, onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null);
+        wijzigingen.push({ miceId: mid, inv: onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null });
+      }
+      if (wijzigingen.length) {
+        if (onInvullingBatch) onInvullingBatch(wijzigingen);
+        else for (const w of wijzigingen) onInvulling(w.miceId, w.inv);
       }
     }
     setBewerk(false);
@@ -11432,11 +11487,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     {od && od.map((o, j) => (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
                         <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + fmtGram(p * n2) + " (" + Math.round(p) + " g p.p.)" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
-                        {o.recipeId && !stift && (
-                          <button onClick={() => onOpenRecipe(o.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
-                            {o.receptNaam || "recept"}
+                        {!stift && (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam }] : [])).filter((bl) => bl.recipeId).map((bl, bi) => (
+                          <button key={bi} onClick={() => onOpenRecipe(bl.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
+                            {bl.naam || "recept"}
                           </button>
-                        )}
+                        ))}
                       </div>
                     ))}
                   </div>
@@ -11490,7 +11545,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                   <div className="flex items-center gap-1.5">
                     <input className="input px-2 py-1.5 text-sm" style={{ width: "3.2rem", flex: "0 0 3.2rem" }} inputMode="numeric" data-pa={b.id + "-" + i}
                       value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); } }} />
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); return; }
+                        pijlNav(e, null, '[data-oa="' + b.id + "-" + i + '-0"]', '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
+                      }} />
                     {magProductNaam
                       ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
                       : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>}
@@ -11508,31 +11566,57 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         <div className="flex items-center gap-1.5 pl-3">
                           <input className="input px-2 py-1.5 text-sm" style={{ width: "3.8rem", flex: "0 0 3.8rem" }} data-oa={b.id + "-" + i + "-" + j}
                             value={o.hoeveelheid} onChange={(e) => zetO(mid, j, "hoeveelheid", e.target.value)} placeholder={String(k.aantal || b.gasten || "")}
-                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-op="' + b.id + "-" + i + "-" + j + '"]'); } }} />
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); focusNa('[data-op="' + b.id + "-" + i + "-" + j + '"]'); return; }
+                              // Meest linkse vak: backspace op een lege rij haalt de rij weg
+                              if (e.key === "Backspace" && !String(o.hoeveelheid || "") && !String(o.naam || "") && !String(o.portie || "")) {
+                                e.preventDefault(); wegO(mid, j);
+                                if (!veldFocus('[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]', true)) veldFocus('[data-pa="' + b.id + "-" + i + '"]', true);
+                                return;
+                              }
+                              pijlNav(e,
+                                j > 0 ? '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pa="' + b.id + "-" + i + '"]',
+                                '[data-op="' + b.id + "-" + i + "-" + j + '"]',
+                                j > 0 ? '[data-oa="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pa="' + b.id + "-" + i + '"]',
+                                '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]');
+                            }} />
                           <input className="input px-2 py-1.5 text-sm" style={{ width: "3.6rem", flex: "0 0 3.6rem" }} inputMode="numeric" data-op={b.id + "-" + i + "-" + j}
                             value={o.portie || ""} onChange={(e) => zetO(mid, j, "portie", e.target.value)} placeholder="gr pp" title="Gram per persoon"
-                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); } }} />
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); return; }
+                              if (e.key === "Backspace" && !String(o.portie || "")) { e.preventDefault(); veldFocus('[data-oa="' + b.id + "-" + i + "-" + j + '"]', true); return; }
+                              pijlNav(e,
+                                '[data-oa="' + b.id + "-" + i + "-" + j + '"]',
+                                '[data-on="' + b.id + "-" + i + "-" + j + '"]',
+                                '[data-op="' + b.id + "-" + i + "-" + (j - 1) + '"]',
+                                '[data-op="' + b.id + "-" + i + "-" + (j + 1) + '"]');
+                            }} />
                           <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-" + j}
                             value={o.naam} onChange={(e) => { zetO(mid, j, "naam", e.target.value); setSug(sleutel); }} onFocus={() => setSug(sleutel)}
                             placeholder="gerecht | onderdeel | onderdeel"
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") { e.preventDefault(); setSug(""); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); }
-                              if (e.key === "Backspace" && !String(o.naam || "") && !String(o.hoeveelheid || "") && !String(o.portie || "")) { e.preventDefault(); wegO(mid, j); focusNa('[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]'); }
+                              if (e.key === "Enter") { e.preventDefault(); setSug(""); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); return; }
+                              if (e.key === "Backspace" && !String(o.naam || "")) { e.preventDefault(); veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true); return; }
+                              pijlNav(e,
+                                '[data-op="' + b.id + "-" + i + "-" + j + '"]',
+                                '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]',
+                                '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]',
+                                '[data-on="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
                           <button onClick={() => { setKoppelRij(koppelRij === sleutel ? "" : sleutel); setKoppelZoek(""); }} className="ff mute hover:opacity-60" title="Recept als bijlage koppelen"><Link size={15} /></button>
                           <button onClick={() => setGeschVoor(mid)} className="ff mute hover:opacity-60" title="Eerdere invullingen van dit product"><History size={15} /></button>
                           <button onClick={() => wegO(mid, j)} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
                         </div>
                         {(() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? <div className="pl-3 text-[11px]" style={{ color: "#44502f" }}>= {fmtGram(p * n2)} totaal</div> : null; })()}
-                        {(o.recipeId || o.productId) && (
-                          <div className="pl-3 text-[12px] flex items-center gap-1" style={{ color: "#44502f" }}>
-                            ⤷ {o.receptNaam || (o.recipeId ? "recept" : "calculatie")}
-                            <button onClick={() => ontkoppel(mid, j)} className="ff mute hover:opacity-60" title="Bijlage loskoppelen"><X size={12} /></button>
+                        {bijlagenVan(o).map((bl, bi) => (
+                          <div key={bi} className="pl-3 text-[12px] flex items-center gap-1" style={{ color: "#44502f" }}>
+                            ⤷ {bl.naam || (bl.recipeId ? "recept" : "calculatie")}
+                            <button onClick={() => ontkoppel(mid, j, bi)} className="ff mute hover:opacity-60" title="Bijlage loskoppelen"><X size={12} /></button>
                           </div>
-                        )}
-                        {sug === sleutel && !o.recipeId && !o.productId && suggesties(o.naam).length > 0 && (
+                        ))}
+                        {sug === sleutel && suggesties(segmentVan(o.naam)).length > 0 && (
                           <div className="pl-3 mt-1 space-y-0.5">
-                            {suggesties(o.naam).map((sg, jj) => (
+                            {suggesties(segmentVan(o.naam)).map((sg, jj) => (
                               <button key={jj} onClick={() => { koppelRecept(mid, j, sg); setSug(""); }}
                                 className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sg.recipeId ? "#eef2e6" : "#fbf9f2" }}>
                                 ⤷ {sg.naam} <span className="mute text-[11px]">· {sg.label} als bijlage</span>
@@ -11893,7 +11977,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const bladNu = bladen[actief] || { naam: "", door: "", op: "" };
   const opTekst = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString("nl-NL", { day: "numeric", month: "short" }) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); } catch (e) { return ""; } };
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} onClick={(e) => { if (e.target === e.currentTarget) sluit(); }}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} {...backdropSluiter(() => sluit())}>
       <div className="w-full max-w-2xl rounded-2xl p-4 flex flex-col shadow-xl" style={{ background: T.paper, height: "min(88vh, 700px)" }}>
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <div className="serif ink text-xl leading-tight">Notities</div>
@@ -11980,7 +12064,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
@@ -12287,7 +12371,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     nootOpenStandaard={false}
                     invulStatus={null} onInvullen={null} recepten={recepten}
                     invullingVan={(miceId) => invVoor(b, miceId)}
-                    onInvulling={(miceId, inv) => onInvulPartij(b, miceId, inv)}
+                    onInvulling={(miceId, inv) => onInvulPartij(b, miceId, inv)} onInvullingBatch={(lijst) => onInvulPartijBatch(b, lijst)}
                     vorigeInvulling={(miceId) => vorigeInvulling(b, miceId)}
                     onOpslaan={(regels, velden) => {
                       onKoppel(b, regels);
@@ -12478,7 +12562,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onWisInv }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, onWisInv }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
@@ -12779,7 +12863,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
       </div>
 
       {detailBoeking && (
-        <div className="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6" style={{ background: "rgba(43,46,36,.55)" }} onClick={() => setDetail(null)}>
+        <div className="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6" style={{ background: "rgba(43,46,36,.55)" }} {...backdropSluiter(() => setDetail(null))}>
           <div className="max-w-2xl mx-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end mb-2">
               <button onClick={() => setDetail(null)} className="ff rounded-full w-9 h-9 shadow flex items-center justify-center" style={{ background: T.paper, border: "1px solid " + T.line }}><X size={17} /></button>
@@ -12794,7 +12878,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true} toonPrijs={true} toonOverige={true}
               autoBewerk={nieuwBewerk && nieuwBewerk.id === detailBoeking.id}
               invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
-              onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null}
+              onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null} onInvullingBatch={canEdit ? (lijst) => onInvulPartijBatch(detailBoeking, lijst) : null}
               vorigeInvulling={(miceId) => vorigeInvulling(detailBoeking, miceId)}
               onInvullen={null}
               onOpslaan={(regels, velden) => {
@@ -13711,7 +13795,7 @@ function BatchMeasureModal({ batches, onAdd, onFinish, onClose }) {
     onFinish(b.id, m); // slaat de meting op, rondt de batch af en opent de voorraad-popup
   };
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }} {...backdropSluiter(() => onClose())}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -13770,7 +13854,7 @@ function CleaningCheckModal({ tasks, logs, user, canEdit, forDate, onSign, onDay
   const [showAll, setShowAll] = useState(!!forDate);
   const areas = [...new Set(withStatus.map((x) => x.t.area))].sort((a, b) => a.localeCompare(b, "nl"));
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,56,35,0.45)" }} {...backdropSluiter(() => onClose())}>
       <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
