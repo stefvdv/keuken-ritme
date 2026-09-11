@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11r"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-11s"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -4504,10 +4504,15 @@ function App() {
   const toggleBatchDone = async (id) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const nb = { ...b, done: !b.done, finishedDate: !b.done ? localDate() : null };
+    if (!b.done) {
+      // Nog niet afronden: eerst de eindmeting. Pas bij opslaan of overslaan
+      // gaat de batch echt dicht — annuleren laat hem actief staan.
+      push({ screen: "batchEindmeting", id: b.id });
+      return;
+    }
+    const nb = { ...b, done: false, finishedDate: null }; // heropenen
     if (!(await persistBatch(nb))) return;
     setBatches((bs) => bs.map((x) => (x.id === id ? nb : x)));
-    if (nb.done) push({ screen: "batchEindmeting", id: nb.id });
   };
   // Na de eindmeting (of het overslaan ervan): door naar toevoegen aan de voorraad.
   const stockPrefillForBatch = (b) => {
@@ -4524,10 +4529,16 @@ function App() {
       yieldText: (rec && rec.yield) || "",
     };
   };
-  const finishEindmeting = (batchId, m) => {
-    if (m) addBatchMeasurement(batchId, { ...m, note: m.note ? "Eindmeting — " + m.note : "Eindmeting" });
+  const finishEindmeting = async (batchId, m) => {
     const b = batches.find((x) => x.id === batchId);
-    replaceTop({ screen: "voorraadForm", editing: null, prefill: b ? stockPrefillForBatch(b) : null });
+    let nb = b;
+    if (b && !b.done) {
+      nb = { ...b, done: true, finishedDate: localDate() }; // nu pas echt afronden
+      if (!(await persistBatch(nb))) return;
+      setBatches((bs) => bs.map((x) => (x.id === batchId ? nb : x)));
+    }
+    if (m) addBatchMeasurement(batchId, { ...m, note: m.note ? "Eindmeting — " + m.note : "Eindmeting" });
+    replaceTop({ screen: "voorraadForm", editing: null, prefill: nb ? stockPrefillForBatch(nb) : null });
   };
   const deleteBatch = async (id) => {
     const b = batches.find((x) => x.id === id);
