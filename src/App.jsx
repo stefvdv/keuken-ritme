@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-14p"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-14t"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5424,13 +5424,32 @@ function App() {
       wijzItems.push({ b, w, vingerafdruk });
     });
     const wijzLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
+    // De 5 meest recente logregels over alle boekingen, ook al zijn ze afgerond.
+    const recenteWijz = (() => {
+      const alles = [];
+      for (const b of boekingen || []) for (const e of b.log || []) for (const x of e.w || []) alles.push({ t: String(e.t || ""), naam: b.naam || "Zonder naam", datum: b.datum, w: String(x) });
+      return alles.sort((a, c) => c.t.localeCompare(a.t)).slice(0, 5);
+    })();
+    const wanneerKort = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString("nl-NL", { day: "numeric", month: "short" }) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); } catch (e) { return ""; } };
     meldingCategorieen.push({
-      id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />, heeft: wijzItems.length > 0,
+      id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />, heeft: wijzItems.length > 0, toonAltijd: recenteWijz.length > 0,
       content: (
         <div className="space-y-2.5 text-sm">
           {wijzItems.map(({ b, w, vingerafdruk }) => (
             <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondWijzPartijAf(vingerafdruk)} />
           ))}
+          {recenteWijz.length > 0 && (
+            <div className={wijzItems.length ? "pt-2" : ""} style={wijzItems.length ? { borderTop: "1px solid #e4d6b8" } : undefined}>
+              <div className="text-[10.5px] font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.75 }}>Laatste wijzigingen</div>
+              <ul className="space-y-1">
+                {recenteWijz.map((r, i) => (
+                  <li key={i} className="text-[12.5px] leading-snug">
+                    <span className="font-medium">{r.naam}</span> <span style={{ opacity: 0.7 }}>({wijzLabel(r.datum)}) · {wanneerKort(r.t)}</span><br />{r.w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       ),
       onAfronden: () => wijzItems.forEach((it) => rondWijzPartijAf(it.vingerafdruk)), // Boekingen synchroniseert bewust niet tussen apparaten, en blijft permanent afgerond
@@ -11039,7 +11058,7 @@ function MeldingenBalk({ categorieen, onSluiten, isGedempt, onDempen }) {
       </div>
       {huidige && (
         <div className="p-3.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>
-          {huidige.heeft ? huidige.content : <div className="text-sm">Niets te melden — alles is afgerond of afgetekend.</div>}
+          {huidige.heeft || huidige.toonAltijd ? huidige.content : <div className="text-sm">Niets te melden — alles is afgerond of afgetekend.</div>}
           {huidige.heeft && (
             <div className="flex justify-end gap-2 mt-3 pt-3" style={{ borderTop: "1px solid #e4d6b8" }}>
               <button onClick={() => { if (onDempen) onDempen(huidige.id); setOpen(null); }} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }} title="Telt tot morgen 07:00 niet mee in de meldingsstip">Dempen</button>
@@ -11718,7 +11737,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           ? <div className="w-full flex items-center gap-1.5">
               <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" title={velden.naam || naamTekst || b.naam || ""} value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
               <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }} value={velden.bezorgwijze || "locatie"} onChange={(e) => setVelden((v) => ({ ...v, bezorgwijze: e.target.value }))} title="Op locatie of bezorgen">
-                <option value="locatie">Op locatie</option>
+                <option value="locatie">Bij de Beug</option>
                 <option value="bezorgen">Bezorgen</option>
               </select>
               <input className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "9rem" }} list={"zalen-" + b.id} value={velden.zaal || ""} onChange={(e) => setVelden((v) => ({ ...v, zaal: e.target.value }))} placeholder="Locatie (bv. de Deel)" title="Waar op het landgoed (of het bezorgadres)" />
@@ -11920,10 +11939,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                             value={o.hoeveelheid} onChange={(e) => zetO(mid, j, "hoeveelheid", e.target.value)} placeholder={String(k.aantal || b.gasten || "")}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") { e.preventDefault(); focusNa('[data-op="' + b.id + "-" + i + "-" + j + '"]'); return; }
-                              // Meest linkse vak: backspace op een lege rij haalt de rij weg
-                              if (e.key === "Backspace" && !String(o.hoeveelheid || "") && !String(o.naam || "") && !String(o.portie || "")) {
-                                e.preventDefault(); wegO(mid, j);
-                                if (!veldFocus('[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]', true)) veldFocus('[data-pa="' + b.id + "-" + i + '"]', true);
+                              if (e.key === "Backspace" && !String(o.hoeveelheid || "")) {
+                                e.preventDefault();
+                                if (!e.repeat) { if (!veldFocus('[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]', true)) veldFocus('[data-pa="' + b.id + "-" + i + '"]', true); }
                                 return;
                               }
                               pijlNav(e,
@@ -11936,7 +11954,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                             value={o.portie || ""} onChange={(e) => zetO(mid, j, "portie", e.target.value)} placeholder="gr pp" title="Gram per persoon"
                             onKeyDown={(e) => {
                               if (e.key === "Enter") { e.preventDefault(); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); return; }
-                              if (e.key === "Backspace" && !String(o.portie || "")) { e.preventDefault(); veldFocus('[data-oa="' + b.id + "-" + i + "-" + j + '"]', true); return; }
+                              if (e.key === "Backspace" && !String(o.portie || "")) { e.preventDefault(); if (!e.repeat) veldFocus('[data-oa="' + b.id + "-" + i + "-" + j + '"]', true); return; }
                               pijlNav(e,
                                 '[data-oa="' + b.id + "-" + i + "-" + j + '"]',
                                 '[data-on="' + b.id + "-" + i + "-" + j + '"]',
@@ -11949,7 +11967,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                             placeholder="gerecht | onderdeel | onderdeel"
                             onKeyDown={(e) => {
                               if (e.key === "Enter") { e.preventDefault(); setSug(""); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); return; }
-                              if (e.key === "Backspace" && !String(o.naam || "")) { e.preventDefault(); veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true); return; }
+                              if (e.key === "Backspace" && !String(o.naam || "")) { e.preventDefault(); if (!e.repeat) veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true); return; }
                               pijlNav(e,
                                 '[data-op="' + b.id + "-" + i + "-" + j + '"]',
                                 '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]',
@@ -12598,11 +12616,16 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         const huur = keuzes.filter(isHuur);
         const blok = (k) => {
           const inv = k.miceId ? invVoor(b, invulSleutel(b, k)) : null;
-          const naam = inv && inv.naam && (inv.onderdelen || []).length ? inv.naam : k.naam;
           const od = ((inv && inv.onderdelen) || []).filter((o) => onderdeelNaam(o));
-          const regels = od.map((o) => "<div class='inv'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + onderdeelNaam(o)) + "</div>").join("");
           const tijdK = tijdenVoorKeuze(b, k);
-          return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + naam + (tijdK ? " · " + tijdK : "")) + "</div>" + regels + "</div>";
+          if (od.length) {
+            // Invulling vervangt de productkop (zoals op de mep-kaart), niet vet.
+            return "<div class='blok'>" + od.map((o) => "<div class='inv0'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + onderdeelNaam(o)) + "</div>").join("") + "</div>";
+          }
+          const aantal = k.aantal || gastenVan(b);
+          const naamK = String(k.naam || "");
+          const dubbel = new RegExp("^\\s*" + String(aantal) + "\\b").test(naamK); // "7 liter soep" × 7: getal niet herhalen
+          return "<div class='blok'><div class='pr'>" + pEsc((dubbel ? "" : aantal + "× ") + naamK + (tijdK ? " · " + tijdK : "")) + "</div></div>";
         };
         const huurHtml = huur.length
           ? "<div class='blok'><div class='mepkop'>Materiaalhuur</div>" + huur.map((k) => "<div class='inv'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam) + "</div>").join("") + "</div>"
@@ -12617,11 +12640,20 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
       + "td{padding:1.4mm 1mm;border-bottom:1px solid #e6e3d8}td.n{text-align:right;width:11mm}td.tot{font-weight:700;border-left:1px solid #ccc}"
       + ".p{margin-bottom:5mm;break-inside:avoid;page-break-inside:avoid}.pt{font-weight:700;margin-bottom:1.5mm}.mut{font-weight:400;color:#6a6550}.st{color:#a05a00;font-weight:600}"
-      + ".blok{margin:0 0 2.5mm}.pr{font-weight:700;margin:0 0 .4mm}.inv{padding-left:4mm}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
+      + ".blok{margin:0 0 2.5mm}.pr{font-weight:700;margin:0 0 .4mm}.inv{padding-left:4mm}.inv0{margin:0 0 .3mm}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
       + ".m{display:flex;justify-content:space-between;max-width:90mm;border-bottom:1px solid #eee}.m b{color:#44502f}"
       + ".al{color:#b3261e;margin-top:1mm;font-weight:700}"
       + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
-      + dagen.map(dagBlok).join("") + "</body></html>");
+      + dagen.map(dagBlok).join("")
+      + "<scr" + 'ipt>(function(){'
+      + 'var meet=document.createElement("div");meet.style.height="100mm";meet.style.position="absolute";meet.style.visibility="hidden";document.body.appendChild(meet);'
+      + 'var pagina=meet.offsetHeight*2.65;meet.remove();' // ~265mm bruikbare hoogte per A4
+      + 'var schuif=0;'
+      + 'document.querySelectorAll("h2").forEach(function(h){'
+      + 'var top=(h.offsetTop+schuif)%pagina;'
+      + 'if(top>pagina*(2/3)){h.style.breakBefore="page";h.style.pageBreakBefore="always";schuif+=pagina-top;}'
+      + '});'
+      + '})();</scr' + "ipt></body></html>");
   };
 
   // De optelsomtabel staat direct boven de eerste dag vanaf vandaag met partijen.
