@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-14l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-14p"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -11311,26 +11311,37 @@ function ProductInfoPopup({ titel, sub, teksten, onSluit }) {
   );
 }
 
-const NieuwTag = () => (
-  <span className="inline-block align-middle ml-1.5 rounded px-1 py-[1px] text-[9.5px] font-bold uppercase tracking-wider" style={{ background: "#fbeadb", color: "#c2611a", border: "1px solid #ecc9a4" }}>nieuw</span>
+const NieuwTag = ({ titel }) => (
+  <span title={titel} className="inline-block align-middle ml-1.5 rounded px-1 py-[1px] text-[9.5px] font-bold uppercase tracking-wider" style={{ background: "#fbeadb", color: "#c2611a", border: "1px solid #ecc9a4", cursor: titel ? "help" : undefined }}>nieuw</span>
 );
+// Elk "nieuw"-label wordt per apparaat maar 5 keer getoond; daarna is het
+// bekend en verdwijnt het vanzelf (localStorage, niet gesynchroniseerd).
+const NIEUW_MAX = 5;
+let nieuwTellerCache = null;
+const nieuwTellers = () => { if (!nieuwTellerCache) { try { nieuwTellerCache = JSON.parse(localStorage.getItem("ritme:nieuwTeller") || "{}") || {}; } catch (e) { nieuwTellerCache = {}; } } return nieuwTellerCache; };
+const telNieuw = (sl) => { const m = nieuwTellers(); m[sl] = (m[sl] || 0) + 1; try { localStorage.setItem("ritme:nieuwTeller", JSON.stringify(m)); } catch (e) {} };
 // Kijkt in het wijzigingslog (b.log) van de laatste 3 dagen wat er precies
-// veranderd is, zodat de kaart dat onderdeel een "nieuw"-label kan geven.
+// veranderd is: per onderdeel de logteksten (voor de tooltip) en het jongste
+// tijdstip (een nieuwe wijziging geeft het label opnieuw 5 kijkbeurten).
 const versWijzigingen = (b) => {
-  const uit = { gasten: false, tijd: false, allergie: false, notitie: false, producten: new Set() };
+  const leeg = () => ({ teksten: [], t: "" });
+  const uit = { gasten: leeg(), tijd: leeg(), allergie: leeg(), notitie: leeg(), producten: new Map() };
   const grens = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString(); })();
   const nrm = (t) => zonderAccent(String(t || "")).toLowerCase().trim();
+  const zet = (el, w, t) => { el.teksten.push(w); if (t > el.t) el.t = t; };
+  const zetP = (naamN, w, t) => { if (!uit.producten.has(naamN)) uit.producten.set(naamN, leeg()); zet(uit.producten.get(naamN), w, t); };
   for (const e of (b && b.log) || []) {
-    if (String(e.t || "") < grens) continue;
+    const t = String(e.t || "");
+    if (t < grens) continue;
     for (const w0 of e.w || []) {
       const w = String(w0);
-      if (w.startsWith("Gasten:")) uit.gasten = true;
-      else if (w.startsWith("Starttijd:") || w.startsWith("Datum:")) uit.tijd = true;
-      else if (w.startsWith("Allergieën") || w.startsWith("Dieetwensen")) uit.allergie = true;
-      else if (w.startsWith("Notitie")) uit.notitie = true;
-      else if (w.startsWith("Erbij: ")) { const m = w.match(/^Erbij: [\d.,]+\u00d7 (.+)$/); if (m) uit.producten.add(nrm(m[1])); }
+      if (w.startsWith("Gasten:")) zet(uit.gasten, w, t);
+      else if (w.startsWith("Starttijd:") || w.startsWith("Datum:")) zet(uit.tijd, w, t);
+      else if (w.startsWith("Allergieën") || w.startsWith("Dieetwensen")) zet(uit.allergie, w, t);
+      else if (w.startsWith("Notitie")) zet(uit.notitie, w, t);
+      else if (w.startsWith("Erbij: ")) { const m = w.match(/^Erbij: [\d.,]+\u00d7 (.+)$/); if (m) zetP(nrm(m[1]), w, t); }
       else if (w.startsWith("Weg: ")) { /* verdwenen regel: niets te labelen */ }
-      else { const m = w.match(/^(.+): [\d.,]+\u00d7 \u2192 [\d.,]+\u00d7$/); if (m) uit.producten.add(nrm(m[1])); }
+      else { const m = w.match(/^(.+): [\d.,]+\u00d7 \u2192 [\d.,]+\u00d7$/); if (m) zetP(nrm(m[1]), w, t); }
     }
   }
   return uit;
@@ -11348,7 +11359,24 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [velden, setVelden] = useState({ gasten: "", tijd: "", allergie: "", notitie: "" });
   const [kies, setKies] = useState(false);
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
-  const vers = React.useMemo(() => versWijzigingen(b), [b]);
+  const versEl = React.useMemo(() => versWijzigingen(b), [b]);
+  // Zichtbaarheid één keer per kaartweergave bepalen (vóór het tellen), zodat
+  // de vijfde kijkbeurt nog volledig zichtbaar is.
+  const vers = React.useMemo(() => {
+    const maak = (el, sl) => {
+      if (!el || !el.teksten.length) return null;
+      const sleutel = String(b.id) + "|" + sl + "|" + el.t;
+      if ((nieuwTellers()[sleutel] || 0) >= NIEUW_MAX) return null;
+      return { titel: el.teksten.join("\n"), sleutel };
+    };
+    const producten = new Map();
+    for (const [nm, el] of versEl.producten) { const n = maak(el, "p|" + nm); if (n) producten.set(nm, n); }
+    return { gasten: maak(versEl.gasten, "gasten"), tijd: maak(versEl.tijd, "tijd"), allergie: maak(versEl.allergie, "allergie"), notitie: maak(versEl.notitie, "notitie"), producten };
+  }, [versEl, b.id]);
+  useEffect(() => {
+    const sls = [vers.gasten, vers.tijd, vers.allergie, vers.notitie, ...vers.producten.values()].filter(Boolean).map((x) => x.sleutel);
+    sls.forEach(telNieuw);
+  }, [vers]);
   // De ouder (de detailpopup) kan bij het sluiten vragen om openstaand
   // bewerkwerk eerst op te slaan — een misklik naast de popup gooit dan
   // niets weg. Alleen het rode kruis annuleert bewust.
@@ -11384,7 +11412,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   }, [bewerk]);
 
   const keuzesS = sorteerEetmoment(keuzes || [], catVan);
-  const bezorging = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
+  const bezorgingAuto = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
+  const bezorging = extra && extra.bezorgwijze ? extra.bezorgwijze === "bezorgen" : bezorgingAuto;
+  const zaalEff = (extra && String(extra.zaal || "").trim()) || zaal;
   const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isKeukenRegel(k, catVan));
   // Verborgen regels (dranken, huur, personeel…) blijven op de boekingpagina
   // bereikbaar onder een ingeklapt kopje Overige.
@@ -11528,7 +11558,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   });
 
   const startBewerk = () => {
-    setRegels(keuzesS.map((k) => ({ ...k })));
+    const groepTijd = (k) => {
+      if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) return r.tijd || "";
+      return "";
+    };
+    const gesorteerd = keuzesS.map((k, i) => ({ k, i, t: groepTijd(k) }))
+      .sort((a, c) => (a.t || "").localeCompare(c.t || "") || a.i - c.i)
+      .map((x) => ({ ...x.k }));
+    setRegels(gesorteerd);
     const m = {};
     for (const k of keuzesS) if (k.miceId) m[invulSleutel(b, k)] = (onderdelenVan(invulSleutel(b, k)) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o }));
     setInv(m);
@@ -11539,6 +11576,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       notitie: (extra && extra.notitie) || noot || "",
       naam: naamTekst || b.naam || "",
       status: statusWaarde || b.status || "confirmed",
+      bezorgwijze: (extra && extra.bezorgwijze) || (bezorgingAuto ? "bezorgen" : "locatie"),
+      zaal: (extra && extra.zaal) || zaal || "",
     });
     const alBron = (extra && extra.allergie) || (allergie || []).join("\n");
     const rijenAl = alParse(alBron);
@@ -11676,7 +11715,17 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
-          ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 w-full md:w-auto md:flex-1" title={velden.naam || naamTekst || b.naam || ""} value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
+          ? <div className="w-full flex items-center gap-1.5">
+              <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" title={velden.naam || naamTekst || b.naam || ""} value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
+              <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }} value={velden.bezorgwijze || "locatie"} onChange={(e) => setVelden((v) => ({ ...v, bezorgwijze: e.target.value }))} title="Op locatie of bezorgen">
+                <option value="locatie">Op locatie</option>
+                <option value="bezorgen">Bezorgen</option>
+              </select>
+              <input className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "9rem" }} list={"zalen-" + b.id} value={velden.zaal || ""} onChange={(e) => setVelden((v) => ({ ...v, zaal: e.target.value }))} placeholder="Locatie (bv. de Deel)" title="Waar op het landgoed (of het bezorgadres)" />
+              <datalist id={"zalen-" + b.id}>
+                <option value="de Deel" /><option value="Groene Schuur" /><option value="Binnentuin" /><option value="Moestuin" /><option value="Boomgaard" />
+              </datalist>
+            </div>
           : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 w-full md:w-auto md:flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
 
         {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
@@ -11697,9 +11746,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           <span className="text-[14px] font-semibold shrink-0 inline-flex items-center gap-1" style={{ color: "#44502f" }}>
             {bezorging
               ? <span title={"Bezorging" + (adres ? " · " + adres : "")} className="inline-flex"><Truck size={22} /></span>
-              : zaal ? <span title={zaal} className="inline-flex"><Home size={22} /></span> : null}
+              : zaalEff ? <span title={zaalEff} className="inline-flex"><Home size={22} /></span> : null}
             <span>{(tijdTekst || "—") + " · " + gastenTekst + " pers."}</span>
-            {(vers.tijd || vers.gasten) && <NieuwTag />}
+            {(vers.tijd || vers.gasten) && <NieuwTag titel={[vers.gasten && vers.gasten.titel, vers.tijd && vers.tijd.titel].filter(Boolean).join("\n")} />}
           </span>
         )}
         {!bewerk && (
@@ -11733,7 +11782,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
-          statusTekst={statusTekst} zaal={zaal} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
+          statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
           onSluit={() => setInfoOpen(false)} />
       )}
 
@@ -11774,7 +11823,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
-                const isVers = vers.producten.has(zonderAccent(String(k.naam || "")).toLowerCase().trim());
+                const isVers = vers.producten.get(zonderAccent(String(k.naam || "")).toLowerCase().trim()) || null;
                 return (
                   <div key={i}>
                     {!zonderKop && (
@@ -11782,13 +11831,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         onClick={() => { if (stift) return; const info = productInfoVoor(k); if (info) setProductInfo(info); }}
                         title={!stift ? productInfoHover(k) : undefined}>
                         <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
-                        {isVers && <NieuwTag />}
+                        {isVers && <NieuwTag titel={isVers.titel} />}
                       </div>
                     )}
                     {od && od.map((o, j) => (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
                         <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
-                        {zonderKop && j === 0 && isVers && <NieuwTag />}
+                        {zonderKop && j === 0 && isVers && <NieuwTag titel={isVers.titel} />}
                         {!stift && (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam }] : [])).filter((bl) => bl.recipeId).map((bl, bi) => (
                           <button key={bi} onClick={() => onOpenRecipe(bl.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
                             {bl.naam || "recept"}
@@ -11806,7 +11855,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           )}
           {allergie.length > 0 && (
             <div className="mt-1.5 text-[14.5px] font-bold" style={{ color: "#b3261e" }}>
-              {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} />{i === 0 && vers.allergie ? <NieuwTag /> : null}</div>)}
+              {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} />{i === 0 && vers.allergie ? <NieuwTag titel={vers.allergie.titel} /> : null}</div>)}
             </div>
           )}
           {overigeKeuzes.length > 0 && (
@@ -11825,7 +11874,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             {noot ? (
               <>
                 <button onClick={() => setNootOpen((o) => !o)} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
-                {vers.notitie && <NieuwTag />}
+                {vers.notitie && <NieuwTag titel={vers.notitie.titel} />}
                 {nootOpen && (
                   <p className="text-[13px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
                     <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
@@ -12002,7 +12051,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           {kies && (
             <ProductKiezer boeking={b} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
               onSluit={() => setKies(false)}
-              onKies={(p, aantal) => { setRegels((rs) => [...rs, p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal }]); if (!p.eigen) setInv((m) => (m[String(p.id)] ? m : { ...m, [String(p.id)]: (onderdelenVan(p.id) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o })) })); setKies(false); }} />
+              onKies={(p, aantal) => { setRegels((rs) => [...rs, p.hand ? { naam: p.naam, aantal } : p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal }]); if (!p.eigen && !p.hand) setInv((m) => (m[String(p.id)] ? m : { ...m, [String(p.id)]: (onderdelenVan(p.id) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o })) })); setKies(false); }} />
           )}
         </div>
       )}
@@ -13366,6 +13415,12 @@ function ProductKiezer({ boeking, lijst, onKies, onSluit }) {
             </button>
           ))}
           {!hits.length && <p className="text-[12.5px] mute">Niets gevonden.</p>}
+          {q.trim() && (
+            <button onClick={() => onKies({ hand: true, naam: q.trim() }, Number(aantal) || boeking.gasten || 0)} className="ff card cardh w-full text-left px-3 py-2" style={{ borderStyle: "dashed" }}>
+              <div className="text-sm ink">➕ "{q.trim()}" los toevoegen</div>
+              <div className="text-[12px] mute">Eenmalig, alleen op deze partij — wordt niet onthouden.</div>
+            </button>
+          )}
         </div>
         <div className="flex justify-end mt-3"><button onClick={onSluit} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Sluiten</button></div>
       </div>
