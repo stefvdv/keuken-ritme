@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Bold, Underline, Italic, List, ListOrdered, Heading, CheckSquare
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Bold, Underline, Italic, List, ListOrdered, Heading, CheckSquare, Copy, ClipboardPaste
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-14b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-14h"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2593,17 +2593,29 @@ function ComboInput({ value, onChange, options, placeholder }) {
     document.addEventListener("keydown", toets, true);
     return () => { document.removeEventListener("mousedown", klik, true); document.removeEventListener("keydown", toets, true); };
   }, [open]);
+  const [alles, setAlles] = useState(false); // pijl: volledige lijst i.p.v. filter
+  const getoond = React.useMemo(() => {
+    const q = String(value || "").trim();
+    if (alles || !q) return options;
+    const strikt = options.filter((o) => strictMatchAny([o], q));
+    if (strikt.length) return strikt;
+    return options.filter((o) => softMatchAny([o], q)); // kleine spelfouten
+  }, [options, value, alles]);
   return (
     <div ref={boxRef} className="relative">
-      <input className="input pl-2.5 pr-8 py-2 w-full text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
-      <button type="button" onClick={() => setOpen((o) => !o)} className="ff absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md hover:opacity-70" title="Standaardopties">
+      <input className="input pl-2.5 pr-8 py-2 w-full text-sm" value={value}
+        onChange={(e) => { onChange(e.target.value); setAlles(false); setOpen(true); }}
+        onFocus={() => { if (String(value || "").trim()) { setAlles(false); setOpen(true); } }}
+        placeholder={placeholder} />
+      <button type="button" onClick={() => { setAlles(true); setOpen((o) => !o); }} className="ff absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md hover:opacity-70" title="Alle opties">
         <ChevronDown size={15} className="acc" />
       </button>
       {open && (
         <>
           <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "12rem", overflowY: "auto" }}>
-            {options.map((o) => (
-              <button key={o} type="button" onClick={() => { onChange(o); setOpen(false); }}
+            {getoond.length === 0 && <div className="px-3 py-2 text-sm mute">Niets gevonden — de getypte naam blijft gewoon staan.</div>}
+            {getoond.map((o) => (
+              <button key={o} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); }}
                 className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 " + (o === value ? "pillon" : "ink hover:opacity-70")}>
                 <span>{o}</span>
                 {o === value && <Check size={15} />}
@@ -3097,9 +3109,12 @@ function App() {
         // Bestelde productregels: los op het event en per programmadeel.
         const regels = [];
         const pakProducten = (arr, act, tijd) => {
+          const kaal = (h) => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/g, "&").trim();
           for (const p of arr || []) {
             if (p.object_type !== "product") continue;
-            regels.push({ id: p.object_id, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", catId: p.object_category_id || null });
+            const oms = kaal(p.description || p.remark || "");
+            const pid = p.object_id != null && p.object_id !== "" ? p.object_id : "vrij:" + String(p.name || "").trim().toLowerCase();
+            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", catId: p.object_category_id || null, ...(oms ? { oms } : {}) });
           }
         };
         pakProducten(e.products, "", "");
@@ -3149,8 +3164,9 @@ function App() {
     // vast voorvoegsel zodat de weergave kan kleuren.
     {
       const oudPer = {}; for (const b of boekingen) oudPer[b.id] = b;
-      const som = (rs) => { const m = {}; for (const x of rs || []) m[x.id] = (m[x.id] || 0) + (Number(x.aantal) || 0); return m; };
-      const naamVan = (rs, id) => { const x = (rs || []).find((y) => String(y.id) === String(id)); return x ? x.naam : String(id); };
+      const slR = (x) => String(x.id) + "\u0001" + String(x.naam || "");
+      const som = (rs) => { const m = {}; for (const x of rs || []) m[slR(x)] = (m[slR(x)] || 0) + (Number(x.aantal) || 0); return m; };
+      const naamVan = (rs, sl) => String(sl).split("\u0001")[1] || String(sl).split("\u0001")[0];
       for (const r of rijen) {
         const o = oudPer[r.id];
         const w = [];
@@ -10177,6 +10193,7 @@ const tijdenVoorKeuze = (b, k) => {
   const uniek = [];
   for (const r of (b && b.regels) || []) {
     if (String(r.id) !== String(k.miceId)) continue;
+    if (k.naam && r.naam && r.naam !== k.naam) continue; // gedeeld id: naam beslist
     const t = String(r.tijd || "").trim();
     if (t && !uniek.includes(t)) uniek.push(t);
   }
@@ -10185,8 +10202,9 @@ const tijdenVoorKeuze = (b, k) => {
 const autoKeuzesUitBoeking = (b) => {
   const per = {};
   for (const r of (b && b.regels) || []) {
-    if (!per[r.id]) per[r.id] = { miceId: r.id, naam: r.naam, aantal: 0 };
-    per[r.id].aantal += Number(r.aantal) || 0;
+    const sl = String(r.id) + "\u0001" + String(r.naam || "");
+    if (!per[sl]) per[sl] = { miceId: r.id, naam: r.naam, aantal: 0 };
+    per[sl].aantal += Number(r.aantal) || 0;
   }
   return Object.values(per);
 };
@@ -11249,6 +11267,40 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
   );
 }
 
+// Productinfo uit MICE: de omschrijving die op het event zelf bij het product
+// staat, met de catalogusomschrijving als aanvulling. Sluit met klik ernaast,
+// Escape of de terugknop van het toestel.
+function ProductInfoPopup({ titel, sub, teksten, onSluit }) {
+  const sluitRef = React.useRef(onSluit); sluitRef.current = onSluit;
+  useEffect(() => {
+    const terug = () => sluitRef.current();
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
+    try { window.history.pushState({ app: "ritme", productinfo: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", terug);
+    window.addEventListener("keydown", toets, true);
+    return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} {...backdropSluiter(() => sluitRef.current())}>
+      <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="serif ink text-xl leading-tight">{titel}</div>
+          <button onClick={() => sluitRef.current()} className="ff mute hover:opacity-70 shrink-0"><X size={18} /></button>
+        </div>
+        {sub && <div className="text-[12.5px] mute mt-0.5">{sub}</div>}
+        <div className="mt-3 space-y-3">
+          {teksten.map((t, i) => (
+            <div key={i}>
+              {t.kop && <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1">{t.kop}</div>}
+              <div className="text-sm ink leading-relaxed" style={{ whiteSpace: "pre-wrap" }}>{t.tekst}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const NieuwTag = () => (
   <span className="inline-block align-middle ml-1.5 rounded px-1 py-[1px] text-[9.5px] font-bold uppercase tracking-wider" style={{ background: "#fbeadb", color: "#c2611a", border: "1px solid #ecc9a4" }}>nieuw</span>
 );
@@ -11287,6 +11339,25 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [kies, setKies] = useState(false);
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
   const vers = React.useMemo(() => versWijzigingen(b), [b]);
+  const [productInfo, setProductInfo] = useState(null); // { titel, sub, teksten }
+  const productInfoHover = (k) => {
+    const info = productInfoVoor(k);
+    if (!info) return undefined;
+    const t = info.teksten.map((x) => (x.kop ? x.kop + ": " : "") + x.tekst).join("\n\n");
+    return t.length > 600 ? t.slice(0, 600) + "\u2026" : t;
+  };
+  const productInfoVoor = (k) => {
+    if (!k || !k.miceId) return null;
+    const eigen = ((b && b.regels) || []).filter((r) => String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && String(r.oms || "").trim());
+    const cat = (miceProducten || []).find((p) => String(p.id) === String(k.miceId));
+    const catOms = String((cat && cat.omschrijving) || "").trim();
+    const teksten = [];
+    for (const r of eigen) teksten.push({ kop: eigen.length > 1 && (r.act || r.tijd) ? [r.act, r.tijd].filter(Boolean).join(" ") : (catOms ? "Bij deze partij" : ""), tekst: r.oms });
+    if (catOms && !teksten.some((t) => t.tekst === catOms)) teksten.push({ kop: teksten.length ? "Uit de productcatalogus" : "", tekst: catOms });
+    if (!teksten.length) return null;
+    const tijdK = tijdenVoorKeuze(b, k);
+    return { titel: k.naam, sub: (k.aantal || b.gasten) + "\u00d7" + (tijdK ? " \u00b7 " + tijdK : ""), teksten };
+  };
   const [overigeOpen, setOverigeOpen] = useState(false);
   const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
   // Escape of de terugknop van het toestel sluit de bewerkstand zonder opslaan.
@@ -11473,6 +11544,69 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [koppelRij, setKoppelRij] = useState(""); // rij waarvoor handmatig een recept gezocht wordt
   const [koppelZoek, setKoppelZoek] = useState("");
   const [alRijen, setAlRijen] = useState([]); // allergenen: [aantal][inhoud] per rij
+  const [kopieOk, setKopieOk] = useState(false);
+  // Hele invulling kopiëren/plakken tussen boekingen. Ctrl+C (zonder losse
+  // tekstselectie) of de kopieerknop zet alles op het klembord — producten,
+  // aantallen, invulregels met porties en receptbijlagen, en de notitie.
+  // Plakken in een andere boeking zet alles terug bij de producten met
+  // dezelfde naam (of hetzelfde MICE-id).
+  const KOPIE_MARKER = "[ritme-invulling]";
+  const kopieerPayload = () => {
+    const producten = regels.filter((k) => k.miceId).map((k) => ({
+      naam: k.naam || "", miceId: k.miceId, aantal: k.aantal == null ? "" : k.aantal,
+      onderdelen: (inv[String(k.miceId)] || []).filter((o) => String(o.naam || "").trim() || o.recipeId).map((o) => ({
+        hoeveelheid: String(o.hoeveelheid || ""), portie: String(o.portie || ""), naam: String(o.naam || ""),
+        recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "",
+        bijlagen: (o.bijlagen || []).map((bl) => ({ recipeId: bl.recipeId || null, productId: bl.productId || null, naam: bl.naam || "" })),
+      })),
+    }));
+    const leesbaar = producten.map((p) => (p.aantal || "") + "\u00d7 " + p.naam + p.onderdelen.map((o) => "\n  " + (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam + (o.portie ? " (" + o.portie + " p.p.)" : "")).join("")).join("\n");
+    const data = { producten, notitie: magExtra ? String(velden.notitie || "") : "" };
+    return leesbaar + "\n" + KOPIE_MARKER + JSON.stringify(data);
+  };
+  const kopieerInvulling = async () => {
+    const t = kopieerPayload();
+    try { await navigator.clipboard.writeText(t); } catch (e) {
+      try { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); } catch (e2) { return; }
+    }
+    setKopieOk(true); setTimeout(() => setKopieOk(false), 1600);
+  };
+  const plakData = (d) => {
+    if (!d || !Array.isArray(d.producten)) return;
+    const gemist = [];
+    setInv((m) => {
+      const n = { ...m };
+      for (const p of d.producten) {
+        const doel = regels.find((k) => k.miceId && (normNaam(k.naam) === normNaam(p.naam) || String(k.miceId) === String(p.miceId)));
+        if (!doel) { if ((p.onderdelen || []).length) gemist.push(p.naam); continue; }
+        if (!(p.onderdelen || []).length) continue; // lege invulling niet over bestaande heen
+        n[String(doel.miceId)] = p.onderdelen.map((o) => ({ hoeveelheid: o.hoeveelheid || "", portie: o.portie || "", naam: o.naam || "", recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "", bijlagen: o.bijlagen || [] }));
+      }
+      return n;
+    });
+    if (d.notitie && magExtra) setVelden((v) => (String(v.notitie || "").trim() ? v : { ...v, notitie: d.notitie }));
+    if (gemist.length) setTimeout(() => alert("Niet gevonden in deze boeking (overgeslagen):\n\u00b7 " + gemist.join("\n\u00b7 ")), 50);
+  };
+  const plakUitTekst = (t) => {
+    const i = String(t || "").indexOf(KOPIE_MARKER);
+    if (i < 0) return false;
+    try { plakData(JSON.parse(String(t).slice(i + KOPIE_MARKER.length))); return true; } catch (e) { return false; }
+  };
+  const bewerkToetsen = (e) => {
+    if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "c") {
+      const el = document.activeElement;
+      let selectieInVak = false;
+      try { selectieInVak = el && el.selectionStart != null && el.selectionStart !== el.selectionEnd; } catch (e2) {}
+      const losseSelectie = (() => { try { const sel = window.getSelection(); return sel && !sel.isCollapsed; } catch (e2) { return false; } })();
+      if (selectieInVak || losseSelectie) return; // gewone kopieeractie wint
+      e.preventDefault();
+      kopieerInvulling();
+    }
+  };
+  const bewerkPlak = (e) => {
+    const t = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+    if (t && t.includes(KOPIE_MARKER)) { e.preventDefault(); plakUitTekst(t); }
+  };
   const alParse = (tekst) => String(tekst || "").split(/\r?\n+/).map((r) => r.trim()).filter(Boolean).map((r) => {
     const m = r.match(/^(\d+)\s*[x×]?\s*(.*)$/);
     return m ? { aantal: m[1], tekst: m[2] } : { aantal: "", tekst: r };
@@ -11547,6 +11681,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         )}
         {bewerk && (
           <>
+            <button onClick={kopieerInvulling} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + (kopieOk ? "#4f7a3a" : T.line), color: kopieOk ? "#4f7a3a" : T.ink }} title="Hele invulling kopi\u00ebren (ook met Ctrl+C zonder tekstselectie) \u2014 plakken kan in een andere boeking">
+              {kopieOk ? <Check size={17} /> : <Copy size={17} />}
+            </button>
+            <button onClick={async () => { try { const t = await navigator.clipboard.readText(); if (!plakUitTekst(t)) alert("Geen gekopieerde invulling op het klembord gevonden."); } catch (e) { alert("Plakken kan ook met Ctrl+V in dit blok."); } }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Gekopieerde invulling hier plakken (ook met Ctrl+V)">
+              <ClipboardPaste size={17} />
+            </button>
             {onInvKlaar && (
               <button onClick={() => onInvKlaar(!invKlaar)} className="ff shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
                 style={invKlaar ? { border: "1.5px solid #4f7a3a", color: "#4f7a3a", background: "#eef3e8" } : { border: "1.5px solid #1a1a1a", color: "#1a1a1a" }}
@@ -11559,6 +11699,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           </>
         )}
       </div>
+      {productInfo && <ProductInfoPopup titel={productInfo.titel} sub={productInfo.sub} teksten={productInfo.teksten} onSluit={() => setProductInfo(null)} />}
       {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
@@ -11574,7 +11715,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // Groeperen per programmadeel (MICE-activity): kop met naam en
                 // tijd, witregel ertussen. Zonder programmadeel: geen kop.
                 const groepVan = (k) => {
-                  if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (r.act || r.tijd)) return { act: r.act || "", tijd: r.tijd || "" };
+                  if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) return { act: r.act || "", tijd: r.tijd || "" };
                   return { act: "", tijd: "" };
                 };
                 const groepen = [];
@@ -11607,7 +11748,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 return (
                   <div key={i}>
                     {!zonderKop && (
-                      <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
+                      <div className={(k.miceId || k.productId ? "font-semibold ink" : "ink") + (!stift && productInfoVoor(k) ? " cursor-pointer" : "")}
+                        onClick={() => { if (stift) return; const info = productInfoVoor(k); if (info) setProductInfo(info); }}
+                        title={!stift ? productInfoHover(k) : undefined}>
                         <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
                         {isVers && <NieuwTag />}
                       </div>
@@ -11666,7 +11809,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       )}
 
       {bewerk && (
-        <div className="mt-2 space-y-2">
+        <div className="mt-2 space-y-2" onKeyDown={bewerkToetsen} onPaste={bewerkPlak}>
           {regels.map((k, i) => {
             if (k.miceId) {
               const mid = String(k.miceId);
@@ -11680,8 +11823,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         pijlNav(e, null, '[data-oa="' + b.id + "-" + i + '-0"]', '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
                       }} />
                     {magProductNaam
-                      ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
-                      : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate">{k.naam}</span>}
+                      ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" title={productInfoHover(k)} value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
+                      : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate" title={productInfoHover(k)} style={productInfoHover(k) ? { cursor: "help" } : undefined}>{k.naam}</span>}
                     {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
                     {vorigeInvulling && vorigeInvulling(k.miceId) && (
                       <button onClick={() => { const vd = vorigeInvulling(k.miceId); if (vd) setInv((m) => ({ ...m, [mid]: vd.map((o) => ({ ...o })) })); }}
@@ -12987,7 +13130,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   </div>
                   <div className="space-y-0.5">
                     {items.map((b) => (
-                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) ? "3px solid #1a1a1a" : "3px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
+                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) && b.datum >= vandaag ? "3px solid #1a1a1a" : "3px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
                         <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)} pers. · {tijdVan(b) || "—"}</span>
                       </button>
@@ -13017,7 +13160,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               autoBewerk={nieuwBewerk && nieuwBewerk.id === detailBoeking.id}
               invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
               onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null} onInvullingBatch={canEdit ? (lijst) => onInvulPartijBatch(detailBoeking, lijst) : null}
-              invKlaar={invKlaarVan ? invKlaarVan(detailBoeking) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
+              invKlaar={invKlaarVan ? (invKlaarVan(detailBoeking) || detailBoeking.datum < vandaag) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
               vorigeInvulling={(miceId) => vorigeInvulling(detailBoeking, miceId)}
               onInvullen={null}
               onOpslaan={(regels, velden) => {
