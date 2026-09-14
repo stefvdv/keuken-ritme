@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-14a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-14b"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -7930,7 +7930,11 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const iOS = /iphone|ipad|ipod/i.test(ua);
   return (
-    <div>
+    <div className="extras-compact">
+      <style>{".extras-compact h2{margin-top:1.1rem;margin-bottom:.45rem}"
+        + ".extras-compact .card{padding:.8rem .9rem}"
+        + ".extras-compact .card > p{margin-bottom:.55rem}"
+        + ".extras-compact .card p.text-xs{margin-top:.55rem}"}</style>
       <BackBar onBack={onBack} />
       <h1 className="serif ink text-3xl leading-tight">Extras</h1>
 
@@ -11505,7 +11509,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   };
 
   return (
-    <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: "3px solid " + (invKlaar ? randKleur : "#1a1a1a"), scrollMarginTop: "0.75rem" }}>
+    <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 w-full md:w-auto md:flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
@@ -12983,7 +12987,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   </div>
                   <div className="space-y-0.5">
                     {items.map((b) => (
-                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) ? "1.5px solid #1a1a1a" : "1.5px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
+                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) ? "3px solid #1a1a1a" : "3px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
                         <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)} pers. · {tijdVan(b) || "—"}</span>
                       </button>
