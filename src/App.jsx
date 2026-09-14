@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-12c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-14a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3348,6 +3348,9 @@ function App() {
   // Culinaire invulling per pártij (laag "inv|id|…"): bewerken op een kaart
   // raakt alleen die partij. Een lege set onderdelen maskeert bewust een
   // eventueel nog bestaande oude globale invulling van dat product.
+  // Vlag "invulling afgerond" per boeking: gedeeld, via dezelfde koppelingslaag.
+  const invKlaarVan = (b) => !!((leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0] || {}).klaar;
+  const zetInvKlaar = (b, klaar) => saveKoppelingSleutel("invklaar|id|" + b.id, klaar ? [{ klaar: true, t: new Date().toISOString() }] : []);
   const saveInvullingenPartij = (b, wijzigingen) => {
     // Alle gewijzigde producten in één keer in de laag zetten; losse
     // aanroepen na elkaar overschreven elkaar via de verouderde state.
@@ -5339,8 +5342,8 @@ function App() {
       }
       return uit;
     })();
-    if (haccpMeldingen.length) meldingCategorieen.push({
-      id: "haccp", label: "HACCP", icon: <Thermometer size={15} />,
+    meldingCategorieen.push({
+      id: "haccp", label: "HACCP", icon: <Thermometer size={15} />, heeft: haccpMeldingen.length > 0,
       content: (
         <ul className="space-y-2.5 text-sm">
           {haccpMeldingen.map((m) => (
@@ -5357,8 +5360,8 @@ function App() {
 
     // Fermentatie: klaar om af te ronden, of actie/meting nodig.
     const { ready: fermReady, items: fermItems } = collectNotices(batches);
-    if ((fermReady.length || fermItems.length) && !afgerondSet.has("fermentatie:__alles__")) meldingCategorieen.push({
-      id: "fermentatie", label: "Fermentatie", icon: <FlaskConical size={15} />,
+    meldingCategorieen.push({
+      id: "fermentatie", label: "Fermentatie", icon: <FlaskConical size={15} />, heeft: (fermReady.length || fermItems.length) > 0 && !afgerondSet.has("fermentatie:__alles__"),
       content: (
         <ul className="space-y-2.5 text-sm">
           {fermReady.map(({ b, day }) => (
@@ -5387,8 +5390,8 @@ function App() {
     });
 
     // Schoonmaak: tijd om de dag af te tekenen.
-    if (checkBanner && !afgerondSet.has("schoonmaak:__alles__")) meldingCategorieen.push({
-      id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={15} />,
+    meldingCategorieen.push({
+      id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={15} />, heeft: !!checkBanner && !afgerondSet.has("schoonmaak:__alles__"),
       content: <p className="text-sm">Het is {String(CHECK_HOUR).padStart(2, "0")}:{String(CHECK_MIN).padStart(2, "0")} geweest — tijd om de schoonmaak van vandaag af te tekenen.<br /><button onClick={() => { setMeldingenOpen(false); setCheckOpen(true); }} className="ff mt-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }}>Aftekenen</button></p>,
       onAfronden: () => { dismissCheckBanner(); rondAf("schoonmaak:__alles__"); },
     });
@@ -5405,8 +5408,8 @@ function App() {
       wijzItems.push({ b, w, vingerafdruk });
     });
     const wijzLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
-    if (wijzItems.length) meldingCategorieen.push({
-      id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />,
+    meldingCategorieen.push({
+      id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />, heeft: wijzItems.length > 0,
       content: (
         <div className="space-y-2.5 text-sm">
           {wijzItems.map(({ b, w, vingerafdruk }) => (
@@ -5426,8 +5429,8 @@ function App() {
       .map((r) => ({ r, open: bezorgOpenstaand(r) })).filter((x) => x.open.length)
       .sort((a, b) => String(a.r.boeking_datum || "").localeCompare(String(b.r.boeking_datum || "")));
     const bezorgSamenvat = (open) => open.map((o) => o.aantal + "× " + o.naam).join(", ");
-    if (!afgerondSet.has("materiaal:__alles__") && bezorgItems.length) meldingCategorieen.push({
-      id: "materiaal", label: "Materiaalbeheer", icon: <Package size={15} />,
+    meldingCategorieen.push({
+      id: "materiaal", label: "Materiaalbeheer", icon: <Package size={15} />, heeft: !afgerondSet.has("materiaal:__alles__") && bezorgItems.length > 0,
       content: (
         <ul className="space-y-1.5 text-sm">
           {bezorgItems.map(({ r, open }) => (
@@ -5440,14 +5443,15 @@ function App() {
     });
   }
   const sluitMeldingen = () => { balkNetDicht.current = Date.now(); setMeldingenOpen(false); };
-  const actieveMeldingen = meldingCategorieen.filter((c) => !isGedempt(c.id));
+  const actieveMeldingen = meldingCategorieen.filter((c) => c.heeft && !isGedempt(c.id));
+  const balkOpenbaar = meldingCategorieen.some((c) => c.heeft); // ook gedempte zijn terug te vinden
   const klikHome = () => {
     const nu = Date.now();
     const dubbelklik = nu - laatsteHomeKlik.current < 400;
     laatsteHomeKlik.current = nu;
     if (dubbelklik) { sluitMeldingen(); goHome(); return; } // dubbelklik negeert de meldingsbalk altijd
     if (meldingenOpen || nu - balkNetDicht.current < 500) { sluitMeldingen(); return; } // sluiten, niet meteen heropenen
-    if (actieveMeldingen.length) { setMeldingenOpen(true); return; }
+    if (balkOpenbaar) { setMeldingenOpen(true); return; }
     goHome();
   };
   // Op een detailscherm (een gerecht, recept, batch...) moet de bijbehorende
@@ -5537,7 +5541,7 @@ function App() {
                 canEdit={canEdit} onHaal={haalBoekingen} onKoppel={saveKoppeling} onBkExtra={saveBkExtra} nieuwBewerk={nieuwBewerk}
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
-                onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij} onWisInv={wisInvullingPartij}
+                onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij} invKlaarVan={invKlaarVan} onInvKlaar={zetInvKlaar} onWisInv={wisInvullingPartij}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -7952,9 +7956,6 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
       <div className="card p-4">
         <p className="text-sm mute mb-3">De chef-versie toont Calculaties (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
         <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
-        {onOpenGerechten && (
-          <button onClick={onOpenGerechten} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2"><Utensils size={15} /> Gerechten-pagina openen (testperiode)</button>
-        )}
         {chefMode && onResetBoekingen && (
           <button onClick={onResetBoekingen} disabled={boekingenLaden} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
             {boekingenLaden ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
@@ -10996,20 +10997,23 @@ function MeldingenBalk({ categorieen, onSluiten, isGedempt, onDempen }) {
       <div className="flex flex-wrap items-center gap-1.5 p-3" style={{ borderBottom: huidige ? "1px solid " + T.line : "none" }}>
         {categorieen.map((c) => (
           <button key={c.id} onClick={() => setOpen((o) => (o === c.id ? null : c.id))}
-            className={"ff inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium " + (open === c.id ? "pillon" : "pill") + (isGedempt && isGedempt(c.id) ? " opacity-50" : "")}
-            title={isGedempt && isGedempt(c.id) ? "Gedempt tot 07:00 — telt niet mee in de stip" : undefined}>
+            className={"ff relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium " + (open === c.id ? "pillon" : "pill") + (!c.heeft || (isGedempt && isGedempt(c.id)) ? " opacity-35" : "")}
+            title={!c.heeft ? "Niets te melden — alles afgerond" : (isGedempt && isGedempt(c.id) ? "Gedempt tot 07:00 — telt niet mee in de stip" : undefined)}>
             {c.icon} {c.label}
+            {c.heeft && !(isGedempt && isGedempt(c.id)) && <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: "#b3261e", border: "1.5px solid #fff" }} />}
           </button>
         ))}
         <button onClick={onSluiten} className="ff mute hover:opacity-70 ml-auto shrink-0 p-1" title="Sluiten"><X size={17} /></button>
       </div>
       {huidige && (
         <div className="p-3.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>
-          {huidige.content}
-          <div className="flex justify-end gap-2 mt-3 pt-3" style={{ borderTop: "1px solid #e4d6b8" }}>
-            <button onClick={() => { if (onDempen) onDempen(huidige.id); setOpen(null); }} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }} title="Telt tot morgen 07:00 niet mee in de meldingsstip">Dempen</button>
-            <button onClick={() => { huidige.onAfronden(); setOpen(null); }} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Afronden</button>
-          </div>
+          {huidige.heeft ? huidige.content : <div className="text-sm">Niets te melden — alles is afgerond of afgetekend.</div>}
+          {huidige.heeft && (
+            <div className="flex justify-end gap-2 mt-3 pt-3" style={{ borderTop: "1px solid #e4d6b8" }}>
+              <button onClick={() => { if (onDempen) onDempen(huidige.id); setOpen(null); }} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }} title="Telt tot morgen 07:00 niet mee in de meldingsstip">Dempen</button>
+              <button onClick={() => { huidige.onAfronden(); setOpen(null); }} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Afronden</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -11241,7 +11245,32 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
   );
 }
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch }) {
+const NieuwTag = () => (
+  <span className="inline-block align-middle ml-1.5 rounded px-1 py-[1px] text-[9.5px] font-bold uppercase tracking-wider" style={{ background: "#fbeadb", color: "#c2611a", border: "1px solid #ecc9a4" }}>nieuw</span>
+);
+// Kijkt in het wijzigingslog (b.log) van de laatste 3 dagen wat er precies
+// veranderd is, zodat de kaart dat onderdeel een "nieuw"-label kan geven.
+const versWijzigingen = (b) => {
+  const uit = { gasten: false, tijd: false, allergie: false, notitie: false, producten: new Set() };
+  const grens = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString(); })();
+  const nrm = (t) => zonderAccent(String(t || "")).toLowerCase().trim();
+  for (const e of (b && b.log) || []) {
+    if (String(e.t || "") < grens) continue;
+    for (const w0 of e.w || []) {
+      const w = String(w0);
+      if (w.startsWith("Gasten:")) uit.gasten = true;
+      else if (w.startsWith("Starttijd:") || w.startsWith("Datum:")) uit.tijd = true;
+      else if (w.startsWith("Allergieën") || w.startsWith("Dieetwensen")) uit.allergie = true;
+      else if (w.startsWith("Notitie")) uit.notitie = true;
+      else if (w.startsWith("Erbij: ")) { const m = w.match(/^Erbij: [\d.,]+\u00d7 (.+)$/); if (m) uit.producten.add(nrm(m[1])); }
+      else if (w.startsWith("Weg: ")) { /* verdwenen regel: niets te labelen */ }
+      else { const m = w.match(/^(.+): [\d.,]+\u00d7 \u2192 [\d.,]+\u00d7$/); if (m) uit.producten.add(nrm(m[1])); }
+    }
+  }
+  return uit;
+};
+
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [bewerk, setBewerk] = useState(false);
@@ -11253,6 +11282,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const [velden, setVelden] = useState({ gasten: "", tijd: "", allergie: "", notitie: "" });
   const [kies, setKies] = useState(false);
   const [nootOpen, setNootOpen] = useState(!!nootOpenStandaard);
+  const vers = React.useMemo(() => versWijzigingen(b), [b]);
   const [overigeOpen, setOverigeOpen] = useState(false);
   const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
   // Escape of de terugknop van het toestel sluit de bewerkstand zonder opslaan.
@@ -11475,7 +11505,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   };
 
   return (
-    <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: "3px solid " + randKleur, scrollMarginTop: "0.75rem" }}>
+    <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: "3px solid " + (invKlaar ? randKleur : "#1a1a1a"), scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 w-full md:w-auto md:flex-1" value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
@@ -11501,6 +11531,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               ? <span title={"Bezorging" + (adres ? " · " + adres : "")} className="inline-flex"><Truck size={22} /></span>
               : zaal ? <span title={zaal} className="inline-flex"><Home size={22} /></span> : null}
             <span>{(tijdTekst || "—") + " · " + gastenTekst + " pers."}</span>
+            {(vers.tijd || vers.gasten) && <NieuwTag />}
           </span>
         )}
         {!bewerk && (
@@ -11512,6 +11543,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         )}
         {bewerk && (
           <>
+            {onInvKlaar && (
+              <button onClick={() => onInvKlaar(!invKlaar)} className="ff shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
+                style={invKlaar ? { border: "1.5px solid #4f7a3a", color: "#4f7a3a", background: "#eef3e8" } : { border: "1.5px solid #1a1a1a", color: "#1a1a1a" }}
+                title={invKlaar ? "De invulling staat op afgerond — klik om te heropenen" : "Markeer de invulling van deze partij als afgerond (zwarte rand verdwijnt)"}>
+                {invKlaar ? "Invulling afgerond ✓" : "Invulling afronden"}
+              </button>
+            )}
             <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Annuleren"><X size={18} /></button>
             <button onClick={opslaan} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #4f7a3a", color: "#4f7a3a" }} title="Opslaan"><Check size={18} /></button>
           </>
@@ -11561,16 +11599,19 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
+                const isVers = vers.producten.has(zonderAccent(String(k.naam || "")).toLowerCase().trim());
                 return (
                   <div key={i}>
                     {!zonderKop && (
                       <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}>
                         <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
+                        {isVers && <NieuwTag />}
                       </div>
                     )}
                     {od && od.map((o, j) => (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
                         <MarkTekst tekst={(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : ""; })()} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
+                        {zonderKop && j === 0 && isVers && <NieuwTag />}
                         {!stift && (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam }] : [])).filter((bl) => bl.recipeId).map((bl, bi) => (
                           <button key={bi} onClick={() => onOpenRecipe(bl.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
                             {bl.naam || "recept"}
@@ -11588,7 +11629,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           )}
           {allergie.length > 0 && (
             <div className="mt-1.5 text-[14.5px] font-bold" style={{ color: "#b3261e" }}>
-              {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} /></div>)}
+              {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMark} />{i === 0 && vers.allergie ? <NieuwTag /> : null}</div>)}
             </div>
           )}
           {overigeKeuzes.length > 0 && (
@@ -11607,6 +11648,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             {noot ? (
               <>
                 <button onClick={() => setNootOpen((o) => !o)} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
+                {vers.notitie && <NieuwTag />}
                 {nootOpen && (
                   <p className="text-[13px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
                     <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMark} />
@@ -12649,7 +12691,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, onWisInv }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const vandaag = localDate();
@@ -12941,7 +12983,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   </div>
                   <div className="space-y-0.5">
                     {items.map((b) => (
-                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
+                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) ? "1.5px solid #1a1a1a" : "1.5px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
                         <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)} pers. · {tijdVan(b) || "—"}</span>
                       </button>
@@ -12971,6 +13013,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               autoBewerk={nieuwBewerk && nieuwBewerk.id === detailBoeking.id}
               invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
               onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null} onInvullingBatch={canEdit ? (lijst) => onInvulPartijBatch(detailBoeking, lijst) : null}
+              invKlaar={invKlaarVan ? invKlaarVan(detailBoeking) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
               vorigeInvulling={(miceId) => vorigeInvulling(detailBoeking, miceId)}
               onInvullen={null}
               onOpslaan={(regels, velden) => {
