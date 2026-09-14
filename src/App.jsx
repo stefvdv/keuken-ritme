@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-11y"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-12c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5597,7 +5597,8 @@ function App() {
           editing={current.editing ? calcItems.find((x) => x.id === current.editing) : null}
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
-        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+        {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })}
+          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -7869,7 +7870,56 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef }) {
+// Centraal beheer: allergenen per ingrediënt, app-breed. Elke koppeling geldt
+// meteen voor alle recepten en gerechten waar dat ingrediënt in voorkomt.
+function AllergenenBeheer({ rijen, onSave }) {
+  const [vorm, setVorm] = useState(null); // null | { naam, labels: [], bestaand }
+  const wissel = (l) => setVorm((v) => ({ ...v, labels: v.labels.includes(l) ? v.labels.filter((x) => x !== l) : [...v.labels, l] }));
+  const bewaar = () => {
+    const naam = String((vorm && vorm.naam) || "").trim();
+    if (!naam) { alert("Vul een ingrediënt in."); return; }
+    onSave(naam, vorm.labels);
+    setVorm(null);
+  };
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">Koppel allergenen aan een ingrediënt; dat geldt meteen voor alle recepten en gerechten met dat ingrediënt. De app herkent de 14 wettelijke allergenen al vanzelf — dit is voor uitzonderingen en eigen benamingen.</p>
+      {(rijen || []).length > 0 && (
+        <div className="rounded-xl mb-3 divide-y" style={{ border: "1px solid " + T.line }}>
+          {rijen.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm ink">{r.name}</div>
+                <div className="text-[11.5px] mute">{(r.allergens || []).length ? r.allergens.join(", ") : "geen allergenen (uitzondering)"}</div>
+              </div>
+              <button onClick={() => setVorm({ naam: r.name, labels: [...(r.allergens || [])], bestaand: true })} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={14} /></button>
+              <button onClick={() => { if (window.confirm('Koppeling voor "' + r.name + '" weghalen? De automatische herkenning geldt dan weer.')) onSave(r.name, null); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {vorm ? (
+        <div className="rounded-xl p-3" style={{ border: "1px solid " + T.line, background: "#fff" }}>
+          <input autoFocus={!vorm.bestaand} disabled={vorm.bestaand} className="input px-3 py-2 w-full text-sm mb-2" value={vorm.naam} onChange={(e) => setVorm((v) => ({ ...v, naam: e.target.value }))} placeholder="Ingrediënt (bv. lupinemeel)" />
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {ALLERGEN_LABELS.map((l) => (
+              <button key={l} type="button" onClick={() => wissel(l)} className={"ff rounded-full px-2.5 py-1 text-[12px] font-medium " + (vorm.labels.includes(l) ? "pillon" : "pill")}>{l}</button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={bewaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-medium">Opslaan</button>
+            <button onClick={() => setVorm(null)} className="btno ff rounded-lg px-4 py-2 text-sm font-medium">Annuleren</button>
+          </div>
+          <div className="text-[11.5px] mute mt-2">Geen enkel allergeen aanvinken kan ook: dan telt dit ingrediënt nergens meer als allergeen (bv. "kokosmelk" die onterecht als melk herkend wordt).</div>
+        </div>
+      ) : (
+        <button onClick={() => setVorm({ naam: "", labels: [], bestaand: false })} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Plus size={15} /> Ingrediënt koppelen</button>
+      )}
+    </div>
+  );
+}
+
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -7887,6 +7937,13 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
             <p className="text-sm mute mb-3">Houd bij wat er met bezorgingen meegaat en wat er nog terug moet komen.</p>
             <button onClick={onOpenBezorg} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Package size={16} /> Bezorgmateriaal beheren</button>
           </div>
+        </>
+      )}
+
+      {onSaveAllergenFix && (
+        <>
+          <SectionTitle>Allergenen per ingrediënt</SectionTitle>
+          <AllergenenBeheer rijen={allergenFixRijen || []} onSave={onSaveAllergenFix} />
         </>
       )}
 
@@ -12141,7 +12198,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     }, 350);
     return () => clearTimeout(t);
   }, []);
-  const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < vandaag);
+  // Een dag klapt pas vanzelf dicht na 02:00 's nachts: tot die tijd hoort
+  // de avond nog bij de werkdag, dus tussen 00:00 en 02:00 blijft "gisteren" open.
+  const mepDag = (() => { const x = new Date(Date.now() - 2 * 3600000); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); })();
+  const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < mepDag);
   const zetMark = (sleutel) => {
     if (!stift) return;
     setMarkering((m) => {
@@ -12591,6 +12651,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // gezelschap; daarna weet de app het.
 function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, onWisInv }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
+  const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const vandaag = localDate();
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
@@ -12858,11 +12919,15 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         </div>
       )}
 
-      <div className="overflow-x-auto -mx-4 px-4 pb-2">
-        <div style={{ minWidth: "44rem" }}>
-          <div className="grid grid-cols-7 mb-1">
+      <div className="sticky z-20 -mx-4 px-4" style={{ top: 0, background: "#efece2" }}>
+        <div ref={dagenKopRef} className="overflow-x-hidden">
+          <div style={{ minWidth: "44rem" }} className="grid grid-cols-7 py-1">
             {["ma","di","wo","do","vr","za","zo"].map((w) => <div key={w} className="text-[11px] font-semibold uppercase tracking-widest acc px-1.5">{w}</div>)}
           </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto -mx-4 px-4 pb-2" onScroll={(e) => { if (dagenKopRef.current) dagenKopRef.current.scrollLeft = e.currentTarget.scrollLeft; }}>
+        <div style={{ minWidth: "44rem" }}>
           <div className="grid grid-cols-7 gap-px rounded-xl overflow-hidden" style={{ background: T.line, border: "1px solid " + T.line }}>
             {weken.flat().map((d) => {
               const inMaand = d.slice(0, 7) === maand;
@@ -15075,15 +15140,18 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   // datum aflopend gesorteerd — nieuw boven, oud onder). Zonder zoekterm
   // toont "ouder" de meest recente boekingen; typen doorzoekt alles.
   const partijQuery = zonderAccent(zoek).toLowerCase().trim();
-  const matchtPartij = (b) => !partijQuery || zonderAccent(b.naam || "").toLowerCase().includes(partijQuery);
+  const striktPartij = (b) => strictMatchAny([b.naam || ""], zoek);
+  const zachtPartij = (b) => softMatchAny([b.naam || ""], zoek);
+  const bedoeldeJe = !!partijQuery && !(boekingen || []).some(striktPartij) && (boekingen || []).some(zachtPartij);
+  const matchtPartij = bedoeldeJe ? zachtPartij : striktPartij;
   const vandaagBoekingen = React.useMemo(() =>
     (boekingen || []).filter((b) => b.datum === vandaag && matchtPartij(b)).sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || ""))),
-    [boekingen, vandaag, partijQuery]);
+    [boekingen, vandaag, partijQuery, bedoeldeJe]);
   const ouderBoekingen = React.useMemo(() =>
     (boekingen || []).filter((b) => b.datum !== vandaag && matchtPartij(b))
       .sort((a, b) => String(b.datum || "").localeCompare(String(a.datum || "")))
       .slice(0, partijQuery ? 60 : 30),
-    [boekingen, vandaag, partijQuery]);
+    [boekingen, vandaag, partijQuery, bedoeldeJe]);
 
   const materiaalNamen = React.useMemo(() => {
     const set = new Set((materiaalItems || []).map((i) => i.naam));
@@ -15144,6 +15212,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
                   <div>
                     <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een partij op naam…" />
                     <div className="mt-1.5 rounded-xl overflow-y-auto" style={{ maxHeight: "18rem", border: "1px solid " + T.line }}>
+                      {bedoeldeJe && <div className="px-3 py-2 text-[12.5px]" style={{ background: "#f3ecdc", borderBottom: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{zoek}" — bedoelde je:</div>}
                       {vandaagBoekingen.length > 0 && (
                         <>
                           <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Vandaag</div>
