@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-15a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-15e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5415,7 +5415,9 @@ function App() {
     // Boekingen: wat is er de afgelopen dagen aan partijen gewijzigd.
     const wijzGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 3); return d.toISOString(); })();
     const wijzItems = [];
+    const wijzVandaag = localDate();
     (boekingen || []).forEach((b) => {
+      if (b.datum && b.datum < wijzVandaag) return; // dag al geweest: geldt als afgerond
       const w = [];
       (b.log || []).forEach((e) => { if (String(e.t || "") >= wijzGrens) (e.w || []).forEach((x) => w.push(String(x))); });
       if (!w.length) return;
@@ -12646,12 +12648,28 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
       + dagen.map(dagBlok).join("")
       + "<scr" + 'ipt>(function(){'
+      // Paginering nabootsen: dagkop in het onderste derde schuift door; een
+      // partij die niet meer past breekt naar de volgende pagina en krijgt
+      // onderaan de pagina de melding dat de dag verdergaat.
       + 'var meet=document.createElement("div");meet.style.height="100mm";meet.style.position="absolute";meet.style.visibility="hidden";document.body.appendChild(meet);'
       + 'var pagina=meet.offsetHeight*2.65;meet.remove();' // ~265mm bruikbare hoogte per A4
       + 'var schuif=0;'
-      + 'document.querySelectorAll("h2").forEach(function(h){'
-      + 'var top=(h.offsetTop+schuif)%pagina;'
-      + 'if(top>pagina*(2/3)){h.style.breakBefore="page";h.style.pageBreakBefore="always";schuif+=pagina-top;}'
+      + 'var els=[].slice.call(document.querySelectorAll("h2, .p"));'
+      + 'els.forEach(function(el){'
+      + 'var top=(el.offsetTop+schuif)%pagina;'
+      + 'if(el.tagName==="H2"){'
+      + 'if(top>pagina*(2/3)){el.style.breakBefore="page";el.style.pageBreakBefore="always";schuif+=pagina-top;}'
+      + 'return;}'
+      + 'if(top+el.offsetHeight>pagina&&top>0){'
+      + 'el.style.breakBefore="page";el.style.pageBreakBefore="always";'
+      + 'if(pagina-top>40){'
+      + 'var n=document.createElement("div");'
+      + 'n.textContent="\u2192 zie volgende bladzijde voor deze dag";'
+      + 'n.style.cssText="font-style:italic;font-size:10px;color:#6a6550;text-align:right;margin-top:1mm";'
+      + 'el.parentNode.insertBefore(n,el);'
+      + '}'
+      + 'schuif+=pagina-top;'
+      + '}'
       + '});'
       + '})();</scr' + "ipt></body></html>");
   };
@@ -14621,14 +14639,45 @@ function Chip({ children }) { return <span className="chip inline-flex items-cen
 function Empty({ label }) { return <div className="text-center text-sm mute card py-10 px-4" style={{ borderStyle: "dashed" }}>{label}</div>; }
 function Field({ label, children }) { return <label className="block mb-4"><span className="block text-sm font-medium ink mb-1.5">{label}</span>{children}</label>; }
 
-function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan" }) {
+// Conceptbewaarder voor formulieren: houdt tijdens het typen een kopie bij in
+// localStorage, zodat een per ongeluk weggeklikt formulier via de Herstel-knop
+// (met bevestiging) terug te halen is. Wordt gewist zodra er echt is opgeslagen.
+const conceptLees = (sleutel) => { try { const j = JSON.parse(localStorage.getItem(sleutel) || "null"); return j && j.d ? j : null; } catch (e) { return null; } };
+const conceptWanneer = (c) => { try { const d = new Date(c.t); return d.toLocaleDateString("nl-NL", { day: "numeric", month: "short" }) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); } catch (e) { return ""; } };
+function useConcept(sleutel, snapshot, zetters) {
+  const begin = React.useRef(null);
+  if (begin.current === null) begin.current = JSON.stringify(snapshot);
+  const timer = React.useRef(null);
+  const ser = JSON.stringify(snapshot);
+  useEffect(() => {
+    if (ser === begin.current) return; // niets aangeraakt: bestaand concept niet overschrijven
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { try { localStorage.setItem(sleutel, JSON.stringify({ t: new Date().toISOString(), d: snapshot })); } catch (e) {} }, 800);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [ser, sleutel]);
+  const concept = conceptLees(sleutel);
+  const herstelbaar = !!(concept && JSON.stringify(concept.d) !== ser);
+  const herstel = () => {
+    const c = conceptLees(sleutel);
+    if (!c) { alert("Geen eerder concept gevonden."); return; }
+    if (!window.confirm("Niet-opgeslagen invulling van " + conceptWanneer(c) + " terugzetten? De huidige inhoud van het formulier wordt vervangen.")) return;
+    zetters(c.d);
+  };
+  const wis = () => { try { localStorage.removeItem(sleutel); } catch (e) {} };
+  return { herstelbaar, herstel, wis };
+}
+
+function FormBar({ title, onCancel, onSave, saveLabel = "Opslaan", onHerstel, herstelTitel }) {
   // Blijft bij het scrollen in beeld (net onder de header, h-14 = 56px), zodat
   // annuleren en opslaan op lange formulieren altijd binnen handbereik zijn.
   return (
     <div className="sticky z-10 -mx-4 px-4 flex items-center justify-between pt-4 pb-3" style={{ top: 0, background: T.paper, borderBottom: "1px solid " + T.line, marginBottom: "0.75rem" }}>
       <button onClick={onCancel} className="ff inline-flex items-center gap-1 text-sm mute hover:opacity-70"><X size={16} /> Annuleren</button>
       <span className="serif ink text-lg">{title}</span>
-      <button onClick={onSave} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><Check size={16} /> {saveLabel}</button>
+      <span className="flex items-center gap-1.5">
+        {onHerstel && <button onClick={onHerstel} className="btno ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" title={herstelTitel || "Vorige (niet-opgeslagen) invulling terugzetten"}><RotateCcw size={15} /> Herstel</button>}
+        <button onClick={onSave} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3.5 py-2"><Check size={16} /> {saveLabel}</button>
+      </span>
     </div>
   );
 }
@@ -14778,7 +14827,21 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
       if (Array.isArray(p.steps) && p.steps.length) setSteps(p.steps);
     } catch (e) { setErr("Vertalen lukte niet. Probeer opnieuw."); } finally { setTranslating(false); }
   }
-  const submit = () => { if (!name.trim()) { alert("Geef het recept een naam."); return; } if (!(Number(shelfDays) > 0)) { alert("Vul de houdbaarheid in (dagen)."); return; } if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } onSave({
+  // Concept: alles wat je typt wordt bewaard; Herstel haalt het terug na een misklik.
+  const conceptSnap = { name, category, costPrice, yields, portions, portionSize, recipeType, basePick, ingredients, steps, seasons, diet, ferment, fermentMethod, fSalt, fTemp, fDays, fPh, fSugar, shelfDays, shelfStorage };
+  const conceptApi = useConcept("ritme:concept:recept:" + ((recipe && recipe.id) || "nieuw"), conceptSnap, (d) => {
+    setName(d.name || ""); setCategory(d.category || ""); setCostPrice(d.costPrice || "");
+    if (Array.isArray(d.yields)) setYields(d.yields);
+    setPortions(d.portions || ""); setPortionSize(d.portionSize || "");
+    setRecipeType(d.recipeType || "basis"); setBasePick(d.basePick || null);
+    if (Array.isArray(d.ingredients)) setIngredients(d.ingredients.length ? d.ingredients : [{ item: "", amount: "" }]);
+    if (Array.isArray(d.steps)) setSteps(d.steps.length ? d.steps : [""]);
+    if (Array.isArray(d.seasons)) setSeasons(d.seasons);
+    setDiet(d.diet || "Vegetarisch"); setFerment(!!d.ferment); setFermentMethod(d.fermentMethod || "Melkzuur");
+    setFSalt(d.fSalt || ""); setFTemp(d.fTemp || ""); setFDays(d.fDays || ""); setFPh(d.fPh || ""); setFSugar(d.fSugar || "");
+    setShelfDays(d.shelfDays || ""); setShelfStorage(d.shelfStorage || "gekoeld");
+  });
+  const submit = () => { if (!name.trim()) { alert("Geef het recept een naam."); return; } if (!(Number(shelfDays) > 0)) { alert("Vul de houdbaarheid in (dagen)."); return; } if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } conceptApi.wis(); onSave({
     name: name.trim(), category: normCategory(category.trim()) || "Zonder categorie",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
     season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
@@ -14808,7 +14871,8 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
   }); };
   return (
     <div>
-      <FormBar title={recipe ? "Recept bewerken" : "Nieuw recept"} onCancel={onCancel} onSave={submit} />
+      <FormBar title={recipe ? "Recept bewerken" : "Nieuw recept"} onCancel={onCancel} onSave={submit}
+        onHerstel={conceptApi.herstelbaar ? conceptApi.herstel : null} herstelTitel="Niet-opgeslagen invulling van dit formulier terugzetten" />
       {err && <p className="text-xs mb-3" style={{ color: "#a23b2c" }}>{err}</p>}
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Gefermenteerde rode biet" /></Field>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-0">
@@ -14963,6 +15027,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
                 onBlur={() => setTimeout(() => setIngSug((r) => (r === i ? null : r)), 140)}
                 onKeyDown={(e) => {
                   if (e.key === "Tab" || e.key === "Escape") setIngSug(null);
+                  else if (e.key === "Enter") { e.preventDefault(); setIngSug(null); addIngAt(i); }
                   else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); }
                 }} placeholder="Ingrediënt of recept" />
               {ingSug === i && String(ing.item || "").trim().length >= 2 && (() => {
@@ -15010,9 +15075,9 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
               );
             })()}
 
-            <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 px-1"
-              title={alg.length ? "Allergeen: " + alg.join(", ") + " — tik om aan te passen" : "Geen allergeen — tik om aan te passen"}
-              style={{ color: alg.length ? "#d32f2f" : "#a5a394" }}><AlertTriangle size={alg.length ? 32 : 16} /></button>
+            <button type="button" onClick={() => setAlgOpen((o) => (o === i ? null : i))} className="hover:opacity-60 shrink-0 flex items-center justify-center"
+              style={{ width: "2rem", color: alg.length ? "#d32f2f" : "#a5a394" }}
+              title={alg.length ? "Allergeen: " + alg.join(", ") + " — tik om aan te passen" : "Geen allergeen — tik om aan te passen"}><AlertTriangle size={20} strokeWidth={alg.length ? 2.4 : 1.6} /></button>
             <button onClick={() => { setAlgOpen(null); setIngredients((a) => a.filter((_, idx) => idx !== i)); }} className="mute hover:opacity-60 px-1"><Trash2 size={16} /></button>
           </div>
           {sub && (
@@ -15118,10 +15183,19 @@ function DishForm({ dish, draft, allRecipes, recipeById, onCancel, onSave, onNew
   const found = q ? allRecipes.filter((r) => softMatchAny([r.name, r.category], q)) : allRecipes;
   const matches = found.slice(0, limit);
   const currentState = () => ({ name, course, description, plating, recipeIds, portions: eurNum(portions), season: SEASONS.filter((s) => seasons.includes(s)), diet });
-  const submit = () => { if (!name.trim()) return; onSave({ ...currentState(), name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim() }); };
+  const conceptSnap = { name, course, description, plating, recipeIds, portions, seasons, diet };
+  const conceptApi = useConcept("ritme:concept:gerecht:" + ((dish && dish.id) || "nieuw"), conceptSnap, (d) => {
+    setName(d.name || ""); setCourse(d.course || ""); setDescription(d.description || ""); setPlating(d.plating || "");
+    if (Array.isArray(d.recipeIds)) setRecipeIds(d.recipeIds);
+    setPortions(d.portions || "");
+    if (Array.isArray(d.seasons)) setSeasons(d.seasons);
+    setDiet(d.diet || "Vegetarisch");
+  });
+  const submit = () => { if (!name.trim()) return; conceptApi.wis(); onSave({ ...currentState(), name: name.trim(), course: course.trim() || "Gerecht", description: description.trim(), plating: plating.trim() }); };
   return (
     <div>
-      <FormBar title={dish ? "Gerecht bewerken" : "Nieuw gerecht"} onCancel={onCancel} onSave={submit} />
+      <FormBar title={dish ? "Gerecht bewerken" : "Nieuw gerecht"} onCancel={onCancel} onSave={submit}
+        onHerstel={conceptApi.herstelbaar ? conceptApi.herstel : null} herstelTitel="Niet-opgeslagen invulling van dit formulier terugzetten" />
       <Field label="Naam"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Drie bieten uit eigen tuin" /></Field>
       <div className="text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(voor het seizoensfilter)</span></div>
       <div className="flex flex-wrap gap-1.5 mb-4">
