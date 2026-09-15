@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-15e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-15f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2594,6 +2594,7 @@ function ComboInput({ value, onChange, options, placeholder }) {
     return () => { document.removeEventListener("mousedown", klik, true); document.removeEventListener("keydown", toets, true); };
   }, [open]);
   const [alles, setAlles] = useState(false); // pijl: volledige lijst i.p.v. filter
+  const [idx, setIdx] = useState(null);
   const getoond = React.useMemo(() => {
     const q = String(value || "").trim();
     if (alles || !q) return options;
@@ -2604,8 +2605,13 @@ function ComboInput({ value, onChange, options, placeholder }) {
   return (
     <div ref={boxRef} className="relative">
       <input className="input pl-2.5 pr-8 py-2 w-full text-sm" value={value}
-        onChange={(e) => { onChange(e.target.value); setAlles(false); setOpen(true); }}
-        onFocus={() => { if (String(value || "").trim()) { setAlles(false); setOpen(true); } }}
+        onChange={(e) => { onChange(e.target.value); setAlles(false); setOpen(true); setIdx(null); }}
+        onFocus={() => { if (String(value || "").trim()) { setAlles(false); setOpen(true); setIdx(null); } }}
+        onKeyDown={(e) => {
+          if (!open && e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setIdx(0); return; }
+          if (open && lijstToetsen(e, getoond.length, idx, setIdx, (k) => { onChange(getoond[k]); setOpen(false); setIdx(null); })) return;
+          if (e.key === "Escape") { setOpen(false); setIdx(null); }
+        }}
         placeholder={placeholder} />
       <button type="button" onClick={() => { setAlles(true); setOpen((o) => !o); }} className="ff absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md hover:opacity-70" title="Alle opties">
         <ChevronDown size={15} className="acc" />
@@ -2614,9 +2620,9 @@ function ComboInput({ value, onChange, options, placeholder }) {
         <>
           <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "12rem", overflowY: "auto" }}>
             {getoond.length === 0 && <div className="px-3 py-2 text-sm mute">Niets gevonden — de getypte naam blijft gewoon staan.</div>}
-            {getoond.map((o) => (
-              <button key={o} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); }}
-                className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 " + (o === value ? "pillon" : "ink hover:opacity-70")}>
+            {getoond.map((o, k) => (
+              <button key={o} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); setIdx(null); }}
+                className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 " + (idx === k || (idx == null && o === value) ? "pillon" : "ink hover:opacity-70")}>
                 <span>{o}</span>
                 {o === value && <Check size={15} />}
               </button>
@@ -11458,6 +11464,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   // Het stuk wáár de cursor staat, begrensd door | , of / — zodat de
   // receptsuggesties horen bij de bereiding die je aan het typen bent.
   const [sugPos, setSugPos] = useState(null);
+  const [sugIdx, setSugIdx] = useState(null);
   const segmentBijCursor = (tekst, pos) => {
     const t = String(tekst || "");
     if (pos == null) return segmentVan(t);
@@ -11964,10 +11971,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                                 '[data-op="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
                           <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-" + j}
-                            value={o.naam} onChange={(e) => { zetO(mid, j, "naam", e.target.value); setSug(sleutel); setSugPos(e.target.selectionStart); }} onFocus={(e) => { setSug(sleutel); setSugPos(e.target.selectionStart); }}
-                            onClick={(e) => setSugPos(e.target.selectionStart)} onKeyUp={(e) => setSugPos(e.target.selectionStart)}
+                            value={o.naam} onChange={(e) => { zetO(mid, j, "naam", e.target.value); setSug(sleutel); setSugPos(e.target.selectionStart); setSugIdx(null); }} onFocus={(e) => { setSug(sleutel); setSugPos(e.target.selectionStart); setSugIdx(null); }}
+                            onClick={(e) => setSugPos(e.target.selectionStart)} onKeyUp={(e) => { if (e.key !== "ArrowDown" && e.key !== "ArrowUp") setSugPos(e.target.selectionStart); }}
                             placeholder="gerecht | onderdeel | onderdeel"
                             onKeyDown={(e) => {
+                              const sugLijst = sug === sleutel ? suggesties(segmentBijCursor(o.naam, sugPos)) : [];
+                              if (lijstToetsen(e, sugLijst.length, sugIdx, setSugIdx, (k) => { koppelRecept(mid, j, sugLijst[k]); setSug(""); setSugIdx(null); })) return;
                               if (e.key === "Enter") { e.preventDefault(); setSug(""); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); return; }
                               if (e.key === "Backspace" && !String(o.naam || "")) { e.preventDefault(); if (!e.repeat) veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true); return; }
                               pijlNav(e,
@@ -11990,8 +11999,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         {sug === sleutel && suggesties(segmentBijCursor(o.naam, sugPos)).length > 0 && (
                           <div className="pl-3 mt-1 space-y-0.5">
                             {suggesties(segmentBijCursor(o.naam, sugPos)).map((sg, jj) => (
-                              <button key={jj} onClick={() => { koppelRecept(mid, j, sg); setSug(""); }}
-                                className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sg.recipeId ? "#eef2e6" : "#fbf9f2" }}>
+                              <button key={jj} onClick={() => { koppelRecept(mid, j, sg); setSug(""); setSugIdx(null); }}
+                                className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sugIdx === jj ? "#3f5238" : (sg.recipeId ? "#eef2e6" : "#fbf9f2"), color: sugIdx === jj ? "#f2f0e8" : undefined }}>
                                 ⤷ {sg.naam} <span className="mute text-[11px]">· {sg.label} als bijlage</span>
                               </button>
                             ))}
@@ -14639,6 +14648,16 @@ function Chip({ children }) { return <span className="chip inline-flex items-cen
 function Empty({ label }) { return <div className="text-center text-sm mute card py-10 px-4" style={{ borderStyle: "dashed" }}>{label}</div>; }
 function Field({ label, children }) { return <label className="block mb-4"><span className="block text-sm font-medium ink mb-1.5">{label}</span>{children}</label>; }
 
+// Toetsnavigatie voor suggestielijsten: pijltjes lopen door de lijst,
+// Enter kiest het gemarkeerde item en sluit de lijst.
+const lijstToetsen = (e, aantal, idx, setIdx, kies) => {
+  if (!aantal) return false;
+  if (e.key === "ArrowDown") { e.preventDefault(); setIdx((i) => (i == null || i >= aantal - 1 ? 0 : i + 1)); return true; }
+  if (e.key === "ArrowUp") { e.preventDefault(); setIdx((i) => (i == null || i <= 0 ? aantal - 1 : i - 1)); return true; }
+  if (e.key === "Enter" && idx != null && idx >= 0 && idx < aantal) { e.preventDefault(); kies(idx); return true; }
+  return false;
+};
+
 // Conceptbewaarder voor formulieren: houdt tijdens het typen een kopie bij in
 // localStorage, zodat een per ongeluk weggeklikt formulier via de Herstel-knop
 // (met bevestiging) terug te halen is. Wordt gewist zodra er echt is opgeslagen.
@@ -14841,6 +14860,20 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
     setFSalt(d.fSalt || ""); setFTemp(d.fTemp || ""); setFDays(d.fDays || ""); setFPh(d.fPh || ""); setFSugar(d.fSugar || "");
     setShelfDays(d.shelfDays || ""); setShelfStorage(d.shelfStorage || "gekoeld");
   });
+  const [ingSugIdx, setIngSugIdx] = useState(null);
+  const ingSugLijst = (ing) => {
+    const t = String((ing && ing.item) || "").trim();
+    if (t.length < 2) return [];
+    const arts = (PRIJSLIJST.arts || []).filter((a) => strictMatchAny([a.omschrijving], t)).slice(0, 6).map((a) => ({ soort: "art", a }));
+    const recs = (allRecipes || []).filter((r) => r.id !== (recipe && recipe.id) && softMatchAny([r.name], t)).slice(0, 4).map((r) => ({ soort: "rec", r }));
+    return [...arts, ...recs];
+  };
+  const kiesIngSug = (i, item) => {
+    if (!item) return;
+    if (item.soort === "art") setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: item.a.omschrijving, artikelCode: item.a.code, recipeRef: null } : x)));
+    else setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: item.r.name, recipeRef: item.r.id, artikelCode: null } : x)));
+    setIngSug(null); setIngSugIdx(null);
+  };
   const submit = () => { if (!name.trim()) { alert("Geef het recept een naam."); return; } if (!(Number(shelfDays) > 0)) { alert("Vul de houdbaarheid in (dagen)."); return; } if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } conceptApi.wis(); onSave({
     name: name.trim(), category: normCategory(category.trim()) || "Zonder categorie",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
@@ -15022,35 +15055,41 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
           <div className="flex gap-2">
             <div className="relative flex-1 min-w-0">
               <input data-rf-item={i} className={inputCls + " w-full"} value={ing.item}
-                onChange={(e) => { setIng(i, "item", e.target.value); setIngSug(i); }}
-                onFocus={() => setIngSug(i)}
+                onChange={(e) => { setIng(i, "item", e.target.value); setIngSug(i); setIngSugIdx(null); }}
+                onFocus={() => { setIngSug(i); setIngSugIdx(null); }}
                 onBlur={() => setTimeout(() => setIngSug((r) => (r === i ? null : r)), 140)}
                 onKeyDown={(e) => {
+                  const lijst = ingSug === i ? ingSugLijst(ing) : [];
+                  if (lijstToetsen(e, lijst.length, ingSugIdx, setIngSugIdx, (k) => kiesIngSug(i, lijst[k]))) return;
                   if (e.key === "Tab" || e.key === "Escape") setIngSug(null);
                   else if (e.key === "Enter") { e.preventDefault(); setIngSug(null); addIngAt(i); }
                   else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); }
                 }} placeholder="Ingrediënt of recept" />
-              {ingSug === i && String(ing.item || "").trim().length >= 2 && (() => {
-                const t = String(ing.item).trim();
-                const arts = (PRIJSLIJST.arts || []).filter((a) => strictMatchAny([a.omschrijving], t)).slice(0, 6);
-                const recs = (allRecipes || []).filter((r) => r.id !== (recipe && recipe.id) && softMatchAny([r.name], t)).slice(0, 4);
-                if (!arts.length && !recs.length) return null;
+              {ingSug === i && (() => {
+                const lijst = ingSugLijst(ing);
+                if (!lijst.length) return null;
                 return (
                   <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "15rem", overflowY: "auto" }}>
-                    {arts.length > 0 && <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">Inkoop</div>}
-                    {arts.map((a) => { const pb = artikelPerBasis(a); return (
-                      <button key={a.code} type="button" onMouseDown={(ev) => { ev.preventDefault(); setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: a.omschrijving, artikelCode: a.code, recipeRef: null } : x))); setIngSug(null); }}
-                        className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
-                        {a.omschrijving} <span className="mute">· {[a.leverancier, pb ? eur(pb.prijs) + " p/" + pb.b : null].filter(Boolean).join(" · ")}</span>
-                      </button>
-                    ); })}
-                    {recs.length > 0 && <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">Recepten</div>}
-                    {recs.map((r) => { const pp = receptPortieKost(r); return (
-                      <button key={r.id} type="button" onMouseDown={(ev) => { ev.preventDefault(); setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: r.name, recipeRef: r.id, artikelCode: null } : x))); setIngSug(null); }}
-                        className="ff w-full text-left rounded-xl px-3 py-2 text-sm ink hover:opacity-70">
-                        {r.name} <span className="mute">· recept{pp !== null ? " · " + eur(pp) + " per portie" : ""}</span>
-                      </button>
-                    ); })}
+                    {lijst.map((item, k) => {
+                      const kop = (k === 0 && item.soort === "art") ? "Inkoop" : (item.soort === "rec" && (k === 0 || lijst[k - 1].soort === "art")) ? "Recepten" : null;
+                      const actief = ingSugIdx === k;
+                      return (
+                        <React.Fragment key={k}>
+                          {kop && <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">{kop}</div>}
+                          {item.soort === "art" ? (() => { const a = item.a; const pb = artikelPerBasis(a); return (
+                            <button type="button" onMouseDown={(ev) => { ev.preventDefault(); kiesIngSug(i, item); }}
+                              className={"ff w-full text-left rounded-xl px-3 py-2 text-sm " + (actief ? "pillon" : "ink hover:opacity-70")}>
+                              {a.omschrijving} <span className={actief ? "" : "mute"}>· {[a.leverancier, pb ? eur(pb.prijs) + " p/" + pb.b : null].filter(Boolean).join(" · ")}</span>
+                            </button>
+                          ); })() : (() => { const r = item.r; const pp = receptPortieKost(r); return (
+                            <button type="button" onMouseDown={(ev) => { ev.preventDefault(); kiesIngSug(i, item); }}
+                              className={"ff w-full text-left rounded-xl px-3 py-2 text-sm " + (actief ? "pillon" : "ink hover:opacity-70")}>
+                              {r.name} <span className={actief ? "" : "mute"}>· recept{pp !== null ? " · " + eur(pp) + " per portie" : ""}</span>
+                            </button>
+                          ); })()}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -15548,7 +15587,8 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const [nieuwMateriaalOpen, setNieuwMateriaalOpen] = useState(false);
   const [inventarisBewerk, setInventarisBewerk] = useState(false);
 
-  const kiesPartij = (b) => { setGekozen({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); setZoek(""); };
+  const kiesPartij = (b) => { setGekozen({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); setZoek(""); setPartijIdx(null); };
+  const [partijIdx, setPartijIdx] = useState(null);
   const setRij = (i, veld, w) => setRijen((rs) => rs.map((r, j) => (j === i ? { ...r, [veld]: w } : r)));
   const voegRijToe = () => setRijen((rs) => [...rs, { naam: "", aantal: "" }]);
   const wegRij = (i) => setRijen((rs) => (rs.length <= 1 ? [{ naam: "", aantal: "" }] : rs.filter((_, j) => j !== i)));
@@ -15597,14 +15637,16 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
                   </div>
                 ) : (
                   <div>
-                    <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een partij op naam…" />
+                    <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoek} onChange={(e) => { setZoek(e.target.value); setPartijIdx(null); }}
+                      onKeyDown={(e) => { const alle = [...vandaagBoekingen, ...ouderBoekingen]; lijstToetsen(e, alle.length, partijIdx, setPartijIdx, (k) => kiesPartij(alle[k])); }}
+                      placeholder="Zoek een partij op naam…" />
                     <div className="mt-1.5 rounded-xl overflow-y-auto" style={{ maxHeight: "18rem", border: "1px solid " + T.line }}>
                       {bedoeldeJe && <div className="px-3 py-2 text-[12.5px]" style={{ background: "#f3ecdc", borderBottom: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{zoek}" — bedoelde je:</div>}
                       {vandaagBoekingen.length > 0 && (
                         <>
                           <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Vandaag</div>
                           {vandaagBoekingen.map((b) => (
-                            <button key={b.id} onClick={() => kiesPartij(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className="mute">· {b.gasten || 0} pers. · {String(b.start_tijd || "").slice(11, 16)}</span></button>
+                            <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.indexOf(b) ? "" : "mute"}>· {b.gasten || 0} pers. · {String(b.start_tijd || "").slice(11, 16)}</span></button>
                           ))}
                         </>
                       )}
@@ -15612,7 +15654,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
                         <>
                           <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Ouder</div>
                           {ouderBoekingen.map((b) => (
-                            <button key={b.id} onClick={() => kiesPartij(b)} className="ff w-full text-left px-3 py-2 text-sm hover:opacity-70" style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className="mute">· {fmtDMY(b.datum)}</span></button>
+                            <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "" : "mute"}>· {fmtDMY(b.datum)}</span></button>
                           ))}
                         </>
                       )}
