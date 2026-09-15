@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-15f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-15g"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -15617,79 +15617,30 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const [toonCompleet, setToonCompleet] = useState(false);
 
   const [toonInventaris, setToonInventaris] = useState(false);
-  const openFormulier = () => { setNieuwOpen(true); setTimeout(() => { const el = document.getElementById("bezorg-nieuw"); if (el) el.scrollIntoView({ block: "start" }); }, 60); };
+  // Bezorging rechtstreeks vanuit de inventarislijst: per item een invulvakje.
+  const [bezorgModus, setBezorgModus] = useState(false);
+  const [bezorgAantallen, setBezorgAantallen] = useState({});
+  const zetBezorgAantal = (naam, w) => setBezorgAantallen((m) => { const n = { ...m }; if (String(w).trim()) n[naam] = w; else delete n[naam]; return n; });
+  const startBezorgModus = () => {
+    setToonInventaris(true); setBezorgModus(true); setInventarisBewerk(false);
+    setTimeout(() => { const el = document.getElementById("bezorg-inventaris"); if (el) el.scrollIntoView({ block: "start" }); }, 60);
+  };
+  const stopBezorgModus = () => { setBezorgModus(false); setBezorgAantallen({}); setGekozen(null); setZoek(""); setNotitie(""); };
+  const opslaanVanuitLijst = async () => {
+    const materialen = Object.entries(bezorgAantallen).map(([naam, aantal]) => ({ naam, aantal: Number(aantal) || 0 })).filter((m) => m.aantal > 0);
+    if (!gekozen) { alert("Kies eerst de partij waar dit materiaal mee gaat."); return; }
+    if (!materialen.length) { alert("Vul bij minstens één materiaal een aantal in."); return; }
+    const naam = onAskName ? await onAskName("bezorging", "Bezorging registreren") : "";
+    if (onAskName && !naam) return; // geannuleerd in de naam-popup
+    onSave({ boekingId: gekozen.id, boekingNaam: gekozen.naam, boekingDatum: gekozen.datum, materialen, notitie, door: naam });
+    stopBezorgModus();
+  };
+  const openFormulier = startBezorgModus;
   return (
     <div>
       <BackBar onBack={onBack} />
       <h1 className="serif ink text-3xl leading-tight">Bezorgmateriaal</h1>
       <p className="text-sm mute mt-1">Wat ging er mee met een bezorging, en wat moet er nog terugkomen? Registreer hieronder een nieuwe bezorging; hierboven zie je wat er nog openstaat.</p>
-
-      {canEdit && nieuwOpen && (
-        <div id="bezorg-nieuw" className="card p-4 mt-4" style={{ scrollMarginTop: "0.75rem" }}>
-            <div className="space-y-3">
-              <div className="serif ink text-lg leading-tight">Nieuwe bezorging</div>
-              <div>
-                <span className="block text-sm font-medium ink mb-1.5">Partij</span>
-                {gekozen ? (
-                  <div className="flex items-center justify-between gap-2 card p-2.5">
-                    <span className="text-sm ink truncate">{gekozen.naam} <span className="mute">· {fmtDMY(gekozen.datum)}</span></span>
-                    <button onClick={() => setGekozen(null)} className="ff text-[12.5px] font-medium acc hover:opacity-70 shrink-0">Wijzig</button>
-                  </div>
-                ) : (
-                  <div>
-                    <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoek} onChange={(e) => { setZoek(e.target.value); setPartijIdx(null); }}
-                      onKeyDown={(e) => { const alle = [...vandaagBoekingen, ...ouderBoekingen]; lijstToetsen(e, alle.length, partijIdx, setPartijIdx, (k) => kiesPartij(alle[k])); }}
-                      placeholder="Zoek een partij op naam…" />
-                    <div className="mt-1.5 rounded-xl overflow-y-auto" style={{ maxHeight: "18rem", border: "1px solid " + T.line }}>
-                      {bedoeldeJe && <div className="px-3 py-2 text-[12.5px]" style={{ background: "#f3ecdc", borderBottom: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{zoek}" — bedoelde je:</div>}
-                      {vandaagBoekingen.length > 0 && (
-                        <>
-                          <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Vandaag</div>
-                          {vandaagBoekingen.map((b) => (
-                            <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.indexOf(b) ? "" : "mute"}>· {b.gasten || 0} pers. · {String(b.start_tijd || "").slice(11, 16)}</span></button>
-                          ))}
-                        </>
-                      )}
-                      {ouderBoekingen.length > 0 && (
-                        <>
-                          <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-widest acc" style={{ background: T.paper, position: "sticky", top: 0 }}>Ouder</div>
-                          {ouderBoekingen.map((b) => (
-                            <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "" : "mute"}>· {fmtDMY(b.datum)}</span></button>
-                          ))}
-                        </>
-                      )}
-                      {vandaagBoekingen.length === 0 && ouderBoekingen.length === 0 && <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <span className="block text-sm font-medium ink mb-1.5">Materialen</span>
-                <div className="space-y-2">
-                  {rijen.map((r, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0"><ComboInput value={r.naam} onChange={(w) => setRij(i, "naam", w)} options={materiaalNamen} placeholder="bv. Tupperware bak groot" /></div>
-                      <input type="text" inputMode="numeric" className="input px-2 py-2 text-sm text-right" style={{ width: "4.5rem" }} value={r.aantal} onChange={(e) => setRij(i, "aantal", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" />
-                      <button onClick={() => wegRij(i)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={15} /></button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <AddRow onClick={voegRijToe} label="Materiaal toevoegen" />
-                  {onSaveInventaris && <button onClick={() => setNieuwMateriaalOpen(true)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70"><Package size={15} /> Nieuw materiaal in inventaris</button>}
-                </div>
-              </div>
-
-              <Field label="Notitie (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
-
-              <div className="flex justify-end gap-2">
-                <button onClick={() => { setNieuwOpen(false); setGekozen(null); setRijen([{ naam: "", aantal: "" }]); setNotitie(""); }} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
-                <button onClick={opslaan} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Opslaan</button>
-              </div>
-            </div>
-        </div>
-      )}
 
       <SectionTitle>Nog terug te halen ({openLijst.length})</SectionTitle>
       {openLijst.length === 0
@@ -15706,18 +15657,68 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
       )}
       {onSaveInventaris && (
         <>
-          <div className="flex items-center justify-between gap-2 mt-6 mb-2">
+          <div id="bezorg-inventaris" className="flex items-center justify-between gap-2 mt-6 mb-2" style={{ scrollMarginTop: "0.75rem" }}>
             <button onClick={() => setToonInventaris((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
               {toonInventaris ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Inventaris ({materiaalItems.length})
             </button>
             {toonInventaris && (
-              <button onClick={() => setInventarisBewerk((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70">
-                <Pencil size={13} /> {inventarisBewerk ? "Klaar" : "Bewerken"}
-              </button>
+              <span className="flex items-center gap-3">
+                {canEdit && !inventarisBewerk && (
+                  <button onClick={() => (bezorgModus ? stopBezorgModus() : startBezorgModus())} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70">
+                    <Truck size={13} /> {bezorgModus ? "Annuleren" : "Nieuwe bezorging"}
+                  </button>
+                )}
+                {!bezorgModus && (
+                  <button onClick={() => setInventarisBewerk((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70">
+                    <Pencil size={13} /> {inventarisBewerk ? "Klaar" : "Bewerken"}
+                  </button>
+                )}
+              </span>
             )}
           </div>
+          {toonInventaris && bezorgModus && (
+            <div className="card p-3.5 mb-3 space-y-3" style={{ border: "2px solid " + T.green }}>
+              <div className="serif ink text-lg leading-tight">Nieuwe bezorging — vul hieronder per materiaal in wat er meegaat</div>
+              <div>
+                <span className="block text-sm font-medium ink mb-1.5">Partij</span>
+                {gekozen ? (
+                  <div className="flex items-center justify-between gap-2 card p-2.5">
+                    <span className="text-sm ink truncate">{gekozen.naam} <span className="mute">· {fmtDMY(gekozen.datum)}</span></span>
+                    <button onClick={() => setGekozen(null)} className="ff text-[12.5px] font-medium acc hover:opacity-70 shrink-0">Wijzig</button>
+                  </div>
+                ) : (
+                  <div>
+                    <input autoFocus className="input px-3 py-2 w-full text-sm" value={zoek} onChange={(e) => { setZoek(e.target.value); setPartijIdx(null); }}
+                      onKeyDown={(e) => { const alle = [...vandaagBoekingen, ...ouderBoekingen]; lijstToetsen(e, alle.length, partijIdx, setPartijIdx, (k) => kiesPartij(alle[k])); }}
+                      placeholder="Zoek een partij op naam…" />
+                    <div className="mt-1.5 rounded-xl overflow-y-auto" style={{ maxHeight: "14rem", border: "1px solid " + T.line }}>
+                      {bedoeldeJe && <div className="px-3 py-2 text-[12.5px]" style={{ background: "#f3ecdc", borderBottom: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{zoek}" — bedoelde je:</div>}
+                      {vandaagBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc">Vandaag</div>}
+                      {vandaagBoekingen.map((b) => (
+                        <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.indexOf(b) ? "" : "mute"}>· {b.gasten || 0} pers.</span></button>
+                      ))}
+                      {ouderBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc">Ouder</div>}
+                      {ouderBoekingen.map((b) => (
+                        <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "" : "mute"}>· {fmtDMY(b.datum)}</span></button>
+                      ))}
+                      {vandaagBoekingen.length === 0 && ouderBoekingen.length === 0 && <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <Field label="Notitie (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12.5px] mute">{Object.keys(bezorgAantallen).length} materiaal{Object.keys(bezorgAantallen).length === 1 ? "" : "en"} ingevuld</span>
+                <span className="flex gap-2">
+                  <button onClick={stopBezorgModus} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+                  <button onClick={opslaanVanuitLijst} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold">Bezorging opslaan</button>
+                </span>
+              </div>
+            </div>
+          )}
           {toonInventaris && (
-            <InventarisBeheer categorieen={materiaalCategorieen} items={materiaalItems} bewerk={inventarisBewerk} onOpslaan={onSaveInventaris} />
+            <InventarisBeheer categorieen={materiaalCategorieen} items={materiaalItems} bewerk={inventarisBewerk} onOpslaan={onSaveInventaris}
+              bezorgModus={bezorgModus && canEdit} bezorgAantallen={bezorgAantallen} onBezorgAantal={zetBezorgAantal} />
           )}
         </>
       )}
@@ -15727,7 +15728,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
           okLabel="Toevoegen" onCancel={() => setNieuwMateriaalOpen(false)}
           onOk={(naam) => { onSaveInventaris([...materiaalItems, { naam, categorie: "Overige", opmerking: "", hoeveelheid: "" }], null); setNieuwMateriaalOpen(false); }} />
       )}
-      {canEdit && !nieuwOpen && (
+      {canEdit && !bezorgModus && (
         <button onClick={openFormulier} className="btnp ff fixed bottom-6 right-4 sm:right-6 z-30 inline-flex items-center gap-2 rounded-full pl-4 pr-5 py-3 shadow-lg font-medium text-sm">
           <Plus size={19} /> Bezorging
         </button>
@@ -15739,14 +15740,14 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
 // Inventarisbeheer: per categorie een groep; in leesstand een simpele lijst,
 // in bewerkstand aanpasbare regels plus de mogelijkheid een nieuwe categorie
 // toe te voegen. Wijzigingen worden meteen bewaard (geen aparte opslaanknop).
-function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
+function InventarisBeheer({ categorieen, items, bewerk, onOpslaan, bezorgModus, bezorgAantallen, onBezorgAantal }) {
   const [nieuweCatOpen, setNieuweCatOpen] = useState(false);
   const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat);
   const zetItem = (idx, veld, w) => onOpslaan(items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)), null);
   const wegItem = (idx) => onOpslaan(items.filter((_, j) => j !== idx), null);
   const voegItemToe = (cat) => onOpslaan([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
   const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) onOpslaan(null, [...categorieen, naam]); setNieuweCatOpen(false); };
-  const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : "1fr 4.5rem 1fr";
+  const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : bezorgModus ? "1fr 4.5rem 1fr 5rem" : "1fr 4.5rem 1fr";
   return (
     <div className="space-y-4">
       {categorieen.map((cat) => {
@@ -15758,16 +15759,20 @@ function InventarisBeheer({ categorieen, items, bewerk, onOpslaan }) {
             {rijen.length ? (
               <div className="card overflow-hidden">
                 <div className="grid gap-x-3 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide acc" style={{ gridTemplateColumns: kolommen, borderBottom: "1px solid " + T.line }}>
-                  <span>Naam</span><span className="text-right">Aantal</span><span>Opmerking</span>{bewerk && <span></span>}
+                  <span>Naam</span><span className="text-right">Aantal</span><span>Opmerking</span>{bewerk && <span></span>}{bezorgModus && <span className="text-right">Mee</span>}
                 </div>
                 {!bewerk ? (
-                  rijen.map((i, j) => (
-                    <div key={j} className={"grid gap-x-3 items-start px-3.5 py-2 text-sm " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen }}>
-                      <span className="ink break-words">{i.naam}</span>
+                  rijen.map((i, j) => {
+                    const mee = bezorgModus ? String((bezorgAantallen && bezorgAantallen[i.naam]) || "") : "";
+                    return (
+                    <div key={j} className={"grid gap-x-3 items-center px-3.5 py-2 text-sm " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen, background: mee ? "#eef2e6" : undefined }}>
+                      <span className={"break-words " + (mee ? "ink font-medium" : "ink")}>{i.naam}</span>
                       <span className="mute text-right">{i.hoeveelheid || "—"}</span>
                       <span className="mute italic break-words">{i.opmerking || ""}</span>
+                      {bezorgModus && <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" value={mee}
+                        onChange={(e) => onBezorgAantal(i.naam, e.target.value.replace(/[^0-9]/g, ""))} placeholder="0" title="Aantal dat meegaat met deze bezorging" />}
                     </div>
-                  ))
+                  ); })
                 ) : (
                   rijen.map((i, j) => {
                     const idx = items.indexOf(i);
