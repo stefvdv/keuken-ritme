@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-14t"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-15a"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5652,7 +5652,7 @@ function App() {
           } else flash("Chef-modus aan — geen dubbele artikelen gevonden");
           return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
-        {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen} bezorgLijst={bezorgLijst} canEdit={canEdit}
+        {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen.map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; })} bezorgLijst={bezorgLijst} canEdit={canEdit}
           materiaalItems={materiaalItems} materiaalCategorieen={materiaalCategorieen} onSaveInventaris={canEdit ? saveInventaris : null}
           onSave={saveBezorgRegistratie} onTerug={boekBezorgTerugname} onDelete={canEdit ? verwijderBezorgRegistratie : null} onAskName={askName}
           onBack={goBack} focusId={current.focus != null ? current.focus : null} />}
