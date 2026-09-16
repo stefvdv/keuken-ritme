@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-15k"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-16b"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -5489,18 +5489,7 @@ function App() {
           {wijzItems.map(({ b, w, vingerafdruk }) => (
             <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondWijzPartijAf(vingerafdruk)} />
           ))}
-          {recenteWijz.length > 0 && (
-            <div className={wijzItems.length ? "pt-2" : ""} style={wijzItems.length ? { borderTop: "1px solid #e4d6b8" } : undefined}>
-              <div className="text-[10.5px] font-semibold uppercase tracking-widest mb-1" style={{ opacity: 0.75 }}>Laatste wijzigingen</div>
-              <ul className="space-y-1">
-                {recenteWijz.map((r, i) => (
-                  <li key={i} className="text-[12.5px] leading-snug">
-                    <span className="font-medium">{r.naam}</span> <span style={{ opacity: 0.7 }}>({wijzLabel(r.datum)}) · {wanneerKort(r.t)}</span><br />{r.w}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <LaatsteWijzigingenBlok regels={recenteWijz} wijzLabel={wijzLabel} wanneerKort={wanneerKort} bovenrand={wijzItems.length > 0} />
         </div>
       ),
       onAfronden: () => wijzItems.forEach((it) => rondWijzPartijAf(it.vingerafdruk)), // Boekingen synchroniseert bewust niet tussen apparaten, en blijft permanent afgerond
@@ -11111,6 +11100,27 @@ function MateriaalMeldingRegel({ r, open, boeking, wijzLabel, bezorgSamenvat }) 
   );
 }
 
+function LaatsteWijzigingenBlok({ regels, wijzLabel, wanneerKort, bovenrand }) {
+  const [open, setOpen] = useState(false); // standaard ingeklapt
+  if (!regels.length) return null;
+  return (
+    <div className={bovenrand ? "pt-2" : ""} style={bovenrand ? { borderTop: "1px solid #e4d6b8" } : undefined}>
+      <button onClick={() => setOpen((v) => !v)} className="ff inline-flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-widest" style={{ opacity: 0.8 }}>
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Laatste wijzigingen ({regels.length})
+      </button>
+      {open && (
+        <ul className="space-y-1 mt-1">
+          {regels.map((r, i) => (
+            <li key={i} className="text-[12.5px] leading-snug">
+              <span className="font-medium">{r.naam}</span> <span style={{ opacity: 0.7 }}>({wijzLabel(r.datum)}) · {wanneerKort(r.t)}</span><br />{r.w}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function MeldingenBalk({ categorieen, onSluiten, isGedempt, onDempen }) {
   const [open, setOpen] = useState(null); // id van de uitgeklapte categorie
   const [breed, setBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
@@ -11820,16 +11830,18 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
-          ? <div className="w-full flex items-center gap-1.5">
-              <input className="input px-2 py-1 text-[16px] font-bold serif min-w-0 flex-1" title={velden.naam || naamTekst || b.naam || ""} value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
-              <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }} value={velden.bezorgwijze || "locatie"} onChange={(e) => setVelden((v) => ({ ...v, bezorgwijze: e.target.value }))} title="Op locatie of bezorgen">
-                <option value="locatie">Bij de Beug</option>
-                <option value="bezorgen">Bezorgen</option>
-              </select>
-              <input className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "9rem" }} list={"zalen-" + b.id} value={velden.zaal || ""} onChange={(e) => setVelden((v) => ({ ...v, zaal: e.target.value }))} placeholder="Locatie (bv. de Deel)" title="Waar op het landgoed (of het bezorgadres)" />
-              <datalist id={"zalen-" + b.id}>
-                <option value="de Deel" /><option value="Groene Schuur" /><option value="Binnentuin" /><option value="Moestuin" /><option value="Boomgaard" />
-              </datalist>
+          ? <div className="w-full space-y-1.5">
+              <input className="input px-2 py-1 text-[16px] font-bold serif w-full" title={velden.naam || naamTekst || b.naam || ""} value={velden.naam} onChange={(e) => setVelden((v) => ({ ...v, naam: e.target.value }))} />
+              <div className="flex items-center gap-1.5">
+                <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }} value={velden.bezorgwijze || "locatie"} onChange={(e) => setVelden((v) => ({ ...v, bezorgwijze: e.target.value }))} title="Op locatie of bezorgen">
+                  <option value="locatie">Bij de Beug</option>
+                  <option value="bezorgen">Bezorgen</option>
+                </select>
+                <input className="input px-2 py-1 text-[12.5px] min-w-0 flex-1" style={{ maxWidth: "14rem" }} list={"zalen-" + b.id} value={velden.zaal || ""} onChange={(e) => setVelden((v) => ({ ...v, zaal: e.target.value }))} placeholder="Locatie (bv. de Deel)" title="Waar op het landgoed (of het bezorgadres)" />
+                <datalist id={"zalen-" + b.id}>
+                  <option value="de Deel" /><option value="Groene Schuur" /><option value="Binnentuin" /><option value="Moestuin" /><option value="Boomgaard" />
+                </datalist>
+              </div>
             </div>
           : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 w-full md:w-auto md:flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
 
@@ -13273,7 +13285,8 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-2 py-1.5 relative">
+      <div className="sticky z-20 -mx-4 px-4" style={{ top: 0, background: "#efece2" }}>
+      <div className="flex items-center gap-2 py-1.5 relative">
         <button onClick={() => schuifMaand(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={15} /></button>
         <span className="serif ink font-bold text-xl leading-tight capitalize">{maandLabel}</span>
         <button onClick={() => schuifMaand(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={15} /></button>
@@ -13309,6 +13322,11 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
           </div>
         )}
       </div>
+        <div ref={dagenKopRef} className="overflow-x-hidden">
+          <div style={{ minWidth: "44rem" }} className="grid grid-cols-7 py-1">
+            {["ma","di","wo","do","vr","za","zo"].map((w) => <div key={w} className="text-[11px] font-semibold uppercase tracking-widest acc px-1.5">{w}</div>)}
+          </div>
+        </div>
       </div>
       {prullenOpen && verwijderd.length > 0 && (
         <div className="card p-3 mb-3">
@@ -13325,13 +13343,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
           </div>
         </div>
       )}
-
-      <div className="sticky z-20 -mx-4 px-4" style={{ top: 0, background: "#efece2" }}>
-        <div ref={dagenKopRef} className="overflow-x-hidden">
-          <div style={{ minWidth: "44rem" }} className="grid grid-cols-7 py-1">
-            {["ma","di","wo","do","vr","za","zo"].map((w) => <div key={w} className="text-[11px] font-semibold uppercase tracking-widest acc px-1.5">{w}</div>)}
-          </div>
-        </div>
       </div>
       <div className="overflow-x-auto -mx-4 px-4 pb-2" onScroll={(e) => { if (dagenKopRef.current) dagenKopRef.current.scrollLeft = e.currentTarget.scrollLeft; }}>
         <div style={{ minWidth: "44rem" }}>
