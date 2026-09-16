@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-15g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-15i"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2582,7 +2582,7 @@ function parseYieldRef(amount, unitText, yieldText) {
 // de oude selects via className/style.
 // Typveld mét dropdown: rechtstreeks typen kan altijd, en de pijl opent een
 // klein menu met de standaardopties (vervangt de aparte "Anders…"-keuze).
-function ComboInput({ value, onChange, options, placeholder }) {
+function ComboInput({ value, onChange, options, placeholder, groepVan }) {
   const [open, setOpen] = useState(false);
   const boxRef = React.useRef(null);
   useEffect(() => {
@@ -2621,11 +2621,16 @@ function ComboInput({ value, onChange, options, placeholder }) {
           <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl p-1 shadow-xl" style={{ background: T.paper, border: "1px solid " + T.line, maxHeight: "12rem", overflowY: "auto" }}>
             {getoond.length === 0 && <div className="px-3 py-2 text-sm mute">Niets gevonden — de getypte naam blijft gewoon staan.</div>}
             {getoond.map((o, k) => (
-              <button key={o} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); setIdx(null); }}
+              <React.Fragment key={o}>
+                {groepVan && groepVan(o) && (k === 0 || groepVan(getoond[k - 1]) !== groepVan(o)) && (
+                  <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">{groepVan(o)}</div>
+                )}
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); setIdx(null); }}
                 className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 " + (idx === k || (idx == null && o === value) ? "pillon" : "ink hover:opacity-70")}>
                 <span>{o}</span>
                 {o === value && <Check size={15} />}
               </button>
+              </React.Fragment>
             ))}
           </div>
         </>
@@ -6250,7 +6255,10 @@ const navHref = (adres) => {
   const tekst = String(adres || "").trim();
   if (!tekst) return "#";
   const isIOS = (() => { try { return /iPad|iPhone|iPod/.test(navigator.userAgent || ""); } catch (e) { return false; } })();
-  return isIOS ? "https://maps.apple.com/?q=" + encodeURIComponent(tekst) : "geo:0,0?q=" + encodeURIComponent(tekst);
+  const enc = encodeURIComponent(tekst);
+  if (isIOS) return "https://maps.apple.com/?q=" + enc;
+  if (/Android/i.test(navigator.userAgent || "")) return "geo:0,0?q=" + enc;
+  return "https://www.google.com/maps?q=" + enc; // laptop/desktop: gewone kaartlink
 };
 const PRIJS_STOP = ["de", "het", "een", "van", "per", "vers", "verse", "bio", "biologisch", "biologische", "ca", "stuks", "stuk", "gram", "gr", "kg", "ml", "liter", "doos", "bak", "zak", "pot", "krat"];
 const prijsWoorden = (s) => zonderAccent(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ")
@@ -11280,9 +11288,7 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
           {adres && (
             <div>
               <span className="mute">{bezorging ? "Bezorgadres" : "Adres"}: </span>
-              {/* Alleen op telefoon klikbaar naar de ingestelde navigatie-app; op laptop/tablet blijft het platte tekst. */}
-              <span className="ink font-semibold hidden md:inline">{adres}</span>
-              <a href={navHref(adres)} className="ff underline ink font-semibold md:hidden">{adres}</a>
+              <a href={navHref(adres)} target="_blank" rel="noreferrer" className="ff underline ink font-semibold">{adres}</a>
             </div>
           )}
           {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
@@ -12602,7 +12608,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
 
   const dagKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()]; };
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
-  const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ");
+  const weekNr = (() => { const x = new Date(dagen[0] + "T12:00:00"); x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7)); const w1 = new Date(x.getFullYear(), 0, 4); return 1 + Math.round(((x - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7); })();
+  const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ") + " · wk " + weekNr;
 
   const printen = () => {
     // Print alleen wat op de mep-kaarten staat: per partij een kopregel
@@ -15437,15 +15444,14 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
 // Eén openstaande (of afgeronde) bezorgregistratie, met inline formulier om
 // een terugname te boeken. initieelOpen klapt de kaart uit vanuit een link
 // in de BezorgBanner (via focusId op het scherm eromheen).
-function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, boekingen, onAskName, initieelOpen }) {
+function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, materiaalCatVan, boekingen, onAskName, initieelOpen }) {
   const open = bezorgOpenstaand(reg);
   const terugRegels = bezorgTerugnameRegels(reg);
   const boeking = React.useMemo(() => (boekingen || []).find((b) => String(b.id) === String(reg.boeking_id)) || null, [boekingen, reg.boeking_id]);
   const [infoOpen, setInfoOpen] = useState(false);
   const [uit, setUit] = useState(!!initieelOpen);
-  const [waarden, setWaarden] = useState(() => {
-    const w = {}; open.forEach((o) => { w[o.naam] = String(o.aantal).replace(".", ","); }); return w;
-  });
+  const [klap, setKlap] = useState(!!initieelOpen); // kaart standaard ingeklapt
+  const [waarden, setWaarden] = useState({}); // teruggave-vakken beginnen leeg
   // Extra materiaal dat niet in de oorspronkelijke bezorging stond — voor
   // als het invullen van de bezorging zelf niet klopte.
   const [extraRijen, setExtraRijen] = useState([{ naam: "", aantal: "" }]);
@@ -15468,20 +15474,27 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, boekinge
     onTerug(reg.id, { regels, notitie, door: naam });
     setUit(false); setExtraRijen([{ naam: "", aantal: "" }]); setNotitie("");
   };
+  const adres = (boeking && boeking.adres) || "";
   return (
     <div id={"bezorg-" + reg.id} className="card p-3" style={{ scrollMarginTop: "0.75rem" }}>
-      <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={() => canEdit && open.length > 0 && setUit((v) => !v)} className="ff text-left min-w-0 flex-1" disabled={!canEdit || !open.length}>
-          <div className="font-semibold ink truncate">{reg.boeking_naam || "Zonder naam"}</div>
-          <div className="text-[12.5px] mute">{dLabel(reg.boeking_datum)}</div>
-        </button>
-        <div className="flex items-center gap-1.5 shrink-0">
+      {/* Partijnaam op een eigen rij, zo breed en leesbaar mogelijk */}
+      <button type="button" onClick={() => setKlap((v) => !v)} className="ff w-full text-left flex items-start justify-between gap-2">
+        <span className="font-semibold ink break-words min-w-0 flex-1 text-[15.5px] leading-snug">{reg.boeking_naam || "Zonder naam"}</span>
+        <span className="shrink-0 mt-0.5">{klap ? <ChevronUp size={16} className="acc" /> : <ChevronDown size={16} className="acc" />}</span>
+      </button>
+      <div className="mt-1 flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[12.5px] mute">{dLabel(reg.boeking_datum)}</span>
+        <span className="flex items-center gap-1.5 shrink-0">
           {boeking && <button onClick={() => setInfoOpen(true)} className="ff rounded-lg p-1" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={15} /></button>}
           {open.length > 0
             ? <span className="text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>Nog op te halen</span>
             : <span className="text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#e7ecdd", color: "#44502f" }}>Compleet</span>}
-        </div>
+        </span>
       </div>
+      {adres && <div className="mt-1 text-[13px]"><a href={navHref(adres)} target="_blank" rel="noreferrer" className="ff underline ink">{adres}</a></div>}
+      {reg.door && <div className="mt-0.5 text-[12.5px] mute">Bezorgd door {reg.door}</div>}
+      {open.length > 0 && <div className="mt-1 text-[13.5px] font-medium" style={{ color: "#b3261e" }}>Nog niet terug: {open.map((o) => o.aantal + "× " + o.naam).join(", ")}</div>}
+      {klap && (<>
       {infoOpen && boeking && (
         <PartijInfoPopup naam={boeking.naam} datumKop={dLabel(boeking.datum)} tijdTekst={String(boeking.start_tijd || "").slice(11, 16)}
           gastenTekst={String(boeking.gasten || 0)} bezorging={false} zaal={boeking.zaal || ""} adres={boeking.adres || ""}
@@ -15491,8 +15504,10 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, boekinge
       <div className="mt-2 text-[13.5px] space-y-0.5">
         <div className="mute">Meegegeven: {(reg.materialen || []).map((m) => m.aantal + "× " + m.naam).join(", ") || "—"}</div>
         {alTerug && <div className="mute">Al terug: {alTerug}</div>}
-        {open.length > 0 && <div className="font-medium" style={{ color: "#a05a00" }}>Nog niet terug: {open.map((o) => o.aantal + "× " + o.naam).join(", ")}</div>}
       </div>
+      {canEdit && open.length > 0 && !uit && (
+        <button onClick={() => setUit(true)} className="btno ff mt-2 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">Terugname invullen</button>
+      )}
       {canEdit && open.length > 0 && uit && (
         <div className="mt-3 pt-3 space-y-3" style={{ borderTop: "1px solid " + T.line }}>
           <div>
@@ -15513,7 +15528,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, boekinge
             <div className="space-y-2">
               {extraRijen.map((r, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0"><ComboInput value={r.naam} onChange={(w) => zetExtra(i, "naam", w)} options={materiaalNamen} placeholder="Materiaal" /></div>
+                  <div className="flex-1 min-w-0"><ComboInput value={r.naam} onChange={(w) => zetExtra(i, "naam", w)} options={materiaalNamen} groepVan={materiaalCatVan} placeholder="Materiaal" /></div>
                   <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }} value={r.aantal} onChange={(e) => zetExtra(i, "aantal", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" />
                   <button onClick={() => wegExtra(i)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
                 </div>
@@ -15547,6 +15562,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, boekinge
       {canEdit && onDelete && (
         <button onClick={() => { if (window.confirm("Deze registratie verwijderen?")) onDelete(reg.id); }} className="ff mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>
       )}
+      </>)}
     </div>
   );
 }
@@ -15579,10 +15595,17 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
       .slice(0, partijQuery ? 60 : 30),
     [boekingen, vandaag, partijQuery, bedoeldeJe]);
 
+  const materiaalCatVan = React.useMemo(() => {
+    const m = {};
+    (materiaalItems || []).forEach((i) => { if (i.naam && !(i.naam in m)) m[i.naam] = i.categorie || "Overige"; });
+    return (naam) => m[naam] || "Eerder gebruikt";
+  }, [materiaalItems]);
   const materiaalNamen = React.useMemo(() => {
     const set = new Set((materiaalItems || []).map((i) => i.naam));
     (bezorgLijst || []).forEach((r) => (r.materialen || []).forEach((m) => m.naam && set.add(m.naam)));
-    return [...set].sort((a, b) => a.localeCompare(b, "nl"));
+    // Groepsgewijs: eerst de inventaris in categorievolgorde, daarna eerder gebruikte namen
+    const catIdx = (naam) => { const c = materiaalCatVan(naam); const i = (materiaalCategorieen || []).indexOf(c); return c === "Eerder gebruikt" || i < 0 ? 999 : i; };
+    return [...set].sort((a, b) => catIdx(a) - catIdx(b) || a.localeCompare(b, "nl"));
   }, [bezorgLijst, materiaalItems]);
   const [nieuwMateriaalOpen, setNieuwMateriaalOpen] = useState(false);
   const [inventarisBewerk, setInventarisBewerk] = useState(false);
@@ -15645,14 +15668,14 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
       <SectionTitle>Nog terug te halen ({openLijst.length})</SectionTitle>
       {openLijst.length === 0
         ? <Empty label="Alle bezorgmateriaal is terug." />
-        : <div className="space-y-2.5">{openLijst.map(({ r }) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} boekingen={boekingen} onAskName={onAskName} initieelOpen={r.id === focusId} />)}</div>}
+        : <div className="space-y-2.5">{openLijst.map(({ r }) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} materiaalCatVan={materiaalCatVan} boekingen={boekingen} onAskName={onAskName} initieelOpen={r.id === focusId} />)}</div>}
 
       {compleetLijst.length > 0 && (
         <>
           <button onClick={() => setToonCompleet((v) => !v)} className="ff flex mt-6 mb-2 items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
             {toonCompleet ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Afgerond ({compleetLijst.length})
           </button>
-          {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} boekingen={boekingen} onAskName={onAskName} initieelOpen={false} />)}</div>}
+          {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onDelete={onDelete} materiaalNamen={materiaalNamen} materiaalCatVan={materiaalCatVan} boekingen={boekingen} onAskName={onAskName} initieelOpen={false} />)}</div>}
         </>
       )}
       {onSaveInventaris && (
