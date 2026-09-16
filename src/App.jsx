@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-15i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-15j"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2858,7 +2858,7 @@ function App() {
   const bewaarBestelLijst = async (obj) => {
     bestelLijstRef.current = obj;
     setBestelLijst(obj);
-    if (live) { try { await supabase.from("app_settings").upsert({ key: "bestellijst", value: obj, updated_at: new Date().toISOString() }); } catch (e) {} }
+    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "bestellijst", value: obj, updated_at: new Date().toISOString() }); } catch (e) {} }
   };
   // Na het inladen van een leverancierslijst: zelf toegevoegde bestelproducten
   // met een overeenkomende naam samenvoegen — de ingeladen informatie wint,
@@ -2896,7 +2896,7 @@ function App() {
   const [mepNotitie, setMepNotitie] = useState(null);
   const bewaarMepNotitie = async (obj) => {
     setMepNotitie(obj);
-    if (live) { try { await supabase.from("app_settings").upsert({ key: "mep_notitie", value: obj, updated_at: new Date().toISOString() }); } catch (e) {} }
+    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "mep_notitie", value: obj, updated_at: new Date().toISOString() }); } catch (e) {} }
   };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
   const [miceProducten, setMiceProducten] = useState([]); // catalogus uit MICE
@@ -2993,7 +2993,11 @@ function App() {
       const aanvulling = { datum: new Date().toISOString(), door: reg.door || (user && user.name) || "", materialen: reg.materialen || [], notitie: reg.notitie || "" };
       const aanvullingen = [...(bestaande.aanvullingen || []), aanvulling];
       setBezorgLijst((l) => l.map((r) => (r.id === bestaande.id ? { ...r, materialen, aanvullingen } : r)));
-      if (live) { try { await supabase.from("bezorgmateriaal").update({ materialen, aanvullingen, updated_at: new Date().toISOString() }).eq("id", bestaande.id); } catch (e) {} }
+      if (live) {
+        let gelukt = false;
+        try { const { error } = await supabase.from("bezorgmateriaal").update({ materialen, aanvullingen, updated_at: new Date().toISOString() }).eq("id", bestaande.id); gelukt = !error; } catch (e) {}
+        if (!gelukt) wachtrijVoegToe("bezorgmateriaal", { ...bestaande, materialen, aanvullingen, updated_at: new Date().toISOString() });
+      }
       flash("Toegevoegd aan bestaande bezorging voor deze partij");
       materiaalAutoToevoegen((reg.materialen || []).map((m) => m.naam));
       return;
@@ -3004,9 +3008,16 @@ function App() {
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     if (live) {
-      const { data, error } = await supabase.from("bezorgmateriaal").insert(rij).select().single();
-      if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst bezorgmateriaal.sql in Supabase."); return; }
-      setBezorgLijst((l) => [data, ...l]);
+      let geplaatst = null;
+      try { const { data, error } = await supabase.from("bezorgmateriaal").insert(rij).select().single(); if (error) throw error; geplaatst = data; } catch (e) {}
+      if (geplaatst) setBezorgLijst((l) => [geplaatst, ...l]);
+      else {
+        // Geen verbinding: lokaal doorwerken en later alsnog wegschrijven.
+        const lokaal = { ...rij, id: "off-" + Date.now() };
+        setBezorgLijst((l) => [lokaal, ...l]);
+        wachtrijVoegToe("bezorgmateriaal", lokaal);
+        flash("Geen verbinding — bezorging staat klaar en synchroniseert vanzelf");
+      }
     } else {
       setBezorgLijst((l) => [{ ...rij, id: -Date.now() }, ...l]);
     }
@@ -3022,7 +3033,11 @@ function App() {
     const gebeurtenis = { datum: new Date().toISOString(), door: event.door || (user && user.name) || "", notitie: event.notitie || "", regels: event.regels };
     const teruggenomen = [...(huidige.teruggenomen || []), gebeurtenis];
     setBezorgLijst((l) => l.map((r) => (r.id === id ? { ...r, teruggenomen } : r)));
-    if (live) { try { await supabase.from("bezorgmateriaal").update({ teruggenomen, updated_at: new Date().toISOString() }).eq("id", id); } catch (e) {} }
+    if (live) {
+      let gelukt = false;
+      try { const { error } = await supabase.from("bezorgmateriaal").update({ teruggenomen, updated_at: new Date().toISOString() }).eq("id", id); gelukt = !error; } catch (e) {}
+      if (!gelukt) wachtrijVoegToe("bezorgmateriaal", { ...huidige, teruggenomen, updated_at: new Date().toISOString() });
+    }
     materiaalAutoToevoegen(event.regels.map((r) => r.naam));
   };
   const verwijderBezorgRegistratie = async (id) => {
@@ -3302,6 +3317,14 @@ function App() {
     if (!m) { m = document.createElement("meta"); m.name = "viewport"; document.head.appendChild(m); }
     m.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no";
   }, []);
+  useEffect(() => {
+    if (!live) return;
+    const probeer = () => { wachtrijVerwerk(supabase); };
+    probeer();
+    window.addEventListener("online", probeer);
+    const t = setInterval(probeer, 60000);
+    return () => { window.removeEventListener("online", probeer); clearInterval(t); };
+  }, []);
   useEffect(() => { if (loaded) doeSyncRef.current(); }, [loaded]);
   useEffect(() => { if (loaded && (section === "boekingen" || section === "mep")) doeSyncRef.current(); }, [loaded, section]);
   useEffect(() => {
@@ -3318,7 +3341,7 @@ function App() {
 
   const saveKoppelingSleutel = async (sleutel, producten) => {
     setKoppeling((k) => ({ ...k, [sleutel]: producten }));
-    if (live) await supabase.from("mice_koppeling").upsert({ sleutel, producten, updated_by: user || "", updated_at: new Date().toISOString() });
+    if (live) await veiligUpsert(supabase, "mice_koppeling", { sleutel, producten, updated_by: user || "", updated_at: new Date().toISOString() });
   };
   const saveKoppeling = (b, producten) => saveKoppelingSleutel("id|" + b.id, producten);
   // Eigen boeking (niet uit MICE): negatief id zodat het nooit botst met MICE.
@@ -3422,14 +3445,14 @@ function App() {
   const saveHaccpInterval = async (n) => {
     const x = Math.max(1, Math.round(Number(n) || HACCP_INTERVAL_STANDAARD));
     setHaccpInterval(x);
-    if (live) await supabase.from("app_settings").upsert({ key: "haccp_interval", value: { dagen: x }, updated_at: new Date().toISOString() });
+    if (live) await veiligUpsert(supabase, "app_settings", { key: "haccp_interval", value: { dagen: x }, updated_at: new Date().toISOString() });
   };
   React.useMemo(() => zetVormen(eigenVormen), [eigenVormen]);
   const saveVormen = async (lijst) => {
     const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))];
     setEigenVormen(uit);
     if (live) {
-      const { error } = await supabase.from("app_settings").upsert({ key: "verpakkingsvormen", value: { namen: uit }, updated_at: new Date().toISOString() });
+      const { error } = await veiligUpsert(supabase, "app_settings", { key: "verpakkingsvormen", value: { namen: uit }, updated_at: new Date().toISOString() });
       if (error) flash("Vorm alleen op dit apparaat bewaard");
     }
   };
@@ -3439,14 +3462,14 @@ function App() {
     const categorieen = nieuweCategorieen != null ? nieuweCategorieen : materiaalCategorieen;
     setMateriaalItems(items); setMateriaalCategorieen(categorieen);
     if (live) {
-      const { error } = await supabase.from("app_settings").upsert({ key: "bezorg_materialen", value: { items, categorieen }, updated_at: new Date().toISOString() });
+      const { error } = await veiligUpsert(supabase, "app_settings", { key: "bezorg_materialen", value: { items, categorieen }, updated_at: new Date().toISOString() });
       if (error) flash("Materiaal alleen op dit apparaat bewaard");
     }
   };
   const saveExtraNamen = async (lijst) => {
     const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"));
     setExtraNamen(uit);
-    if (live) { try { await supabase.from("app_settings").upsert({ key: "team_namen", value: { namen: uit }, updated_at: new Date().toISOString() }); } catch (e) {} }
+    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "team_namen", value: { namen: uit }, updated_at: new Date().toISOString() }); } catch (e) {} }
   };
   // Nieuwe naam getypt in de "wie doet dit"-popup: voortaan overal beschikbaar.
   const voegNaamToe = (naam) => {
@@ -3537,7 +3560,7 @@ function App() {
   const spellingUitzondering = async (namen) => {
     const volgende = [...new Set([...spellingUit, ...namen.map((x) => String(x).toLowerCase())])];
     setSpellingUit(volgende);
-    if (live) await supabase.from("app_settings").upsert({ key: "calc_spelling", value: { namen: volgende }, updated_at: new Date().toISOString() });
+    if (live) await veiligUpsert(supabase, "app_settings", { key: "calc_spelling", value: { namen: volgende }, updated_at: new Date().toISOString() });
   };
   const corrigeerNamen = (nieuw, oud) => {
     const oudeNamen = new Set(((oud && oud.ingredients) || []).map((x) => String((x && x.item) || "").trim().toLowerCase()));
@@ -3566,7 +3589,7 @@ function App() {
     const volgende = { ...naamAlias, [String(van).toLowerCase()]: naar };
     setNaamAlias(volgende);
     if (live) {
-      const { error } = await supabase.from("app_settings").upsert({ key: "calc_alias", value: { paren: volgende }, updated_at: new Date().toISOString() });
+      const { error } = await veiligUpsert(supabase, "app_settings", { key: "calc_alias", value: { paren: volgende }, updated_at: new Date().toISOString() });
       if (error) flash("Alleen lokaal samengevoegd — draai eerst de app_settings-SQL in Supabase");
       else flash(van + " telt nu mee als " + naar);
     } else flash(van + " telt nu mee als " + naar);
@@ -3576,7 +3599,7 @@ function App() {
     const volgende = [...new Set([...negeerIng, String(naam).toLowerCase()])];
     setNegeerIng(volgende);
     if (live) {
-      const { error } = await supabase.from("app_settings").upsert({ key: "calc_negeer", value: { namen: volgende }, updated_at: new Date().toISOString() });
+      const { error } = await veiligUpsert(supabase, "app_settings", { key: "calc_negeer", value: { namen: volgende }, updated_at: new Date().toISOString() });
       if (error) flash("Alleen lokaal weggehaald — draai eerst de app_settings-SQL in Supabase");
     }
   };
@@ -4000,7 +4023,7 @@ function App() {
     setCatSettings(next);
     try { localStorage.setItem("ritme:cats-eigen", JSON.stringify(next.eigen)); localStorage.setItem("ritme:cats-verborgen", JSON.stringify(next.verborgen)); } catch (e) {}
     if (live) {
-      const { error } = await supabase.from("app_settings").upsert({ key: "recipe_categories", value: next, updated_at: new Date().toISOString() });
+      const { error } = await veiligUpsert(supabase, "app_settings", { key: "recipe_categories", value: next, updated_at: new Date().toISOString() });
       if (error) flash("Categorieën alleen lokaal bewaard — draai eerst de app_settings-SQL in Supabase");
     }
   };
@@ -10213,6 +10236,39 @@ const statusRand = (st) => {
   return "#3b6ea5";
 };
 const STATUS_OPTIES = [["confirmed", "bevestigd"], ["option", "in optie"], ["option_expired", "optie verlopen"], ["cancelled", "geannuleerd"], ["request", "aanvraag"]];
+// Offline-wachtrij: lukt een schrijfactie niet (geen internet), dan gaat hij
+// in localStorage en wordt hij automatisch opnieuw geprobeerd zodra er weer
+// verbinding is (online-event + elke minuut). Laatste schrijver wint.
+const WACHTRIJ_SLEUTEL = "ritme:offlineWachtrij";
+const wachtrijLees = () => { try { const l = JSON.parse(localStorage.getItem(WACHTRIJ_SLEUTEL) || "[]"); return Array.isArray(l) ? l : []; } catch (e) { return []; } };
+const wachtrijZet = (l) => { try { localStorage.setItem(WACHTRIJ_SLEUTEL, JSON.stringify(l)); } catch (e) {} };
+const wachtrijVoegToe = (tabel, rij) => {
+  // Per app_settings-sleutel / koppeling-sleutel maar één (de nieuwste) bewaren
+  const merk = tabel + "|" + String(rij.key || rij.sleutel || rij.id || "");
+  const l = wachtrijLees().filter((w) => (w.tabel + "|" + String(w.rij.key || w.rij.sleutel || w.rij.id || "")) !== merk || !(rij.key || rij.sleutel || rij.id));
+  l.push({ tabel, rij, t: new Date().toISOString() });
+  wachtrijZet(l);
+};
+let wachtrijBezig = false;
+async function wachtrijVerwerk(supabase) {
+  if (wachtrijBezig) return;
+  const l = wachtrijLees();
+  if (!l.length) return;
+  wachtrijBezig = true;
+  const rest = [];
+  for (const w of l) {
+    try { const { error } = await supabase.from(w.tabel).upsert(w.rij); if (error) rest.push(w); } catch (e) { rest.push(w); }
+  }
+  wachtrijZet(rest);
+  wachtrijBezig = false;
+}
+// Veilige upsert: bij mislukking in de wachtrij (het scherm werkte al door
+// op de lokale state, dus de gebruiker merkt er niets van).
+async function veiligUpsert(supabase, tabel, rij) {
+  try { const { error } = await supabase.from(tabel).upsert(rij); if (error) throw error; return true; }
+  catch (e) { wachtrijVoegToe(tabel, rij); return false; }
+}
+
 // Overlay-sluiter die alleen sluit als de klik óók op de achtergrond begon:
 // een sleep-selectie die buiten het paneel eindigt, laat alles gewoon open.
 const backdropSluiter = (sluit) => {
@@ -15451,6 +15507,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, materiaa
   const [infoOpen, setInfoOpen] = useState(false);
   const [uit, setUit] = useState(!!initieelOpen);
   const [klap, setKlap] = useState(!!initieelOpen); // kaart standaard ingeklapt
+  const [naamTip, setNaamTip] = useState(null); // tik op een afgekapte naam: zwevende volledige naam
   const [waarden, setWaarden] = useState({}); // teruggave-vakken beginnen leeg
   // Extra materiaal dat niet in de oorspronkelijke bezorging stond — voor
   // als het invullen van de bezorging zelf niet klopte.
@@ -15514,8 +15571,11 @@ function BezorgKaart({ reg, canEdit, onTerug, onDelete, materiaalNamen, materiaa
             <div className="text-[12.5px] font-medium ink mb-1.5">Wat is er teruggekomen?</div>
             <div className="space-y-2">
               {open.map((o) => (
-                <div key={o.naam} className="flex items-center gap-2">
-                  <span className="text-sm flex-1 min-w-0 truncate">{o.naam}</span>
+                <div key={o.naam} className="relative flex items-center gap-2">
+                  {naamTip === o.naam && (
+                    <span className="absolute left-0 bottom-full mb-1 z-40 rounded-lg px-2.5 py-1.5 text-[12.5px] shadow-lg" style={{ background: "#2b3823", color: "#f2f0e8", maxWidth: "90%" }} onClick={() => setNaamTip(null)}>{o.naam}</span>
+                  )}
+                  <span className="text-sm flex-1 min-w-0 truncate" onClick={() => setNaamTip((t) => (t === o.naam ? null : o.naam))} title={o.naam}>{o.naam}</span>
                   <input type="text" inputMode="decimal" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }}
                     value={waarden[o.naam] || ""} onChange={(e) => setWaarden((w) => ({ ...w, [o.naam]: e.target.value.replace(/[^0-9,.]/g, "") }))} />
                   <span className="text-[11.5px] mute shrink-0">/ {o.aantal}</span>
@@ -15763,13 +15823,35 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
 // Inventarisbeheer: per categorie een groep; in leesstand een simpele lijst,
 // in bewerkstand aanpasbare regels plus de mogelijkheid een nieuwe categorie
 // toe te voegen. Wijzigingen worden meteen bewaard (geen aparte opslaanknop).
-function InventarisBeheer({ categorieen, items, bewerk, onOpslaan, bezorgModus, bezorgAantallen, onBezorgAantal }) {
+function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewerk, onOpslaan, bezorgModus, bezorgAantallen, onBezorgAantal }) {
   const [nieuweCatOpen, setNieuweCatOpen] = useState(false);
+  // Bewerken gebeurt op een lokale kopie en wordt na 0,8 s typrust (of bij het
+  // sluiten) weggeschreven: per toetsaanslag de hele app her-renderen en
+  // opslaan brak op de telefoon de invoer af na een paar letters.
+  const [lokaal, setLokaal] = useState({ items: itemsProp, categorieen: categorieenProp });
+  const laatst = React.useRef(JSON.stringify({ items: itemsProp, categorieen: categorieenProp }));
+  const timer = React.useRef(null);
+  const wachtend = React.useRef(null);
+  useEffect(() => {
+    const ser = JSON.stringify({ items: itemsProp, categorieen: categorieenProp });
+    if (ser !== laatst.current) { laatst.current = ser; setLokaal({ items: itemsProp, categorieen: categorieenProp }); }
+  }, [itemsProp, categorieenProp]);
+  const geef = (nItems, nCats) => setLokaal((l) => {
+    const n = { items: nItems != null ? nItems : l.items, categorieen: nCats != null ? nCats : l.categorieen };
+    laatst.current = JSON.stringify(n);
+    wachtend.current = n;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { wachtend.current = null; onOpslaan(n.items, n.categorieen); }, 800);
+    return n;
+  });
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); if (wachtend.current) onOpslaan(wachtend.current.items, wachtend.current.categorieen); }, []);
+  const items = lokaal.items;
+  const categorieen = lokaal.categorieen;
   const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat);
-  const zetItem = (idx, veld, w) => onOpslaan(items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)), null);
-  const wegItem = (idx) => onOpslaan(items.filter((_, j) => j !== idx), null);
-  const voegItemToe = (cat) => onOpslaan([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
-  const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) onOpslaan(null, [...categorieen, naam]); setNieuweCatOpen(false); };
+  const zetItem = (idx, veld, w) => geef(items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)), null);
+  const wegItem = (idx) => geef(items.filter((_, j) => j !== idx), null);
+  const voegItemToe = (cat) => geef([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
+  const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) geef(null, [...categorieen, naam]); setNieuweCatOpen(false); };
   const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : bezorgModus ? "1fr 4.5rem 1fr 5rem" : "1fr 4.5rem 1fr";
   return (
     <div className="space-y-4">
