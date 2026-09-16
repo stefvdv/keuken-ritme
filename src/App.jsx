@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-16f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-16h"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -15564,6 +15564,27 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
 // Eén openstaande (of afgeronde) bezorgregistratie, met inline formulier om
 // een terugname te boeken. initieelOpen klapt de kaart uit vanuit een link
 // in de BezorgBanner (via focusId op het scherm eromheen).
+const kanHover = () => { try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches; } catch (e) { return false; } };
+function NaamMetTip({ label, tip, className }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open || kanHover()) return;
+    const t = setTimeout(() => setOpen(false), 2500); // aanraakscherm: vanzelf weg
+    return () => clearTimeout(t);
+  }, [open]);
+  return (
+    <span className="relative min-w-0 flex-1">
+      {open && (
+        <span className="absolute left-0 bottom-full mb-1 z-40 rounded-lg px-2.5 py-1.5 text-[12.5px] shadow-lg" style={{ background: "#2b3823", color: "#f2f0e8", maxWidth: "95vw", width: "max-content" }} onClick={() => setOpen(false)}>{tip}</span>
+      )}
+      <span className={(className || "") + " block truncate"}
+        onMouseEnter={() => { if (kanHover()) setOpen(true); }}
+        onMouseLeave={() => { if (kanHover()) setOpen(false); }}
+        onClick={() => { if (!kanHover()) setOpen((v) => !v); }}>{label}</span>
+    </span>
+  );
+}
+
 function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen, materiaalCatVan, boekingen, onAskName, initieelOpen }) {
   const open = bezorgOpenstaand(reg);
   const terugRegels = bezorgTerugnameRegels(reg);
@@ -15571,7 +15592,6 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
   const [infoOpen, setInfoOpen] = useState(false);
   const [uit, setUit] = useState(!!initieelOpen);
   const [klap, setKlap] = useState(!!initieelOpen); // kaart standaard ingeklapt
-  const [naamTip, setNaamTip] = useState(null); // tik op een afgekapte naam: zwevende volledige naam
   const [meerOpties, setMeerOpties] = useState(false); // extra materiaal/opmerking bij terugname
   const [gesch, setGesch] = useState(false); // logboek ingeklapt
   const [bw, setBw] = useState(null); // bewerkstand: { materialen: [{naam, aantal}], notitie }
@@ -15652,11 +15672,8 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
           return alles.map((m, i) => {
             const nogOpen = openMap[m.naam] || 0;
             return (
-              <div key={i} className="relative flex items-center gap-2 px-3 py-2">
-                {naamTip === "st:" + m.naam && (
-                  <span className="absolute left-0 bottom-full mb-1 z-40 rounded-lg px-2.5 py-1.5 text-[12.5px] shadow-lg" style={{ background: "#2b3823", color: "#f2f0e8", maxWidth: "90%" }} onClick={() => setNaamTip(null)}>{m.naam}</span>
-                )}
-                <span className="text-sm ink flex-1 min-w-0 truncate" onClick={() => setNaamTip((t) => (t === "st:" + m.naam ? null : "st:" + m.naam))} title={m.naam}>{m.aantal}× {m.naam}</span>
+              <div key={i} className="flex items-center gap-2 px-3 py-2">
+                <NaamMetTip label={m.aantal + "× " + m.naam} tip={m.naam} className="text-sm ink" />
                 {nogOpen > 0
                   ? <span className="shrink-0 text-[11.5px] font-bold rounded-full px-2 py-0.5" style={{ background: "#fbe4e1", color: "#b3261e" }}>nog {nogOpen} buiten</span>
                   : <span className="shrink-0 text-[12px] font-semibold" style={{ color: "#4f7a3a" }}>✓ terug</span>}
@@ -15696,11 +15713,8 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
             </div>
             <div className="space-y-2">
               {open.map((o) => (
-                <div key={o.naam} className="relative flex items-center gap-2">
-                  {naamTip === o.naam && (
-                    <span className="absolute left-0 bottom-full mb-1 z-40 rounded-lg px-2.5 py-1.5 text-[12.5px] shadow-lg" style={{ background: "#2b3823", color: "#f2f0e8", maxWidth: "90%" }} onClick={() => setNaamTip(null)}>{o.naam}</span>
-                  )}
-                  <span className="text-sm flex-1 min-w-0 truncate" onClick={() => setNaamTip((t) => (t === o.naam ? null : o.naam))} title={o.naam}>{o.naam}</span>
+                <div key={o.naam} className="flex items-center gap-2">
+                  <NaamMetTip label={o.naam} tip={o.naam} className="text-sm" />
                   <input type="text" inputMode="decimal" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }}
                     value={waarden[o.naam] || ""} onChange={(e) => setWaarden((w) => ({ ...w, [o.naam]: e.target.value.replace(/[^0-9,.]/g, "") }))} />
                   <span className="text-[11.5px] mute shrink-0">/ {o.aantal}</span>
@@ -15795,6 +15809,12 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
       .slice(0, partijQuery ? 60 : 30),
     [boekingen, vandaag, partijQuery, bedoeldeJe]);
 
+  // Wat staat er in totaal nog buiten, per materiaal (over alle bezorgingen)?
+  const buitenPerMateriaal = React.useMemo(() => {
+    const per = {};
+    for (const r of bezorgLijst || []) for (const o of bezorgOpenstaand(r)) per[o.naam] = (per[o.naam] || 0) + o.aantal;
+    return per;
+  }, [bezorgLijst]);
   const materiaalCatVan = React.useMemo(() => {
     const m = {};
     (materiaalItems || []).forEach((i) => { if (i.naam && !(i.naam in m)) m[i.naam] = i.categorie || "Overige"; });
@@ -15916,11 +15936,11 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
                       placeholder="Zoek een partij op naam…" />
                     <div className="mt-1.5 rounded-xl overflow-y-auto" style={{ maxHeight: "14rem", border: "1px solid " + T.line }}>
                       {bedoeldeJe && <div className="px-3 py-2 text-[12.5px]" style={{ background: "#f3ecdc", borderBottom: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{zoek}" — bedoelde je:</div>}
-                      {vandaagBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc">Vandaag</div>}
+                      {vandaagBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc underline" style={{ textUnderlineOffset: "2px" }}>Vandaag</div>}
                       {vandaagBoekingen.map((b) => (
                         <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.indexOf(b) ? "" : "mute"}>· {b.gasten || 0} pers.</span></button>
                       ))}
-                      {ouderBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc">Ouder</div>}
+                      {ouderBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc underline" style={{ textUnderlineOffset: "2px" }}>Ouder</div>}
                       {ouderBoekingen.map((b) => (
                         <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "" : "mute"}>· {fmtDMY(b.datum)}</span></button>
                       ))}
@@ -15941,7 +15961,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
           )}
           {toonInventaris && (
             <InventarisBeheer categorieen={materiaalCategorieen} items={materiaalItems} bewerk={inventarisBewerk} onOpslaan={onSaveInventaris}
-              bezorgModus={bezorgModus && canEdit} bezorgAantallen={bezorgAantallen} onBezorgAantal={zetBezorgAantal} />
+              bezorgModus={bezorgModus && canEdit} bezorgAantallen={bezorgAantallen} onBezorgAantal={zetBezorgAantal} buitenVan={buitenPerMateriaal} />
           )}
         </>
       )}
@@ -15963,7 +15983,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
 // Inventarisbeheer: per categorie een groep; in leesstand een simpele lijst,
 // in bewerkstand aanpasbare regels plus de mogelijkheid een nieuwe categorie
 // toe te voegen. Wijzigingen worden meteen bewaard (geen aparte opslaanknop).
-function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewerk, onOpslaan, bezorgModus, bezorgAantallen, onBezorgAantal }) {
+function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewerk, onOpslaan, bezorgModus, bezorgAantallen, onBezorgAantal, buitenVan }) {
   const [nieuweCatOpen, setNieuweCatOpen] = useState(false);
   // Bewerken gebeurt op een lokale kopie en wordt na 0,8 s typrust (of bij het
   // sluiten) weggeschreven: per toetsaanslag de hele app her-renderen en
@@ -15992,7 +16012,7 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
   const wegItem = (idx) => geef(items.filter((_, j) => j !== idx), null);
   const voegItemToe = (cat) => geef([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
   const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) geef(null, [...categorieen, naam]); setNieuweCatOpen(false); };
-  const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : bezorgModus ? "1fr 4.5rem 1fr 5rem" : "1fr 4.5rem 1fr";
+  const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : bezorgModus ? "1fr 4rem 3.5rem 4.5rem" : "1fr 4.5rem 3.5rem 1fr";
   return (
     <div className="space-y-4">
       {categorieen.map((cat) => {
@@ -16004,7 +16024,7 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
             {rijen.length ? (
               <div className="card overflow-hidden">
                 <div className="grid gap-x-3 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide acc" style={{ gridTemplateColumns: kolommen, borderBottom: "1px solid " + T.line }}>
-                  <span>Naam</span><span className="text-right">Aantal</span><span>Opmerking</span>{bewerk && <span></span>}{bezorgModus && <span className="text-right">Mee</span>}
+                  <span>Naam</span><span className="text-right">Aantal</span>{!bewerk && <span className="text-right">Buiten</span>}{!bewerk && !bezorgModus && <span>Opmerking</span>}{bewerk && <span>Opmerking</span>}{bewerk && <span></span>}{bezorgModus && <span className="text-right">Mee</span>}
                 </div>
                 {!bewerk ? (
                   rijen.map((i, j) => {
@@ -16013,7 +16033,8 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
                     <div key={j} className={"grid gap-x-3 items-center px-3.5 py-2 text-sm " + (j > 0 ? "divi" : "")} style={{ gridTemplateColumns: kolommen, background: mee ? "#eef2e6" : undefined }}>
                       <span className={"break-words " + (mee ? "ink font-medium" : "ink")}>{i.naam}</span>
                       <span className="mute text-right">{i.hoeveelheid || "—"}</span>
-                      <span className="mute italic break-words">{i.opmerking || ""}</span>
+                      {(() => { const buiten = (buitenVan && buitenVan[i.naam]) || 0; return <span className={"text-right " + (buiten > 0 ? "font-bold" : "mute")} style={buiten > 0 ? { color: "#b3261e" } : undefined} title={buiten > 0 ? buiten + " nog niet terug van bezorgingen" : "Niets buiten"}>{buiten > 0 ? buiten : ""}</span>; })()}
+                      {!bezorgModus && <span className="mute italic break-words">{i.opmerking || ""}</span>}
                       {bezorgModus && <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" value={mee}
                         onChange={(e) => onBezorgAantal(i.naam, e.target.value.replace(/[^0-9]/g, ""))} placeholder="0" title="Aantal dat meegaat met deze bezorging" />}
                     </div>
