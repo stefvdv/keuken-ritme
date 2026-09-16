@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-16c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-16e"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2623,7 +2623,7 @@ function ComboInput({ value, onChange, options, placeholder, groepVan }) {
             {getoond.map((o, k) => (
               <React.Fragment key={o}>
                 {groepVan && groepVan(o) && (k === 0 || groepVan(getoond[k - 1]) !== groepVan(o)) && (
-                  <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1">{groepVan(o)}</div>
+                  <div className="text-[10.5px] font-semibold uppercase tracking-widest acc px-2 pt-1.5 pb-1" style={{ position: "sticky", top: "-0.25rem", zIndex: 1, background: T.paper, marginTop: "-0.25rem" }}>{groepVan(o)}</div>
                 )}
               <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o); setOpen(false); setIdx(null); }}
                 className={"ff w-full text-left rounded-xl px-3 py-2 text-sm flex items-center justify-between gap-2 " + (idx === k || (idx == null && o === value) ? "pillon" : "ink hover:opacity-70")}>
@@ -15569,6 +15569,8 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
   const [uit, setUit] = useState(!!initieelOpen);
   const [klap, setKlap] = useState(!!initieelOpen); // kaart standaard ingeklapt
   const [naamTip, setNaamTip] = useState(null); // tik op een afgekapte naam: zwevende volledige naam
+  const [meerOpties, setMeerOpties] = useState(false); // extra materiaal/opmerking bij terugname
+  const [gesch, setGesch] = useState(false); // logboek ingeklapt
   const [bw, setBw] = useState(null); // bewerkstand: { materialen: [{naam, aantal}], notitie }
   const startBewerk = () => { setKlap(true); setBw({ materialen: (reg.materialen || []).map((m) => ({ naam: m.naam, aantal: String(m.aantal) })), notitie: reg.notitie || "" }); };
   const zetBwMat = (i, veld, w) => setBw((b) => ({ ...b, materialen: b.materialen.map((m, j) => (j === i ? { ...m, [veld]: w } : m)) }));
@@ -15625,7 +15627,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
       </div>
       {adres && <div className="mt-1 text-[13px]"><a href={navHref(adres)} target="_blank" rel="noreferrer" className="ff underline ink">{adres}</a></div>}
       {reg.door && <div className="mt-0.5 text-[12.5px] mute">Bezorgd door {reg.door}</div>}
-      {open.length > 0 && <div className="mt-1 text-[13.5px] font-medium" style={{ color: "#b3261e" }}>Nog niet terug: {open.map((o) => o.aantal + "× " + o.naam).join(", ")}</div>}
+      {open.length > 0 && !klap && <div className="mt-1 text-[13.5px] font-medium" style={{ color: "#b3261e" }}>Nog niet terug: {open.map((o) => o.aantal + "× " + o.naam).join(", ")}</div>}
       {klap && (<>
       {infoOpen && boeking && (
         <PartijInfoPopup naam={boeking.naam} datumKop={dLabel(boeking.datum)} tijdTekst={String(boeking.start_tijd || "").slice(11, 16)}
@@ -15633,9 +15635,32 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
           contact={boeking.contact || ""} klant_email={boeking.klant_email || ""} toonEmail={true} tel={boeking.tel || ""}
           onSluit={() => setInfoOpen(false)} />
       )}
-      <div className="mt-2 text-[13.5px] space-y-0.5">
-        <div className="mute">Meegegeven: {(reg.materialen || []).map((m) => m.aantal + "× " + m.naam).join(", ") || "—"}</div>
-        {alTerug && <div className="mute">Al terug: {alTerug}</div>}
+      {/* Per materiaal één regel: naam links, status rechts. In één
+          oogopslag te zien wat nog buiten staat. */}
+      <div className="mt-2 rounded-xl divide-y" style={{ border: "1px solid " + T.line }}>
+        {(() => {
+          const openMap = {};
+          for (const o of open) openMap[o.naam] = o.aantal;
+          // Alles wat is meegegeven (incl. latere aanvullingen), per naam opgeteld
+          const per = {};
+          for (const m of reg.materialen || []) per[m.naam] = (per[m.naam] || 0) + (Number(m.aantal) || 0);
+          for (const a of reg.aanvullingen || []) for (const m of a.materialen || []) per[m.naam] = (per[m.naam] || 0) + (Number(m.aantal) || 0);
+          const alles = Object.entries(per).map(([naam, aantal]) => ({ naam, aantal })).sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
+          return alles.map((m, i) => {
+            const nogOpen = openMap[m.naam] || 0;
+            return (
+              <div key={i} className="relative flex items-center gap-2 px-3 py-2">
+                {naamTip === "st:" + m.naam && (
+                  <span className="absolute left-0 bottom-full mb-1 z-40 rounded-lg px-2.5 py-1.5 text-[12.5px] shadow-lg" style={{ background: "#2b3823", color: "#f2f0e8", maxWidth: "90%" }} onClick={() => setNaamTip(null)}>{m.naam}</span>
+                )}
+                <span className="text-sm ink flex-1 min-w-0 truncate" onClick={() => setNaamTip((t) => (t === "st:" + m.naam ? null : "st:" + m.naam))} title={m.naam}>{m.aantal}× {m.naam}</span>
+                {nogOpen > 0
+                  ? <span className="shrink-0 text-[11.5px] font-bold rounded-full px-2 py-0.5" style={{ background: "#fbe4e1", color: "#b3261e" }}>nog {nogOpen} buiten</span>
+                  : <span className="shrink-0 text-[12px] font-semibold" style={{ color: "#4f7a3a" }}>✓ terug</span>}
+              </div>
+            );
+          });
+        })()}
       </div>
       {bw && (
         <div className="mt-3 pt-3 space-y-2.5" style={{ borderTop: "1px solid " + T.line }}>
@@ -15656,12 +15681,16 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
         </div>
       )}
       {canEdit && open.length > 0 && !uit && !bw && (
-        <button onClick={() => setUit(true)} className="btno ff mt-2 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold">Terugname invullen</button>
+        <button onClick={() => setUit(true)} className="btnp ff mt-2.5 w-full rounded-xl px-3 py-2.5 text-[14px] font-semibold">Opgehaald materiaal invullen</button>
       )}
       {canEdit && open.length > 0 && uit && (
         <div className="mt-3 pt-3 space-y-3" style={{ borderTop: "1px solid " + T.line }}>
           <div>
-            <div className="text-[12.5px] font-medium ink mb-1.5">Wat is er teruggekomen?</div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="text-[13px] font-semibold ink">Wat is er terug? Vul de aantallen in.</div>
+              <button onClick={() => setWaarden(() => { const w = {}; open.forEach((o) => { w[o.naam] = String(o.aantal); }); return w; })}
+                className="btno ff shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-semibold">Alles is terug</button>
+            </div>
             <div className="space-y-2">
               {open.map((o) => (
                 <div key={o.naam} className="relative flex items-center gap-2">
@@ -15676,6 +15705,12 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
               ))}
             </div>
           </div>
+          {!meerOpties && (
+            <button onClick={() => setMeerOpties(true)} className="ff inline-flex items-center gap-1 text-[12.5px] font-medium acc hover:opacity-70">
+              <ChevronDown size={13} /> Meer opties (ander materiaal erbij, opmerking)
+            </button>
+          )}
+          {meerOpties && (<>
           <div>
             <div className="text-[12.5px] font-medium ink mb-1.5">Stond er nog iets anders bij? (optioneel)</div>
             <div className="space-y-2">
@@ -15690,9 +15725,10 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
             <AddRow onClick={voegExtraToe} label="Materiaal toevoegen" />
           </div>
           <Field label="Opmerking bij deze terugname (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. één bak beschadigd" /></Field>
+          </>)}
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={() => setUit(false)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
-            <button onClick={verwerk} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Terugname boeken</button>
+            <button onClick={() => { setUit(false); setMeerOpties(false); }} className="ff rounded-lg px-3 py-2 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
+            <button onClick={verwerk} className="btnp ff rounded-xl px-4 py-2 text-sm font-bold">Terugname boeken</button>
           </div>
         </div>
       )}
@@ -15706,10 +15742,17 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
         for (const g of reg.teruggenomen || []) regels.push({ t: g.datum, tekst: "Opgehaald" + (g.door ? " door " + g.door : "") + ": " + (g.regels || []).map((m) => m.aantal + "× " + m.naam).join(", "), noot: g.notitie || "" });
         if (!regels.length) return null;
         return (
-          <div className="mt-3 pt-2 space-y-0.5 text-[12px] mute" style={{ borderTop: "1px solid " + T.line }}>
-            {regels.map((r, i) => (
-              <div key={i}>{wanneer(r.t)} · {r.tekst}{r.noot ? <span> — {r.noot}</span> : null}</div>
-            ))}
+          <div className="mt-3 pt-2" style={{ borderTop: "1px solid " + T.line }}>
+            <button onClick={() => setGesch((v) => !v)} className="ff inline-flex items-center gap-1 text-[12px] font-medium mute hover:opacity-70">
+              {gesch ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Geschiedenis ({regels.length})
+            </button>
+            {gesch && (
+              <div className="mt-1 space-y-0.5 text-[12px] mute">
+                {regels.map((r, i) => (
+                  <div key={i}>{wanneer(r.t)} · {r.tekst}{r.noot ? <span> — {r.noot}</span> : null}</div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })()}
