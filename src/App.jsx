@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-16e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-16f"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3494,7 +3494,10 @@ function App() {
       t = setTimeout(() => { try { const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}"); if (live) veiligUpsert(supabase, "app_settings", { key: "gebruik_telling", value: d, updated_at: new Date().toISOString() }); } catch (e) {} }, 5000);
     };
     return () => { gebruikGewijzigd = null; if (t) clearTimeout(t); };
-  }, [live]);
+    // live wordt binnen de timeout gelezen (na initialisatie); [live] als
+    // dependency gaf een use-before-init omdat de lijst tijdens het renderen
+    // al wordt uitgelezen, vóór de declaratie van live verderop.
+  }, []);
   const saveInventaris = async (nieuweItems, nieuweCategorieen) => {
     const items = nieuweItems != null ? nieuweItems : materiaalItems;
     const categorieen = nieuweCategorieen != null ? nieuweCategorieen : materiaalCategorieen;
