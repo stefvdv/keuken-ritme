@@ -535,7 +535,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-16b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-16c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -3379,7 +3379,7 @@ function App() {
     if (ookInvulling) setProdKoppeling({});
     setKoppeling({});
     setBoekingen([]);
-    try { localStorage.removeItem("ritme_mep_markering"); localStorage.removeItem("ritme_som_af"); } catch (e) {}
+    bewaarMepMark({ markering: {}, somAf: {} });
     const van = new Date(); van.setDate(van.getDate() - 62);
     try {
       const n = await haalBoekingen(localDate(van), "9999-12-31");
@@ -3472,6 +3472,29 @@ function App() {
     }
   };
   // Gedeelde materialenlijst voor bezorgingen (kratten, bakken, dozen...).
+  // Stiftmarkeringen en samen-maken-vinkjes: gedeeld met het hele team.
+  const [mepMark, setMepMark] = useState({ markering: {}, somAf: {} });
+  const mepMarkRef = React.useRef(JSON.stringify({ markering: {}, somAf: {} }));
+  const mepMarkTimer = React.useRef(null);
+  const bewaarMepMark = (deel) => {
+    setMepMark((m) => {
+      const n = { markering: deel.markering != null ? deel.markering : m.markering, somAf: deel.somAf != null ? deel.somAf : m.somAf };
+      mepMarkRef.current = JSON.stringify(n);
+      if (mepMarkTimer.current) clearTimeout(mepMarkTimer.current);
+      mepMarkTimer.current = setTimeout(() => { if (live) veiligUpsert(supabase, "app_settings", { key: "mep_markering", value: n, updated_at: new Date().toISOString() }); }, 600);
+      return n;
+    });
+  };
+  // Gedeelde gebruiksteller: na elke telling (met wat rust) de samengevoegde
+  // stand wegschrijven; binnenkomende standen worden per item op maximum gezet.
+  useEffect(() => {
+    let t = null;
+    gebruikGewijzigd = () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => { try { const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}"); if (live) veiligUpsert(supabase, "app_settings", { key: "gebruik_telling", value: d, updated_at: new Date().toISOString() }); } catch (e) {} }, 5000);
+    };
+    return () => { gebruikGewijzigd = null; if (t) clearTimeout(t); };
+  }, [live]);
   const saveInventaris = async (nieuweItems, nieuweCategorieen) => {
     const items = nieuweItems != null ? nieuweItems : materiaalItems;
     const categorieen = nieuweCategorieen != null ? nieuweCategorieen : materiaalCategorieen;
@@ -4094,7 +4117,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst"]),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"]),
       supabase.from("mice_events").select("*").order("datum", { ascending: true }),
       supabase.from("mice_koppeling").select("*"),
       supabase.from("mice_producten").select("*").order("naam", { ascending: true }),
@@ -4167,6 +4190,13 @@ function App() {
     if (tnRow && tnRow.value && Array.isArray(tnRow.value.namen)) setExtraNamen(tnRow.value.namen);
     const blRow = (cs && cs.data && cs.data.find((r) => r.key === "bestellijst")) || null;
     if (blRow && blRow.value && typeof blRow.value === "object") { bestelLijstRef.current = blRow.value; setBestelLijst(blRow.value); }
+    const mmRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_markering")) || null;
+    if (mmRow && mmRow.value && typeof mmRow.value === "object") {
+      const binnen = JSON.stringify(mmRow.value);
+      if (binnen !== mepMarkRef.current) { mepMarkRef.current = binnen; setMepMark({ markering: mmRow.value.markering || {}, somAf: mmRow.value.somAf || {} }); }
+    }
+    const gtRow = (cs && cs.data && cs.data.find((r) => r.key === "gebruik_telling")) || null;
+    if (gtRow && gtRow.value && typeof gtRow.value === "object") gebruikSamenvoegen(gtRow.value);
     const mnRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_notitie")) || null;
     if (mnRow && mnRow.value) {
       const v = mnRow.value;
@@ -5597,7 +5627,7 @@ function App() {
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -9127,15 +9157,28 @@ const TECH_NOTES_SEED = {
   ],
 };
 
-// Lokale gebruiksteller per apparaat: hoe vaker iets gebruikt is, hoe hoger
-// het in tabellen en kieslijsten komt te staan.
+// Gebruiksteller: hoe vaker iets gebruikt is, hoe hoger het in tabellen en
+// kieslijsten staat. Wordt (via de app) gedeeld tussen de apparaten; bij het
+// samenvoegen wint per item de hoogste telling.
+let gebruikGewijzigd = null; // door de app gezet: bewaart de teller gedeeld
 function telGebruik(soort, naam) {
   try {
     const k = "ritme:gebruik";
     const d = JSON.parse(localStorage.getItem(k) || "{}");
     d[soort + ":" + naam] = (d[soort + ":" + naam] || 0) + 1;
     localStorage.setItem(k, JSON.stringify(d));
+    if (gebruikGewijzigd) gebruikGewijzigd();
   } catch (e) {}
+}
+function gebruikSamenvoegen(server) {
+  try {
+    const k = "ritme:gebruik";
+    const d = JSON.parse(localStorage.getItem(k) || "{}");
+    let anders = false;
+    for (const [sl, n] of Object.entries(server || {})) { const v = Math.max(Number(n) || 0, d[sl] || 0); if (v !== (d[sl] || 0)) { d[sl] = v; anders = true; } }
+    if (anders) localStorage.setItem(k, JSON.stringify(d));
+    return d;
+  } catch (e) { return server || {}; }
 }
 function leesGebruik(soort) {
   try {
@@ -12535,7 +12578,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
@@ -12550,20 +12593,15 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
   const [klaarOpen, setKlaarOpen] = useState(false);
   const [somRij, setSomRij] = useState(null); // uitgeklapte bereiding met partijnamen
-  const [somAf, setSomAf] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("ritme_som_af") || "{}"); } catch (e) { return {}; }
-  });
-  const toggleAf = (sleutel) => setSomAf((m) => {
-    const n = { ...m };
+  // Vinkjes en stiftmarkeringen zijn gedeeld met het hele team (via de app).
+  const somAf = (mepMark && mepMark.somAf) || {};
+  const markering = (mepMark && mepMark.markering) || {};
+  const toggleAf = (sleutel) => {
+    const n = { ...somAf };
     if (n[sleutel]) delete n[sleutel]; else n[sleutel] = true;
-    try { localStorage.setItem("ritme_som_af", JSON.stringify(n)); } catch (e) {}
-    return n;
-  });
+    onMepMark({ somAf: n });
+  };
   const [stift, setStift] = useState(null);
-  // De stiftmelding blijft staan zolang de stift actief is.
-  const [markering, setMarkering] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("ritme_mep_markering") || "{}"); } catch (e) { return {}; }
-  });
   const [dagDicht, setDagDicht] = useState({}); // per dag inklapbaar; verleden standaard dicht
   // Stift sluit met Escape of een rechtermuisklik.
   useEffect(() => {
@@ -12591,12 +12629,9 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < mepDag);
   const zetMark = (sleutel) => {
     if (!stift) return;
-    setMarkering((m) => {
-      const nieuw = { ...m };
-      if (nieuw[sleutel] === stift) delete nieuw[sleutel]; else nieuw[sleutel] = stift;
-      try { localStorage.setItem("ritme_mep_markering", JSON.stringify(nieuw)); } catch (e) {}
-      return nieuw;
-    });
+    const nieuw = { ...markering };
+    if (nieuw[sleutel] === stift) delete nieuw[sleutel]; else nieuw[sleutel] = stift;
+    onMepMark({ markering: nieuw });
   };
 
   const dagen = [];
