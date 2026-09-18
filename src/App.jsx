@@ -539,7 +539,12 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-18c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-18f"; // versiestempel — check dit na elke deploy
+// Service worker: bewaart de app-bestanden zodat de app ook zónder internet
+// opstart (het bestand public/sw.js hoort in het project te staan).
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  try { window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); }); } catch (e) {}
+}
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -2982,7 +2987,7 @@ function App() {
     if (!live) return;
     (async () => {
       try {
-        const { data } = await supabase.from("bezorgmateriaal").select("*").order("created_at", { ascending: false }).limit(1000);
+        const { data } = await metSnapshot("bezorgmateriaal", supabase.from("bezorgmateriaal").select("*").order("created_at", { ascending: false }).limit(1000));
         if (data) setBezorgLijst(data);
       } catch (e) {}
     })();
@@ -3009,7 +3014,6 @@ function App() {
         if (!gelukt) wachtrijVoegToe("bezorgmateriaal", { ...bestaande, materialen, aanvullingen, updated_at: new Date().toISOString() });
       }
       flash("Toegevoegd aan bestaande bezorging voor deze partij");
-      materiaalAutoToevoegen((reg.materialen || []).map((m) => m.naam));
       return;
     }
     const rij = {
@@ -3032,7 +3036,6 @@ function App() {
       setBezorgLijst((l) => [{ ...rij, id: -Date.now() }, ...l]);
     }
     flash("Bezorging geregistreerd");
-    materiaalAutoToevoegen((reg.materialen || []).map((m) => m.naam));
   };
   // Terugname invullen: elke keer komt er een nieuwe gebeurtenis bij (nooit
   // overschrijven), met tijdstip, wie het invulde en een eigen notitie —
@@ -3048,7 +3051,6 @@ function App() {
       try { const { error } = await supabase.from("bezorgmateriaal").update({ teruggenomen, updated_at: new Date().toISOString() }).eq("id", id); gelukt = !error; } catch (e) {}
       if (!gelukt) wachtrijVoegToe("bezorgmateriaal", { ...huidige, teruggenomen, updated_at: new Date().toISOString() });
     }
-    materiaalAutoToevoegen(event.regels.map((r) => r.naam));
   };
   // Ingevulde bezorging naderhand bewerken: materialen en notitie aanpassen,
   // met een logregel wie het aanpaste. Werkt ook offline via de wachtrij.
@@ -3062,7 +3064,6 @@ function App() {
       try { const { error } = await supabase.from("bezorgmateriaal").update({ materialen, notitie, bewerkingen, updated_at: new Date().toISOString() }).eq("id", id); gelukt = !error; } catch (e) {}
       if (!gelukt) wachtrijVoegToe("bezorgmateriaal", { ...huidige, materialen, notitie, bewerkingen, updated_at: new Date().toISOString() });
     }
-    materiaalAutoToevoegen((materialen || []).map((m) => m.naam));
     flash("Bezorging aangepast");
   };
   const verwijderBezorgRegistratie = async (id) => {
@@ -3536,13 +3537,9 @@ function App() {
   // Materiaal dat bij het invullen van een bezorging of terugname wordt
   // getypt maar nog niet in de inventaris staat, komt er automatisch bij
   // (onder "Overige"), zodat de lijst vanzelf meegroeit.
-  const materiaalAutoToevoegen = (namen) => {
-    const bekend = new Set(materiaalItems.map((i) => zonderAccent(i.naam).toLowerCase().trim()));
-    const nieuw = [...new Set((namen || []).map((n) => String(n || "").trim()).filter(Boolean))]
-      .filter((n) => !bekend.has(zonderAccent(n).toLowerCase().trim()));
-    if (!nieuw.length) return;
-    saveInventaris([...materiaalItems, ...nieuw.map((n) => ({ naam: n, categorie: "Overige", opmerking: "", hoeveelheid: "" }))], null);
-  };
+  // Materiaal dat los bij een bezorging of terugname wordt getypt is bewust
+  // tijdelijk: het komt NÍET in de inventaris. Andersom wel — de kieslijsten
+  // putten uit de inventaris. Inventaris aanvullen kan alleen via Bewerken.
   const [bdArtikelen, setBdArtikelen] = useState([]);
   const [importVraag, setImportVraag] = useState(null); // {file, naam} — leverancier bevestigen voor het inlezen
   const [samenvoegVraag, setSamenvoegVraag] = useState(null); // {lev, paren} — na het inlezen laten kiezen
@@ -4119,31 +4116,32 @@ function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
+    snapshotUitCache = false;
     const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs, mev, mko, mpr, mpk, ass, bda, cit] = await Promise.all([
-      supabase.from("recipe_overrides").select("*"),
-      supabase.from("recipes_custom").select("*"),
-      supabase.from("recipe_endorsements").select("*"),
-      supabase.from("recipe_opens").select("*"),
-      supabase.from("dishes").select("*"),
-      supabase.from("ferment_batches").select("*").order("created_at", { ascending: false }),
-      supabase.from("recipe_hidden").select("recipe_id"),
-      supabase.from("flavor_pairings").select("*"),
-      supabase.from("dish_hidden").select("dish_id"),
-      supabase.from("cleaning_tasks").select("*"),
-      supabase.from("cleaning_logs").select("*").order("done_date", { ascending: false }).range(0, 4999),
-      supabase.from("technique_notes").select("*"),
-      supabase.from("haccp_logs").select("*").order("check_date", { ascending: false }),
-      supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
-      supabase.from("werkwijze_docs").select("*"),
-      supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"]),
-      supabase.from("mice_events").select("*").order("datum", { ascending: true }),
-      supabase.from("mice_koppeling").select("*"),
-      supabase.from("mice_producten").select("*").order("naam", { ascending: true }),
-      supabase.from("mice_prodkoppeling").select("*"),
-      supabase.from("assortiment").select("*"),
-      supabase.from("bd_artikelen").select("*"),
-      supabase.from("calculatie_items").select("*"),
+      metSnapshot("recipe_overrides", supabase.from("recipe_overrides").select("*")),
+      metSnapshot("recipes_custom", supabase.from("recipes_custom").select("*")),
+      metSnapshot("recipe_endorsements", supabase.from("recipe_endorsements").select("*")),
+      metSnapshot("recipe_opens", supabase.from("recipe_opens").select("*")),
+      metSnapshot("dishes", supabase.from("dishes").select("*")),
+      metSnapshot("ferment_batches", supabase.from("ferment_batches").select("*").order("created_at", { ascending: false })),
+      metSnapshot("recipe_hidden", supabase.from("recipe_hidden").select("recipe_id")),
+      metSnapshot("flavor_pairings", supabase.from("flavor_pairings").select("*")),
+      metSnapshot("dish_hidden", supabase.from("dish_hidden").select("dish_id")),
+      metSnapshot("cleaning_tasks", supabase.from("cleaning_tasks").select("*")),
+      metSnapshot("cleaning_logs", supabase.from("cleaning_logs").select("*").order("done_date", { ascending: false }).range(0, 4999)),
+      metSnapshot("technique_notes", supabase.from("technique_notes").select("*")),
+      metSnapshot("haccp_logs", supabase.from("haccp_logs").select("*").order("check_date", { ascending: false })),
+      metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
+      metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
+      metSnapshot("voorraad", supabase.from("voorraad").select("*")),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"])),
+      metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
+      metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
+      metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
+      metSnapshot("mice_prodkoppeling", supabase.from("mice_prodkoppeling").select("*")),
+      metSnapshot("assortiment", supabase.from("assortiment").select("*")),
+      metSnapshot("bd_artikelen", supabase.from("bd_artikelen").select("*")),
+      metSnapshot("calculatie_items", supabase.from("calculatie_items").select("*")),
     ]);
     let recs = [...initialRecipes];
     const ovMap = new Map((ov.data || []).map((r) => [r.id, r.data]));
@@ -4250,6 +4248,7 @@ function App() {
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
     setLoaded(true);
+    if (snapshotUitCache) flash("Geen verbinding — je ziet de laatst bekende stand; alles synchroniseert zodra er weer internet is");
     const dbDishes = (di.data || []).map((d) => ({
       id: d.id, name: d.name, course: d.course, description: d.description, plating: d.plating,
       recipeIds: d.recipe_ids || [], season: d.season || [], diet: d.diet || "Vegetarisch",
@@ -4552,13 +4551,17 @@ function App() {
   };
   const persistBatch = async (b) => {
     if (!live) return true;
-    const { error } = await supabase.from("ferment_batches").upsert({
+    const rij = {
       id: b.id, product: b.product, type: b.type, start_date: b.startDate, days: b.days,
       salt_pct: b.saltPct, temp_c: b.tempC, amount: b.amount, ph: b.pH, sugar_pct: b.sugarPct ?? null, notes: b.notes,
       done: b.done, by: b.by, finished_date: b.finishedDate, log: b.log || [], actions_done: b.actionsDone || [],
       recipe_id: b.recipeId || null, method: b.method || b.type || null,
-    });
-    return !dbFail(error);
+    };
+    try { const { error } = await supabase.from("ferment_batches").upsert(rij); if (!error) return true; } catch (e) {}
+    // Geen verbinding: lokaal doorwerken, later vanzelf synchroniseren.
+    wachtrijVoegToe("ferment_batches", rij);
+    flash("Geen verbinding — wijziging staat klaar en synchroniseert vanzelf");
+    return true;
   };
   const saveBatch = async (data, editingId) => {
     if (editingId) {
@@ -4656,14 +4659,28 @@ function App() {
   };
   const finishEindmeting = async (batchId, m) => {
     const b = batches.find((x) => x.id === batchId);
+    if (!b) return;
+    // Afronden + eindmeting in één schrijfactie. Eerder ging dit in twee
+    // stappen, waarbij de meting werd opgebouwd uit een verouderde kopie
+    // (van vóór het afronden) — die schreef "afgerond" direct weer terug
+    // naar actief. Vandaar batches die na de eindmeting actief bleven.
     let nb = b;
-    if (b && !b.done) {
+    if (!b.done) {
       nb = { ...b, done: true, finishedDate: localDate() }; // nu pas echt afronden
+      if (m) {
+        const nm = (x) => { const v = String(x ?? "").replace(",", ".").trim(); return v === "" || isNaN(Number(v)) ? null : Number(v); };
+        const naam = await askName("groot", "Batch afronden");
+        if (!naam) { flash("Niet afgerond — de batch blijft actief staan"); return; }
+        const entry = { date: m.date, ph: nm(m.ph), brix: nm(m.brix), tempC: nm(m.tempC), note: m.note ? "Eindmeting — " + m.note : "Eindmeting", by: naam };
+        nb = { ...nb, log: [...(b.log || []), entry], pH: entry.ph ?? b.pH };
+      }
       if (!(await persistBatch(nb))) return;
       setBatches((bs) => bs.map((x) => (x.id === batchId ? nb : x)));
+      flash(m ? "Batch afgerond · eindmeting in het logboek" : "Batch afgerond");
     }
-    if (m) addBatchMeasurement(batchId, { ...m, note: m.note ? "Eindmeting — " + m.note : "Eindmeting" });
-    replaceTop({ screen: "voorraadForm", editing: null, prefill: nb ? stockPrefillForBatch(nb) : null });
+    // De batch is nu al definitief afgerond — de voorraad-stap hierna is los:
+    // die annuleren of dichtklikken maakt de batch niet opnieuw actief.
+    replaceTop({ screen: "voorraadForm", editing: null, prefill: stockPrefillForBatch(nb) });
   };
   const deleteBatch = async (id) => {
     const b = batches.find((x) => x.id === id);
@@ -10324,6 +10341,39 @@ const statusRand = (st) => {
   return "#3b6ea5";
 };
 const STATUS_OPTIES = [["confirmed", "bevestigd"], ["option", "in optie"], ["option_expired", "optie verlopen"], ["cancelled", "geannuleerd"], ["request", "aanvraag"]];
+// Gegevens-snapshot voor offline starten: elke geslaagde lading wordt (per
+// tabel) lokaal bewaard. Mislukt een query bij het opstarten (geen internet),
+// dan wordt de laatst bekende stand gebruikt zodat de app gewoon werkt.
+const SNAPSHOT_SLEUTEL = "ritme:dataSnapshot";
+let snapshotGeheugen = null;
+let snapshotUitCache = false; // stond er deze lading iets uit de cache?
+const snapshotLees = () => {
+  if (!snapshotGeheugen) { try { snapshotGeheugen = JSON.parse(localStorage.getItem(SNAPSHOT_SLEUTEL) || "{}") || {}; } catch (e) { snapshotGeheugen = {}; } }
+  return snapshotGeheugen;
+};
+let snapshotTimer = null;
+const snapshotZet = (naam, data) => {
+  const m = snapshotLees();
+  m[naam] = data;
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => {
+    try { localStorage.setItem(SNAPSHOT_SLEUTEL, JSON.stringify(snapshotGeheugen)); }
+    catch (e) { try { localStorage.removeItem(SNAPSHOT_SLEUTEL); } catch (e2) {} } // te groot: liever geen cache dan een halve
+  }, 1500);
+};
+// Query met terugvaloptie: bij succes de snapshot verversen, bij een mislukte
+// verbinding de laatst bekende stand teruggeven.
+const metSnapshot = (naam, q) => Promise.resolve(q).then((r) => {
+  if (r && !r.error && Array.isArray(r.data)) { snapshotZet(naam, r.data); return r; }
+  const c = snapshotLees()[naam];
+  if (Array.isArray(c)) { snapshotUitCache = true; return { data: c, error: null }; }
+  return r;
+}).catch(() => {
+  const c = snapshotLees()[naam];
+  snapshotUitCache = Array.isArray(c);
+  return { data: Array.isArray(c) ? c : null, error: null };
+});
+
 // Offline-wachtrij: lukt een schrijfactie niet (geen internet), dan gaat hij
 // in localStorage en wordt hij automatisch opnieuw geprobeerd zodra er weer
 // verbinding is (online-event + elke minuut). Laatste schrijver wint.
@@ -15856,13 +15906,12 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const materiaalCatVan = React.useMemo(() => {
     const m = {};
     (materiaalItems || []).forEach((i) => { if (i.naam && !(i.naam in m)) m[i.naam] = i.categorie || "Overige"; });
-    return (naam) => m[naam] || "Eerder gebruikt";
+    return (naam) => m[naam] || "Overige";
   }, [materiaalItems]);
+  // Alleen de inventaris — losse namen uit eerdere bezorgingen tellen niet mee.
   const materiaalNamen = React.useMemo(() => {
-    const set = new Set((materiaalItems || []).map((i) => i.naam));
-    (bezorgLijst || []).forEach((r) => (r.materialen || []).forEach((m) => m.naam && set.add(m.naam)));
-    // Groepsgewijs: eerst de inventaris in categorievolgorde, daarna eerder gebruikte namen
-    const catIdx = (naam) => { const c = materiaalCatVan(naam); const i = (materiaalCategorieen || []).indexOf(c); return c === "Eerder gebruikt" || i < 0 ? 999 : i; };
+    const set = new Set((materiaalItems || []).map((i) => i.naam).filter(Boolean));
+    const catIdx = (naam) => { const i = (materiaalCategorieen || []).indexOf(materiaalCatVan(naam)); return i < 0 ? 999 : i; };
     return [...set].sort((a, b) => catIdx(a) - catIdx(b) || a.localeCompare(b, "nl"));
   }, [bezorgLijst, materiaalItems]);
   const [nieuwMateriaalOpen, setNieuwMateriaalOpen] = useState(false);
