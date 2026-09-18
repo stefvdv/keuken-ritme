@@ -181,14 +181,18 @@ const FERMENT_TARGETS = {
   Suikerfermentatie: { phStart: null, phEnd: null, note: "Suikerfermentatie: stuur op smaak, bruis en (bij drank) alcohol; pH minder leidend." },
   Azijnfermentatie: { phStart: null, phEnd: 3.0, note: "Azijn: verzuurt tot pH ~2,5–3,0; heeft zuurstof nodig (doek, geen deksel)." },
 };
-// Standaard handelingsschema per fermentatiemethode (voor herinneringen)
-
-
+// Controle-omschrijving per fermentatiemethode. Hoe váák er gecontroleerd
+// wordt staat niet meer hier: het ingestelde aantal controles (Extras) wordt
+// verdeeld over de looptijd van de batch — zie batchStatus.
 const FERMENT_ACTIONS = {
-  Melkzuur: [{ label: "Controleer onderdompeling en proef", everyDays: 2 }],
-  Suikerfermentatie: [{ label: "Roer om / voed en ontlucht de fles", everyDays: 1 }],
-  Azijnfermentatie: [{ label: "Proef en controleer de moeder", everyDays: 3 }],
+  Melkzuur: [{ label: "Controleer onderdompeling en proef" }],
+  Suikerfermentatie: [{ label: "Roer om / voed en ontlucht de fles" }],
+  Azijnfermentatie: [{ label: "Proef en controleer de moeder" }],
 };
+// Interval in dagen voor een batch: looptijd gedeeld door het aantal controles
+// (naar beneden afgerond, minimaal 1). Door af te ronden op hele dagen blijft
+// het ritme bij kleine verlengingen (+1 dag) gewoon doorlopen.
+const fermentInterval = (dagen) => Math.max(1, Math.floor((Number(dagen) || 0) / Math.max(1, FERMENT_CONTROLES)));
 
 // ---------- printen ----------
 // Opent een schone printweergave in een nieuw venster (A4), los van de app-UI.
@@ -535,7 +539,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-16h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-18c"; // versiestempel — check dit na elke deploy
 const AUTO_OFF_HOUR = 2; // vanaf dit uur wordt een lege gisteren automatisch "bedrijf dicht"
 const WORKDAY_START = 7, WORKDAY_END = 17; // 17:00 sluiten — HACCP-banners alleen binnen werktijd
 // Recept dat gegaard wordt (oven, koken, stoven …): herkend op naam + stappen.
@@ -577,6 +581,11 @@ const HACCP_INTERVAL_STANDAARD = 2;
 const BEZORG_CATEGORIEEN_DEFAULT = ["Servies", "Bestek", "Glaswerk", "Serveer materialen", "Decoratie", "Overige"];
 let HACCP_INTERVAL = HACCP_INTERVAL_STANDAARD;
 const zetHaccpInterval = (n) => { const x = Number(n); HACCP_INTERVAL = x > 0 ? x : HACCP_INTERVAL_STANDAARD; };
+// Aantal tussentijdse controles per fermentatiebatch, verdeeld over de looptijd
+// (instelbaar in Extras, gedeeld). 28 dagen bij 4 controles = om de 7 dagen.
+const FERMENT_CONTROLES_STANDAARD = 4;
+let FERMENT_CONTROLES = FERMENT_CONTROLES_STANDAARD;
+const zetFermentControles = (n) => { const x = Math.round(Number(n)); FERMENT_CONTROLES = x > 0 ? x : FERMENT_CONTROLES_STANDAARD; };
 // De dagen waarop gemeten had moeten worden en waarop niets staat. Telt terug
 // vanaf vandaag, hooguit 60 dagen, en stopt bij de eerste meting ooit.
 const gemisteMetingen = (logs) => {
@@ -2851,6 +2860,7 @@ function App() {
   const [materiaalItems, setMateriaalItems] = useState([]); // [{ naam, categorie, opmerking }]
   const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
+  const [fermentControles, setFermentControles] = useState(FERMENT_CONTROLES_STANDAARD); // controles per fermentatiebatch
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
   // Gedeelde bestellijst (aantallen, besteltelling, notitie, eigen producten).
   const [bestelLijst, setBestelLijst] = useState(null);
@@ -3457,6 +3467,12 @@ function App() {
     }
   };
   React.useMemo(() => zetHaccpInterval(haccpInterval), [haccpInterval]);
+  React.useMemo(() => zetFermentControles(fermentControles), [fermentControles]);
+  const saveFermentControles = async (n) => {
+    const x = Math.min(30, Math.max(1, Math.round(Number(n) || FERMENT_CONTROLES_STANDAARD)));
+    setFermentControles(x);
+    if (live) await veiligUpsert(supabase, "app_settings", { key: "ferment_controles", value: { aantal: x }, updated_at: new Date().toISOString() });
+  };
   const saveHaccpInterval = async (n) => {
     const x = Math.max(1, Math.round(Number(n) || HACCP_INTERVAL_STANDAARD));
     setHaccpInterval(x);
@@ -4120,7 +4136,7 @@ function App() {
       supabase.from("haccp_records").select("*").order("record_date", { ascending: false }),
       supabase.from("werkwijze_docs").select("*"),
       supabase.from("voorraad").select("*"),
-      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"]),
+      supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"]),
       supabase.from("mice_events").select("*").order("datum", { ascending: true }),
       supabase.from("mice_koppeling").select("*"),
       supabase.from("mice_producten").select("*").order("naam", { ascending: true }),
@@ -4183,6 +4199,8 @@ function App() {
     if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
     const hiRow = (cs && cs.data && cs.data.find((r) => r.key === "haccp_interval")) || null;
     if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
+    const fcRow = (cs && cs.data && cs.data.find((r) => r.key === "ferment_controles")) || null;
+    if (fcRow && fcRow.value && Number(fcRow.value.aantal) > 0) setFermentControles(Number(fcRow.value.aantal));
     const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
     if (bmRow && bmRow.value) {
       if (Array.isArray(bmRow.value.items)) setMateriaalItems(bmRow.value.items);
@@ -5692,7 +5710,7 @@ function App() {
             goBack(); }} />}
         {current.screen === "batchForm" && <BatchForm prefill={current.prefill} editing={current.editing ? batches.find((b) => b.id === current.editing) : null} fermentRecipes={recipes.filter((r) => r.ferment)} onCancel={goBack} onSave={(d) => { saveBatch(d, current.editing); setSection("fermentatie"); goBack(); }} />}
         {current.screen === "batchLog" && <BatchLogScreen batch={batches.find((b) => b.id === current.id)} canEdit={canEdit} onBack={goBack} onAdd={(m) => { addBatchMeasurement(current.id, m); goBack(); }} onDeleteRow={(i) => deleteBatchMeasurement(current.id, i)} />}
-        {current.screen === "batchEindmeting" && <EindmetingForm batch={batches.find((b) => b.id === current.id)} onCancelBack={goBack} onSkip={() => finishEindmeting(current.id, null)} onSave={(m) => finishEindmeting(current.id, m)} />}
+        {current.screen === "batchEindmeting" && <EindmetingForm batch={batches.find((b) => b.id === current.id)} onCancelBack={() => { goBack(); flash("Niet afgerond — de batch blijft actief staan"); }} onSkip={() => finishEindmeting(current.id, null)} onSave={(m) => finishEindmeting(current.id, m)} />}
         {current.screen === "haccpForm" && <HaccpForm editing={current.editing ? haccpLogs.find((l) => l.id === current.editing) : null} onCancel={goBack} onSave={(d) => { saveHaccp(d, current.editing); goBack(); }} />}
         {current.screen === "haccpRecordForm" && <HaccpRecordForm kind={current.recordKind} editing={current.editing ? haccpRecords.find((r) => r.id === current.editing) : null} prefill={current.prefill || null} onCancel={goBack} onSave={(d) => { saveHaccpRecord(d, current.editing); goBack(); }} />}
         {current.screen === "werkDocForm" && <WerkwijzeDocForm editing={current.editing ? mergedWerkDocs.find((d) => d.key === current.editing) : null} onCancel={goBack} onSave={(d) => { saveWerkDoc(d, current.editing); goBack(); }} />}
@@ -5710,7 +5728,7 @@ function App() {
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })}
-          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -8034,7 +8052,7 @@ function AllergenenBeheer({ rijen, onSave }) {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix }) {
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles }) {
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -8063,6 +8081,22 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>Allergenen per ingrediënt</SectionTitle>
           <AllergenenBeheer rijen={allergenFixRijen || []} onSave={onSaveAllergenFix} />
+        </>
+      )}
+
+      {onFermentControles && (
+        <>
+          <SectionTitle>Fermentatie</SectionTitle>
+          <div className="card p-4">
+            <p className="text-sm mute mb-2">Hoe vaak wordt een batch tussentijds gecontroleerd? De app verdeelt dit aantal over de looptijd — en herinnert altijd op de laatste dag. Geldt voor alle lopende én nieuwe batches, op alle apparaten.</p>
+            <label className="flex items-center gap-2 text-sm ink">
+              <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" style={{ width: "3.6rem" }} defaultValue={String(fermentControles)}
+                onBlur={(e) => { const w = e.target.value.trim(); if (w && Number(w) !== fermentControles) onFermentControles(w); e.target.value = String(Math.min(30, Math.max(1, Math.round(Number(w) || fermentControles))) || fermentControles); }}
+                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+              controles per batch
+            </label>
+            <p className="text-xs mute">Voorbeeld: een batch van 28 dagen bij {fermentControles} controles = om de {Math.max(1, Math.floor(28 / Math.max(1, fermentControles)))} dagen.</p>
+          </div>
         </>
       )}
 
@@ -8745,11 +8779,15 @@ function batchStatus(b) {
   const readyRaw = !b.done && day >= b.days;
   const ready = readyRaw && !acked.includes(READY_KEY);
   const actions = FERMENT_ACTIONS[b.method] || FERMENT_ACTIONS[b.type] || [];
+  const interval = fermentInterval(b.days);
+  // Controle-dag: op elk veelvoud van het interval, en altijd op de laatste
+  // dag van de (eventueel verlengde) batch.
+  const controleDag = day > 0 && (day % interval === 0 || day === Number(b.days));
   const due = [];
-  if (!b.done) for (const a of actions) {
-    if (a.everyDays && day > 0 && day % a.everyDays === 0 && !acked.includes(a.label)) due.push(a.label);
+  if (!b.done && controleDag) for (const a of actions) {
+    if (!acked.includes(a.label)) due.push(a.label);
   }
-  return { day, ready, readyRaw, due, acked };
+  return { day, ready, readyRaw, due, acked, interval };
 }
 const READY_KEY = "__klaar";
 
@@ -16007,17 +16045,32 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); if (wachtend.current) onOpslaan(wachtend.current.items, wachtend.current.categorieen); }, []);
   const items = lokaal.items;
   const categorieen = lokaal.categorieen;
-  const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat);
+  const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat).filter(inZoek);
   const zetItem = (idx, veld, w) => geef(items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)), null);
   const wegItem = (idx) => geef(items.filter((_, j) => j !== idx), null);
   const voegItemToe = (cat) => geef([...items, { naam: "", categorie: cat, opmerking: "", hoeveelheid: "" }], null);
   const voegCatToe = (naam) => { if (naam && !categorieen.includes(naam)) geef(null, [...categorieen, naam]); setNieuweCatOpen(false); };
-  const kolommen = bewerk ? "1fr 4.5rem 1fr auto" : bezorgModus ? "1fr 4rem 3.5rem 4.5rem" : "1fr 4.5rem 3.5rem 1fr";
+  const smal = typeof window !== "undefined" && window.innerWidth < 480; // telefoon
+  const kolommen = bewerk
+    ? "minmax(0,1fr) " + (smal ? "3.4rem minmax(0,1fr)" : "4.5rem minmax(0,1fr)") + " auto"
+    : bezorgModus
+      ? "minmax(0,1fr) " + (smal ? "2.6rem 2.6rem 3.8rem" : "4rem 3.5rem 4.5rem")
+      : "minmax(0,1fr) " + (smal ? "3rem 2.8rem" : "4.5rem 3.5rem") + " minmax(0,1fr)";
+  // Zoekbalk: filtert de lijst live, in elke stand (bekijken, bezorgen, bewerken).
+  const [zoekI, setZoekI] = useState("");
+  const zoektI = String(zoekI || "").trim().length > 0;
+  const inZoek = (i) => !zoektI || softMatchAny([i.naam, i.opmerking, i.categorie], zoekI);
   return (
     <div className="space-y-4">
+      <div className="relative">
+        <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 mute pointer-events-none" />
+        <input className="input pl-8 pr-8 py-2 w-full text-sm" value={zoekI} onChange={(e) => setZoekI(e.target.value)} placeholder="Zoek in de inventaris…" />
+        {zoektI && <button onClick={() => setZoekI("")} className="ff absolute right-2 top-1/2 -translate-y-1/2 mute hover:opacity-70"><X size={15} /></button>}
+      </div>
+      {zoektI && !items.some(inZoek) && <p className="text-sm mute">Niets gevonden voor "{zoekI}".</p>}
       {categorieen.map((cat) => {
         const rijen = perCat(cat);
-        if (!bewerk && !rijen.length) return null;
+        if (!rijen.length && (!bewerk || zoektI)) return null;
         return (
           <div key={cat}>
             <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc underline mb-2">{cat}</h3>
