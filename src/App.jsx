@@ -143,6 +143,27 @@ const zetRecepten = (rs) => { const m = {}; for (const r of rs || []) if (r && r
 const receptById = (id) => (id && RECEPTEN.perId[id]) || null;
 const subRecept = (ing) => (ing && typeof ing === "object" && ing.recipeRef ? receptById(ing.recipeRef) : null);
 
+// Allergenen van een vrij getypte (product)naam. Eerst de exacte correctie,
+// daarna correcties op zinsdelen ("witte wijn" in "Stoofpeertjes met witte
+// wijn"), langste eerst zodat "witte wijn" wint van "wijn". Wat na het
+// wegknippen overblijft gaat door de automatische detectie.
+const naamAllergenen = (naam) => {
+  const exact = globalAllergenFixFor(naam);
+  if (exact) return ALLERGEN_LABELS.filter((l) => exact.includes(l));
+  const schoon = (t) => " " + String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]+/g, " ").trim() + " ";
+  let t = schoon(naam);
+  const set = new Set();
+  const sleutels = Object.entries(GLOBAL_ALLERGEN_FIXES || {})
+    .map(([k, fix]) => ({ m: schoon(k).trim(), fix }))
+    .filter((x) => x.m).sort((a, b) => b.m.length - a.m.length);
+  for (const { m, fix } of sleutels) {
+    if (!t.includes(" " + m + " ")) continue;
+    t = t.split(" " + m + " ").join(" ");
+    (Array.isArray(fix) ? fix : []).forEach((l) => set.add(normAllergenLabel(l)));
+  }
+  detectAllergens(t).forEach((l) => set.add(l));
+  return ALLERGEN_LABELS.filter((l) => set.has(l));
+};
 const ingredientAllergens = (ing) => {
   const item = ing && typeof ing === "object" ? ing.item : ing;
   if (ing && typeof ing === "object" && Array.isArray(ing.allergens)) return ing.allergens.map(normAllergenLabel);
@@ -539,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-18f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-19b"; // versiestempel — check dit na elke deploy
 // Service worker: bewaart de app-bestanden zodat de app ook zónder internet
 // opstart (het bestand public/sw.js hoort in het project te staan).
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
@@ -9973,17 +9994,48 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const [note, setNote] = useState("");
   const [allergens, setAllergens] = useState([]);
   const [algOpen, setAlgOpen] = useState(false);
+  // Allergenen herkennen uit de productnaam, met dezelfde regels als bij
+  // recepten (app-brede correcties winnen van de automatische detectie).
+  // Handmatig uitvinken wint altijd: wat je uitzet komt niet vanzelf terug.
+  const handUit = React.useRef(new Set());   // door de gebruiker uitgevinkt
+  const autoVorig = React.useRef([]);        // wat de herkenning eerder aanzette
+  const herkend = React.useMemo(() => (name.trim().length >= 3 ? naamAllergenen(name) : []), [name]);
+  useEffect(() => {
+    setAllergens((a) => {
+      const handmatigAan = a.filter((l) => !autoVorig.current.includes(l));
+      const autoNu = herkend.filter((l) => !handUit.current.has(l) && !handmatigAan.includes(l));
+      const nieuw = ALLERGEN_LABELS.filter((l) => handmatigAan.includes(l) || autoNu.includes(l));
+      if (autoNu.some((l) => !a.includes(l))) setAlgOpen(true); // iets herkend: klap open
+      autoVorig.current = autoNu;
+      return nieuw.length === a.length && nieuw.every((l, i) => l === a[i]) ? a : nieuw;
+    });
+  }, [herkend]);
+  const wisselAllergeen = (l) => setAllergens((a) => {
+    if (a.includes(l)) {
+      if (herkend.includes(l)) handUit.current.add(l); // uitgezet terwijl herkend: onthouden
+      autoVorig.current = autoVorig.current.filter((x) => x !== l);
+      return a.filter((x) => x !== l);
+    }
+    handUit.current.delete(l);
+    return ALLERGEN_LABELS.filter((x) => a.includes(x) || x === l);
+  });
   // Recept overnemen: naam, THT, allergenen, opslag en (bij fermentatie) klaar-rond.
   const applyRecipe = (r, p) => {
     const basis = p || prod || today;
     setName(r.name); setPicked(true); setGekozenRecept(r);
     if (r.shelfDays) setTht(thtVan(basis, r.shelfDays));
-    setAllergens(recipeAllergens(r));
+    handUit.current = new Set(); autoVorig.current = [];
+    const va = recipeAllergens(r);
+    setAllergens(va);
+    if (va.length) setAlgOpen(true);
     const fd = r.fermentDefaults;
     if (r.ferment && fd && fd.days) setReady(thtVan(basis, fd.days));
     // Handelingen: bij fermentatierecepten de standaardhandeling van de methode.
     const acties = r.ferment && r.fermentMethod && FERMENT_ACTIONS[r.fermentMethod];
-    if (acties && acties.length) setNote(acties.map((a) => a.label + (a.everyDays > 1 ? " (elke " + a.everyDays + " dagen)" : " (dagelijks)")).join(" · "));
+    if (acties && acties.length) {
+      const iv = fd && fd.days ? fermentInterval(fd.days) : null;
+      setNote(acties.map((a) => a.label + (iv ? (iv > 1 ? " (elke " + iv + " dagen)" : " (dagelijks)") : "")).join(" · "));
+    }
   };
   useEffect(() => { if (prefillRecipe) applyRecipe(prefillRecipe, today); }, []);
   const naamRef = React.useRef(null);
@@ -10143,7 +10195,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           {algOpen && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {ALLERGEN_LABELS.map((l) => (
-                <button key={l} type="button" onClick={() => setAllergens((a) => a.includes(l) ? a.filter((x) => x !== l) : ALLERGEN_LABELS.filter((x) => a.includes(x) || x === l))} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (allergens.includes(l) ? "pillon" : "pill")}>{l}</button>
+                <button key={l} type="button" onClick={() => wisselAllergeen(l)} className={"ff rounded-full px-2.5 py-1 text-xs font-medium " + (allergens.includes(l) ? "pillon" : "pill")}>{l}</button>
               ))}
             </div>
           )}
