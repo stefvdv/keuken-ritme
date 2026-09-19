@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-19b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-19e"; // versiestempel — check dit na elke deploy
 // Service worker: bewaart de app-bestanden zodat de app ook zónder internet
 // opstart (het bestand public/sw.js hoort in het project te staan).
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
@@ -2887,6 +2887,7 @@ function App() {
   const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [fermentControles, setFermentControles] = useState(FERMENT_CONTROLES_STANDAARD); // controles per fermentatiebatch
+  const [catZicht, setCatZicht] = useState({}); // zichtbaarheid per MICE-categorie
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
   // Gedeelde bestellijst (aantallen, besteltelling, notitie, eigen producten).
   const [bestelLijst, setBestelLijst] = useState(null);
@@ -3490,6 +3491,15 @@ function App() {
   };
   React.useMemo(() => zetHaccpInterval(haccpInterval), [haccpInterval]);
   React.useMemo(() => zetFermentControles(fermentControles), [fermentControles]);
+  React.useMemo(() => zetCatZicht(catZicht), [catZicht]);
+  const saveCatZicht = async (cat, zicht) => {
+    const sleutel = String(cat || "").toLowerCase().trim();
+    if (!sleutel) return;
+    const n = { ...catZicht };
+    if (!zicht || zicht === catZichtStandaard(sleutel)) delete n[sleutel]; else n[sleutel] = zicht;
+    setCatZicht(n);
+    if (live) await veiligUpsert(supabase, "app_settings", { key: "cat_zichtbaarheid", value: n, updated_at: new Date().toISOString() });
+  };
   const saveFermentControles = async (n) => {
     const x = Math.min(30, Math.max(1, Math.round(Number(n) || FERMENT_CONTROLES_STANDAARD)));
     setFermentControles(x);
@@ -4155,7 +4165,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4220,6 +4230,8 @@ function App() {
     if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
     const fcRow = (cs && cs.data && cs.data.find((r) => r.key === "ferment_controles")) || null;
     if (fcRow && fcRow.value && Number(fcRow.value.aantal) > 0) setFermentControles(Number(fcRow.value.aantal));
+    const czRow = (cs && cs.data && cs.data.find((r) => r.key === "cat_zichtbaarheid")) || null;
+    if (czRow && czRow.value && typeof czRow.value === "object") setCatZicht(czRow.value);
     const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
     if (bmRow && bmRow.value) {
       if (Array.isArray(bmRow.value.items)) setMateriaalItems(bmRow.value.items);
@@ -5766,7 +5778,9 @@ function App() {
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })}
-          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
+          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} onImportCategorieen={canEdit ? importMiceCategorieen : null}
+          catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
+          catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
           if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
           setChefMode(true);
@@ -8090,7 +8104,9 @@ function AllergenenBeheer({ rijen, onSave }) {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles }) {
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht }) {
+  const catImportRef = React.useRef(null);
+  const [catZichtOpen, setCatZichtOpen] = useState(false);
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -8119,6 +8135,44 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>Allergenen per ingrediënt</SectionTitle>
           <AllergenenBeheer rijen={allergenFixRijen || []} onSave={onSaveAllergenFix} />
+        </>
+      )}
+
+      {onImportCategorieen && (
+        <>
+          <SectionTitle>MICE-productcategorieën</SectionTitle>
+          <div className="card p-4">
+            <p className="text-sm mute mb-3">Bepalen wat op de mep- en boekingkaarten (verborgen) hoort. Nieuwe producten in MICE? Lees dan de productexport (Excel) opnieuw in.</p>
+            <button onClick={() => { try { catImportRef.current.click(); } catch (e) {} }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Tag size={15} /> Categorieën inlezen uit export</button>
+            <input ref={catImportRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
+            {onCatZicht && (catLijst || []).length > 0 && (
+              <div className="mt-3 pt-3" style={{ borderTop: "1px solid " + T.line }}>
+                <button onClick={() => setCatZichtOpen((v) => !v)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70">
+                  {catZichtOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Zichtbaarheid per categorie ({catLijst.length})
+                </button>
+                {catZichtOpen && (
+                  <div className="mt-2 space-y-1.5">
+                    <p className="text-xs mute">Waar horen producten uit deze categorie thuis? Nieuwe categorieën uit MICE verschijnen hier vanzelf na het inlezen; zonder keuze volgen ze de standaard.</p>
+                    {catLijst.map((cat) => {
+                      const sleutel = String(cat).toLowerCase().trim();
+                      const huidig = (catZicht && catZicht[sleutel]) || catZichtStandaard(sleutel);
+                      return (
+                        <div key={cat} className="flex items-center justify-between gap-2">
+                          <span className="text-sm ink min-w-0 flex-1 truncate" title={cat}>{cat}</span>
+                          <select className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "auto" }} value={huidig}
+                            onChange={(e) => onCatZicht(sleutel, e.target.value)}>
+                            <option value="keuken">Keuken (mep + boeking)</option>
+                            <option value="boeking">Alleen boeking</option>
+                            <option value="verborgen">Verborgen (onder Overige)</option>
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </>
       )}
 
@@ -10373,15 +10427,49 @@ const VERBERG_CATEGORIEEN = new Set(["dranken", "locatiehuur", "personeelsdienst
 const VERBERG_IDS = new Set([251091, 269892, 294470, 315007, 325635, 399647, 420970, 431060]); // o.a. korting, kurkgeld, wijnarrangement, zelfoogst
 const TOON_IDS = new Set([242048, 264671]); // workshop met de kok, appel crumble
 const VERBERG_NAAM = /(koffie|thee\b|dranken|frisdrank|wijn|bier|bubbels|cava|cider|limonade|nacalculatie|zaalhuur|locatiehuur|dagdeel)/;
+// Instelbare zichtbaarheid per categorie (Extras → MICE-productcategorieën),
+// gedeeld met het team. Waarden: "keuken" (mep + boeking), "boeking"
+// (alleen boeking, niet op de mep), "verborgen" (onder Overige, niet op mep).
+// Een keuze hier wint van de vaste lijsten; nieuwe categorieën zonder keuze
+// volgen de vaste lijsten en tonen anders gewoon (liever te veel dan te weinig).
+let CAT_ZICHT = {};
+const zetCatZicht = (m) => { CAT_ZICHT = m && typeof m === "object" ? m : {}; };
+const catZichtVan = (cat) => CAT_ZICHT[String(cat || "").toLowerCase().trim()] || "";
 const isKeukenRegel = (k, catVan) => {
   const id = Number(k.miceId);
   if (TOON_IDS.has(id)) return true;
   if (VERBERG_IDS.has(id)) return false;
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
+  const zicht = catZichtVan(cat);
+  if (zicht) return zicht !== "verborgen";
   if (cat) return !VERBERG_CATEGORIEEN.has(cat);
   // Geen categorie bekend (nieuw of nooit geïmporteerd): vang duidelijke
   // dranken- en huurnamen alsnog af.
   return !VERBERG_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase());
+};
+// Mep-specifiek: spullen die wél bij de boeking horen (huur, techniek,
+// entertainment, decoratie — podium, geluid, kussens, kapstokken, boeketten)
+// maar niets in de keuken te zoeken hebben. Op de boekingpagina blijven ze
+// gewoon staan; alleen de mep-pagina en de mep-print slaan ze over.
+// Categorieën op patroon (dekt ook nieuwe producten in die categorieën),
+// met een naam-vangnet voor producten zonder geïmporteerde categorie.
+const MEP_VERBERG_CAT = /(huur|materiaal|techniek|entertain|decorat|bloemen|audio|muziek|\bav\b|meubilair|facilitair)/;
+const MEP_VERBERG_NAAM = /(podium|partybox|microfoon|geluidsman|geluidstechniek|geluidsset|lichtset|kapstok|kussens|boeket|bloemstuk|beamer|projectiescherm|\bdj\b|harpist|muzikant|statafel)/;
+const isMepRegel = (k, catVan) => {
+  if (!isKeukenRegel(k, catVan)) return false;
+  if (TOON_IDS.has(Number(k.miceId))) return true;
+  const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
+  const zicht = catZichtVan(cat);
+  if (zicht) return zicht === "keuken"; // expliciete keuze wint, ook van het naam-vangnet
+  if (cat && MEP_VERBERG_CAT.test(cat)) return false;
+  return !MEP_VERBERG_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase());
+};
+// Standaardzichtbaarheid volgens de vaste lijsten (voor de instellingenlijst).
+const catZichtStandaard = (cat) => {
+  const c = String(cat || "").toLowerCase().trim();
+  if (VERBERG_CATEGORIEEN.has(c)) return "verborgen";
+  if (MEP_VERBERG_CAT.test(c)) return "boeking";
+  return "keuken";
 };
 const isVerwijderd = (koppeling, b) => koppeling["del|" + b.id] !== undefined;
 const statusRand = (st) => {
@@ -11696,7 +11784,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     const teksten = eigen.map((r) => ({ kop: eigen.length > 1 && (r.act || r.tijd) ? [r.act, r.tijd].filter(Boolean).join(" ") : "", tekst: r.oms }));
     if (!teksten.length) return null;
     const tijdK = tijdenVoorKeuze(b, k);
-    return { titel: k.naam, sub: (k.aantal || b.gasten) + "\u00d7" + (tijdK ? " \u00b7 " + tijdK : ""), teksten };
+    const catNaam = (catVan && catVan[k.miceId]) || "";
+    return { titel: k.naam, sub: (k.aantal || b.gasten) + "\u00d7" + (tijdK ? " \u00b7 " + tijdK : "") + (catNaam ? " \u00b7 " + catNaam : ""), teksten };
   };
   const [overigeOpen, setOverigeOpen] = useState(false);
   const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
@@ -11715,7 +11804,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const bezorgingAuto = keuzesS.some((k) => /bezorg/i.test(String(k.naam || "")));
   const bezorging = extra && extra.bezorgwijze ? extra.bezorgwijze === "bezorgen" : bezorgingAuto;
   const zaalEff = (extra && String(extra.zaal || "").trim()) || zaal;
-  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isKeukenRegel(k, catVan));
+  const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => (alleenKeuken ? isMepRegel(k, catVan) : isKeukenRegel(k, catVan)));
   // Verborgen regels (dranken, huur, personeel…) blijven op de boekingpagina
   // bereikbaar onder een ingeklapt kopje Overige.
   const overigeKeuzes = toonOverige ? keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || "")) && !isKeukenRegel(k, catVan)) : [];
@@ -12134,6 +12223,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         onClick={() => { if (stift) return; const info = productInfoVoor(k); if (info) setProductInfo(info); }}
                         title={!stift ? productInfoHover(k) : undefined}>
                         <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
+                        {!stift && productInfoVoor(k) && <Info size={13} className="inline ml-1 acc shrink-0" style={{ verticalAlign: "-2px" }} />}
                         {isVers && <NieuwTag titel={isVers.titel} />}
                       </div>
                     )}
@@ -12821,7 +12911,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
   const invVoor = (b, miceId) => { const e = invLaag(b).find((x) => String(x.miceId) === String(miceId)); if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return prodKoppeling[miceId] || null; };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
-  const mepVan = (b) => gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
+  const mepVan = (b) => gekozen(b).filter((k) => isMepRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
   // te nemen met het herhaalknopje in de bewerkstand.
   const vorigeInvulling = (b, miceId) => {
@@ -12890,7 +12980,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         const loc = bez ? "Bezorging" + (b.adres ? " · " + b.adres : (b.zaal ? " · " + b.zaal : "")) : (b.zaal || "");
         const kopDelen = [naamVan(b) || "Zonder naam", gastenVan(b) + " pers.", tijdVan(b) || "tijd onbekend", loc].filter(Boolean);
         const kop = "<div class='pt'>" + kopDelen.map(pEsc).join(", ") + (al.length ? ", <span class='al'>" + al.map(pEsc).join(", ") + "</span>" : "") + "</div>";
-        const keuzes = sorteerEetmoment(gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isKeukenRegel(k, catVan)), catVan);
+        const keuzes = sorteerEetmoment(gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isMepRegel(k, catVan)), catVan);
         const eten = keuzes.filter((k) => !isHuur(k));
         const huur = keuzes.filter(isHuur);
         const blok = (k) => {
