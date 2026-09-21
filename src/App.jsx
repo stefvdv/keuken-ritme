@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-21a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-21b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -5316,6 +5316,13 @@ function App() {
     goBack();
     flash(live ? "Recept verwijderd voor het hele team" : "Recept verwijderd (demo: alleen dit apparaat)");
   };
+  // Deellink naar één recept: openen zodra de recepten geladen zijn.
+  // Bewust vóór de login-poort: hooks na een early return geven React #310.
+  const deelReceptGeopend = React.useRef(false);
+  useEffect(() => {
+    if (!DEEL_GAST || !DEEL_GAST.receptId || deelReceptGeopend.current || !loaded) return;
+    if (recipeById(DEEL_GAST.receptId)) { deelReceptGeopend.current = true; push({ screen: "recipeDetail", id: DEEL_GAST.receptId }); }
+  }, [loaded, recipes]);
   const bumpOpenCount = async (id) => {
     setOpenCounts((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
     if (live && !DEEL_GAST) { try { await supabase.rpc("bump_recipe_open", { rid: id }); } catch (e) {} }
@@ -5463,11 +5470,6 @@ function App() {
   );
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
-  const deelReceptGeopend = React.useRef(false);
-  useEffect(() => {
-    if (!DEEL_GAST || !DEEL_GAST.receptId || deelReceptGeopend.current || !loaded) return;
-    if (recipeById(DEEL_GAST.receptId)) { deelReceptGeopend.current = true; push({ screen: "recipeDetail", id: DEEL_GAST.receptId }); }
-  }, [loaded, recipes]);
   const fabAction = () => {
     if (section === "boekingen") { setNieuwBoekingDatum(localDate()); setNieuwBoekingOpen(true); return; }
     if (section === "gerechten") push({ screen: "dishForm", editing: null });
