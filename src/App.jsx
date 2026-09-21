@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-21b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-21c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2848,6 +2848,7 @@ export default function AppRoot() {
 if (typeof console !== "undefined") console.log("Ritme " + RITME_VERSIE);
 function App() {
   const [user, setUser] = useState(null);
+  const [gastFout, setGastFout] = useState(null); // deellink: waarom het aanmelden niet lukt
   const [section, setSection] = useState(DEEL_GAST ? "recepten" : "mep"); // de app opent op de mise-en-place (deellink: recepten)
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
@@ -4151,7 +4152,14 @@ function App() {
     supabase.auth.getSession().then(({ data }) => {
       applySession(data.session);
       // Deellink zonder sessie: stil anoniem aanmelden (alleen-lezen).
-      if (DEEL_GAST && !data.session && typeof supabase.auth.signInAnonymously === "function") { try { supabase.auth.signInAnonymously().catch(() => {}); } catch (e) {} }
+      if (DEEL_GAST && !data.session) {
+        if (typeof supabase.auth.signInAnonymously !== "function") { setGastFout("versie"); return; }
+        try {
+          supabase.auth.signInAnonymously().then((r) => {
+            if (r && r.error) setGastFout(String(r.error.message || "aanmelden geweigerd"));
+          }).catch((e) => setGastFout(String((e && e.message) || "geen verbinding")));
+        } catch (e) { setGastFout(String((e && e.message) || "aanmelden mislukt")); }
+      }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
     return () => { alive = false; sub.subscription.unsubscribe(); };
@@ -5465,7 +5473,7 @@ function App() {
   if (!user && DEEL_GAST) return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <p className="text-sm mute">Recepten laden… Lukt dit niet, vraag dan een nieuwe link aan de keuken.</p>
+      <GastSplash fout={gastFout} />
     </div>
   );
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
@@ -6311,6 +6319,22 @@ function NamePromptModal({ label, extraNamen, onNieuweNaam, onPick }) {
           <button onClick={kiesEigen} disabled={!eigen.trim()} className="btnp ff shrink-0 rounded-lg px-3 text-sm font-semibold disabled:opacity-40"><Check size={15} /></button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function GastSplash({ fout }) {
+  // Na tien seconden zonder resultaat is er echt iets mis — dan tonen we de
+  // uitleg ook zonder concrete foutmelding.
+  const [teLang, setTeLang] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setTeLang(true), 10000); return () => clearTimeout(t); }, []);
+  if (!fout && !teLang) return <p className="text-sm mute">Recepten laden…</p>;
+  return (
+    <div className="max-w-sm text-center">
+      <p className="serif ink text-xl mb-2">De deellink kan nu niet openen</p>
+      <p className="text-sm mute">Het anonieme meekijk-account kon niet aangemeld worden{fout && fout !== "versie" ? " (" + fout + ")" : ""}.</p>
+      <p className="text-sm mute mt-2">Voor de keuken: zet in Supabase <span className="font-medium ink">Authentication → Sign In / Providers → “Allow anonymous sign-ins”</span> aan en probeer de link opnieuw.</p>
+      <button onClick={() => { try { window.location.reload(); } catch (e) {} }} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold mt-4">Opnieuw proberen</button>
     </div>
   );
 }
