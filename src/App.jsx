@@ -560,7 +560,14 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-19e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-21a"; // versiestempel — check dit na elke deploy
+// Deellink: ?deel=recepten opent de app in gastweergave — alleen de
+// receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
+// schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
+// direct één recept.
+const DEEL_GAST = (() => {
+  try { const q = new URLSearchParams(window.location.search); return q.get("deel") === "recepten" ? { receptId: q.get("recept") || null } : null; } catch (e) { return null; }
+})();
 // Service worker: bewaart de app-bestanden zodat de app ook zónder internet
 // opstart (het bestand public/sw.js hoort in het project te staan).
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
@@ -2841,7 +2848,7 @@ export default function AppRoot() {
 if (typeof console !== "undefined") console.log("Ritme " + RITME_VERSIE);
 function App() {
   const [user, setUser] = useState(null);
-  const [section, setSection] = useState("mep"); // de app opent op de mise-en-place
+  const [section, setSection] = useState(DEEL_GAST ? "recepten" : "mep"); // de app opent op de mise-en-place (deellink: recepten)
   const [recipes, setRecipes] = useState(initialRecipes);
   const [dishes, setDishes] = useState(seedDishes);
   // Live (met database): start leeg tot de echte batches geladen zijn — de
@@ -3373,10 +3380,10 @@ function App() {
     const t = setInterval(probeer, 60000);
     return () => { window.removeEventListener("online", probeer); clearInterval(t); };
   }, []);
-  useEffect(() => { if (loaded) doeSyncRef.current(); }, [loaded]);
-  useEffect(() => { if (loaded && (section === "boekingen" || section === "mep")) doeSyncRef.current(); }, [loaded, section]);
+  useEffect(() => { if (loaded && !DEEL_GAST) doeSyncRef.current(); }, [loaded]);
+  useEffect(() => { if (loaded && !DEEL_GAST && (section === "boekingen" || section === "mep")) doeSyncRef.current(); }, [loaded, section]);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || DEEL_GAST) return;
     const klok = setInterval(() => {
       const nu = Date.now();
       const zeven = new Date(); zeven.setHours(7, 0, 0, 0);
@@ -3537,6 +3544,7 @@ function App() {
   // stand wegschrijven; binnenkomende standen worden per item op maximum gezet.
   useEffect(() => {
     let t = null;
+    if (DEEL_GAST) return;
     gebruikGewijzigd = () => {
       if (t) clearTimeout(t);
       t = setTimeout(() => { try { const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}"); if (live) veiligUpsert(supabase, "app_settings", { key: "gebruik_telling", value: d, updated_at: new Date().toISOString() }); } catch (e) {} }, 5000);
@@ -4136,10 +4144,15 @@ function App() {
       // Geen accounts meer: het keukenwachtwoord logt het apparaat eenmalig in;
       // wie wat doet wordt per actie gevraagd via de naam-popup. Oude anonieme
       // (gast-)sessies tellen niet: die mogen niet schrijven van de database.
-      if (!session || session.user.is_anonymous) { setUser(null); return; }
-      setUser({ name: "", role: "", canEdit: true });
+      if (!session) { setUser(null); return; }
+      if (session.user.is_anonymous) { setUser(DEEL_GAST ? { name: "", role: "gast", canEdit: false, gast: true } : null); return; }
+      setUser(DEEL_GAST ? { name: "", role: "gast", canEdit: false, gast: true } : { name: "", role: "", canEdit: true });
     };
-    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    supabase.auth.getSession().then(({ data }) => {
+      applySession(data.session);
+      // Deellink zonder sessie: stil anoniem aanmelden (alleen-lezen).
+      if (DEEL_GAST && !data.session && typeof supabase.auth.signInAnonymously === "function") { try { supabase.auth.signInAnonymously().catch(() => {}); } catch (e) {} }
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, [live]);
@@ -5305,7 +5318,7 @@ function App() {
   };
   const bumpOpenCount = async (id) => {
     setOpenCounts((c) => ({ ...c, [id]: (c[id] || 0) + 1 }));
-    if (live) { try { await supabase.rpc("bump_recipe_open", { rid: id }); } catch (e) {} }
+    if (live && !DEEL_GAST) { try { await supabase.rpc("bump_recipe_open", { rid: id }); } catch (e) {} }
   };
 
   const todayKey = localDate();
@@ -5442,8 +5455,19 @@ function App() {
     return () => { supabase.removeChannel(ch); };
   }, [live]);
 
+  if (!user && DEEL_GAST) return (
+    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: T.paper, color: "#33352c" }}>
+      <BrandCSS />
+      <p className="text-sm mute">Recepten laden… Lukt dit niet, vraag dan een nieuwe link aan de keuken.</p>
+    </div>
+  );
   if (!user) return <><BrandCSS /><Login onPick={setUser} live={live} /></>;
   const openRecipe = (id) => { bumpOpenCount(id); push({ screen: "recipeDetail", id }); };
+  const deelReceptGeopend = React.useRef(false);
+  useEffect(() => {
+    if (!DEEL_GAST || !DEEL_GAST.receptId || deelReceptGeopend.current || !loaded) return;
+    if (recipeById(DEEL_GAST.receptId)) { deelReceptGeopend.current = true; push({ screen: "recipeDetail", id: DEEL_GAST.receptId }); }
+  }, [loaded, recipes]);
   const fabAction = () => {
     if (section === "boekingen") { setNieuwBoekingDatum(localDate()); setNieuwBoekingOpen(true); return; }
     if (section === "gerechten") push({ screen: "dishForm", editing: null });
@@ -5647,27 +5671,34 @@ function App() {
   };
   const actieveSectie = current.screen === "list" ? section : screenSectie(current);
 
+  const gast = !!(user && user.gast);
   return (
     <div className="min-h-screen flex" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
-      <ZijBalk chef={chefMode} section={actieveSectie}
+      {!gast && <ZijBalk chef={chefMode} section={actieveSectie}
         onKies={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }}
         onHome={klikHome}
         onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }}
-        onInstellingen={() => push({ screen: "settings" })} meldingen={actieveMeldingen.length} />
+        onInstellingen={() => push({ screen: "settings" })} meldingen={actieveMeldingen.length} />}
 
-      {meldingenOpen && meldingCategorieen.length > 0 && <MeldingenBalk categorieen={meldingCategorieen} onSluiten={sluitMeldingen} isGedempt={isGedempt} onDempen={dempMelding} />}
+      {!gast && meldingenOpen && meldingCategorieen.length > 0 && <MeldingenBalk categorieen={meldingCategorieen} onSluiten={sluitMeldingen} isGedempt={isGedempt} onDempen={dempMelding} />}
 
       <div className="flex-1 min-w-0 flex flex-col">
-      <div className="md:hidden">
+      {gast && (
+        <div className="px-4 pt-4 pb-1 max-w-2xl lg:max-w-6xl mx-auto w-full">
+          <h1 className="serif ink text-2xl leading-tight">Recepten · in het ritme van het land</h1>
+          <p className="text-[12.5px] mute mt-0.5">Meegedeeld door de keuken van De Beug — alleen-lezen.</p>
+        </div>
+      )}
+      {!gast && <div className="md:hidden">
         <Header user={user} onHome={klikHome} onOpenSettings={() => push({ screen: "settings" })} onMep={() => { resetTo({ screen: "list" }); setSection("mep"); }} mepActief={actieveSectie === "mep"} instellingenActief={actieveSectie === "__instellingen"}
           titel={current.screen !== "list" ? null : (section === "home" ? null : ({ mep: "Mise en place", boekingen: "Boekingen", assortiment: "Calculaties" }[section] || (SECTIONS.find((x) => x.id === section) || {}).label || null))}
           meldingen={actieveMeldingen.length} />
-      </div>
+      </div>}
 
       <main className="flex-1 min-w-0 w-full max-w-2xl lg:max-w-6xl mx-auto px-4 pb-28 pt-3">
         <div className="md:hidden">
-          {!FORM_SCREENS.has(current.screen) && (
+          {!gast && !FORM_SCREENS.has(current.screen) && (
             <SectionNav chef={chefMode} section={actieveSectie}
               setSection={(sid) => { setSection(sid); setSearch(""); if (current.screen !== "list") resetTo({ screen: "list" }); }} />
           )}
@@ -5819,7 +5850,7 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : section === "boekingen" ? "Boeking" : "Batch"}
         </button>
       )}
-      {user && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && section === "boekingen") && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
+      {user && !gast && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && section === "boekingen") && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
         tabellen={techTableRows} canEdit={canEdit} onEditTable={(t) => push({ screen: "techTableForm", table: t })} />}
       {user && canEdit && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && (section === "boekingen" || section === "assortiment")) && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
@@ -8137,6 +8168,20 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
           <AllergenenBeheer rijen={allergenFixRijen || []} onSave={onSaveAllergenFix} />
         </>
       )}
+
+      <SectionTitle>Recepten delen</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute mb-3">Stuur een link waarmee iemand alleen de recepten kan bekijken — zonder wachtwoord, alleen-lezen, zonder boekingen of andere onderdelen. Een los recept deel je met de <Link size={13} className="inline align-[-2px]" />-knop op het recept zelf.</p>
+        <button onClick={async (e) => {
+          const url = window.location.origin + "/?deel=recepten";
+          let ok = false;
+          try { await navigator.clipboard.writeText(url); ok = true; } catch (err) {
+            try { const ta = document.createElement("textarea"); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); ok = true; } catch (e2) {}
+          }
+          const knop = e.currentTarget; if (ok && knop) { const w = knop.textContent; knop.textContent = "Link gekopieerd ✓"; setTimeout(() => { try { knop.textContent = w; } catch (e3) {} }, 1800); }
+          if (!ok) window.prompt("Kopieer de link:", url);
+        }} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Link size={15} /> Deellink kopiëren</button>
+      </div>
 
       {onImportCategorieen && (
         <>
@@ -14824,8 +14869,21 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
     <div>
       <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
-        extra={canEdit ? (
-          <button onClick={onAddStock} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={24} /></button>
+        extra={(canEdit || (user && !user.gast)) ? (
+          <>
+            {user && !user.gast && (
+              <button onClick={async (e) => {
+                const url = window.location.origin + "/?deel=recepten&recept=" + encodeURIComponent(recipe.id);
+                let ok = false;
+                try { await navigator.clipboard.writeText(url); ok = true; } catch (err) {
+                  try { const ta = document.createElement("textarea"); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); ok = true; } catch (e2) {}
+                }
+                if (!ok) window.prompt("Kopieer de link:", url);
+                else { const kn = e.currentTarget; kn.style.background = "#e4ecdc"; setTimeout(() => { try { kn.style.background = ""; } catch (e3) {} }, 1200); }
+              }} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Deellink naar dit recept kopiëren (alleen-lezen)"><Link size={22} /></button>
+            )}
+            {canEdit && <button onClick={onAddStock} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="In voorraad zetten"><ShelfIcon size={24} /></button>}
+          </>
         ) : null} />
       <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap">
         <h1 className="serif ink text-3xl leading-tight">{recipe.name}</h1>
