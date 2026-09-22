@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-21c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-22a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2896,6 +2896,7 @@ function App() {
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [fermentControles, setFermentControles] = useState(FERMENT_CONTROLES_STANDAARD); // controles per fermentatiebatch
   const [catZicht, setCatZicht] = useState({}); // zichtbaarheid per MICE-categorie
+  const [paklijsten, setPaklijsten] = useState([]); // [{ id, naam, items: [{ naam, aantal }] }]
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
   // Gedeelde bestellijst (aantallen, besteltelling, notitie, eigen producten).
   const [bestelLijst, setBestelLijst] = useState(null);
@@ -3555,6 +3556,16 @@ function App() {
     // dependency gaf een use-before-init omdat de lijst tijdens het renderen
     // al wordt uitgelezen, vóór de declaratie van live verderop.
   }, []);
+  // Paklijsten: gedeeld met het team, offline via de wachtrij.
+  const savePaklijsten = async (lijsten) => {
+    const schoon = (lijsten || []).map((l) => ({
+      id: l.id || ("pl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7)),
+      naam: String(l.naam || "").trim() || "Naamloze paklijst",
+      items: (l.items || []).map((i) => ({ naam: String(i.naam || "").trim(), aantal: String(i.aantal == null ? "" : i.aantal).trim() })).filter((i) => i.naam),
+    }));
+    setPaklijsten(schoon);
+    if (live) await veiligUpsert(supabase, "app_settings", { key: "paklijsten", value: { lijsten: schoon }, updated_at: new Date().toISOString() });
+  };
   const saveInventaris = async (nieuweItems, nieuweCategorieen) => {
     const items = nieuweItems != null ? nieuweItems : materiaalItems;
     const categorieen = nieuweCategorieen != null ? nieuweCategorieen : materiaalCategorieen;
@@ -4186,7 +4197,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4253,6 +4264,8 @@ function App() {
     if (fcRow && fcRow.value && Number(fcRow.value.aantal) > 0) setFermentControles(Number(fcRow.value.aantal));
     const czRow = (cs && cs.data && cs.data.find((r) => r.key === "cat_zichtbaarheid")) || null;
     if (czRow && czRow.value && typeof czRow.value === "object") setCatZicht(czRow.value);
+    const plRow = (cs && cs.data && cs.data.find((r) => r.key === "paklijsten")) || null;
+    if (plRow && plRow.value && Array.isArray(plRow.value.lijsten)) setPaklijsten(plRow.value.lijsten);
     const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
     if (bmRow && bmRow.value) {
       if (Array.isArray(bmRow.value.items)) setMateriaalItems(bmRow.value.items);
@@ -5838,6 +5851,7 @@ function App() {
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
         {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen.map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; })} bezorgLijst={bezorgLijst} canEdit={canEdit}
           materiaalItems={materiaalItems} materiaalCategorieen={materiaalCategorieen} onSaveInventaris={canEdit ? saveInventaris : null}
+          paklijsten={paklijsten} onSavePaklijsten={canEdit ? savePaklijsten : null}
           onSave={saveBezorgRegistratie} onTerug={boekBezorgTerugname} onBewerk={canEdit ? bewerkBezorgRegistratie : null} onDelete={canEdit ? verwijderBezorgRegistratie : null} onAskName={askName}
           onBack={goBack} focusId={current.focus != null ? current.focus : null} />}
       </main>
@@ -8180,10 +8194,10 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
 
       {onOpenBezorg && (
         <>
-          <SectionTitle>Bezorgmateriaal</SectionTitle>
+          <SectionTitle>Materiaalbeheer</SectionTitle>
           <div className="card p-4">
             <p className="text-sm mute mb-3">Houd bij wat er met bezorgingen meegaat en wat er nog terug moet komen.</p>
-            <button onClick={onOpenBezorg} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Package size={16} /> Bezorgmateriaal beheren</button>
+            <button onClick={onOpenBezorg} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Package size={16} /> Materiaalbeheer openen</button>
           </div>
         </>
       )}
@@ -16098,7 +16112,87 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
 // Bezorgmateriaal-pagina: registreer wat er meegaat met een bezorging en houd
 // bij wat er nog terug moet komen. Bereikbaar via Instellingen, of via een
 // link in de melding op de boekingenpagina (met focusId naar één registratie).
-function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategorieen, onSaveInventaris, canEdit, onSave, onTerug, onBewerk, onDelete, onAskName, onBack, focusId }) {
+// Paklijst: vaste inpaklijst per soort catering (bv. BBQ buffet). Ingeklapt
+// toont hij alleen naam en voortgang; uitgeklapt is het een werkchecklist
+// (afvinken is tijdelijk en per apparaat), te bewerken en te gebruiken als
+// startpunt voor een bezorging.
+const PAKLIJST_AF_SLEUTEL = "ritme:paklijstAf";
+const paklijstAfLees = () => { try { return JSON.parse(localStorage.getItem(PAKLIJST_AF_SLEUTEL) || "{}") || {}; } catch (e) { return {}; } };
+const paklijstAfZet = (m) => { try { localStorage.setItem(PAKLIJST_AF_SLEUTEL, JSON.stringify(m)); } catch (e) {} };
+
+function PaklijstKaart({ lijst, canEdit, bewerk, onWijzig, onVerwijder, onStartBezorging }) {
+  const [open, setOpen] = useState(false);
+  const [af, setAf] = useState(() => paklijstAfLees()[lijst.id] || {});
+  const items = lijst.items || [];
+  const gedaan = items.filter((i) => af[i.naam]).length;
+  const zetAf = (naam) => setAf((m) => {
+    const n = { ...m };
+    if (n[naam]) delete n[naam]; else n[naam] = true;
+    const alles = paklijstAfLees(); alles[lijst.id] = n; paklijstAfZet(alles);
+    return n;
+  });
+  const wisAf = () => { setAf({}); const alles = paklijstAfLees(); delete alles[lijst.id]; paklijstAfZet(alles); };
+  const zetItem = (idx, veld, w) => onWijzig({ ...lijst, items: items.map((i, j) => (j === idx ? { ...i, [veld]: w } : i)) });
+  const wegItem = (idx) => onWijzig({ ...lijst, items: items.filter((_, j) => j !== idx) });
+  const plusItem = () => onWijzig({ ...lijst, items: [...items, { naam: "", aantal: "" }] });
+  return (
+    <div className="card p-3">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="ff w-full text-left flex items-center justify-between gap-2">
+        <span className="min-w-0 flex-1">
+          <span className="serif ink text-[16px] leading-tight break-words">{lijst.naam}</span>
+          <span className="block text-[12.5px] mute">{items.length} item{items.length === 1 ? "" : "s"}{gedaan > 0 ? " · " + gedaan + " afgevinkt" : ""}</span>
+        </span>
+        <span className="shrink-0">{open ? <ChevronUp size={16} className="acc" /> : <ChevronDown size={16} className="acc" />}</span>
+      </button>
+      {open && (
+        <div className="mt-2.5">
+          {bewerk ? (
+            <div className="space-y-2">
+              <input className="input px-2 py-1.5 text-sm w-full font-semibold" value={lijst.naam} onChange={(e) => onWijzig({ ...lijst, naam: e.target.value })} placeholder="Naam van de paklijst" />
+              {items.map((i, j) => (
+                <div key={j} className="flex items-center gap-2">
+                  <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" value={i.naam} onChange={(e) => zetItem(j, "naam", e.target.value)} placeholder="Materiaal" />
+                  <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4rem" }} value={i.aantal || ""} onChange={(e) => zetItem(j, "aantal", e.target.value.replace(/[^0-9]/g, ""))} placeholder="aantal" title="Leeg = aantal afhankelijk van de partij" />
+                  <button onClick={() => wegItem(j)} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
+                </div>
+              ))}
+              <AddRow onClick={plusItem} label="Item toevoegen" />
+              <div className="flex justify-end pt-1">
+                <button onClick={() => { if (window.confirm('Paklijst "' + lijst.naam + '" verwijderen? Dit kan niet ongedaan gemaakt worden.')) onVerwijder(); }}
+                  className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Paklijst verwijderen</button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="space-y-0.5">
+                {items.map((i, j) => (
+                  <button key={j} type="button" onClick={() => zetAf(i.naam)} className="ff w-full text-left flex items-center gap-2 py-1">
+                    <span className="shrink-0 rounded flex items-center justify-center" style={{ width: "1.15rem", height: "1.15rem", border: "1.5px solid " + (af[i.naam] ? T.green : T.line), background: af[i.naam] ? T.green : "transparent" }}>
+                      {af[i.naam] && <Check size={12} style={{ color: "#fbf9f2" }} />}
+                    </span>
+                    <span className={"text-sm min-w-0 " + (af[i.naam] ? "mute" : "ink")} style={af[i.naam] ? { textDecoration: "line-through" } : undefined}>
+                      {i.aantal ? i.aantal + "× " : ""}{i.naam}
+                    </span>
+                  </button>
+                ))}
+                {!items.length && <p className="text-[12.5px] mute">Nog geen items — voeg ze toe met Bewerken.</p>}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                {canEdit && items.length > 0 && (
+                  <button onClick={onStartBezorging} className="btnp ff rounded-lg px-3 py-2 text-[12.5px] font-semibold inline-flex items-center gap-1.5"><Truck size={14} /> Bezorging starten</button>
+                )}
+                {gedaan > 0 && <button onClick={wisAf} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Vinkjes wissen</button>}
+                <span className="text-[11.5px] mute">Afvinken is tijdelijk en alleen op dit apparaat.</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategorieen, onSaveInventaris, paklijsten, onSavePaklijsten, canEdit, onSave, onTerug, onBewerk, onDelete, onAskName, onBack, focusId }) {
   const vandaag = localDate();
   const [nieuwOpen, setNieuwOpen] = useState(false);
   const [gekozen, setGekozen] = useState(null); // { id, naam, datum }
@@ -16173,15 +16267,19 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const [toonCompleet, setToonCompleet] = useState(false);
 
   const [toonInventaris, setToonInventaris] = useState(false);
+  const [toonPaklijsten, setToonPaklijsten] = useState(false);
+  const [paklijstBewerk, setPaklijstBewerk] = useState(false);
+  const [nieuwPaklijstOpen, setNieuwPaklijstOpen] = useState(false);
+  const [vanafPaklijst, setVanafPaklijst] = useState(null); // naam van de gebruikte paklijst
   // Bezorging rechtstreeks vanuit de inventarislijst: per item een invulvakje.
   const [bezorgModus, setBezorgModus] = useState(false);
   const [bezorgAantallen, setBezorgAantallen] = useState({});
   const zetBezorgAantal = (naam, w) => setBezorgAantallen((m) => { const n = { ...m }; if (String(w).trim()) n[naam] = w; else delete n[naam]; return n; });
   const startBezorgModus = () => {
-    setToonInventaris(true); setBezorgModus(true); setInventarisBewerk(false);
+    setToonInventaris(true); setBezorgModus(true); setInventarisBewerk(false); setVanafPaklijst(null);
     setTimeout(() => { const el = document.getElementById("bezorg-inventaris"); if (el) el.scrollIntoView({ block: "start" }); }, 60);
   };
-  const stopBezorgModus = () => { setBezorgModus(false); setBezorgAantallen({}); setGekozen(null); setZoek(""); setNotitie(""); };
+  const stopBezorgModus = () => { setBezorgModus(false); setBezorgAantallen({}); setGekozen(null); setZoek(""); setNotitie(""); setVanafPaklijst(null); };
   const opslaanVanuitLijst = async () => {
     const materialen = Object.entries(bezorgAantallen).map(([naam, aantal]) => ({ naam, aantal: Number(aantal) || 0 })).filter((m) => m.aantal > 0);
     if (!gekozen) { alert("Kies eerst de partij waar dit materiaal mee gaat."); return; }
@@ -16192,15 +16290,31 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
     stopBezorgModus();
   };
   const openFormulier = startBezorgModus;
+  // Paklijst als startpunt: alle items komen als ingevuld aantal in de
+  // bezorging (leeg aantal telt als 1 — daarna gewoon aan te passen).
+  const startVanafPaklijst = (lijst) => {
+    const m = {};
+    for (const i of lijst.items || []) { const n = String(i.naam || "").trim(); if (n) m[n] = String(Number(i.aantal) > 0 ? Number(i.aantal) : 1); }
+    setBezorgAantallen(m);
+    setToonInventaris(true); setBezorgModus(true); setInventarisBewerk(false);
+    setVanafPaklijst(lijst.naam);
+    setTimeout(() => { const el = document.getElementById("bezorg-inventaris"); if (el) el.scrollIntoView({ block: "start" }); }, 60);
+  };
+  // Ingevulde materialen die niet in de inventaris staan (bv. los van een
+  // paklijst): die horen er wél bij, maar hebben geen rij in de lijst.
+  const inventarisNamen = React.useMemo(() => new Set((materiaalItems || []).map((i) => String(i.naam || "").trim()).filter(Boolean)), [materiaalItems]);
+  const buitenInventaris = Object.keys(bezorgAantallen).filter((n) => !inventarisNamen.has(n));
+  const wijzigPaklijst = (nieuw) => onSavePaklijsten((paklijsten || []).map((l) => (l.id === nieuw.id ? nieuw : l)));
+  const verwijderPaklijst = (id) => onSavePaklijsten((paklijsten || []).filter((l) => l.id !== id));
   return (
     <div>
       <BackBar onBack={onBack} />
-      <h1 className="serif ink text-3xl leading-tight">Bezorgmateriaal</h1>
-      <p className="text-sm mute mt-1">Wat ging er mee met een bezorging, en wat moet er nog terugkomen? Registreer hieronder een nieuwe bezorging; hierboven zie je wat er nog openstaat.</p>
+      <h1 className="serif ink text-3xl leading-tight">Materiaalbeheer</h1>
+      <p className="text-sm mute mt-1">Paklijsten, de inventaris en wat er met bezorgingen meeging — hieronder zie je wat er nog terug moet komen.</p>
 
       <SectionTitle>Nog terug te halen ({openLijst.length})</SectionTitle>
       {openLijst.length === 0
-        ? <Empty label="Alle bezorgmateriaal is terug." />
+        ? <Empty label="Al het materiaal is terug." />
         : <div className="space-y-2.5">{openLijst.map(({ r }) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onBewerk={onBewerk} onDelete={onDelete} materiaalNamen={materiaalNamen} materiaalCatVan={materiaalCatVan} boekingen={boekingen} onAskName={onAskName} initieelOpen={r.id === focusId} />)}</div>}
 
       {compleetLijst.length > 0 && (
@@ -16209,6 +16323,35 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
             {toonCompleet ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Afgerond ({compleetLijst.length})
           </button>
           {toonCompleet && <div className="space-y-2.5">{compleetLijst.map((r) => <BezorgKaart key={r.id} reg={r} canEdit={canEdit} onTerug={onTerug} onBewerk={onBewerk} onDelete={onDelete} materiaalNamen={materiaalNamen} materiaalCatVan={materiaalCatVan} boekingen={boekingen} onAskName={onAskName} initieelOpen={false} />)}</div>}
+        </>
+      )}
+      {onSavePaklijsten && (
+        <>
+          <div className="flex items-center justify-between gap-2 mt-6 mb-2">
+            <button onClick={() => setToonPaklijsten((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc">
+              {toonPaklijsten ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Paklijsten ({(paklijsten || []).length})
+            </button>
+            {toonPaklijsten && canEdit && (
+              <span className="flex items-center gap-3">
+                {paklijstBewerk && (
+                  <button onClick={() => setNieuwPaklijstOpen(true)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70"><Plus size={13} /> Nieuwe lijst</button>
+                )}
+                <button onClick={() => setPaklijstBewerk((v) => !v)} className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium acc hover:opacity-70">
+                  <Pencil size={13} /> {paklijstBewerk ? "Klaar" : "Bewerken"}
+                </button>
+              </span>
+            )}
+          </div>
+          {toonPaklijsten && (
+            <div className="space-y-2">
+              <p className="text-[12.5px] mute">Vaste inpaklijsten per soort catering. Open er een om af te vinken tijdens het verzamelen, of gebruik hem als startpunt voor een bezorging.</p>
+              {(paklijsten || []).map((l) => (
+                <PaklijstKaart key={l.id} lijst={l} canEdit={canEdit} bewerk={paklijstBewerk && canEdit}
+                  onWijzig={wijzigPaklijst} onVerwijder={() => verwijderPaklijst(l.id)} onStartBezorging={() => startVanafPaklijst(l)} />
+              ))}
+              {!(paklijsten || []).length && <Empty label="Nog geen paklijsten — maak er een via Bewerken → Nieuwe lijst." />}
+            </div>
+          )}
         </>
       )}
       {onSaveInventaris && (
@@ -16235,6 +16378,21 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
           {toonInventaris && bezorgModus && (
             <div className="card p-3.5 mb-3 space-y-3" style={{ border: "2px solid " + T.green }}>
               <div className="serif ink text-lg leading-tight">Nieuwe bezorging — vul hieronder per materiaal in wat er meegaat</div>
+              {vanafPaklijst && <div className="text-[12.5px]" style={{ color: "#44502f" }}>Overgenomen van paklijst “{vanafPaklijst}” — pas de aantallen gerust aan.</div>}
+              {buitenInventaris.length > 0 && (
+                <div>
+                  <span className="block text-sm font-medium ink mb-1.5">Van de paklijst (staat niet in de inventaris)</span>
+                  <div className="space-y-1.5">
+                    {buitenInventaris.map((n) => (
+                      <div key={n} className="flex items-center gap-2">
+                        <span className="text-sm ink min-w-0 flex-1 truncate" title={n}>{n}</span>
+                        <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }} value={bezorgAantallen[n] || ""} onChange={(e) => zetBezorgAantal(n, e.target.value.replace(/[^0-9]/g, ""))} />
+                        <button onClick={() => zetBezorgAantal(n, "")} className="ff shrink-0 hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <span className="block text-sm font-medium ink mb-1.5">Partij</span>
                 {gekozen ? (
@@ -16277,6 +16435,16 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
               bezorgModus={bezorgModus && canEdit} bezorgAantallen={bezorgAantallen} onBezorgAantal={zetBezorgAantal} buitenVan={buitenPerMateriaal} />
           )}
         </>
+      )}
+      {nieuwPaklijstOpen && (
+        <PromptModal titel="Nieuwe paklijst" label="Naam" placeholder="bv. BBQ buffet"
+          hint="Daarna voeg je de items toe met Bewerken."
+          okLabel="Aanmaken" onCancel={() => setNieuwPaklijstOpen(false)}
+          onOk={(naam) => {
+            const nw = { id: "pl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7), naam: String(naam || "").trim() || "Naamloze paklijst", items: [] };
+            onSavePaklijsten([...(paklijsten || []), nw]);
+            setNieuwPaklijstOpen(false); setPaklijstBewerk(true);
+          }} />
       )}
       {nieuwMateriaalOpen && (
         <PromptModal titel="Nieuw materiaal" label="Naam" placeholder="bv. Tupperware bak groot"
