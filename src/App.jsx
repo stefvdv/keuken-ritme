@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-22a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-22b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -16120,7 +16120,7 @@ const PAKLIJST_AF_SLEUTEL = "ritme:paklijstAf";
 const paklijstAfLees = () => { try { return JSON.parse(localStorage.getItem(PAKLIJST_AF_SLEUTEL) || "{}") || {}; } catch (e) { return {}; } };
 const paklijstAfZet = (m) => { try { localStorage.setItem(PAKLIJST_AF_SLEUTEL, JSON.stringify(m)); } catch (e) {} };
 
-function PaklijstKaart({ lijst, canEdit, bewerk, onWijzig, onVerwijder, onStartBezorging }) {
+function PaklijstKaart({ lijst, canEdit, bewerk, onWijzig, onVerwijder }) {
   const [open, setOpen] = useState(false);
   const [af, setAf] = useState(() => paklijstAfLees()[lijst.id] || {});
   const items = lijst.items || [];
@@ -16178,11 +16178,8 @@ function PaklijstKaart({ lijst, canEdit, bewerk, onWijzig, onVerwijder, onStartB
                 {!items.length && <p className="text-[12.5px] mute">Nog geen items — voeg ze toe met Bewerken.</p>}
               </div>
               <div className="flex flex-wrap items-center gap-2 mt-3">
-                {canEdit && items.length > 0 && (
-                  <button onClick={onStartBezorging} className="btnp ff rounded-lg px-3 py-2 text-[12.5px] font-semibold inline-flex items-center gap-1.5"><Truck size={14} /> Bezorging starten</button>
-                )}
                 {gedaan > 0 && <button onClick={wisAf} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Vinkjes wissen</button>}
-                <span className="text-[11.5px] mute">Afvinken is tijdelijk en alleen op dit apparaat.</span>
+                <span className="text-[11.5px] mute">Afvinken is tijdelijk en alleen op dit apparaat. Deze lijst kiezen bij een nieuwe bezorging kan onder Partij.</span>
               </div>
             </div>
           )}
@@ -16292,13 +16289,17 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const openFormulier = startBezorgModus;
   // Paklijst als startpunt: alle items komen als ingevuld aantal in de
   // bezorging (leeg aantal telt als 1 — daarna gewoon aan te passen).
-  const startVanafPaklijst = (lijst) => {
-    const m = {};
-    for (const i of lijst.items || []) { const n = String(i.naam || "").trim(); if (n) m[n] = String(Number(i.aantal) > 0 ? Number(i.aantal) : 1); }
-    setBezorgAantallen(m);
-    setToonInventaris(true); setBezorgModus(true); setInventarisBewerk(false);
+  // Paklijst overnemen in een lopende bezorging: alle items komen erbij
+  // (leeg aantal telt als 1). Al ingevulde aantallen blijven staan.
+  const neemPaklijstOver = (id) => {
+    const lijst = (paklijsten || []).find((l) => l.id === id);
+    if (!lijst) return;
+    setBezorgAantallen((m) => {
+      const n = { ...m };
+      for (const i of lijst.items || []) { const naam = String(i.naam || "").trim(); if (naam && !n[naam]) n[naam] = String(Number(i.aantal) > 0 ? Number(i.aantal) : 1); }
+      return n;
+    });
     setVanafPaklijst(lijst.naam);
-    setTimeout(() => { const el = document.getElementById("bezorg-inventaris"); if (el) el.scrollIntoView({ block: "start" }); }, 60);
   };
   // Ingevulde materialen die niet in de inventaris staan (bv. los van een
   // paklijst): die horen er wél bij, maar hebben geen rij in de lijst.
@@ -16347,7 +16348,7 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
               <p className="text-[12.5px] mute">Vaste inpaklijsten per soort catering. Open er een om af te vinken tijdens het verzamelen, of gebruik hem als startpunt voor een bezorging.</p>
               {(paklijsten || []).map((l) => (
                 <PaklijstKaart key={l.id} lijst={l} canEdit={canEdit} bewerk={paklijstBewerk && canEdit}
-                  onWijzig={wijzigPaklijst} onVerwijder={() => verwijderPaklijst(l.id)} onStartBezorging={() => startVanafPaklijst(l)} />
+                  onWijzig={wijzigPaklijst} onVerwijder={() => verwijderPaklijst(l.id)} />
               ))}
               {!(paklijsten || []).length && <Empty label="Nog geen paklijsten — maak er een via Bewerken → Nieuwe lijst." />}
             </div>
@@ -16378,7 +16379,6 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
           {toonInventaris && bezorgModus && (
             <div className="card p-3.5 mb-3 space-y-3" style={{ border: "2px solid " + T.green }}>
               <div className="serif ink text-lg leading-tight">Nieuwe bezorging — vul hieronder per materiaal in wat er meegaat</div>
-              {vanafPaklijst && <div className="text-[12.5px]" style={{ color: "#44502f" }}>Overgenomen van paklijst “{vanafPaklijst}” — pas de aantallen gerust aan.</div>}
               {buitenInventaris.length > 0 && (
                 <div>
                   <span className="block text-sm font-medium ink mb-1.5">Van de paklijst (staat niet in de inventaris)</span>
@@ -16420,6 +16420,16 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
                   </div>
                 )}
               </div>
+              {(paklijsten || []).length > 0 && (
+                <div>
+                  <span className="block text-sm font-medium ink mb-1.5">Beginnen vanaf een paklijst (optioneel)</span>
+                  <select className="input px-2.5 py-2 w-full text-sm" value="" onChange={(e) => { if (e.target.value) neemPaklijstOver(e.target.value); e.target.value = ""; }}>
+                    <option value="">Kies een paklijst…</option>
+                    {(paklijsten || []).map((l) => <option key={l.id} value={l.id}>{l.naam} ({(l.items || []).length})</option>)}
+                  </select>
+                  {vanafPaklijst && <p className="text-[12px] mt-1" style={{ color: "#44502f" }}>Paklijst “{vanafPaklijst}” overgenomen — pas de aantallen gerust aan.</p>}
+                </div>
+              )}
               <Field label="Notitie (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12.5px] mute">{Object.keys(bezorgAantallen).length} materiaal{Object.keys(bezorgAantallen).length === 1 ? "" : "en"} ingevuld</span>
@@ -16501,6 +16511,8 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
       : "minmax(0,1fr) " + (smal ? "3rem 2.8rem" : "4.5rem 3.5rem") + " minmax(0,1fr)";
   // Zoekbalk: filtert de lijst live, in elke stand (bekijken, bezorgen, bewerken).
   const [zoekI, setZoekI] = useState("");
+  const [dicht, setDicht] = useState({}); // ingeklapte categorieën (alleen in de bezorgstand)
+  const klapCat = (cat) => setDicht((m) => ({ ...m, [cat]: !m[cat] }));
   const zoektI = String(zoekI || "").trim().length > 0;
   const inZoek = (i) => !zoektI || softMatchAny([i.naam, i.opmerking, i.categorie], zoekI);
   return (
@@ -16511,13 +16523,33 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
         {zoektI && <button onClick={() => setZoekI("")} className="ff absolute right-2 top-1/2 -translate-y-1/2 mute hover:opacity-70"><X size={15} /></button>}
       </div>
       {zoektI && !items.some(inZoek) && <p className="text-sm mute">Niets gevonden voor "{zoekI}".</p>}
+      {bezorgModus && categorieen.some((c) => perCat(c).length) && (
+        <div className="flex items-center gap-3 -mb-1">
+          <button onClick={() => setDicht(Object.fromEntries(categorieen.map((c) => [c, true])))} className="ff text-[12px] font-medium acc hover:opacity-70">Alles inklappen</button>
+          <button onClick={() => setDicht({})} className="ff text-[12px] font-medium acc hover:opacity-70">Alles uitklappen</button>
+        </div>
+      )}
       {categorieen.map((cat) => {
         const rijen = perCat(cat);
         if (!rijen.length && (!bewerk || zoektI)) return null;
+        // Inklappen alleen tijdens het invullen van een bezorging; zoeken wint
+        // altijd (anders lijkt een treffer te ontbreken).
+        const klapbaar = bezorgModus && !zoektI;
+        const isDicht = klapbaar && !!dicht[cat];
+        const meeInCat = bezorgModus ? rijen.filter((i) => String((bezorgAantallen && bezorgAantallen[i.naam]) || "").trim()).length : 0;
         return (
           <div key={cat}>
-            <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc underline mb-2">{cat}</h3>
-            {rijen.length ? (
+            {klapbaar ? (
+              <button onClick={() => klapCat(cat)} className="ff w-full flex items-center justify-between gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc underline" style={{ textUnderlineOffset: "2px" }}>
+                  {isDicht ? <ChevronDown size={13} /> : <ChevronUp size={13} />} {cat}
+                </span>
+                <span className="text-[11.5px] mute shrink-0">{meeInCat > 0 ? meeInCat + " ingevuld" : rijen.length + " item" + (rijen.length === 1 ? "" : "s")}</span>
+              </button>
+            ) : (
+              <h3 className="text-[12.5px] font-semibold uppercase tracking-widest acc underline mb-2">{cat}</h3>
+            )}
+            {isDicht ? null : rijen.length ? (
               <div className="card overflow-hidden">
                 <div className="grid gap-x-3 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide acc" style={{ gridTemplateColumns: kolommen, borderBottom: "1px solid " + T.line }}>
                   <span>Naam</span><span className="text-right">Aantal</span>{!bewerk && <span className="text-right">Buiten</span>}{!bewerk && !bezorgModus && <span>Opmerking</span>}{bewerk && <span>Opmerking</span>}{bewerk && <span></span>}{bezorgModus && <span className="text-right">Mee</span>}
