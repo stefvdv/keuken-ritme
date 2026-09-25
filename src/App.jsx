@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-25d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-25e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -10660,7 +10660,7 @@ const MICE_WEB = "https://debeug.miceoperations.com";
 // Rechtstreeks naar het tabblad Documenten van die boeking; daar staat de
 // keukenlijst waar het menu in moet. Eigen boekingen (negatief id) staan niet
 // in MICE en krijgen dus geen link.
-const miceDocumentenUrl = (b) => (b && Number(b.id) > 0 ? MICE_WEB + "/events/" + b.id + "/documents#documents" : "");
+const miceDocumentenUrl = (b) => (b && Number(b.id) > 0 ? MICE_WEB + "/events/" + b.id + "/documents" : "");
 // Het merkteken van MICE, uitgeknipt uit hun eigen app zodat de knop meteen
 // herkenbaar is. Ingesloten als afbeelding: geen extra bestand om te laden.
 const MICE_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABIBAMAAACnw650AAAAGFBMVEX////9/f3Uz9RoWWstGDEpFS0oEyweCCIYGJdhAAAExUlEQVR42oVWTU9bRxQ99+EKR2o9d0yqNBI2xibdlI8SgtQNkEJX7aaKusm2i/6d/pCm+QNtiEq6SiiIBFWNgOcPEEmk4rnzqBSbJL5dvGc/2zjtrDz2mXPH955z59IP+P+VGdyq8wwI2/eD1E1UAGFoGPB7QFpfPPvVAbC00anZkSCN5n9xVQBA4GYWdqdHgDSavB8iPu+OXPPLGl8GNWbvVy0cAIC4KbRW52GQm7tXs67L5Kxu09wwk+Yf1NkRx0xWHZknrKVBUOPNLgsZl7cMdVVY583290nABNSZu2cdabQ0sQjg3cOzGovXrWL869hSTLT//DWZi6WN8dPqi5cXS5/IS27Z8JuX2RTUKW5mWxwt394la60dP337xYtXaJuTa1dSUGO/3qKL5dX69SwA0JXxg7VTet1uft0GgAAAdK5qyJRXe4kBFfc3HGtuq9YD+aYXPr+z11dUKmYWPWh7vheu/Tva4/N6vV8R1Fz8M+vNB8jGTDpZF5yv0KC08vvTpNoL56sMc+spD+mxsC7sD4tJuFcn0r642866VqudTSrZarWvHHwobR5DFhlAC4/BY8KaZ3R8XMky0ETxsx+148HIAGpEuVIvRQeCj00JABp/CG4YQ6x0Ng8EQLTDFK2WgE4Ynk3FeQvDUED7U5CqAQLAO41lRNaGnOTNWgaMJRgCAoA9zNU6AFUXp9hvGucEyN0U1S1BAC04oPv36XAB6MzWJd6RYYUggKr3kUlA4rzgfCc5Q8cMCCMAFMB88rXmfhOgqt0zDJwZBAgEoF5J/OF8ZzKJBrAV7xgBpArTc6tF7tnxJnfPmGkCFAHIKfK+ayyjtYJo94rKgMYFZlDCz2XvD3M1H3F8RyUAhAyke8PYusB9Q8G7AT0EMUPPq1Pq6qLlbtr6Qb31bt2ToWjtPzsdAlbhq8NfDm7p2RSIJmQYxACkT7Me0UqvZw0wpYaLSmamfjkcCTQFHRtfSqMrQIoMlAlN7RWvOHs+57sFTpIcwCzCu9ROdPJdo7fx1STjSoBqeoFcaHs7cQYZoSDOaqMvC30NnAU04REA3phcXUa9KVoQKAuCRKMCgFLtEVkAqt57wwgAZvi/FwCoc+kr4wBEOwxaYGSA3M06nAIIymlLyYNjR1JcYLWi5pEpmVtpsK9iIz+GuVZnBEAQlZhifw+tjgg4qV3DQEJzGdPYNBStcgwqrnvNPapd4pmtg/M9FQTMSQvtX8ebEK3sJSB6NgXJPZJhoqpStFbqMhXXvWJ78Op6vunF5DUV3T9TLB9t9VNpY3LXEFX2eiCSslcAKumbPfezFY5WSunbMj59StFd8lN/URYAmm8+ffD8NbWWPaeWouPywzy0uHW7GRK7fOXdg10WM7YS9fsuZ8LxvWLnydurSwA622HVOuuXn8Zyp2RWkcK+oec1KRNDpSnWWTfzbTToYHNSJBHiMFGns65ypzsZdEGU87nCT9p98sW6/EzVDvcCYjliFw8PZNXllwvBiIbhq0qsBEAdVWbmGiPGEJ19TCaZQsr5jbMUMzD1wFGFAYCW+Kh/gOobaF65cn4j/tzcmR7ZxLRwsDRTOiIVENvp0Z2O9MbnZ2EeyF/WcdrpguJOYEdPh33t0E+/b4T8FxSAIZcynWS8AAAAAElFTkSuQmCC";
@@ -12415,9 +12415,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               </button>
             )}
             {miceDocumentenUrl(b) && (
-              <a href={miceDocumentenUrl(b)} target="_blank" rel="noreferrer" className="ff shrink-0 rounded-lg inline-flex items-center justify-center overflow-hidden"
-                style={{ width: "2.1rem", height: "2.1rem", border: "1px solid " + T.line }} title="Documenten van deze boeking in MICE openen">
-                <img src={MICE_LOGO} alt="MICE" width="28" height="28" style={{ display: "block" }} />
+              <a href={miceDocumentenUrl(b)} target="_blank" rel="noreferrer" className="ff shrink-0 rounded-lg overflow-hidden block"
+                style={{ width: "2.1rem", height: "2.1rem" }} title="Documenten van deze boeking in MICE openen">
+                <img src={MICE_LOGO} alt="MICE" style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }} />
               </a>
             )}
             {!annuleerBuiten && <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Annuleren"><X size={18} /></button>}
