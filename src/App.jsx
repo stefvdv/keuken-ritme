@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-25f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-25g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -12436,7 +12436,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 {invKlaar ? "Invulling afgerond ✓" : "Invulling afronden"}
               </button>
             )}
-            {miceDocumentenUrl(b) && (
+            {onMenuKopie && miceDocumentenUrl(b) && (
               <a href={miceDocumentenUrl(b)} target="_blank" rel="noreferrer" className="ff shrink-0 rounded-lg overflow-hidden block"
                 style={{ width: "2.1rem", height: "2.1rem" }} title="Documenten van deze boeking in MICE openen">
                 <img src={MICE_LOGO} alt="MICE" style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }} />
