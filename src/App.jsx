@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-22b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-25a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -7872,14 +7872,14 @@ function MiceVerkenner() {
     <>
       <SectionTitle>MICE-koppeling</SectionTitle>
       <div className="card p-4">
-        <p className="text-sm mute mb-3">Uitzoeken welke gegevens MICE teruggeeft. Werkt alleen als <span className="ink font-medium">MICE_API_KEY</span> in Vercel staat.</p>
+        <p className="text-sm mute mb-3">Uitzoeken welke gegevens MICE teruggeeft. Werkt alleen als <span className="ink font-medium">MICE_API_KEY</span> in Vercel staat. Elk pad mag: probeer bijvoorbeeld <span className="ink font-medium">documents</span>, of <span className="ink font-medium">events/1370</span> met extra <span className="ink font-medium">include_documents=1</span>.</p>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Pad"><input className="input px-3 py-2 w-full text-sm" value={pad} onChange={(e) => setPad(e.target.value)} placeholder="events" /></Field>
           <Field label="Extra (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="date_from=2026-09-01" /></Field>
         </div>
         <div className="flex flex-wrap gap-2 mt-2">
           <button onClick={haal} disabled={bezig} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">{bezig ? "Bezig…" : "Ophalen"}</button>
-          {["events", "products", "packages", "locations", "event_types"].map((p) => (
+          {["events", "documents", "document_templates", "products", "packages", "locations", "event_types"].map((p) => (
             <button key={p} onClick={() => setPad(p)} className="btno ff rounded-lg px-2.5 py-2 text-[12.5px] font-medium">{p}</button>
           ))}
           {tekst && <button onClick={() => { try { navigator.clipboard.writeText(tekst); } catch (e) {} }} className="btno ff rounded-lg px-2.5 py-2 text-[12.5px] font-medium">Kopieer</button>}
@@ -8295,6 +8295,8 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
             onOk={(code) => { if (onChef(true, code)) setChefOpen(false); else setChefFout("Die code klopt niet."); }} />
         )}
       </div>
+
+      {chefMode && <MiceVerkenner />}
 
       <SectionTitle>Backup</SectionTitle>
       <div className="card p-4">
