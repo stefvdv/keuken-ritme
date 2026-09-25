@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-25e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-25f"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -10678,6 +10678,25 @@ const kortStempel = (iso) => {
 // ingevulde gerechten. Aantallen, porties en interne notities blijven weg —
 // dit is wat er in het keukenlijst-document van MICE komt te staan.
 const menuTekstVan = (blokken) => (blokken || []).map((x) => [String(x.kop || "").toUpperCase(), ...x.regels].join("\n")).join("\n\n");
+const kopieerRijkeTekst = (html) => {
+  try {
+    if (!document.body || !document.execCommand) return false;
+    const d = document.createElement("div");
+    d.innerHTML = html;
+    d.setAttribute("contenteditable", "true");
+    d.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;font-size:14px;opacity:0;-webkit-user-select:text;user-select:text";
+    document.body.appendChild(d);
+    const sel = window.getSelection();
+    const bereik = document.createRange();
+    bereik.selectNodeContents(d);
+    sel.removeAllRanges();
+    sel.addRange(bereik);
+    const gelukt = document.execCommand("copy");
+    sel.removeAllRanges();
+    d.remove();
+    return !!gelukt;
+  } catch (e) { return false; }
+};
 const menuHtmlVan = (blokken) => (blokken || []).map((x) =>
   "<p><strong>" + pEsc(String(x.kop || "").toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + pEsc(r) + "</p>").join("")
 ).join("<p><br></p>");
@@ -11809,16 +11828,19 @@ function MenuKopiePopup({ naam, datumKop, blokken, leeg, miceUrl, stempel, verou
   const tekst = menuTekstVan(blokken);
   const kopieer = async () => {
     setFout("");
-    let gelukt = false;
-    try {
-      if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([new window.ClipboardItem({
-          "text/html": new Blob([menuHtmlVan(blokken)], { type: "text/html" }),
-          "text/plain": new Blob([tekst], { type: "text/plain" }),
-        })]);
-        gelukt = true;
-      }
-    } catch (e) {}
+    const html = menuHtmlVan(blokken);
+    let gelukt = kopieerRijkeTekst(html);
+    if (!gelukt) {
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([new window.ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([tekst], { type: "text/plain" }),
+          })]);
+          gelukt = true;
+        }
+      } catch (e) {}
+    }
     if (!gelukt) { try { await navigator.clipboard.writeText(tekst); gelukt = true; } catch (e) {} }
     if (!gelukt) { setFout("Kopiëren lukte niet. Selecteer de tekst hieronder en kopieer met de hand."); return; }
     setOk(true);
