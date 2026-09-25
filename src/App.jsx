@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-25a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-25c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3458,6 +3458,12 @@ function App() {
   // Vlag "invulling afgerond" per boeking: gedeeld, via dezelfde koppelingslaag.
   const invKlaarVan = (b) => !!((leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0] || {}).klaar;
   const zetInvKlaar = (b, klaar) => saveKoppelingSleutel("invklaar|id|" + b.id, klaar ? [{ klaar: true, t: new Date().toISOString() }] : []);
+  // Wanneer het menu van een partij voor het laatst naar het MICE-document is
+  // gekopieerd, met een vingerafdruk van die tekst. Wijzigt de invulling
+  // daarna, dan meldt de boekingkaart dat MICE bijgewerkt moet worden.
+  // Gedeeld via dezelfde koppelingslaag, dus op alle apparaten gelijk.
+  const menuKopieVan = (b) => (leesLaag(koppeling, boekingSleutel, b, "menukop|") || [])[0] || null;
+  const zetMenuKopie = (b, tekst) => saveKoppelingSleutel("menukop|id|" + b.id, [{ t: new Date().toISOString(), vinger: menuVinger(tekst) }]);
   const saveInvullingenPartij = (b, wijzigingen) => {
     // Alle gewijzigde producten in één keer in de laag zetten; losse
     // aanroepen na elkaar overschreven elkaar via de verouderde state.
@@ -5772,6 +5778,7 @@ function App() {
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
                 onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij} invKlaarVan={invKlaarVan} onInvKlaar={zetInvKlaar} onWisInv={wisInvullingPartij}
+                menuKopieVan={menuKopieVan} onMenuKopie={(b2, tekst) => { if (canEdit) zetMenuKopie(b2, tekst); }}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -10646,6 +10653,29 @@ const backdropSluiter = (sluit) => {
 // Invullingen worden opgeslagen per MICE-id. Delen twee verschillende
 // producten (per abuis) hetzelfde id, dan krijgt elk zijn eigen sleutel met
 // de naam erin — anders verschijnt één invulling onder beide producten.
+// De MICE-webomgeving van het landgoed. Het event-id uit de API vormt
+// rechtstreeks de link naar de boeking; documenten hebben in MICE een eigen
+// nummering die de API niet teruggeeft, dus we springen naar de boeking zelf.
+const MICE_WEB = "https://debeug.miceoperations.com";
+const miceBoekingUrl = (b) => (b && Number(b.id) > 0 ? MICE_WEB + "/events/" + b.id : "");
+// Korte vingerafdruk van de gekopieerde menutekst. Verandert de invulling
+// daarna, dan klopt de stempel niet meer en meldt de kaart dat het menu in
+// MICE verouderd is.
+const menuVinger = (t) => { let h = 5381; const x = String(t || ""); for (let i = 0; i < x.length; i++) h = ((h * 33) ^ x.charCodeAt(i)) >>> 0; return h.toString(36); };
+const kortStempel = (iso) => {
+  const d = new Date(iso);
+  if (!isFinite(d)) return "";
+  const mm = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"];
+  return d.getDate() + " " + mm[d.getMonth()] + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+};
+// Menu in klantvorm: per productregel een kop in kapitalen met daaronder de
+// ingevulde gerechten. Aantallen, porties en interne notities blijven weg —
+// dit is wat er in het keukenlijst-document van MICE komt te staan.
+const menuTekstVan = (blokken) => (blokken || []).map((x) => [String(x.kop || "").toUpperCase(), ...x.regels].join("\n")).join("\n\n");
+const menuHtmlVan = (blokken) => (blokken || []).map((x) =>
+  "<p><strong>" + pEsc(String(x.kop || "").toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + pEsc(r) + "</p>").join("")
+).join("<p><br></p>");
+
 const invulSleutel = (b, k) => {
   const mid = String((k && k.miceId) || "");
   if (!mid) return mid;
@@ -11752,6 +11782,108 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
   );
 }
 
+// Het menu van een partij in klantvorm, klaar om in het keukenlijst-document
+// van MICE te plakken. De kop per productregel staat in kapitalen (zoals de
+// kopstijl van het briefpapier), daaronder de ingevulde gerechten. Kopiëren
+// zet zowel platte als opgemaakte tekst op het klembord, zodat de vetgedrukte
+// koppen in de MICE-editor blijven staan. Sluit met klik ernaast, Escape of
+// de terugknop van het toestel.
+function MenuKopiePopup({ naam, datumKop, blokken, leeg, miceUrl, stempel, verouderd, naAfronden, onGekopieerd, onSluit }) {
+  const sluitRef = React.useRef(onSluit); sluitRef.current = onSluit;
+  const [ok, setOk] = useState(false);
+  const [fout, setFout] = useState("");
+  useEffect(() => {
+    const terug = () => sluitRef.current();
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
+    try { window.history.pushState({ app: "ritme", menukopie: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", terug);
+    window.addEventListener("keydown", toets, true);
+    return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
+  }, []);
+  const tekst = menuTekstVan(blokken);
+  const kopieer = async () => {
+    setFout("");
+    let gelukt = false;
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new window.ClipboardItem({
+          "text/html": new Blob([menuHtmlVan(blokken)], { type: "text/html" }),
+          "text/plain": new Blob([tekst], { type: "text/plain" }),
+        })]);
+        gelukt = true;
+      }
+    } catch (e) {}
+    if (!gelukt) { try { await navigator.clipboard.writeText(tekst); gelukt = true; } catch (e) {} }
+    if (!gelukt) { setFout("Kopiëren lukte niet. Selecteer de tekst hieronder en kopieer met de hand."); return; }
+    setOk(true);
+    if (onGekopieerd) onGekopieerd(tekst);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} {...backdropSluiter(() => sluitRef.current())}>
+      <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "85vh", overflowY: "auto" }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="serif ink text-xl leading-tight">Menu</div>
+            <div className="text-[12.5px] mute mt-0.5">{[naam, datumKop].filter(Boolean).join(" · ")}</div>
+          </div>
+          <button onClick={() => sluitRef.current()} className="ff mute hover:opacity-70 shrink-0"><X size={18} /></button>
+        </div>
+
+        {naAfronden && blokken.length > 0 && (
+          <p className="text-[13px] mt-3 mb-0" style={{ color: "#44502f" }}>De invulling staat op afgerond. Zet het menu nu in het keukenlijst-document van deze boeking in MICE.</p>
+        )}
+
+        {blokken.length === 0 ? (
+          <p className="text-[13.5px] mute mt-4 mb-0">Deze partij heeft nog geen culinaire invulling, dus er valt nog niets te kopiëren. Vul eerst per product in wat er gemaakt wordt.</p>
+        ) : (
+          <>
+            <div className="mt-3 rounded-lg p-3 text-[13.5px]" style={{ background: "#fbf9f2", border: "1px solid " + T.line, userSelect: "text" }}>
+              {blokken.map((x, i) => (
+                <div key={i} className={i > 0 ? "mt-3" : ""}>
+                  <div className="font-bold ink" style={{ fontSize: "11.5px", letterSpacing: ".06em" }}>{String(x.kop || "").toUpperCase()}</div>
+                  {x.regels.map((r, j) => <div key={j} className="ink">{r}</div>)}
+                </div>
+              ))}
+            </div>
+            {leeg > 0 && <p className="text-[12px] mute mt-2 mb-0">{leeg === 1 ? "Eén product zonder invulling is overgeslagen." : leeg + " producten zonder invulling zijn overgeslagen."}</p>}
+          </>
+        )}
+
+        {fout && (
+          <>
+            <p className="text-[12.5px] mt-3 mb-1" style={{ color: "#b3261e" }}>{fout}</p>
+            <textarea readOnly value={tekst} className="input px-2 py-1.5 w-full text-[12.5px]" style={{ minHeight: "7rem" }} onFocus={(e) => e.target.select()} />
+          </>
+        )}
+
+        {stempel && (
+          <p className="text-[12px] mt-3 mb-0" style={{ color: verouderd ? "#a05a00" : "#6a6550" }}>
+            {verouderd
+              ? "In MICE staat nog het menu van " + kortStempel(stempel) + " — de invulling is daarna gewijzigd."
+              : "Laatst naar MICE gekopieerd op " + kortStempel(stempel) + "."}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          {blokken.length > 0 && (
+            <button onClick={kopieer} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2">
+              {ok ? <Check size={16} /> : <Copy size={16} />} {ok ? "Gekopieerd" : "Menu kopiëren"}
+            </button>
+          )}
+          {miceUrl
+            ? <a href={miceUrl} target="_blank" rel="noreferrer" className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium inline-flex items-center gap-1.5"><Link size={14} /> Openen in MICE</a>
+            : <span className="text-[12px] mute">Eigen boeking — staat niet in MICE.</span>}
+          <button onClick={() => sluitRef.current()} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium ml-auto">Sluiten</button>
+        </div>
+
+        {blokken.length > 0 && (
+          <p className="text-[12px] mute mt-3 mb-0">Plak het menu in MICE in het keukenlijst-document, onder het kopje Menu. De koppen blijven vetgedrukt.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Productinfo uit MICE: de omschrijving die op het event zelf bij het product
 // staat, met de catalogusomschrijving als aanvulling. Sluit met klik ernaast,
 // Escape of de terugknop van het toestel.
@@ -11822,9 +11954,11 @@ const versWijzigingen = (b) => {
   return uit;
 };
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
+  const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
+  const [naAfronden, setNaAfronden] = useState(false); // venster kwam uit "Invulling afronden"
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -11907,6 +12041,28 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     if (v.recipeId || v.productId || v.tekst) return [{ hoeveelheid: "", naam: v.naam || v.tekst || "", recipeId: v.recipeId || null, productId: v.productId || null }];
     return null;
   };
+  // Het menu voor het MICE-document: alleen productregels die voor de keuken
+  // tellen (huur, techniek en dranken vallen af), met per regel de ingevulde
+  // gerechtnamen. Producten zonder invulling leveren geen kop op — een lege
+  // kop in een klantmenu heeft geen zin — maar worden wel geteld zodat de
+  // popup kan melden dat er iets is overgeslagen.
+  const menuVanPartij = () => {
+    const uit = []; let leeg = 0;
+    for (const k of keuzesS.filter((k2) => !/bezorg/i.test(String(k2.naam || ""))).filter((k2) => isMepRegel(k2, catVan))) {
+      const od = k.miceId ? onderdelenVan(invulSleutel(b, k)) : null;
+      const regels = [];
+      for (const o of od || []) {
+        const n = String(o.naam || "").trim() || String(o.receptNaam || "").trim();
+        if (n) regels.push(n);
+      }
+      if (regels.length) uit.push({ kop: String(k.naam || "").trim() || "Menu", regels });
+      else leeg++;
+    }
+    return { blokken: uit, leeg };
+  };
+  const menuNu = onMenuKopie ? menuVanPartij() : { blokken: [], leeg: 0 };
+  const menuVerouderd = !!(menuKopie && menuKopie.vinger && menuNu.blokken.length && menuKopie.vinger !== menuVinger(menuTekstVan(menuNu.blokken)));
+
   // Meerdere bereidingen in één regel: | , of / sluit een bereiding af,
   // daarna zoekt de suggestielijst alleen op het nieuwe (laatste) stuk.
   const segmentVan = (tekst) => String(tekst || "").split(/[|,\/]/).pop().trim();
@@ -12246,7 +12402,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <ClipboardPaste size={17} />
             </button>
             {onInvKlaar && (
-              <button onClick={() => onInvKlaar(!invKlaar)} className="ff shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
+              <button onClick={() => { const nu = !invKlaar; if (nu) opslaan(); onInvKlaar(nu); if (nu && onMenuKopie) { setNaAfronden(true); setMenuOpen(true); } }} className="ff shrink-0 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
                 style={invKlaar ? { border: "1.5px solid #4f7a3a", color: "#4f7a3a", background: "#eef3e8" } : { border: "1.5px solid #1a1a1a", color: "#1a1a1a" }}
                 title={invKlaar ? "De invulling staat op afgerond — klik om te heropenen" : "Markeer de invulling van deze partij als afgerond (zwarte rand verdwijnt)"}>
                 {invKlaar ? "Invulling afgerond ✓" : "Invulling afronden"}
@@ -12259,6 +12415,23 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       </div>
       {productInfo && <ProductInfoPopup titel={productInfo.titel} sub={productInfo.sub} teksten={productInfo.teksten} onSluit={() => setProductInfo(null)} />}
       {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
+      {!bewerk && onMenuKopie && menuNu.blokken.length > 0 && (
+        <button onClick={() => { setNaAfronden(false); setMenuOpen(true); }} className="ff block text-left text-[11.5px] mt-0.5 underline"
+          style={{ color: menuVerouderd || (!menuKopie && invKlaar) ? "#a05a00" : "#6a6550", textDecorationColor: "#b6b2a3", textUnderlineOffset: "2px" }}>
+          {menuVerouderd
+            ? "Menu in MICE verouderd — invulling gewijzigd na " + kortStempel(menuKopie.t)
+            : menuKopie
+              ? "Menu naar MICE gekopieerd op " + kortStempel(menuKopie.t)
+              : "Menu staat nog niet in MICE"}
+        </button>
+      )}
+
+      {menuOpen && (
+        <MenuKopiePopup naam={naamTekst || b.naam} datumKop={datumKop} blokken={menuNu.blokken} leeg={menuNu.leeg}
+          miceUrl={miceBoekingUrl(b)} stempel={menuKopie && menuKopie.t} verouderd={menuVerouderd} naAfronden={naAfronden}
+          onGekopieerd={(t) => onMenuKopie(t)} onSluit={() => setMenuOpen(false)} />
+      )}
+
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
           statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
@@ -13422,7 +13595,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const kaartApi = React.useRef(null); // opslaan-bij-sluiten van de detailkaart
@@ -13749,6 +13922,8 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
               onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null} onInvullingBatch={canEdit ? (lijst) => onInvulPartijBatch(detailBoeking, lijst) : null}
               invKlaar={invKlaarVan ? (invKlaarVan(detailBoeking) || detailBoeking.datum < vandaag) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
+              menuKopie={menuKopieVan ? menuKopieVan(detailBoeking) : null}
+              onMenuKopie={onMenuKopie ? (tekst) => onMenuKopie(detailBoeking, tekst) : null}
               vorigeInvulling={(miceId) => vorigeInvulling(detailBoeking, miceId)}
               onInvullen={null}
               onOpslaan={(regels, velden) => {
