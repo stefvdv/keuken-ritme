@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-27g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-27h"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3709,12 +3709,28 @@ function App() {
   const [mepMark, setMepMark] = useState({ markering: {}, somAf: {} });
   const mepMarkRef = React.useRef(JSON.stringify({ markering: {}, somAf: {} }));
   const mepMarkTimer = React.useRef(null);
+  // Staat er nog iets te wachten om weggeschreven te worden? Zolang dat zo is
+  // mag een binnenkomende stand uit de database de markering niet overschrijven
+  // — die is dan namelijk ouder dan wat hier op het scherm staat. Zonder deze
+  // rem verdween een net gezette markering soms een seconde later weer.
+  const mepMarkOnbewaard = React.useRef(false);
   const bewaarMepMark = (deel) => {
     setMepMark((m) => {
-      const n = { markering: deel.markering != null ? deel.markering : m.markering, somAf: deel.somAf != null ? deel.somAf : m.somAf };
+      // De nieuwe waarde mag ook een functie zijn die de vorige stand krijgt.
+      // Twee klikken vlak na elkaar rekenden anders allebei met dezelfde oude
+      // stand, waardoor de eerste markering verdween.
+      const mark = typeof deel.markering === "function" ? deel.markering(m.markering) : (deel.markering != null ? deel.markering : m.markering);
+      const som = typeof deel.somAf === "function" ? deel.somAf(m.somAf) : (deel.somAf != null ? deel.somAf : m.somAf);
+      const n = { markering: mark, somAf: som };
       mepMarkRef.current = JSON.stringify(n);
+      mepMarkOnbewaard.current = true;
       if (mepMarkTimer.current) clearTimeout(mepMarkTimer.current);
-      mepMarkTimer.current = setTimeout(() => { if (live) veiligUpsert(supabase, "app_settings", { key: "mep_markering", value: n, updated_at: new Date().toISOString() }); }, 600);
+      mepMarkTimer.current = setTimeout(async () => {
+        if (!live) { mepMarkOnbewaard.current = false; return; }
+        try { await veiligUpsert(supabase, "app_settings", { key: "mep_markering", value: n, updated_at: new Date().toISOString() }); } catch (e) {}
+        // Alleen vrijgeven als er intussen niets nieuws is bijgekomen.
+        if (mepMarkRef.current === JSON.stringify(n)) mepMarkOnbewaard.current = false;
+      }, 600);
       return n;
     });
   };
@@ -4470,7 +4486,7 @@ function App() {
     const mmRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_markering")) || null;
     if (mmRow && mmRow.value && typeof mmRow.value === "object") {
       const binnen = JSON.stringify(mmRow.value);
-      if (binnen !== mepMarkRef.current) { mepMarkRef.current = binnen; setMepMark({ markering: mmRow.value.markering || {}, somAf: mmRow.value.somAf || {} }); }
+      if (!mepMarkOnbewaard.current && binnen !== mepMarkRef.current) { mepMarkRef.current = binnen; setMepMark({ markering: mmRow.value.markering || {}, somAf: mmRow.value.somAf || {} }); }
     }
     const gtRow = (cs && cs.data && cs.data.find((r) => r.key === "gebruik_telling")) || null;
     if (gtRow && gtRow.value && typeof gtRow.value === "object") gebruikSamenvoegen(gtRow.value);
@@ -12714,10 +12730,9 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
           if (klikRef.current) { clearTimeout(klikRef.current); klikRef.current = null; }
           // Staat er al een markering op dit stukje, dan haalt een dubbelklik
           // hem juist weg. Anders zet hij er groen op (of de kleur van de
-          // stift, als die aanstaat).
-          const eigen = markering[sleutel];
-          if (eigen) zetMark(sleutel, eigen, false);
-          else zetMark(sleutel, stift || "groen", true);
+          // stift, als die aanstaat). De afweging gebeurt op het laatste
+          // moment, in zetMark zelf.
+          zetMark(sleutel, stift || "groen", "wissel");
         };
         return (
           <span key={i} onClick={stift || bl ? klik : undefined} onDoubleClick={dubbel}
@@ -14357,12 +14372,20 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // de avond nog bij de werkdag, dus tussen 00:00 en 02:00 blijft "gisteren" open.
   const mepDag = (() => { const x = new Date(Date.now() - 2 * 3600000); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); })();
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < mepDag);
-  const zetMark = (sleutel, kleur, vast) => {
+  // modus: leeg = gedrag van de stift (nog eens klikken met dezelfde kleur
+  // haalt hem weg), "wissel" = staat er al iets, dan gaat het eraf, anders
+  // erop. Het rekenwerk gebeurt op de laatste stand, niet op de stand van het
+  // moment dat deze functie gemaakt werd.
+  const zetMark = (sleutel, kleur, modus) => {
     const k = kleur || stift;
     if (!k) return;
-    const nieuw = { ...markering };
-    if (!vast && nieuw[sleutel] === k) delete nieuw[sleutel]; else nieuw[sleutel] = k;
-    onMepMark({ markering: nieuw });
+    onMepMark({ markering: (huidig) => {
+      const n = { ...(huidig || {}) };
+      if (modus === "wissel") { if (n[sleutel]) delete n[sleutel]; else n[sleutel] = k; }
+      else if (!modus && n[sleutel] === k) delete n[sleutel];
+      else n[sleutel] = k;
+      return n;
+    } });
   };
 
   const dagen = [];
