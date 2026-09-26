@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-27i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-27j"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8885,7 +8885,9 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen, melding
     { id: "__home", label: "Home", icon: (
       <span className="relative inline-flex">
         <img src={BEUG_B} alt="" style={{ height: 22, width: "auto", display: "block" }} />
-        {meldingen > 0 && <span className="absolute -bottom-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
+        {/* Het aantal meldingen staat naast de B, niet ervoor: rechts ernaast
+            en verticaal in het midden. */}
+        {meldingen > 0 && <span className="absolute min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: "#b3261e", color: "#fff", left: "100%", top: "50%", transform: "translateY(-50%)", marginLeft: 3 }}>{meldingen}</span>}
       </span>
     ), doe: onHome },
     { id: "mep", label: "Mise en place", icon: <ClipboardList size={22} />, doe: onMep },
