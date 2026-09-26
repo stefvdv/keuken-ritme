@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26r"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26u"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3443,13 +3443,17 @@ function App() {
   // heeft niets met MICE te maken. Alleen de boekingen zelf en de handmatige
   // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
   const resetBoekingen = async () => {
-    if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling (product → gerecht) blijft staan.")) return;
+    if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling, de vlag \"invulling afgerond\" en het menustempel naar MICE blijven staan.")) return;
     setBoekingenLaden(true);
     if (live) {
-      try { await supabase.from("mice_koppeling").delete().neq("sleutel", "").not("sleutel", "like", "inv|%"); } catch (e) {}
+      try {
+        let q = supabase.from("mice_koppeling").delete().neq("sleutel", "");
+        for (const laag of EIGEN_LAGEN) q = q.not("sleutel", "like", laag + "%");
+        await q;
+      } catch (e) {}
       try { await supabase.from("mice_events").delete().neq("id", 0); } catch (e) {}
     }
-    setKoppeling((k) => { const houd = {}; for (const sl of Object.keys(k)) if (String(sl).startsWith("inv|")) houd[sl] = k[sl]; return houd; });
+    setKoppeling((k) => { const houd = {}; for (const sl of Object.keys(k)) if (EIGEN_LAGEN.some((laag) => String(sl).startsWith(laag))) houd[sl] = k[sl]; return houd; });
     setBoekingen([]);
     bewaarMepMark({ markering: {}, somAf: {} });
     const van = new Date(); van.setDate(van.getDate() - 62);
@@ -3486,8 +3490,30 @@ function App() {
   // raakt alleen die partij. Een lege set onderdelen maskeert bewust een
   // eventueel nog bestaande oude globale invulling van dat product.
   // Vlag "invulling afgerond" per boeking: gedeeld, via dezelfde koppelingslaag.
-  const invKlaarVan = (b) => !!((leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0] || {}).klaar;
-  const zetInvKlaar = (b, klaar) => saveKoppelingSleutel("invklaar|id|" + b.id, klaar ? [{ klaar: true, t: new Date().toISOString() }] : []);
+  // Zonder expliciete vlag kijken we naar de invulling zelf: heeft elk
+  // keukenproduct van de partij minstens één ingevulde regel, dan is ze klaar.
+  // Zo blijft de zwarte rand weg bij partijen die gewoon af zijn — ook als de
+  // vlag er niet (meer) is.
+  const catVanAlle = React.useMemo(() => { const m = {}; for (const p of miceProducten || []) if (p.categorie) m[p.id] = p.categorie; return m; }, [miceProducten]);
+  const invCompleetVan = (b) => {
+    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
+    const keuzes = keuzesOpDag(b, hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b))).filter((k) => isKeukenRegel(k, catVanAlle));
+    if (!keuzes.length) return false;
+    const laag = leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
+    return keuzes.every((k) => {
+      const eigen = laag.find((x) => String(x.miceId) === String(k.miceId));
+      const bron = eigen || prodKoppeling[k.miceId];
+      return !!(bron && (bron.onderdelen || []).some((o) => String((o && o.naam) || "").trim()));
+    });
+  };
+  const invKlaarVan = (b) => {
+    const r = (leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0];
+    if (r && typeof r.klaar === "boolean") return !!r.klaar; // met de hand gezet: dat telt
+    return invCompleetVan(b);
+  };
+  // Heropenen legt een expliciete "nee" vast; anders zou de invulling zelf hem
+  // meteen weer op afgerond zetten.
+  const zetInvKlaar = (b, klaar) => saveKoppelingSleutel("invklaar|id|" + b.id, [{ klaar: !!klaar, t: new Date().toISOString() }]);
   // Wanneer het menu van een partij voor het laatst naar het MICE-document is
   // gekopieerd, met een vingerafdruk van die tekst. Wijzigt de invulling
   // daarna, dan meldt de boekingkaart dat MICE bijgewerkt moet worden.
@@ -10948,6 +10974,10 @@ const backdropSluiter = (sluit) => {
 // De MICE-webomgeving van het landgoed. Het event-id uit de API vormt
 // rechtstreeks de link naar de boeking; documenten hebben in MICE een eigen
 // nummering die de API niet teruggeeft, dus we springen naar de boeking zelf.
+// Lagen met werk van de keuken zelf. Die overleven een reset van de
+// boekingen: de invulling, de vlag "invulling afgerond" en het stempel van
+// het menu dat naar MICE is gekopieerd.
+const EIGEN_LAGEN = ["inv|", "invklaar|", "menukop|"];
 const MICE_WEB = "https://debeug.miceoperations.com";
 // Rechtstreeks naar het tabblad Documenten van die boeking; daar staat de
 // keukenlijst waar het menu in moet. Eigen boekingen (negatief id) staan niet
@@ -10972,9 +11002,24 @@ const kortStempel = (iso) => {
 // Wat tussen haakjes staat is administratie van de offerte — "(per portie)",
 // "(3 borrelhapjes)" — en hoort niet op een menu voor de gast. Haakjes en
 // inhoud gaan eruit; blijft er niets over, dan houden we de naam zoals hij was.
+// Vet en schuin in de invulling. De keuken typt gewoon door; Ctrl+B en Ctrl+I
+// zetten sterretjes of liggende streepjes om de selectie, net als in een
+// chatapp. Die tekens zijn alleen een aanwijzing — overal waar de tekst
+// getoond of afgedrukt wordt verdwijnen ze en blijft de opmaak over.
+const VET_RE = /\*([^*\n]+)\*/g;
+const SCHUIN_RE = /_([^_\n]+)_/g;
+const zonderOpmaak = (t) => String(t == null ? "" : t).replace(VET_RE, "$1").replace(SCHUIN_RE, "$1");
+const opmaakHtml = (t) => pEsc(String(t == null ? "" : t)).replace(VET_RE, "<strong>$1</strong>").replace(SCHUIN_RE, "<em>$1</em>");
+// Op het scherm kunnen we geen halve stukjes opmaken binnen één markeerbaar
+// blokje; staat het hele stukje tussen de tekens, dan krijgt het de opmaak.
+const opmaakVan = (w) => {
+  const t = String(w == null ? "" : w);
+  const kern = t.trim();
+  return { tekst: zonderOpmaak(t), vet: /^\*[^*\n]+\*$/.test(kern), schuin: /^_[^_\n]+_$/.test(kern) };
+};
 const zonderHaakjes = (naam) => String(naam || "").replace(/\s*[(\[\uFF08][^)\]\uFF09]*[)\]\uFF09]\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 const menuKop = (naam) => zonderHaakjes(naam) || String(naam || "").trim();
-const menuTekstVan = (blokken) => (blokken || []).map((x) => [menuKop(x.kop).toUpperCase(), ...x.regels].join("\n")).join("\n\n");
+const menuTekstVan = (blokken) => (blokken || []).map((x) => [menuKop(x.kop).toUpperCase(), ...x.regels.map(zonderOpmaak)].join("\n")).join("\n\n");
 // Het briefpapier van Wilde Wortels als printbestanden. Ze staan in public/
 // zodat ze niet in de app-code hoeven en de service worker ze meeneemt; de
 // achtergrond is de eerste bladzijde van het Word-sjabloon, de letters zijn
@@ -11040,7 +11085,7 @@ const menuInhoudHtml = ({ blokken }) =>
   + "<div class='inhoud'>"
   + (blokken || []).map((x) =>
       "<div class='blok'><p class='kop'>" + pEsc(kortProduct(x.kop)) + "</p>"
-      + x.regels.map((r) => "<p class='regel'>" + pEsc(r) + "</p>").join("")
+      + x.regels.map((r) => "<p class='regel'>" + opmaakHtml(r) + "</p>").join("")
       + "</div>").join("")
   + "</div>";
 // bewerkbaar=true levert dezelfde bladzijde op, maar met de tekst aanpasbaar —
@@ -11086,7 +11131,7 @@ const kopieerRijkeTekst = (html) => {
   } catch (e) { return false; }
 };
 const menuHtmlVan = (blokken) => (blokken || []).map((x) =>
-  "<p><strong>" + pEsc(menuKop(x.kop).toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + pEsc(r) + "</p>").join("")
+  "<p><strong>" + pEsc(menuKop(x.kop).toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + opmaakHtml(r) + "</p>").join("")
 ).join("<p><br></p>");
 
 const invulSleutel = (b, k) => {
@@ -12210,6 +12255,7 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
       {delen.map((w, i) => {
         if (isScheiding(w)) return w;
         const eigen = idx++;
+        const op = opmaakVan(w);
         const sleutel = basis + ":" + eigen;
         const k = MARKEER_KLEUREN.find((x) => x.naam === (markering[sleutel] || erf));
         const bl = !stift && receptPer ? receptPer[eigen] : null;
@@ -12235,7 +12281,9 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
               textDecoration: bl ? "underline" : undefined,
               textDecorationColor: bl ? "#b6b2a3" : undefined,
               textUnderlineOffset: bl ? "2px" : undefined,
-            }}>{w}</span>
+              fontWeight: op.vet ? 700 : undefined,
+              fontStyle: op.schuin ? "italic" : undefined,
+            }}>{op.tekst}</span>
         );
       })}
     </span>
@@ -12598,7 +12646,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     return { titel: k.naam, sub: (k.aantal || b.gasten) + "\u00d7" + (tijdK ? " \u00b7 " + tijdK : "") + (catNaam ? " \u00b7 " + catNaam : ""), teksten };
   };
   const [overigeOpen, setOverigeOpen] = useState(false);
-  const [sug, setSug] = useState(""); // sleutel van het naamveld met open suggesties
   // Escape of de terugknop van het toestel sluit de bewerkstand zonder opslaan.
   useEffect(() => {
     if (!bewerk) return;
@@ -12662,30 +12709,34 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   })();
   const menuVerouderd = !!(menuKopie && menuKopie.vinger && menuNu.blokken.length && menuKopie.vinger !== menuVinger(menuTekstVan(menuNu.blokken)));
 
-  // Meerdere bereidingen in één regel: | , of / sluit een bereiding af,
-  // daarna zoekt de suggestielijst alleen op het nieuwe (laatste) stuk.
-  const segmentVan = (tekst) => String(tekst || "").split(/[|,\/]/).pop().trim();
-  // Het stuk wáár de cursor staat, begrensd door | , of / — zodat de
-  // receptsuggesties horen bij de bereiding die je aan het typen bent.
-  const [sugPos, setSugPos] = useState(null);
-  const [sugIdx, setSugIdx] = useState(null);
-  const segmentBijCursor = (tekst, pos) => {
-    const t = String(tekst || "");
-    if (pos == null) return segmentVan(t);
-    const p = Math.max(0, Math.min(pos, t.length));
-    let start = 0;
-    for (let i = p - 1; i >= 0; i--) if ("|,/".includes(t[i])) { start = i + 1; break; }
-    let eind = t.length;
-    for (let i = p; i < t.length; i++) if ("|,/".includes(t[i])) { eind = i; break; }
-    return t.slice(start, eind).trim();
-  };
+  // Meerdere bereidingen in één regel: | , of / sluit een bereiding af.
+  // Tijdens het typen doet de app daar niets mee — dat leidde alleen maar af.
+  // Pas als je op het schakeltje klikt, zoekt hij bij elk stuk van de hele
+  // regel een recept of calculatie, en kun je er zelf op zoeken.
   const bijlagenVan = (o) => (o.bijlagen && o.bijlagen.length ? o.bijlagen : ((o.recipeId || o.productId) ? [{ recipeId: o.recipeId || null, productId: o.productId || null, naam: o.receptNaam || "" }] : []));
-  const suggesties = (tekst) => {
+  const suggesties = (tekst, maxRec = 4, maxProd = 3) => {
     const q = String(tekst || "").trim();
     if (q.length < 2) return [];
-    const rec = (recepten || []).filter((r) => softMatchAny([r.name, r.category], q)).slice(0, 4).map((r) => ({ recipeId: r.id, naam: r.name, label: "recept" + (r.category ? " · " + r.category : "") }));
-    const prod = (producten || []).filter((p) => softMatchAny([p.name, p.doel, p.cat], q)).slice(0, 3).map((p) => ({ productId: p.id, naam: p.name, label: "calculatie" }));
+    const rec = (recepten || []).filter((r) => softMatchAny([r.name, r.category], q)).slice(0, maxRec).map((r) => ({ recipeId: r.id, naam: r.name, label: "recept" + (r.category ? " · " + r.category : "") }));
+    const prod = (producten || []).filter((p) => softMatchAny([p.name, p.doel, p.cat], q)).slice(0, maxProd).map((p) => ({ productId: p.id, naam: p.name, label: "calculatie" }));
     return [...rec, ...prod];
+  };
+  // Voorstellen voor een heel invulvak: elk stuk tussen | , of / krijgt zijn
+  // eigen kandidaten, met dat stuk erbij zodat je ziet waar het voorstel
+  // vandaan komt. Dubbele voorstellen vallen weg.
+  const vakVoorstellen = (tekst) => {
+    const uit = [];
+    const gezien = new Set();
+    for (const deel of String(tekst || "").split(/[|,\/]/).map((x) => x.trim())) {
+      if (deel.length < 2) continue;
+      for (const sg of suggesties(deel, 3, 2)) {
+        const sl = (sg.recipeId ? "r" : "p") + (sg.recipeId || sg.productId);
+        if (gezien.has(sl)) continue;
+        gezien.add(sl);
+        uit.push({ ...sg, bij: deel });
+      }
+    }
+    return uit.slice(0, 12);
   };
   const focusNa = (sel) => setTimeout(() => { const el = document.querySelector(sel); if (el) el.focus(); }, 30);
   // Vak focussen met de cursor aan het einde (of begin) van de tekst.
@@ -12814,7 +12865,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     const alBron = (extra && extra.allergie) || (allergie || []).join("\n");
     const rijenAl = alParse(alBron);
     setAlRijen(rijenAl.length ? rijenAl : [{ aantal: "", tekst: "" }]);
-    setSug(""); setBewerk(true);
+    setBewerk(true);
     if (onSluitStift) onSluitStift();
   };
   const zetR = (i, veld, w) => setRegels((rs) => rs.map((x, j) => (j === i ? { ...x, [veld]: w } : x)));
@@ -12839,6 +12890,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   }) }));
   const [koppelRij, setKoppelRij] = useState(""); // rij waarvoor handmatig een recept gezocht wordt
   const [koppelZoek, setKoppelZoek] = useState("");
+  const [koppelIdx, setKoppelIdx] = useState(null); // pijltjesmarkering in de voorstellenlijst
+  const sluitKoppel = () => { setKoppelRij(""); setKoppelZoek(""); setKoppelIdx(null); };
   const [alRijen, setAlRijen] = useState([]); // allergenen: [aantal][inhoud] per rij
   const [kopieOk, setKopieOk] = useState(false);
   const laatsteOpslaan = React.useRef(0);
@@ -13268,13 +13321,24 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                                 '[data-op="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
                           <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-" + j}
-                            value={o.naam} onChange={(e) => { zetO(mid, j, "naam", e.target.value); setSug(sleutel); setSugPos(e.target.selectionStart); setSugIdx(null); }} onFocus={(e) => { setSug(sleutel); setSugPos(e.target.selectionStart); setSugIdx(null); }}
-                            onClick={(e) => setSugPos(e.target.selectionStart)} onKeyUp={(e) => { if (e.key !== "ArrowDown" && e.key !== "ArrowUp") setSugPos(e.target.selectionStart); }}
+                            value={o.naam} onChange={(e) => zetO(mid, j, "naam", e.target.value)}
                             placeholder="gerecht | onderdeel | onderdeel"
                             onKeyDown={(e) => {
-                              const sugLijst = sug === sleutel ? suggesties(segmentBijCursor(o.naam, sugPos)) : [];
-                              if (lijstToetsen(e, sugLijst.length, sugIdx, setSugIdx, (k) => { koppelRecept(mid, j, sugLijst[k]); setSug(""); setSugIdx(null); })) return;
-                              if (e.key === "Enter") { e.preventDefault(); setSug(""); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); return; }
+                              // Ctrl+B / Ctrl+I zetten de tekens om de selectie
+                              // heen; staat er niets geselecteerd, dan komt de
+                              // cursor er netjes tussen te staan.
+                              if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[biBI]$/.test(e.key)) {
+                                e.preventDefault();
+                                const teken = e.key === "b" || e.key === "B" ? "*" : "_";
+                                const el = e.target;
+                                const a = el.selectionStart == null ? String(el.value || "").length : el.selectionStart;
+                                const z = el.selectionEnd == null ? a : el.selectionEnd;
+                                const t = String(el.value || "");
+                                zetO(mid, j, "naam", t.slice(0, a) + teken + t.slice(a, z) + teken + t.slice(z));
+                                setTimeout(() => { try { el.setSelectionRange(a + 1, z + 1); } catch (x) {} }, 0);
+                                return;
+                              }
+                              if (e.key === "Enter") { e.preventDefault(); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); return; }
                               if (e.key === "Backspace" && !String(o.naam || "")) { e.preventDefault(); if (!e.repeat) veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true); return; }
                               pijlNav(e,
                                 '[data-op="' + b.id + "-" + i + "-" + j + '"]',
@@ -13282,7 +13346,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                                 '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]',
                                 '[data-on="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
-                          <button onClick={() => { setKoppelRij(koppelRij === sleutel ? "" : sleutel); setKoppelZoek(""); }} className="ff mute hover:opacity-60" title="Recept als bijlage koppelen"><Link size={15} /></button>
+                          <button onClick={() => { setKoppelRij(koppelRij === sleutel ? "" : sleutel); setKoppelZoek(""); setKoppelIdx(null); }} className="ff mute hover:opacity-60" title="Recept of calculatie koppelen"><Link size={15} /></button>
                           <button onClick={() => setGeschVoor({ mid, aantal: k.aantal || b.gasten })} className="ff mute hover:opacity-60" title="Eerdere invullingen van dit soort product"><History size={15} /></button>
                           <button onClick={() => wegO(mid, j)} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
                         </div>
@@ -13293,31 +13357,38 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                             <button onClick={() => ontkoppel(mid, j, bi)} className="ff mute hover:opacity-60" title="Bijlage loskoppelen"><X size={12} /></button>
                           </div>
                         ))}
-                        {sug === sleutel && suggesties(segmentBijCursor(o.naam, sugPos)).length > 0 && (
-                          <div className="pl-3 mt-1 space-y-0.5">
-                            {suggesties(segmentBijCursor(o.naam, sugPos)).map((sg, jj) => (
-                              <button key={jj} onClick={() => { koppelRecept(mid, j, sg); setSug(""); setSugIdx(null); }}
-                                className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: sugIdx === jj ? "#3f5238" : (sg.recipeId ? "#eef2e6" : "#fbf9f2"), color: sugIdx === jj ? "#f2f0e8" : undefined }}>
-                                ⤷ {sg.naam} <span className="mute text-[11px]">· {sg.label} als bijlage</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {koppelRij === sleutel && (
-                          <div className="pl-3 mt-1">
-                            <input autoFocus className="input px-2 py-1.5 text-sm w-full" value={koppelZoek} onChange={(e) => setKoppelZoek(e.target.value)} placeholder="Zoek een recept om te koppelen" />
-                            {koppelZoek.trim().length >= 2 && (
-                              <div className="mt-1 space-y-0.5">
-                                {(recepten || []).filter((r) => softMatchAny([r.name, r.category], koppelZoek)).slice(0, 6).map((r) => (
-                                  <button key={r.id} onClick={() => { koppelRecept(mid, j, { recipeId: r.id, naam: r.name }); setKoppelRij(""); setKoppelZoek(""); }}
-                                    className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]" style={{ background: "#eef2e6" }}>
-                                    ⤷ {r.name} <span className="mute text-[11px]">· recept{r.category ? " · " + r.category : ""}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        {koppelRij === sleutel && (() => {
+                          // Open via het schakeltje: eerst de voorstellen voor
+                          // de hele regel, en typen zoekt door alle recepten
+                          // en calculaties heen.
+                          const zoek = koppelZoek.trim();
+                          const lijst = zoek ? suggesties(zoek, 8, 4) : vakVoorstellen(o.naam);
+                          const kies = (sg) => { koppelRecept(mid, j, sg); sluitKoppel(); };
+                          return (
+                            <div className="pl-3 mt-1">
+                              <input autoFocus className="input px-2 py-1.5 text-sm w-full" value={koppelZoek}
+                                onChange={(e) => { setKoppelZoek(e.target.value); setKoppelIdx(null); }}
+                                placeholder="Zoek een recept of calculatie"
+                                onKeyDown={(e) => {
+                                  if (lijstToetsen(e, lijst.length, koppelIdx, setKoppelIdx, (k) => kies(lijst[k]))) return;
+                                  if (e.key === "Escape") { e.preventDefault(); sluitKoppel(); }
+                                }} />
+                              {lijst.length > 0 ? (
+                                <div className="mt-1 space-y-0.5">
+                                  {lijst.map((sg, jj) => (
+                                    <button key={jj} onClick={() => kies(sg)}
+                                      className="ff block w-full text-left rounded-lg px-2 py-1 text-[12.5px]"
+                                      style={{ background: koppelIdx === jj ? "#3f5238" : (sg.recipeId ? "#eef2e6" : "#fbf9f2"), color: koppelIdx === jj ? "#f2f0e8" : undefined }}>
+                                      ⤷ {sg.naam} <span className={koppelIdx === jj ? "text-[11px]" : "mute text-[11px]"}>· {sg.label}{sg.bij ? " · bij “" + sg.bij + "”" : ""}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-1 text-[12px] mute">{zoek ? "Niets gevonden." : "Geen voorstel gevonden — typ hierboven om zelf te zoeken."}</p>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -13903,22 +13974,34 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     const dagBlok = (d) => {
       const items = partijen.filter((b) => b.datum === d);
       if (!items.length) return "";
-      return "<h2>" + pEsc(dagKop(d)) + "</h2>" + items.map((b) => {
+      // Een hele dag blijft bij elkaar op één bladzijde. Dat kan alleen als de
+      // dag ook op een bladzijde pást; zo niet, dan zou de browser hem in zijn
+      // geheel doorschuiven en een half lege bladzijde achterlaten. Daarom
+      // tellen we eerst de regels: past het ruim, dan houden we de dag bij
+      // elkaar, anders laten we de browser hem tussen twee partijen breken.
+      let dagRegels = 2.5; // de dagkop met zijn witruimte
+      const stukken = items.map((b) => {
         const al = allergieEff(b);
         const bez = gekozen(b).some((k) => /bezorg/i.test(String(k.naam || "")));
-        const loc = bez ? "Bezorging" + (b.adres ? " · " + b.adres : (b.zaal ? " · " + b.zaal : "")) : (b.zaal || "");
-        const kopDelen = [naamVan(b) || "Zonder naam", gastenVan(b) + " pers.", tijdVan(b) || "tijd onbekend", loc].filter(Boolean);
-        const kop = "<div class='pt'>" + kopDelen.map(pEsc).join(", ") + (al.length ? ", <span class='al'>" + al.map(pEsc).join(", ") + "</span>" : "") + "</div>";
         const keuzes = sorteerEetmoment(gekozen(b).filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => isMepRegel(k, catVan)), catVan);
         const eten = keuzes.filter((k) => !isHuur(k));
         const huur = keuzes.filter(isHuur);
+        // Naam, aantal, tijd en zaal; daarachter de allergenen, en daar weer
+        // achter het bezorgadres en de melding dat er nonfood bij hoort.
+        const kopDelen = [naamVan(b) || "Zonder naam", gastenVan(b) + " pers.", tijdVan(b) || "tijd onbekend", bez ? "" : (b.zaal || "")].filter(Boolean);
+        const achter = [];
+        if (bez) achter.push("<span class='bez'>Bezorging" + pEsc(b.adres ? " · " + b.adres : (b.zaal ? " · " + b.zaal : "")) + "</span>");
+        if (huur.length) achter.push("<span class='nf'>Nonfood</span>");
+        const kop = "<div class='pt'>" + kopDelen.map(pEsc).join(", ")
+          + (al.length ? " <span class='al'>" + al.map(pEsc).join(", ") + "</span>" : "")
+          + (achter.length ? " " + achter.join(" ") : "") + "</div>";
         const blok = (k) => {
           const inv = k.miceId ? invVoor(b, invulSleutel(b, k)) : null;
           const od = ((inv && inv.onderdelen) || []).filter((o) => onderdeelNaam(o));
           const tijdK = tijdenVoorKeuze(b, k);
           if (od.length) {
             // Invulling vervangt de productkop (zoals op de mep-kaart), niet vet.
-            return "<div class='blok'>" + od.map((o) => "<div class='inv0'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + onderdeelNaam(o)) + "</div>").join("") + "</div>";
+            return "<div class='blok'>" + od.map((o) => "<div class='inv0'>" + pEsc(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + opmaakHtml(onderdeelNaam(o)) + "</div>").join("") + "</div>";
           }
           const aantal = k.aantal || gastenVan(b);
           const naamK = String(k.naam || "");
@@ -13928,8 +14011,18 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
         const huurHtml = huur.length
           ? "<div class='blok'><div class='mepkop'>Materiaalhuur</div>" + huur.map((k) => "<div class='inv'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam) + "</div>").join("") + "</div>"
           : "";
+        // Ruwe schatting van de hoogte in tekstregels: kopregel (twee als er
+        // een adres achter staat), elke invulregel, plus de witruimte.
+        dagRegels += 1.7 + (kop.length > 170 ? 2 : 1)
+          + eten.reduce((n, k) => n + Math.max(1, (((k.miceId ? invVoor(b, invulSleutel(b, k)) : null) || {}).onderdelen || []).filter((o) => onderdeelNaam(o)).length), 0)
+          + (huur.length ? huur.length + 1.5 : 0);
         return "<div class='p'>" + kop + eten.map(blok).join("") + huurHtml + "</div>";
       }).join("");
+      // Een A4 met 14mm marge biedt ruimte aan ongeveer zestig tekstregels.
+      // We houden marge aan, zodat een schatting die er iets naast zit niet
+      // meteen een bladzijde verspilt.
+      const heel = dagRegels <= 52;
+      return "<div class='" + (heel ? "d" : "dl") + "'><h2>" + pEsc(dagKop(d)) + "</h2>" + stukken + "</div>";
     };
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
       + "@page{size:A4;margin:14mm}body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
@@ -13941,12 +14034,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       + ".blok{margin:0 0 2.5mm}.pr{font-weight:700;margin:0 0 .4mm}.inv{padding-left:4mm}.inv0{margin:0 0 .3mm}.mepkop{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6a6550;margin:1.5mm 0 .5mm}"
       + ".m{display:flex;justify-content:space-between;max-width:90mm;border-bottom:1px solid #eee}.m b{color:#44502f}"
       + ".al{color:#b3261e;margin-top:1mm;font-weight:700}"
+      + ".d{break-inside:avoid;page-break-inside:avoid}"
+      + ".bez{color:#44502f}.nf{color:#a05a00;border:1px solid #d9c9a8;border-radius:3px;padding:0 1mm;font-size:10px;text-transform:uppercase;letter-spacing:.05em}"
       + "</style></head><body><h1>Mise en place</h1><div class='sub'>" + pEsc(weekLabel) + "</div>"
       + dagen.map(dagBlok).join("")
       // Geen eigen paginering meer: de browser verdeelt de bladzijden zelf.
-      // De regels hierboven doen het werk — een partij breekt nooit doormidden
-      // (break-inside:avoid) en een dagkop blijft bij zijn eerste partij
-      // (break-after:avoid). Zo vullen de bladzijden zich vanzelf.
+      // De regels hierboven doen het werk — een dag blijft heel (.d), een
+      // partij breekt nooit doormidden (.p) en een dagkop blijft bij zijn
+      // eerste partij. Zo vullen de bladzijden zich vanzelf.
       + "</body></html>");
   };
 
