@@ -6,7 +6,7 @@ import {
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
   FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
-  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Bold, Underline, Italic, List, ListOrdered, Heading, CheckSquare, Copy, ClipboardPaste
+  Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Bold, Underline, Italic, List, ListOrdered, Heading, CheckSquare, Copy, ClipboardPaste, Users
 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-25g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3191,17 +3191,20 @@ function App() {
         if (!datum || (vanaf && datum < vanaf) || (tot && datum > tot)) continue;
         // Bestelde productregels: los op het event en per programmadeel.
         const regels = [];
-        const pakProducten = (arr, act, tijd) => {
+        const pakProducten = (arr, act, tijd, dag) => {
           const kaal = (h) => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/g, "&").trim();
           for (const p of arr || []) {
             if (p.object_type !== "product") continue;
             const oms = kaal(p.description || p.remark || "");
             const pid = p.object_id != null && p.object_id !== "" ? p.object_id : "vrij:" + String(p.name || "").trim().toLowerCase();
-            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", catId: p.object_category_id || null, ...(oms ? { oms } : {}) });
+            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", ...(dag && dag !== datum ? { dag } : {}), catId: p.object_category_id || null, ...(oms ? { oms } : {}) });
           }
         };
-        pakProducten(e.products, "", "");
-        for (const a of e.activities || []) pakProducten(a.products, a.name || "", String(a.datetime_start || "").slice(11, 16));
+        pakProducten(e.products, "", "", "");
+        // Een meerdaagse boeking heeft programmadelen op verschillende dagen.
+        // De dag van het programmadeel gaat mee op de regel, zodat de partij
+        // straks op de juiste dag op de mep en in de boekingen staat.
+        for (const a of e.activities || []) pakProducten(a.products, a.name || "", String(a.datetime_start || "").slice(11, 16), String(a.datetime_start || "").slice(0, 10));
         // Eigen veld "dieetwensen": MICE levert eigen velden in wisselende vorm.
         const eigenVeld = (ev, naam) => {
           for (const bron of [ev.extra_fields, ev.custom_attributes]) {
@@ -10501,6 +10504,59 @@ const isAanvraagStatus = (st) => statusNL(st) === "aanvraag";
 // Kaartlagen (invulling, mep-aanpassing, extra velden) horen bij één partij:
 // nieuwe sleutels op boekings-id, met terugval op de oude naamsleutel zodat
 // bestaand werk blijft staan.
+// Meerdaagse boekingen. MICE hangt elk programmadeel aan een eigen datum;
+// een boeking van 28 op 29 september heeft dus regels op twee dagen. De app
+// toont de partij dan op beide dagen, met per dag alleen de programmadelen
+// van die dag. De dagvariant houdt hetzelfde id, zodat de invulling, de
+// aanpassingen en de MICE-link gedeeld blijven — alleen de regels verschillen.
+const dagenVanBoeking = (b) => {
+  const set = new Set();
+  for (const r of (b && b.regels) || []) if (r && r.dag) set.add(r.dag);
+  if (!set.size) return [];
+  if (b.datum) set.add(b.datum);
+  return [...set].sort();
+};
+const dagVarianten = (b) => {
+  const dagen = dagenVanBoeking(b);
+  if (dagen.length < 2) return [b];
+  const alleRegels = b.regels || [];
+  return dagen.map((d) => ({
+    ...b,
+    datum: d,
+    regels: alleRegels.filter((r) => (r.dag || b.datum) === d),
+    alleRegels,
+    meerdaags: { dagen, eersteDag: dagen[0], laatsteDag: dagen[dagen.length - 1] },
+  }));
+};
+const splitsPerDag = (lijst) => (lijst || []).flatMap(dagVarianten);
+// Bij welke dag hoort een gekozen product? Handmatige aanpassingen bewaren de
+// hele lijst in één laag, dus de dag zoeken we op in de oorspronkelijke regels.
+// Wat daar niet in staat (zelf toegevoegde producten) hoort bij de eerste dag.
+const keuzeOpDag = (b, k) => {
+  if (!b || !b.meerdaags) return true;
+  for (const r of b.alleRegels || []) {
+    if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam)) return (r.dag || b.meerdaags.eersteDag) === b.datum;
+  }
+  return b.datum === b.meerdaags.eersteDag;
+};
+const keuzesOpDag = (b, lijst) => (b && b.meerdaags ? (lijst || []).filter((k) => keuzeOpDag(b, k)) : (lijst || []));
+// Het hoogste productaantal van deze dag, om naast het aantal gasten te zetten
+// wanneer een programmadeel voor veel meer mensen is dan de boeking zelf.
+const piekVanDag = (b, lijst) => {
+  let top = null;
+  for (const k of lijst || []) {
+    const n = Number(k.aantal) || 0;
+    if (!top || n > top.aantal) top = { aantal: n, naam: String(k.naam || "") };
+  }
+  return top;
+};
+const meerdaagsLabel = (b) => {
+  if (!b || !b.meerdaags) return "";
+  const kort = (d) => { const x = new Date(String(d) + "T12:00:00"); return isFinite(x) ? x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()] : String(d); };
+  const dg = b.meerdaags.dagen;
+  return "Onderdeel van een meerdaagse boeking · " + kort(dg[0]) + " t/m " + kort(dg[dg.length - 1]);
+};
+
 const leesLaag = (koppeling, boekingSleutel, b, voor) => {
   const idW = koppeling[(voor || "") + "id|" + b.id];
   if (idW !== undefined) return idW;
@@ -10678,6 +10734,72 @@ const kortStempel = (iso) => {
 // ingevulde gerechten. Aantallen, porties en interne notities blijven weg —
 // dit is wat er in het keukenlijst-document van MICE komt te staan.
 const menuTekstVan = (blokken) => (blokken || []).map((x) => [String(x.kop || "").toUpperCase(), ...x.regels].join("\n")).join("\n\n");
+// Het briefpapier van Wilde Wortels als printbestanden. Ze staan in public/
+// zodat ze niet in de app-code hoeven en de service worker ze meeneemt; de
+// achtergrond is de eerste bladzijde van het Word-sjabloon, de letters zijn
+// dezelfde Lora en Archivo als daar.
+const BRIEF_ACHTERGROND = "/brief/briefpapier.png";
+const BRIEF_FONTS = [["RitmeLora", "/brief/lora-400.woff2", 400], ["RitmeArchivo", "/brief/archivo-700.woff2", 700]];
+const briefFontCss = () => BRIEF_FONTS.map(([naam, url, gewicht]) =>
+  "@font-face{font-family:'" + naam + "';src:url('" + url + "') format('woff2');font-weight:" + gewicht + ";font-style:normal;font-display:block}"
+).join("");
+// Vóór het printen het briefpapier en de letters in de cache zetten: het
+// printvenster krijgt maar een fractie van een seconde om te laden, en een
+// half geladen achtergrond levert een lege bladzijde op.
+const briefVoorladen = () => new Promise((klaar) => {
+  let wachten = 1;
+  const af = () => { if (--wachten <= 0) klaar(); };
+  try {
+    const img = new Image();
+    img.onload = af; img.onerror = af;
+    img.src = BRIEF_ACHTERGROND;
+    if (img.complete) { af(); }
+  } catch (e) { af(); }
+  try {
+    if (document.fonts && window.FontFace) {
+      for (const [naam, url, gewicht] of BRIEF_FONTS) {
+        wachten++;
+        const f = new window.FontFace(naam, "url(" + url + ")", { weight: String(gewicht) });
+        f.load().then((geladen) => { try { document.fonts.add(geladen); } catch (e) {} af(); }, af);
+      }
+    }
+  } catch (e) {}
+  setTimeout(klaar, 3000); // vangnet: nooit blijven hangen op een traag bestand
+});
+// Het menu op briefpapier. De maten komen uit het Word-sjabloon: linkermarge
+// 71,1 mm, bovenmarge 57,2 mm, en titel plus ondertitel steken 37,5 mm naar
+// links de kantlijn in. Zo staat de gedrukte bladzijde precies waar hij in
+// Word ook zou staan.
+const menuInhoudHtml = ({ datumTekst, blokken }) =>
+  (datumTekst ? "<p class='ondertitel'>" + pEsc(datumTekst) + "</p>" : "")
+  + "<p class='titel'>Menu</p>"
+  + "<div class='inhoud'>"
+  + (blokken || []).map((x) =>
+      "<div class='blok'><p class='kop'>" + pEsc(String(x.kop || "")) + "</p>"
+      + x.regels.map((r) => "<p class='regel'>" + pEsc(r) + "</p>").join("")
+      + "</div>").join("")
+  + "</div>";
+// bewerkbaar=true levert dezelfde bladzijde op, maar met de tekst aanpasbaar —
+// dat is het afdrukvoorbeeld, waarin nog snel iets rechtgezet kan worden.
+const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar }) =>
+  "<!doctype html><html lang='nl'><head><meta charset='utf-8'><title>" + pEsc("Menu " + (naam || "")) + "</title><style>"
+  + briefFontCss()
+  + "@page{size:A4;margin:0}"
+  + "html,body{margin:0;padding:0;background:#fff}"
+  + "*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+  + ".blad{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff url('" + BRIEF_ACHTERGROND + "') no-repeat 0 0;background-size:210mm 297mm}"
+  + ".tekst{position:absolute;left:33.6mm;top:57.2mm;width:141.4mm;color:#2E3C2C;font-family:'RitmeLora',Georgia,'Times New Roman',serif}"
+  + ".ondertitel{font-family:'RitmeArchivo',Arial,Helvetica,sans-serif;font-weight:700;text-transform:uppercase;font-size:10pt;letter-spacing:.2pt;line-height:18pt;margin:0 0 2pt}"
+  + ".titel{font-size:40pt;line-height:45pt;letter-spacing:-.25pt;margin:0;padding-bottom:19pt;border-bottom:.75pt solid #2E3C2C}"
+  + ".inhoud{margin-left:37.5mm;width:103.9mm;padding-top:38pt}"
+  + ".kop{font-family:'RitmeArchivo',Arial,Helvetica,sans-serif;font-weight:700;text-transform:uppercase;font-size:10pt;line-height:15pt;margin:0}"
+  + ".regel{font-size:10pt;line-height:14pt;margin:0}"
+  + ".blok+.blok{margin-top:14pt}"
+  + (bewerkbaar ? ".tekst[contenteditable]{outline:1px dashed #b6b2a3;outline-offset:6px}.tekst[contenteditable]:focus{outline-color:#4f7a3a}@media print{.tekst{outline:none !important}}" : "")
+  + "</style></head><body><div class='blad'><div class='tekst'" + (bewerkbaar ? " contenteditable='true' spellcheck='false'" : "") + ">"
+  + tekstHtml
+  + "</div></div></body></html>";
+
 const kopieerRijkeTekst = (html) => {
   try {
     if (!document.body || !document.execCommand) return false;
@@ -11807,6 +11929,68 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
   );
 }
 
+// Afdrukvoorbeeld van het menu op briefpapier. De bladzijde staat in een
+// eigen venstertje (iframe) met precies dezelfde opmaak als de afdruk, en de
+// tekst is aanpasbaar: handig om vlak voor het printen nog iets recht te
+// zetten. Die wijziging geldt alleen voor deze afdruk en verandert niets aan
+// de invulling van de partij.
+function MenuPrintPopup({ naam, datumTekst, blokken, onSluit }) {
+  const sluitRef = React.useRef(onSluit); sluitRef.current = onSluit;
+  const lijstRef = React.useRef(null);
+  const [schaal, setSchaal] = useState(1);
+  const [klaar, setKlaar] = useState(false);
+  const BLAD_BREED = 794; // 210 mm bij 96 dpi
+  const BLAD_HOOG = 1123;
+  useEffect(() => {
+    const terug = () => sluitRef.current();
+    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
+    try { window.history.pushState({ app: "ritme", menuprint: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", terug);
+    window.addEventListener("keydown", toets, true);
+    return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
+  }, []);
+  // Het blad past zelden op het scherm; verkleinen tot het past.
+  useEffect(() => {
+    const meet = () => {
+      const breed = Math.min((window.innerWidth || 900) - 32, 900);
+      const hoog = (window.innerHeight || 900) - 150;
+      setSchaal(Math.max(0.25, Math.min(1, breed / BLAD_BREED, hoog / BLAD_HOOG)));
+    };
+    meet();
+    window.addEventListener("resize", meet);
+    return () => window.removeEventListener("resize", meet);
+  }, []);
+  useEffect(() => { briefVoorladen().then(() => setKlaar(true)); }, []);
+  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ datumTekst, blokken }), bewerkbaar: true });
+  const printen = () => {
+    const fr = lijstRef.current;
+    if (!fr) return;
+    try {
+      const doc = fr.contentDocument;
+      const tekst = doc && doc.querySelector(".tekst");
+      if (tekst) tekst.removeAttribute("contenteditable");
+      fr.contentWindow.focus();
+      fr.contentWindow.print();
+      setTimeout(() => { try { if (tekst) tekst.setAttribute("contenteditable", "true"); } catch (e) {} }, 500);
+    } catch (e) {}
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-start p-4 overflow-y-auto" style={{ background: "rgba(43,46,36,.6)" }} {...backdropSluiter(() => sluitRef.current())}>
+      <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-[13px]" style={{ color: "#fbf9f2" }}>Klik in de tekst om nog iets aan te passen.</span>
+          <button onClick={printen} disabled={!klaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 ml-auto disabled:opacity-50"><Printer size={16} /> {klaar ? "Printen" : "Bezig\u2026"}</button>
+          <button onClick={() => sluitRef.current()} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium" style={{ background: T.paper }}>Sluiten</button>
+        </div>
+        <div style={{ width: BLAD_BREED * schaal, height: BLAD_HOOG * schaal, margin: "0 auto" }}>
+          <iframe ref={lijstRef} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
+            style={{ width: BLAD_BREED, height: BLAD_HOOG, border: 0, transform: "scale(" + schaal + ")", transformOrigin: "top left", background: "#fff", boxShadow: "0 8px 30px rgba(0,0,0,.35)" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Het menu van een partij in klantvorm, klaar om in het keukenlijst-document
 // van MICE te plakken. De kop per productregel staat in kapitalen (zoals de
 // kopstijl van het briefpapier), daaronder de ingevulde gerechten. Kopiëren
@@ -11982,11 +12166,12 @@ const versWijzigingen = (b) => {
   return uit;
 };
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, annuleerBuiten = false }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie }) {
   const [geschVoor, setGeschVoor] = useState(null); // miceId voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
   const [naAfronden, setNaAfronden] = useState(false); // venster kwam uit "Invulling afronden"
+  const [printOpen, setPrintOpen] = useState(false); // afdrukvoorbeeld van het menu
   const [bewerk, setBewerk] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   useEffect(() => { if (autoBewerk) startBewerk(); /* nieuwe boeking direct bewerken */ // eslint-disable-line
@@ -12088,7 +12273,25 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     }
     return { blokken: uit, leeg };
   };
-  const menuNu = onMenuKopie ? menuVanPartij() : { blokken: [], leeg: 0 };
+  const menuNu = menuVanPartij();
+  // Meerdaagse boeking: deze kaart toont één dag ervan. Het aantal gasten staat
+  // op het event, dus als een programmadeel van die dag voor veel meer mensen
+  // is (een buffet voor 52 bij een boeking van 12), zetten we dat erachter.
+  const meerdaagsTekst = meerdaagsLabel(b);
+  const piek = (() => {
+    if (!b.meerdaags) return null;
+    const top = piekVanDag(b, toonKeuzes);
+    const gasten = Number(gastenTekst) || Number(b.gasten) || 0;
+    return top && top.aantal > gasten ? top : null;
+  })();
+  // Op het gedrukte menu staat de partijnaam met de datum voluit als ondertitel.
+  const printDatum = (() => {
+    const x = new Date(String(b.datum) + "T12:00:00");
+    if (!isFinite(x)) return String(naamTekst || b.naam || "");
+    const dag = ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()];
+    const mnd = ["januari","februari","maart","april","mei","juni","juli","augustus","september","oktober","november","december"][x.getMonth()];
+    return [String(naamTekst || b.naam || "").trim(), dag + " " + x.getDate() + " " + mnd + " " + x.getFullYear()].filter(Boolean).join(" \u2014 ");
+  })();
   const menuVerouderd = !!(menuKopie && menuKopie.vinger && menuNu.blokken.length && menuKopie.vinger !== menuVinger(menuTekstVan(menuNu.blokken)));
 
   // Meerdere bereidingen in één regel: | , of / sluit een bereiding af,
@@ -12373,7 +12576,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   opslaanRef.current = opslaan;
 
   return (
-    <div id={"partij-" + b.id} className="card p-3 min-w-0" style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
+    <div id={"partij-" + b.id + (b.meerdaags ? "-" + b.datum : "")} className="card p-3 min-w-0" style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <div className="w-full space-y-1.5">
@@ -12410,7 +12613,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             {bezorging
               ? <span title={"Bezorging" + (adres ? " · " + adres : "")} className="inline-flex"><Truck size={22} /></span>
               : zaalEff ? <span title={zaalEff} className="inline-flex"><Home size={22} /></span> : null}
-            <span>{(tijdTekst || "—") + " · " + gastenTekst + " pers."}</span>
+            <span className="inline-flex items-center gap-1">{(tijdTekst || "—") + " · "}<Users size={15} className="shrink-0" style={{ verticalAlign: "-2px" }} /> {gastenTekst}</span>
+            {piek && <span className="font-normal mute text-[12.5px]" title={piek.naam}>· {piek.aantal}× {piek.naam.length > 16 ? piek.naam.slice(0, 15) + "\u2026" : piek.naam}</span>}
             {(vers.tijd || vers.gasten) && <NieuwTag titel={[vers.gasten && vers.gasten.titel, vers.tijd && vers.tijd.titel].filter(Boolean).join("\n")} />}
           </span>
         )}
@@ -12418,6 +12622,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           <>
             <button onClick={() => { setInfoOpen(true); if (onSluitStift) onSluitStift(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
             <button onClick={() => setEtiketOpen(etiketVoorstel())} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Etiket printen"><Tag size={17} /></button>
+            {menuNu.blokken.length > 0 && (
+              <button onClick={() => setPrintOpen(true)}
+                className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Menu printen op briefpapier"><Printer size={17} /></button>
+            )}
             {canEdit && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
           </>
         )}
@@ -12442,13 +12650,17 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 <img src={MICE_LOGO} alt="MICE" style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }} />
               </a>
             )}
-            {!annuleerBuiten && <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Annuleren"><X size={18} /></button>}
+            <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Bewerken annuleren — terug naar de partij zonder op te slaan"><X size={18} /></button>
             <button onClick={opslaan} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #4f7a3a", color: "#4f7a3a" }} title="Opslaan"><Check size={18} /></button>
           </>
         )}
       </div>
       {productInfo && <ProductInfoPopup titel={productInfo.titel} sub={productInfo.sub} teksten={productInfo.teksten} onSluit={() => setProductInfo(null)} />}
       {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
+      {meerdaagsTekst && (
+        <div className="text-[11.5px] mt-0.5" style={{ color: "#6a6550" }}>{meerdaagsTekst}</div>
+      )}
+
       {!bewerk && onMenuKopie && menuNu.blokken.length > 0 && (
         <button onClick={() => { setNaAfronden(false); setMenuOpen(true); }} className="ff block text-left text-[11.5px] mt-0.5 underline"
           style={{ color: menuVerouderd || (!menuKopie && invKlaar) ? "#a05a00" : "#6a6550", textDecorationColor: "#b6b2a3", textUnderlineOffset: "2px" }}>
@@ -12458,6 +12670,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               ? "Menu naar MICE gekopieerd op " + kortStempel(menuKopie.t)
               : "Menu staat nog niet in MICE"}
         </button>
+      )}
+
+      {printOpen && (
+        <MenuPrintPopup naam={naamTekst || b.naam} datumTekst={printDatum} blokken={menuNu.blokken} onSluit={() => setPrintOpen(false)} />
       )}
 
       {menuOpen && (
@@ -13173,10 +13389,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const gekozen = (b) => {
     const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
-    if (over !== undefined) return over;
+    if (over !== undefined) return keuzesOpDag(b, over);
     const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    if (hand.length) return hand;
-    return neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b);
+    if (hand.length) return keuzesOpDag(b, hand);
+    return keuzesOpDag(b, neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
   };
   // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
   const extraVan = (b) => {
@@ -13198,7 +13414,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   const alleDagen = [...dagen];
   for (let i = 7; i < 14; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); alleDagen.push(localDate(d)); }
   const dagen2 = alleDagen.slice(7); // de week erna, voor het ingeklapte blok onderaan
-  const partijen = (boekingen || [])
+  const partijen = splitsPerDag(boekingen)
     .filter((b) => alleDagen.includes(b.datum) && !afgezegd(b) && !isAanvraagStatus(statusVan(b)) && !isVerwijderd(koppeling, b))
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
   // Partij-eigen invullaag gaat vóór de (oude) globale productinvulling.
@@ -13241,7 +13457,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   // Naar de kaart van een partij springen: dag openklappen en scrollen.
   const springNaar = (p) => {
     setDagDicht((o) => ({ ...o, [p.datum]: false }));
-    setTimeout(() => { const el = document.getElementById("partij-" + p.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 90);
+    setTimeout(() => { const el = document.getElementById("partij-" + p.id + (p.meerdaags ? "-" + p.datum : "")) || document.getElementById("partij-" + p.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 90);
   };
   // Van buitenaf aangeroepen (bv. vanuit de boekingen-melding): naar een
   // specifieke partij springen zodra die binnenkomt.
@@ -13637,6 +13853,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
   const [detail, setDetail] = useState(null); // boekings-id in de detailweergave
+  const [detailDag, setDetailDag] = useState(null); // welke dag van een meerdaagse boeking
   const somDagen = 7;
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
   const [somRij, setSomRij] = useState(null);
@@ -13645,7 +13862,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   useEffect(() => {
     if (!nieuwBewerk) return;
     setMaand(String(nieuwBewerk.datum).slice(0, 7));
-    setDetail(nieuwBewerk.id);
+    setDetail(nieuwBewerk.id); setDetailDag(nieuwBewerk.datum || null);
     const t = setTimeout(() => onNieuwGebruikt && onNieuwGebruikt(), 1200);
     return () => clearTimeout(t);
   }, [nieuwBewerk]);
@@ -13653,7 +13870,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   // Volgorde: handmatige invulling > Necker-standaard > MICE-bestelling.
   const gekozen = (b) => {
     const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    return hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
+    return keuzesOpDag(b, hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b)));
   };
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
   const invVoor = (b, miceId) => { const e = invLaag(b).find((x) => String(x.miceId) === String(miceId)); if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return prodKoppeling[miceId] || null; };
@@ -13703,7 +13920,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     }
   }
   const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
-  const springNaar = (p) => { setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); };
+  const springNaar = (p) => { setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); setDetailDag(p.datum || null); };
   // Live zoeken naar een partij op naam, met sprong naar de kaart (evt. na
   // maandwissel) en een korte donkere rand-highlight.
   const [zoekOpen, setZoekOpen] = useState(false);
@@ -13744,7 +13961,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     const v = new Date(wk + "T12:00:00"); v.setDate(v.getDate() + 7); wk = localDate(v);
   }
   const perDatum = {};
-  for (const b of boekingen || []) {
+  for (const b of splitsPerDag(boekingen)) {
     if (isVerwijderd(koppeling, b)) continue;
     if (!perDatum[b.datum]) perDatum[b.datum] = [];
     perDatum[b.datum].push(b);
@@ -13792,7 +14009,11 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     return () => clearTimeout(t);
   }, []);
 
-  const detailBoeking = detail != null ? (boekingen || []).find((b) => b.id === detail) : null;
+  const detailBoeking = (() => {
+    if (detail == null) return null;
+    const lijst = splitsPerDag(boekingen);
+    return (detailDag && lijst.find((b) => b.id === detail && b.datum === detailDag)) || lijst.find((b) => b.id === detail) || null;
+  })();
 
   return (
     <div>
@@ -13925,9 +14146,9 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
                   </div>
                   <div className="space-y-0.5">
                     {items.map((b) => (
-                      <button key={b.id} id={"boeking-chip-" + b.id} onClick={() => setDetail(b.id)} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) && b.datum >= vandaag ? "3px solid #1a1a1a" : "3px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
+                      <button key={b.id + "|" + b.datum} id={"boeking-chip-" + b.id + (b.meerdaags ? "-" + b.datum : "")} onClick={() => { setDetail(b.id); setDetailDag(b.datum); }} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) && b.datum >= vandaag ? "3px solid #1a1a1a" : "3px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : "none" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
-                        <span className="block text-[10.5px]" style={{ opacity: 0.9 }}>{gastenVan(b)} pers. · {tijdVan(b) || "—"}</span>
+                        <span className="flex items-center gap-1 text-[10.5px]" style={{ opacity: 0.9 }}><Users size={11} className="shrink-0" /> {gastenVan(b)} · {tijdVan(b) || "—"}</span>
                       </button>
                     ))}
                   </div>
@@ -13941,11 +14162,9 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
       {detailBoeking && (
         <div className="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6" style={{ background: "rgba(43,46,36,.55)" }} {...backdropSluiter(() => { if (kaartApi.current) kaartApi.current.opslaanBijSluiten(); setDetail(null); })}>
           <div className="max-w-2xl mx-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-end mb-2">
-              {/* Bewust zonder opslaan: dit kruis is de annuleerknop van de kaart.
-                  Klikken náást de popup slaat wél op, zodat een misklik niets weggooit. */}
-              <button onClick={() => setDetail(null)} className="ff rounded-full w-9 h-9 shadow flex items-center justify-center" style={{ background: T.paper, border: "1px solid " + T.line }} title="Sluiten zonder opslaan"><X size={17} /></button>
-            </div>
+            {/* Geen eigen sluitknop: het rode kruis op de kaart annuleert het
+                bewerken, en klikken náást de popup sluit hem (en slaat op, zodat
+                een misklik niets weggooit). */}
             <PartijKaart apiRef={kaartApi} b={detailBoeking} invulGesch={invulGesch} naamTekst={naamVan(detailBoeking)} statusWaarde={statusVan(detailBoeking)} magNaamStatus={true} keuzes={gekozen(detailBoeking)} mepRegels={mepVan(detailBoeking).filter(() => true)}
               allergie={allergieEff(detailBoeking)} noot={nootEff(detailBoeking)}
               tijdTekst={tijdVan(detailBoeking)} gastenTekst={gastenVan(detailBoeking)}
@@ -13958,7 +14177,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
               onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null} onInvullingBatch={canEdit ? (lijst) => onInvulPartijBatch(detailBoeking, lijst) : null}
               invKlaar={invKlaarVan ? (invKlaarVan(detailBoeking) || detailBoeking.datum < vandaag) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
-              annuleerBuiten={true}
               menuKopie={menuKopieVan ? menuKopieVan(detailBoeking) : null}
               onMenuKopie={onMenuKopie ? (tekst) => onMenuKopie(detailBoeking, tekst) : null}
               vorigeInvulling={(miceId) => vorigeInvulling(detailBoeking, miceId)}
