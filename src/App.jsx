@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26p"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26r"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2813,6 +2813,8 @@ html{font-size:17px}
 .input{width:100%;border:1px solid #d8d5c8;background:#fff;border-radius:10px;font-size:15px;color:#33352c}
 .input:focus{outline:none;box-shadow:0 0 0 2px #3a4b30;border-color:#3a4b30}
 .divi{border-top:1px solid #ece9dd}
+.weglegbalk{position:fixed;z-index:40;display:flex;flex-wrap:wrap;gap:.5rem;left:.75rem;right:.75rem;top:calc(4rem + var(--meldbalk, 0px));transition:top .15s ease}
+@media (min-width:768px){.weglegbalk{left:5.95rem;right:1rem;top:calc(.7rem + var(--meldbalk, 0px))}}
 ::selection{background:#dfe4d3}
 `}</style>
   );
@@ -10967,7 +10969,12 @@ const kortStempel = (iso) => {
 // Menu in klantvorm: per productregel een kop in kapitalen met daaronder de
 // ingevulde gerechten. Aantallen, porties en interne notities blijven weg —
 // dit is wat er in het keukenlijst-document van MICE komt te staan.
-const menuTekstVan = (blokken) => (blokken || []).map((x) => [String(x.kop || "").toUpperCase(), ...x.regels].join("\n")).join("\n\n");
+// Wat tussen haakjes staat is administratie van de offerte — "(per portie)",
+// "(3 borrelhapjes)" — en hoort niet op een menu voor de gast. Haakjes en
+// inhoud gaan eruit; blijft er niets over, dan houden we de naam zoals hij was.
+const zonderHaakjes = (naam) => String(naam || "").replace(/\s*[(\[\uFF08][^)\]\uFF09]*[)\]\uFF09]\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+const menuKop = (naam) => zonderHaakjes(naam) || String(naam || "").trim();
+const menuTekstVan = (blokken) => (blokken || []).map((x) => [menuKop(x.kop).toUpperCase(), ...x.regels].join("\n")).join("\n\n");
 // Het briefpapier van Wilde Wortels als printbestanden. Ze staan in public/
 // zodat ze niet in de app-code hoeven en de service worker ze meeneemt; de
 // achtergrond is de eerste bladzijde van het Word-sjabloon, de letters zijn
@@ -11026,7 +11033,7 @@ const briefVoorladen = () => new Promise((klaar) => {
 const MENU_TITEL = "Proef de smaken<br>uit de tuin";
 // Het product heet in MICE vaak "Diner: Hoofdgerecht vegetarisch". Op een
 // klantmenu hoort daar alleen het eerste deel van te staan.
-const kortProduct = (naam) => String(naam || "").split(":")[0].trim() || String(naam || "").trim();
+const kortProduct = (naam) => menuKop(String(naam || "").split(":")[0]) || menuKop(naam);
 const menuInhoudHtml = ({ blokken }) =>
   "<p class='menulabel'>Menu</p><div class='lijn'></div>"
   + "<p class='titel'>" + MENU_TITEL + "</p>"
@@ -11079,7 +11086,7 @@ const kopieerRijkeTekst = (html) => {
   } catch (e) { return false; }
 };
 const menuHtmlVan = (blokken) => (blokken || []).map((x) =>
-  "<p><strong>" + pEsc(String(x.kop || "").toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + pEsc(r) + "</p>").join("")
+  "<p><strong>" + pEsc(menuKop(x.kop).toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + pEsc(r) + "</p>").join("")
 ).join("<p><br></p>");
 
 const invulSleutel = (b, k) => {
@@ -11946,11 +11953,26 @@ function MeldingenBalk({ categorieen, onSluiten, isGedempt, onDempen }) {
     document.addEventListener("keydown", toets, true);
     return () => { document.removeEventListener("mousedown", klik, true); document.removeEventListener("keydown", toets, true); };
   }, [onSluiten]);
+  // Hoogte van de knoppenrij doorgeven aan de rest van de app: de taakbalk met
+  // weggelegde partijen staat op dezelfde plek en schuift daarmee naar onder.
+  const rijRef = React.useRef(null);
+  useEffect(() => {
+    const zet = () => { try { document.documentElement.style.setProperty("--meldbalk", (rijRef.current ? rijRef.current.offsetHeight : 0) + "px"); } catch (e) {} };
+    zet();
+    let ro = null;
+    try { ro = new ResizeObserver(zet); if (rijRef.current) ro.observe(rijRef.current); } catch (e) {}
+    try { window.addEventListener("resize", zet); } catch (e) {}
+    return () => {
+      try { if (ro) ro.disconnect(); } catch (e) {}
+      try { window.removeEventListener("resize", zet); } catch (e) {}
+      try { document.documentElement.style.removeProperty("--meldbalk"); } catch (e) {}
+    };
+  }, [breed]);
   const huidige = categorieen.find((c) => c.id === open) || null;
   return (
     <div ref={ref} className="fixed z-50 shadow-xl overflow-y-auto"
       style={{ top: breed ? 0 : "3.5rem", left: breed ? "5.2rem" : 0, right: 0, maxHeight: breed ? "100vh" : "calc(100vh - 3.5rem)", background: T.paper, borderBottom: "1px solid " + T.line, borderRight: breed ? "1px solid " + T.line : "none" }}>
-      <div className="flex flex-wrap items-center gap-1.5 p-3" style={{ borderBottom: huidige ? "1px solid " + T.line : "none" }}>
+      <div ref={rijRef} className="flex flex-wrap items-center gap-1.5 p-3" style={{ borderBottom: huidige ? "1px solid " + T.line : "none" }}>
         {categorieen.map((c) => (
           <button key={c.id} onClick={() => setOpen((o) => (o === c.id ? null : c.id))}
             className={"ff relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium " + (open === c.id ? "pillon" : "pill") + (!c.heeft || (isGedempt && isGedempt(c.id)) ? " opacity-35" : "")}
@@ -14549,9 +14571,11 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
       </div>
 
       {/* Taakbalk met weggelegde partijen: rood omrand, zodat je ziet dat er nog
-          iets openstaat. Tikken opent hem weer in bewerkstand. */}
+          iets openstaat. Tikken opent hem weer in bewerkstand. Hij hangt
+          bovenaan; gaat de meldingsbalk open, dan schuift hij daar netjes
+          onder (--meldbalk komt uit die balk zelf). */}
       {weggelegd.length > 0 && (
-        <div className="fixed left-3 right-20 sm:right-28 z-40 flex flex-wrap gap-2" style={{ bottom: "1.1rem" }}>
+        <div className="weglegbalk">
           {weggelegd.map((w) => (
             <button key={w.id} onClick={() => haalTerug(w)} title={w.naam}
               className="ff inline-flex items-center gap-1.5 rounded-full pl-3 pr-2.5 py-2 text-[12.5px] font-medium shadow-lg"
