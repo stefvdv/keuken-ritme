@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26v"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26y"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2895,13 +2895,20 @@ function App() {
   const [spellingUit, setSpellingUit] = useState([]); // namen die bewust afwijken en niet gecorrigeerd worden
   const [naamAlias, setNaamAlias] = useState({}); // zelf samengevoegde namen: variant -> hoofdnaam
   const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
-  const [extraNamen, setExtraNamen] = useState([]); // zelf toegevoegde namen voor de "wie doet dit"-popup
+  // Het team is een naamlijst: een merkje bij wie wat gedaan heeft, geen
+  // account. Hij is te bewerken in Extras; de namen uit de code zijn alleen
+  // de startlijst voor wie nog nooit iets heeft ingesteld.
+  const [teamNamen, setTeamNamen] = useState(() => TEAM.map((m) => m.name));
   const [materiaalItems, setMateriaalItems] = useState([]); // [{ naam, categorie, opmerking }]
   const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [fermentControles, setFermentControles] = useState(FERMENT_CONTROLES_STANDAARD); // controles per fermentatiebatch
   const [briefpapier, setBriefpapier] = useState(BRIEF_STANDAARD); // eigen briefpapier voor het gedrukte menu
   const [catZicht, setCatZicht] = useState({}); // zichtbaarheid per MICE-categorie
+  const [prodZicht, setProdZicht] = useState({}); // zichtbaarheid per los MICE-product
+  const [eetvolgorde, setEetvolgorde] = useState(EETMOMENTEN_STANDAARD); // volgorde van de eetmomenten
+  const [menuOpmaak, setMenuOpmaak] = useState({ titel: MENU_TITEL_STANDAARD, kleur: BRIEF_GROEN_STANDAARD });
+  const [klantAdres, setKlantAdres] = useState(() => ({ ...KLANT_ADRES_START })); // adressen die MICE niet aanlevert, per klant
   const [paklijsten, setPaklijsten] = useState([]); // [{ id, naam, items: [{ naam, aantal }] }]
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
   // Gedeelde bestellijst (aantallen, besteltelling, notitie, eigen producten).
@@ -3567,6 +3574,81 @@ function App() {
   React.useMemo(() => zetFermentControles(fermentControles), [fermentControles]);
   React.useMemo(() => zetCatZicht(catZicht), [catZicht]);
   React.useMemo(() => zetBriefVorm(briefpapier), [briefpapier]);
+  React.useMemo(() => zetProdZicht(prodZicht), [prodZicht]);
+  React.useMemo(() => zetEetvolgorde(eetvolgorde), [eetvolgorde]);
+  React.useMemo(() => zetMenuOpmaak(menuOpmaak), [menuOpmaak]);
+  React.useMemo(() => zetKlantAdres(klantAdres), [klantAdres]);
+  const bewaarInstelling = async (sleutel, waarde) => {
+    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: sleutel, value: waarde, updated_at: new Date().toISOString() }); } catch (e) { flash("Alleen op dit apparaat bewaard"); } }
+  };
+  const saveProdZicht = async (id, zicht) => {
+    const sleutel = String(id == null ? "" : id);
+    if (!sleutel) return;
+    const n = { ...prodZicht };
+    if (!zicht) delete n[sleutel]; else n[sleutel] = zicht;
+    setProdZicht(n);
+    await bewaarInstelling("prod_zicht", n);
+  };
+  const saveEetvolgorde = async (lijst) => {
+    const n = schoonEetmomenten(lijst);
+    setEetvolgorde(n.length ? n : EETMOMENTEN_STANDAARD);
+    await bewaarInstelling("eetvolgorde", { momenten: n });
+  };
+  // Adres onthouden voor deze klant — ingesteld op de partij zelf (i-knop).
+  const saveKlantAdres = async (b, adres) => {
+    const sl = klantSleutel(b);
+    if (!sl) return;
+    const a = String(adres || "").trim();
+    const n = { ...klantAdres };
+    if (a) n[sl] = a; else delete n[sl];
+    setKlantAdres(n);
+    await bewaarInstelling("klant_adres", n);
+    flash(a ? "Adres onthouden voor " + (b.klant || b.naam || "deze klant") : "Adres vergeten");
+  };
+  // Deze partij als sjabloon voor de volgende keer: de productenlijst en de
+  // invulling zoals ze nu staan.
+  const bouwSjabloon = (b, dag) => {
+    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
+    const bron = hand.length ? hand : (autoKeuzesUitBoeking(b) || []);
+    const keuzes = bron.map((k) => ({ miceId: k.miceId != null ? k.miceId : null, naam: k.naam || "", aantal: k.aantal != null ? k.aantal : null, ...(k.kern ? { kern: k.kern } : {}) }));
+    const laag = leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
+    const inv = laag.filter((x) => (x.onderdelen || []).some((o) => String((o && o.naam) || "").trim())).map((x) => {
+      const k = keuzes.find((y) => String(y.miceId) === String(idUitSleutel(x.miceId)));
+      return { miceId: x.miceId, cat: catVanAlle[idUitSleutel(x.miceId)] || "", naam: x.naam || "", aantal: (k && k.aantal) || b.gasten || 0, onderdelen: x.onderdelen };
+    });
+    return { sjabloon: true, dag: dag == null ? null : dag, t: new Date().toISOString(), keuzes, inv };
+  };
+  const zetHerhaal = async (b, keuze) => {
+    const dagNu = weekdagVan(b);
+    for (const sl of [herhaalSleutel(b, null), dagNu == null ? null : herhaalSleutel(b, dagNu)]) {
+      if (sl && koppeling[sl]) await saveKoppelingSleutel(sl, []);
+    }
+    if (!keuze) { flash("Deze partij wordt niet meer herhaald"); return; }
+    const dag = keuze === "dag" ? dagNu : null;
+    const sj = bouwSjabloon(b, dag);
+    if (!sj.keuzes.length && !sj.inv.length) { flash("Er is nog niets om te herhalen — vul de partij eerst in"); return; }
+    await saveKoppelingSleutel(herhaalSleutel(b, dag), [sj]);
+    flash("Herhaalt voortaan voor " + (b.klant || b.naam || "deze klant") + (dag == null ? "" : " op " + DAGNAMEN[dag]));
+  };
+  const klantInstelVan = (b) => {
+    if (!canEdit || !b || !klantSleutel(b)) return null;
+    const sj = herhaalSjabloon(koppeling, b);
+    return {
+      naam: String(b.klant || b.contact || b.naam || ""),
+      adres: klantAdres[klantSleutel(b)] || "",
+      uitMice: String(b.adres || "").trim(),
+      dagNaam: DAGNAMEN[weekdagVan(b)] || "",
+      herhaal: sj ? (sj.dag == null ? "elke" : "dag") : "",
+      herhaalSinds: (sj && sj.t) || "",
+      onAdres: (a) => saveKlantAdres(b, a),
+      onHerhaal: (keuze) => zetHerhaal(b, keuze),
+    };
+  };
+  const saveMenuOpmaak = async (v) => {
+    const n = { titel: String((v && v.titel) || "").trim() || MENU_TITEL_STANDAARD, kleur: String((v && v.kleur) || "").trim() || BRIEF_GROEN_STANDAARD };
+    setMenuOpmaak(n);
+    await bewaarInstelling("menu_opmaak", n);
+  };
   const saveBriefpapier = async (v) => {
     const n = { ...BRIEF_STANDAARD, ...(v && typeof v === "object" ? v : {}) };
     setBriefpapier(n);
@@ -3646,15 +3728,17 @@ function App() {
       if (error) flash("Materiaal alleen op dit apparaat bewaard");
     }
   };
-  const saveExtraNamen = async (lijst) => {
-    const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"));
-    setExtraNamen(uit);
-    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "team_namen", value: { namen: uit }, updated_at: new Date().toISOString() }); } catch (e) {} }
+  const saveTeamNamen = async (lijst) => {
+    const uit = [...new Set((lijst || []).map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"));
+    setTeamNamen(uit);
+    // "volledig" zegt dat dit de héle lijst is; zonder die vlag is het een
+    // oude opslag met alleen de zelf toegevoegde namen.
+    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "team_namen", value: { namen: uit, volledig: true }, updated_at: new Date().toISOString() }); } catch (e) {} }
   };
   // Nieuwe naam getypt in de "wie doet dit"-popup: voortaan overal beschikbaar.
   const voegNaamToe = (naam) => {
-    const bekend = new Set([...TEAM.map((m) => m.name), ...extraNamen].map((n) => n.toLowerCase()));
-    if (!bekend.has(String(naam).toLowerCase())) saveExtraNamen([...extraNamen, naam]);
+    const bekend = new Set(teamNamen.map((n) => n.toLowerCase()));
+    if (!bekend.has(String(naam).toLowerCase())) saveTeamNamen([...teamNamen, naam]);
   };
   // Materiaal dat bij het invullen van een bezorging of terugname wordt
   // getypt maar nog niet in de inventaris staat, komt er automatisch bij
@@ -4268,7 +4352,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "klant_adres"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4337,6 +4421,14 @@ function App() {
     if (bpRow && bpRow.value && typeof bpRow.value === "object") setBriefpapier({ ...BRIEF_STANDAARD, ...bpRow.value });
     const czRow = (cs && cs.data && cs.data.find((r) => r.key === "cat_zichtbaarheid")) || null;
     if (czRow && czRow.value && typeof czRow.value === "object") setCatZicht(czRow.value);
+    const pzRow = (cs && cs.data && cs.data.find((r) => r.key === "prod_zicht")) || null;
+    if (pzRow && pzRow.value && typeof pzRow.value === "object") setProdZicht(pzRow.value);
+    const evRow = (cs && cs.data && cs.data.find((r) => r.key === "eetvolgorde")) || null;
+    if (evRow && evRow.value && Array.isArray(evRow.value.momenten) && evRow.value.momenten.length) setEetvolgorde(schoonEetmomenten(evRow.value.momenten));
+    const moRow = (cs && cs.data && cs.data.find((r) => r.key === "menu_opmaak")) || null;
+    if (moRow && moRow.value && typeof moRow.value === "object") setMenuOpmaak({ titel: moRow.value.titel || MENU_TITEL_STANDAARD, kleur: moRow.value.kleur || BRIEF_GROEN_STANDAARD });
+    const kaRow = (cs && cs.data && cs.data.find((r) => r.key === "klant_adres")) || null;
+    if (kaRow && kaRow.value && typeof kaRow.value === "object") setKlantAdres(kaRow.value);
     const plRow = (cs && cs.data && cs.data.find((r) => r.key === "paklijsten")) || null;
     if (plRow && plRow.value && Array.isArray(plRow.value.lijsten)) setPaklijsten(plRow.value.lijsten);
     const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
@@ -4346,7 +4438,10 @@ function App() {
       if (Array.isArray(bmRow.value.categorieen) && bmRow.value.categorieen.length) setMateriaalCategorieen(bmRow.value.categorieen);
     }
     const tnRow = (cs && cs.data && cs.data.find((r) => r.key === "team_namen")) || null;
-    if (tnRow && tnRow.value && Array.isArray(tnRow.value.namen)) setExtraNamen(tnRow.value.namen);
+    if (tnRow && tnRow.value && Array.isArray(tnRow.value.namen)) {
+      const lijst = tnRow.value.volledig ? tnRow.value.namen : [...TEAM.map((m) => m.name), ...tnRow.value.namen];
+      setTeamNamen([...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl")));
+    }
     const blRow = (cs && cs.data && cs.data.find((r) => r.key === "bestellijst")) || null;
     if (blRow && blRow.value && typeof blRow.value === "object") { bestelLijstRef.current = blRow.value; setBestelLijst(blRow.value); }
     const mmRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_markering")) || null;
@@ -5837,7 +5932,7 @@ function App() {
               onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
               onDeleteItem={deleteCalcItem} />}
             {section === "mep" && (
-              <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
+              <MepWeek klantInstelVan={klantInstelVan} boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
@@ -5853,7 +5948,7 @@ function App() {
               onDeleteDoc={deleteWerkDoc}
               onEditFerment={() => push({ screen: "fermentGuideForm" })} />}
             {section === "boekingen" && chefMode && (
-              <BoekingenList boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
+              <BoekingenList klantInstelVan={klantInstelVan} boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling} invulGesch={invulGeschiedenis}
                 bezorgLijst={bezorgLijst} onOpenBezorg={(id) => push({ screen: "bezorgmateriaal", focus: id })}
@@ -5924,6 +6019,10 @@ function App() {
         {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })}
           allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} onImportCategorieen={canEdit ? importMiceCategorieen : null}
           briefpapier={briefpapier} onBriefpapier={canEdit ? saveBriefpapier : null}
+          teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
+          miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
+          eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
+          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null}
           catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -5974,7 +6073,7 @@ function App() {
           <Tag size={19} />
         </button>
       )}
-      {namePrompt && <NamePromptModal label={namePrompt.label} extraNamen={extraNamen} onNieuweNaam={voegNaamToe} onPick={answerName} />}
+      {namePrompt && <NamePromptModal label={namePrompt.label} teamNamen={teamNamen} onNieuweNaam={voegNaamToe} onPick={answerName} />}
       {samenvoegVraag && (
         <SamenvoegLijstModal vraag={samenvoegVraag}
           onSluit={() => setSamenvoegVraag(null)}
@@ -6393,10 +6492,10 @@ function PromptModal({ titel, label, hint, waarde, placeholder, wachtwoord, okLa
   );
 }
 
-function NamePromptModal({ label, extraNamen, onNieuweNaam, onPick }) {
+function NamePromptModal({ label, teamNamen, onNieuweNaam, onPick }) {
   const [eigen, setEigen] = useState("");
   const laatst = (() => { try { return localStorage.getItem("ritme:last-name") || ""; } catch (e) { return ""; } })();
-  const namen = [...new Set([...TEAM.map((m) => m.name), ...(extraNamen || [])])].sort((a, b) => (a === laatst ? -1 : b === laatst ? 1 : 0));
+  const namen = [...new Set(((teamNamen || []).length ? teamNamen : TEAM.map((m) => m.name)))].sort((a, b) => (a === laatst ? -1 : b === laatst ? 1 : 0));
   const kiesEigen = () => {
     const naam = eigen.trim();
     if (!naam) return;
@@ -8229,9 +8328,12 @@ function AllergenenBeheer({ rijen, onSave }) {
 // nieuwe app-versie aan te pas. De afbeelding wordt naar A4 op 150 dpi
 // geschaald en zo klein mogelijk bewaard, want hij gaat als instelling mee
 // naar alle apparaten.
-function BriefpapierBeheer({ waarde, onSave }) {
+function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
   const kiesRef = React.useRef(null);
   const [vorm, setVorm] = useState(() => ({ ...BRIEF_STANDAARD, ...(waarde || {}) }));
+  const [tekst, setTekst] = useState(() => (opmaak && opmaak.titel) || MENU_TITEL_STANDAARD);
+  const [kleur, setKleur] = useState(() => (opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD);
+  useEffect(() => { setTekst((opmaak && opmaak.titel) || MENU_TITEL_STANDAARD); setKleur((opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD); }, [opmaak]);
   const [bezig, setBezig] = useState(false);
   const [melding, setMelding] = useState("");
   useEffect(() => { setVorm({ ...BRIEF_STANDAARD, ...(waarde || {}) }); }, [waarde]);
@@ -8316,11 +8418,147 @@ function BriefpapierBeheer({ waarde, onSave }) {
         <button onClick={bewaren} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Opslaan</button>
         <button onClick={() => { setVorm({ ...BRIEF_STANDAARD }); onSave({ ...BRIEF_STANDAARD }); setMelding("Terug op het standaard briefpapier."); }} className="btno ff rounded-lg text-sm font-medium px-4 py-2.5">Terug naar standaard</button>
       </div>
+
+      {onOpmaak && (
+        <div className="mt-4 pt-3" style={{ borderTop: "1px solid " + T.line }}>
+          <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1.5">Titel en kleur</div>
+          <p className="text-sm mute mb-2">De regel onder het logo en de kleur van alle tekst op het menu. Een nieuwe regel in de titel maak je met Enter.</p>
+          <textarea className="input px-2 py-1.5 text-sm w-full" rows={2} value={tekst} onChange={(e) => setTekst(e.target.value)} placeholder={MENU_TITEL_STANDAARD} />
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <input type="color" className="ff rounded-lg" style={{ width: "3rem", height: "2.2rem", border: "1px solid " + T.line, background: "#fff", padding: 2 }}
+              value={/^#[0-9a-f]{6}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD} onChange={(e) => setKleur(e.target.value)} />
+            <input className="input px-2 py-1.5 text-sm" style={{ width: "7rem" }} value={kleur} onChange={(e) => setKleur(e.target.value)} placeholder={BRIEF_GROEN_STANDAARD} />
+            <span className="serif text-[15px]" style={{ color: /^#[0-9a-f]{3,8}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD }}>Zo komt de tekst eruit te zien</span>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <button onClick={() => { onOpmaak({ titel: tekst, kleur }); setMelding("Titel en kleur opgeslagen."); }} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Titel en kleur opslaan</button>
+            <button onClick={() => { setTekst(MENU_TITEL_STANDAARD); setKleur(BRIEF_GROEN_STANDAARD); onOpmaak({ titel: MENU_TITEL_STANDAARD, kleur: BRIEF_GROEN_STANDAARD }); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier }) {
+
+// Het team: alleen namen, als merkje bij wie wat gedaan heeft. Geen accounts,
+// geen rollen — die deden in de app niets.
+function TeamBeheer({ namen, onSave }) {
+  const [nieuw, setNieuw] = useState("");
+  const voeg = () => { const n = nieuw.trim(); if (!n) return; onSave([...(namen || []), n]); setNieuw(""); };
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">De namen die je kunt kiezen bij “wie doet dit?” en die onder aftekeningen komen te staan. Een naam die je weghaalt blijft staan bij wat al is afgetekend.</p>
+      <div className="space-y-1.5">
+        {(namen || []).map((n) => (
+          <div key={n} className="flex items-center justify-between gap-2">
+            <span className="text-sm ink min-w-0 flex-1 truncate">{n}</span>
+            <button onClick={() => { if (window.confirm('"' + n + '" uit de lijst halen?')) onSave((namen || []).filter((x) => x !== n)); }}
+              className="ff mute hover:opacity-60 shrink-0" title="Uit de lijst halen"><Trash2 size={15} /></button>
+          </div>
+        ))}
+        {!(namen || []).length && <p className="text-sm mute">Nog geen namen.</p>}
+      </div>
+      <div className="flex gap-2 mt-3">
+        <input className="input px-2 py-1.5 text-sm flex-1" value={nieuw} onChange={(e) => setNieuw(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); voeg(); } }} placeholder="Naam erbij" />
+        <button onClick={voeg} className="btno ff rounded-lg px-3 py-1.5 text-sm font-medium inline-flex items-center gap-1.5"><Plus size={14} /> Toevoegen</button>
+      </div>
+    </div>
+  );
+}
+
+// Zichtbaarheid per los product. Wint van de categorie, zodat uitzonderingen
+// (kurkgeld, zelfoogst, workshop met de kok) zonder code te regelen zijn.
+function ProductZichtBeheer({ producten, catVan, waarde, onZet }) {
+  const [zoek, setZoek] = useState("");
+  const [alles, setAlles] = useState(false);
+  const q = zoek.trim().toLowerCase();
+  const eigen = (p) => (waarde && waarde[String(p.id)]) || "";
+  const lijst = (producten || [])
+    .filter((p) => (q ? (String(p.naam || "") + " " + String(p.categorie || "")).toLowerCase().includes(q) : !!eigen(p)))
+    .sort((a, b) => String(a.naam || "").localeCompare(String(b.naam || ""), "nl"));
+  const getoond = alles || q ? lijst : lijst.slice(0, 12);
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">Per product bepalen waar het thuishoort. Dit wint van de categorie, dus hier zet je de uitzonderingen. Zonder eigen keuze volgt een product zijn categorie; die staat er dan tussen haakjes bij.</p>
+      <input className="input px-2 py-1.5 text-sm w-full" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een product" />
+      {!q && !lijst.length && <p className="text-xs mute mt-2">Nog geen uitzonderingen ingesteld — zoek hierboven een product op.</p>}
+      {!q && lijst.length > 0 && <p className="text-xs mute mt-2">{lijst.length} {lijst.length === 1 ? "uitzondering" : "uitzonderingen"} ingesteld.</p>}
+      {q && !getoond.length && <p className="text-xs mute mt-2">Niets gevonden. Staat de productenlijst uit MICE al binnen?</p>}
+      <div className="mt-2 space-y-1.5">
+        {getoond.map((p) => {
+          const nu = eigen(p);
+          const standaard = prodZichtStandaard(p, catVan);
+          return (
+            <div key={p.id} className="flex items-center justify-between gap-2">
+              <span className="text-sm ink min-w-0 flex-1 truncate" title={p.naam + (p.categorie ? " · " + p.categorie : "")}>
+                {p.naam}{p.categorie ? <span className="mute text-[12px]"> · {p.categorie}</span> : null}
+              </span>
+              <select className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "auto" }} value={nu}
+                onChange={(e) => onZet(p.id, e.target.value)}>
+                <option value="">Volgt de categorie ({standaard === "keuken" ? "keuken" : standaard === "boeking" ? "alleen boeking" : "verborgen"})</option>
+                <option value="keuken">Keuken (mep + boeking)</option>
+                <option value="boeking">Alleen boeking</option>
+                <option value="verborgen">Verborgen (onder Overige)</option>
+              </select>
+            </div>
+          );
+        })}
+      </div>
+      {!q && lijst.length > 12 && (
+        <button onClick={() => setAlles((v) => !v)} className="ff text-sm font-medium acc hover:opacity-70 mt-2">{alles ? "Minder tonen" : "Alle " + lijst.length + " tonen"}</button>
+      )}
+    </div>
+  );
+}
+
+// De volgorde waarin producten op de kaarten en de mep komen te staan.
+function EetvolgordeBeheer({ momenten, onSave }) {
+  const [rijen, setRijen] = useState(() => (momenten || []).map((m) => ({ naam: m.naam || "", woorden: (m.w || []).join(", "), eerst: !!m.eerst })));
+  const [vies, setVies] = useState(false);
+  useEffect(() => { setRijen((momenten || []).map((m) => ({ naam: m.naam || "", woorden: (m.w || []).join(", "), eerst: !!m.eerst }))); setVies(false); }, [momenten]);
+  const zet = (i, veld, w) => { setRijen((rs) => rs.map((r, j) => (j === i ? { ...r, [veld]: w } : r))); setVies(true); };
+  const schuif = (i, richting) => {
+    const j = i + richting;
+    if (j < 0 || j >= rijen.length) return;
+    setRijen((rs) => { const n = [...rs]; const t = n[i]; n[i] = n[j]; n[j] = t; return n; });
+    setVies(true);
+  };
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">Van boven naar beneden: zo komen de producten onder elkaar te staan. De woorden erachter zijn waar de app op herkent — hij kijkt naar de productnaam én de categorie. Een moment met een vinkje bij “wint” gaat voor: “dessert” in de naam van een dinerproduct hoort toch bij het dessert.</p>
+      <div className="space-y-2">
+        {rijen.map((r, i) => (
+          <div key={i} className="flex items-start gap-1.5">
+            <div className="flex flex-col shrink-0 pt-0.5">
+              <button onClick={() => schuif(i, -1)} disabled={i === 0} className="ff mute hover:opacity-60 disabled:opacity-25" title="Omhoog"><ChevronUp size={14} /></button>
+              <button onClick={() => schuif(i, 1)} disabled={i === rijen.length - 1} className="ff mute hover:opacity-60 disabled:opacity-25" title="Omlaag"><ChevronDown size={14} /></button>
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <input className="input px-2 py-1.5 text-sm" style={{ width: "7.5rem" }} value={r.naam} onChange={(e) => zet(i, "naam", e.target.value)} placeholder="Naam" />
+                <label className="text-[12px] mute inline-flex items-center gap-1 shrink-0" title="Dit moment gaat voor als een woord in twee momenten voorkomt">
+                  <input type="checkbox" checked={r.eerst} onChange={(e) => zet(i, "eerst", e.target.checked)} style={{ width: 15, height: 15 }} /> wint
+                </label>
+                <button onClick={() => { setRijen((rs) => rs.filter((_, j) => j !== i)); setVies(true); }} className="ff mute hover:opacity-60 ml-auto shrink-0" title="Weghalen"><Trash2 size={14} /></button>
+              </div>
+              <input className="input px-2 py-1.5 text-sm w-full" value={r.woorden} onChange={(e) => zet(i, "woorden", e.target.value)} placeholder="woorden, gescheiden door komma's" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <button onClick={() => { setRijen((rs) => [...rs, { naam: "", woorden: "", eerst: false }]); setVies(true); }} className="btno ff rounded-lg px-3 py-1.5 text-sm font-medium inline-flex items-center gap-1.5"><Plus size={14} /> Moment erbij</button>
+        <button onClick={() => { onSave(rijen); setVies(false); }} disabled={!vies} className="btnp ff rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-50">Opslaan</button>
+        <button onClick={() => { if (window.confirm("Terug naar de standaardvolgorde?")) onSave(EETMOMENTEN_STANDAARD); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak }) {
   const catImportRef = React.useRef(null);
   const [catZichtOpen, setCatZichtOpen] = useState(false);
   const herstelRef = React.useRef(null);
@@ -8420,9 +8658,22 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>MICE-productcategorieën</SectionTitle>
           <div className="card p-4">
-            <p className="text-sm mute mb-3">Bepalen wat op de mep- en boekingkaarten (verborgen) hoort. Nieuwe producten in MICE? Lees dan de productexport (Excel) opnieuw in.</p>
+            <p className="text-sm mute mb-3">Bepalen wat op de mep- en boekingkaarten (verborgen) hoort. De producten zelf haalt de app elke dag op uit MICE, maar de categorie zit niet in die koppeling: die komt uit de productexport (Excel). Staan er producten zonder categorie, lees de export dan opnieuw in.</p>
             <button onClick={() => { try { catImportRef.current.click(); } catch (e) {} }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Tag size={15} /> Categorieën inlezen uit export</button>
             <input ref={catImportRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
+            {(() => {
+              const alle = (miceProducten || []).length;
+              if (!alle) return <p className="text-xs mute mt-2">Nog geen producten opgehaald uit MICE.</p>;
+              const zonder = (miceProducten || []).filter((p) => !String(p.categorie || "").trim());
+              return (
+                <p className="text-xs mt-2 mb-0" style={{ color: zonder.length ? "#a05a00" : undefined }}>
+                  {alle} producten uit MICE
+                  {zonder.length
+                    ? " · " + zonder.length + " nog zonder categorie (" + zonder.slice(0, 3).map((p) => p.naam).join(", ") + (zonder.length > 3 ? ", …" : "") + "). Die volgen nu alleen hun naam; lees de export opnieuw in of zet ze los onder Producten tonen."
+                    : " · allemaal ingedeeld."}
+                </p>
+              );
+            })()}
             {onCatZicht && (catLijst || []).length > 0 && (
               <div className="mt-3 pt-3" style={{ borderTop: "1px solid " + T.line }}>
                 <button onClick={() => setCatZichtOpen((v) => !v)} className="ff inline-flex items-center gap-1.5 text-sm font-medium acc hover:opacity-70">
@@ -8454,10 +8705,31 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         </>
       )}
 
+      {onProdZicht && (
+        <>
+          <SectionTitle>Producten tonen</SectionTitle>
+          <ProductZichtBeheer producten={miceProducten} catVan={prodCatVan} waarde={prodZicht} onZet={onProdZicht} />
+        </>
+      )}
+
+      {onEetvolgorde && (
+        <>
+          <SectionTitle>Volgorde van eetmomenten</SectionTitle>
+          <EetvolgordeBeheer momenten={eetvolgorde} onSave={onEetvolgorde} />
+        </>
+      )}
+
+      {onTeamNamen && (
+        <>
+          <SectionTitle>Team</SectionTitle>
+          <TeamBeheer namen={teamNamen} onSave={onTeamNamen} />
+        </>
+      )}
+
       {onBriefpapier && (
         <>
-          <SectionTitle>Briefpapier voor het menu</SectionTitle>
-          <BriefpapierBeheer waarde={briefpapier} onSave={onBriefpapier} />
+          <SectionTitle>Menu op briefpapier</SectionTitle>
+          <BriefpapierBeheer waarde={briefpapier} onSave={onBriefpapier} opmaak={menuOpmaak} onOpmaak={onMenuOpmaak} />
         </>
       )}
 
@@ -10850,8 +11122,15 @@ const VERBERG_NAAM = /(koffie|thee\b|dranken|frisdrank|wijn|bier|bubbels|cava|ci
 let CAT_ZICHT = {};
 const zetCatZicht = (m) => { CAT_ZICHT = m && typeof m === "object" ? m : {}; };
 const catZichtVan = (cat) => CAT_ZICHT[String(cat || "").toLowerCase().trim()] || "";
+// Zichtbaarheid per los product (Extras → Producten tonen). Wint van de
+// categorie en van de vaste lijsten; zonder keuze geldt de standaard.
+let PROD_ZICHT = {};
+const zetProdZicht = (m) => { PROD_ZICHT = m && typeof m === "object" ? m : {}; };
+const prodZichtVan = (id) => (id == null ? "" : PROD_ZICHT[String(id)] || "");
 const isKeukenRegel = (k, catVan) => {
   const id = Number(k.miceId);
+  const eigen = prodZichtVan(k.miceId);
+  if (eigen) return eigen !== "verborgen";
   if (TOON_IDS.has(id)) return true;
   if (VERBERG_IDS.has(id)) return false;
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
@@ -10872,12 +11151,24 @@ const MEP_VERBERG_CAT = /(huur|materiaal|techniek|entertain|decorat|bloemen|audi
 const MEP_VERBERG_NAAM = /(podium|partybox|microfoon|geluidsman|geluidstechniek|geluidsset|lichtset|kapstok|kussens|boeket|bloemstuk|beamer|projectiescherm|\bdj\b|harpist|muzikant|statafel)/;
 const isMepRegel = (k, catVan) => {
   if (!isKeukenRegel(k, catVan)) return false;
+  const eigen = prodZichtVan(k.miceId);
+  if (eigen) return eigen === "keuken";
   if (TOON_IDS.has(Number(k.miceId))) return true;
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
   const zicht = catZichtVan(cat);
   if (zicht) return zicht === "keuken"; // expliciete keuze wint, ook van het naam-vangnet
   if (cat && MEP_VERBERG_CAT.test(cat)) return false;
   return !MEP_VERBERG_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase());
+};
+// Wat een product zónder eigen keuze zou doen — zodat de lijst in Extras
+// meteen laat zien hoe het nu staat.
+const prodZichtStandaard = (p, catVan) => {
+  const k = { miceId: p.id, naam: p.naam };
+  const bewaar = PROD_ZICHT; PROD_ZICHT = {};
+  let uit;
+  try { uit = !isKeukenRegel(k, catVan) ? "verborgen" : isMepRegel(k, catVan) ? "keuken" : "boeking"; }
+  finally { PROD_ZICHT = bewaar; }
+  return uit;
 };
 // Standaardzichtbaarheid volgens de vaste lijsten (voor de instellingenlijst).
 const catZichtStandaard = (cat) => {
@@ -10980,7 +11271,58 @@ const backdropSluiter = (sluit) => {
 // Lagen met werk van de keuken zelf. Die overleven een reset van de
 // boekingen: de invulling, de vlag "invulling afgerond" en het stempel van
 // het menu dat naar MICE is gekopieerd.
-const EIGEN_LAGEN = ["inv|", "invklaar|", "menukop|"];
+const EIGEN_LAGEN = ["inv|", "invklaar|", "menukop|", "herhaal|"];
+const DAGNAMEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+// Startlijst met adressen die MICE niet aanlevert; verder in te stellen op de
+// partij zelf.
+const KLANT_ADRES_START = { "metaal kathedraal": "Rijksstraatweg 20, Utrecht" };
+// Een klant herkennen we aan de klantnaam uit MICE; staat die er niet, dan
+// aan de naam van de boeking. Zo hoort "Lunch Necker" van elke week bij
+// dezelfde klant.
+const klantSleutel = (b) => zonderAccent(String((b && (b.klant || b.contact || b.naam)) || "")).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Adressen die MICE niet aanlevert, per klant. In te stellen op de partij
+// zelf (de i-knop); geldt daarna voor elke boeking van die klant.
+let KLANT_ADRES = {};
+const zetKlantAdres = (m) => { KLANT_ADRES = m && typeof m === "object" ? m : {}; };
+const adresVan = (b) => String((b && b.adres) || "").trim() || KLANT_ADRES[klantSleutel(b)] || "";
+// Een ingevulde partij als sjabloon voor de volgende keer. Per klant, en
+// desgewenst alleen voor die weekdag — "Lunch Necker" is op maandag iets
+// anders dan op woensdag.
+const weekdagVan = (b) => { const d = new Date(String((b && b.datum) || "") + "T12:00:00"); return isFinite(d) ? d.getDay() : null; };
+const herhaalSleutel = (b, dag) => "herhaal|" + klantSleutel(b) + "|" + (dag == null ? "*" : dag);
+const herhaalSjabloon = (koppeling, b) => {
+  if (!koppeling || !b || !klantSleutel(b)) return null;
+  const dag = weekdagVan(b);
+  for (const sl of [dag == null ? null : herhaalSleutel(b, dag), herhaalSleutel(b, null)]) {
+    if (!sl) continue;
+    const r = (koppeling[sl] || [])[0];
+    if (r && r.sjabloon) return r;
+  }
+  return null;
+};
+// De productenlijst uit het sjabloon springt alleen in als MICE zelf niets
+// meestuurt — anders zouden de echte bestelregels overschreven worden.
+const herhaalKeuzes = (koppeling, b) => {
+  if (((b && b.alleRegels) || (b && b.regels) || []).length) return null;
+  const sj = herhaalSjabloon(koppeling, b);
+  return sj && (sj.keuzes || []).length ? sj.keuzes.map((k) => ({ ...k })) : null;
+};
+// De invulling uit het sjabloon: eerst hetzelfde product, anders hetzelfde
+// soort product, en de hoeveelheden omgerekend naar dit aantal.
+const herhaalInvulling = (koppeling, b, miceId, aantal, catVan) => {
+  const sj = herhaalSjabloon(koppeling, b);
+  if (!sj || !(sj.inv || []).length) return null;
+  const cat = String((catVan && catVan[idUitSleutel(miceId)]) || "").toLowerCase().trim();
+  const e = sj.inv.find((x) => String(x.miceId) === String(miceId))
+    || (cat ? sj.inv.find((x) => String(x.cat || "").toLowerCase().trim() === cat) : null);
+  if (!e || !(e.onderdelen || []).length) return null;
+  const van = Number(e.aantal) || 0;
+  const naar = Number(aantal) || 0;
+  return {
+    onderdelen: van > 0 && naar > 0 && van !== naar ? schaalOnderdelen(e.onderdelen, van, naar) : e.onderdelen.map((o) => ({ ...o })),
+    naam: e.naam || "",
+  };
+};
 const MICE_WEB = "https://debeug.miceoperations.com";
 // Rechtstreeks naar het tabblad Documenten van die boeking; daar staat de
 // keukenlijst waar het menu in moet. Eigen boekingen (negatief id) staan niet
@@ -11046,7 +11388,18 @@ const zetBriefVorm = (v) => {
 const briefAchtergrond = () => briefVorm.img || BRIEF_ACHTERGROND;
 // Het groen van "Met biologische oogst van Landgoed de Beug"; alle tekst op
 // het gedrukte menu staat in die kleur.
-const BRIEF_GROEN = "#6E7C4B";
+const BRIEF_GROEN_STANDAARD = "#6E7C4B";
+const MENU_TITEL_STANDAARD = "Proef de smaken\nuit de tuin";
+// Titel en kleur van het menu staan in Extras bij het briefpapier.
+let MENU_OPMAAK = { titel: MENU_TITEL_STANDAARD, kleur: BRIEF_GROEN_STANDAARD };
+const zetMenuOpmaak = (v) => {
+  const titel = String((v && v.titel) || "").trim();
+  const kleur = String((v && v.kleur) || "").trim();
+  MENU_OPMAAK = {
+    titel: titel || MENU_TITEL_STANDAARD,
+    kleur: /^#[0-9a-f]{3,8}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD,
+  };
+};
 const BRIEF_FONTS = [["RitmeLora", "/brief/lora-400.woff2", 400], ["RitmeArchivo", "/brief/archivo-400.woff2", 400], ["RitmeArchivo", "/brief/archivo-700.woff2", 700]];
 const briefFontCss = () => BRIEF_FONTS.map(([naam, url, gewicht]) =>
   "@font-face{font-family:'" + naam + "';src:url('" + url + "') format('woff2');font-weight:" + gewicht + ";font-style:normal;font-display:block}"
@@ -11078,13 +11431,13 @@ const briefVoorladen = () => new Promise((klaar) => {
 // 71,1 mm, bovenmarge 57,2 mm, en titel plus ondertitel steken 37,5 mm naar
 // links de kantlijn in. Zo staat de gedrukte bladzijde precies waar hij in
 // Word ook zou staan.
-const MENU_TITEL = "Proef de smaken<br>uit de tuin";
+const menuTitelHtml = () => pEsc(MENU_OPMAAK.titel).replace(/\r?\n/g, "<br>");
 // Het product heet in MICE vaak "Diner: Hoofdgerecht vegetarisch". Op een
 // klantmenu hoort daar alleen het eerste deel van te staan.
 const kortProduct = (naam) => menuKop(String(naam || "").split(":")[0]) || menuKop(naam);
 const menuInhoudHtml = ({ blokken }) =>
   "<p class='menulabel'>Menu</p><div class='lijn'></div>"
-  + "<p class='titel'>" + MENU_TITEL + "</p>"
+  + "<p class='titel'>" + menuTitelHtml() + "</p>"
   + "<div class='inhoud'>"
   + (blokken || []).map((x) =>
       "<div class='blok'><p class='kop'>" + pEsc(kortProduct(x.kop)) + "</p>"
@@ -11100,9 +11453,9 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar }) =>
   + "html,body{margin:0;padding:0;background:#fff}"
   + "*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
   + ".blad{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff url('" + briefAchtergrond() + "') no-repeat 0 0;background-size:210mm 297mm}"
-  + ".tekst{position:absolute;left:" + briefVorm.links + "mm;top:" + briefVorm.top + "mm;width:" + briefVorm.breedte + "mm;color:" + BRIEF_GROEN + ";font-family:'RitmeArchivo',Arial,Helvetica,sans-serif}"
+  + ".tekst{position:absolute;left:" + briefVorm.links + "mm;top:" + briefVorm.top + "mm;width:" + briefVorm.breedte + "mm;color:" + MENU_OPMAAK.kleur + ";font-family:'RitmeArchivo',Arial,Helvetica,sans-serif}"
   + ".menulabel{font-size:9pt;letter-spacing:2.4pt;text-transform:uppercase;text-align:center;margin:0}"
-  + ".lijn{border-top:.75pt solid " + BRIEF_GROEN + ";margin:9pt 0 0}"
+  + ".lijn{border-top:.75pt solid " + MENU_OPMAAK.kleur + ";margin:9pt 0 0}"
   + ".titel{font-family:'RitmeLora',Georgia,'Times New Roman',serif;font-size:34pt;line-height:40pt;text-align:center;margin:26pt 0 30pt}"
   + ".inhoud{margin-left:" + briefVorm.inspring + "mm;width:" + Math.max(20, briefVorm.breedte - briefVorm.inspring) + "mm}"
   + ".kop{font-weight:700;font-size:10.5pt;line-height:15pt;margin:0}"
@@ -11176,21 +11529,36 @@ const losSplits = (naam, porties, item, gram) => String(naam || "").split(/[|,\/
 // met "eerst" worden vóór alle andere gekeken: een dessert hoort ná het diner,
 // maar zijn categorie heet "Taart en zoetigheid" en zou hem anders bij de
 // zoetigheid van de middag zetten.
-const EETMOMENTEN = [
-  { w: ["aankomst", "ontvangst", "arrival", "welkom"] },
-  { w: ["ontbijt", "breakfast"] },
-  { w: ["lunch", "brood", "sandwich", "soep"] },
-  { w: ["snack", "middag", "taart", "zoet", "koffie", "thee"] },
-  { w: ["amuse"] },
-  { w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht"] },
-  { w: ["dessert", "nagerecht", "toetje"], eerst: true },
-  { w: ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"] },
+const EETMOMENTEN_STANDAARD = [
+  { naam: "Aankomst", w: ["aankomst", "ontvangst", "arrival", "welkom"] },
+  { naam: "Ontbijt", w: ["ontbijt", "breakfast"] },
+  { naam: "Lunch", w: ["lunch", "brood", "sandwich", "soep"] },
+  { naam: "Snack", w: ["snack", "middag", "taart", "zoet", "koffie", "thee"] },
+  { naam: "Amuse", w: ["amuse"] },
+  { naam: "Diner", w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht"] },
+  { naam: "Dessert", w: ["dessert", "nagerecht", "toetje"], eerst: true },
+  { naam: "Borrel", w: ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"] },
 ];
+// De volgorde is instelbaar in Extras (chef). Een moment met "eerst" wint van
+// de andere: "dessert" staat in de naam van een diner-product, maar hoort bij
+// het dessert. Zonder eigen instelling geldt de lijst hierboven.
+let EETVOLGORDE = EETMOMENTEN_STANDAARD;
+const schoonEetmomenten = (lijst) => {
+  const uit = [];
+  for (const m of Array.isArray(lijst) ? lijst : []) {
+    const naam = String((m && m.naam) || "").trim();
+    const w = (Array.isArray(m && m.w) ? m.w : String((m && m.woorden) || "").split(","))
+      .map((x) => zonderAccent(String(x || "")).toLowerCase().trim()).filter(Boolean);
+    if (naam || w.length) uit.push({ naam: naam || w[0] || "Naamloos", w, eerst: !!(m && m.eerst) });
+  }
+  return uit;
+};
+const zetEetvolgorde = (lijst) => { const n = schoonEetmomenten(lijst); EETVOLGORDE = n.length ? n : EETMOMENTEN_STANDAARD; };
 const eetRang = (t) => {
   const x = zonderAccent(String(t || "")).toLowerCase();
-  for (let i = 0; i < EETMOMENTEN.length; i++) if (EETMOMENTEN[i].eerst && EETMOMENTEN[i].w.some((w) => x.includes(w))) return i;
-  for (let i = 0; i < EETMOMENTEN.length; i++) if (EETMOMENTEN[i].w.some((w) => x.includes(w))) return i;
-  return EETMOMENTEN.length;
+  for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].eerst && EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
+  for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
+  return EETVOLGORDE.length;
 };
 const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRang((a.naam || "") + " " + ((catVan && catVan[a.miceId]) || "")) - eetRang((b.naam || "") + " " + ((catVan && catVan[b.miceId]) || "")));
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
@@ -12308,7 +12676,9 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 // potlood zet de kaart zelf om in invoervelden — geen popup.
 // Partij-informatiepopup: hergebruikt op Mep én op de bezorgmateriaal-pagina,
 // zodat contact/adres-info er overal precies hetzelfde uitziet.
-function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit }) {
+function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, klantInstel }) {
+  const [adresVeld, setAdresVeld] = useState(() => (klantInstel && klantInstel.adres) || "");
+  useEffect(() => { setAdresVeld((klantInstel && klantInstel.adres) || ""); }, [klantInstel && klantInstel.adres]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
@@ -12335,6 +12705,48 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
             </div>
           )}
         </div>
+        {klantInstel && (
+          <div className="mt-3 pt-3 space-y-3" style={{ borderTop: "1px solid " + T.line }}>
+            <div className="text-[11px] font-semibold uppercase tracking-widest acc">Vast voor {klantInstel.naam || "deze klant"}</div>
+
+            <div>
+              <div className="text-[12.5px] mute mb-1">
+                {klantInstel.uitMice
+                  ? "MICE levert voor deze boeking zelf een adres aan; dat gaat altijd voor."
+                  : "MICE levert geen adres. Vul het hier één keer in, dan staat het bij elke boeking van deze klant."}
+              </div>
+              <div className="flex gap-2">
+                <input className="input px-2 py-1.5 text-sm flex-1 min-w-0" value={adresVeld} onChange={(e) => setAdresVeld(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); klantInstel.onAdres(adresVeld); } }}
+                  placeholder="Straat 1, Plaats" />
+                <button onClick={() => klantInstel.onAdres(adresVeld)} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium shrink-0">Onthouden</button>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[12.5px] mute mb-1">
+                {klantInstel.herhaal
+                  ? "De invulling van deze partij staat klaar voor de volgende keer" + (klantInstel.herhaal === "dag" && klantInstel.dagNaam ? " (elke " + klantInstel.dagNaam + ")" : "") + ". Is de partij veranderd? Sla hem opnieuw op."
+                  : "Deze partij bewaren als voorbeeld: volgende boekingen van deze klant beginnen dan met dezelfde producten en invulling, omgerekend naar hun aantal."}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => klantInstel.onHerhaal("elke")} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
+                  {klantInstel.herhaal === "elke" ? "Opnieuw opslaan" : "Herhalen — elke keer"}
+                </button>
+                {klantInstel.dagNaam && (
+                  <button onClick={() => klantInstel.onHerhaal("dag")} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
+                    {klantInstel.herhaal === "dag" ? "Opnieuw opslaan" : "Alleen op " + klantInstel.dagNaam}
+                  </button>
+                )}
+                {klantInstel.herhaal && (
+                  <button onClick={() => { if (window.confirm("Stoppen met herhalen voor deze klant?")) klantInstel.onHerhaal(""); }}
+                    className="ff text-[12.5px] font-medium mute hover:opacity-70 px-2">Stoppen</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-end mt-3">
           <button onClick={onSluit} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Sluiten</button>
         </div>
@@ -12580,7 +12992,7 @@ const versWijzigingen = (b) => {
   return uit;
 };
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, klantInstel }) {
   const [geschVoor, setGeschVoor] = useState(null); // { mid, aantal } voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
@@ -13153,7 +13565,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
           statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
-          onSluit={() => setInfoOpen(false)} />
+          klantInstel={klantInstel} onSluit={() => setInfoOpen(false)} />
       )}
 
       {!bewerk && (
@@ -13821,7 +14233,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
+function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
@@ -13893,7 +14305,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     if (over !== undefined) return keuzesOpDag(b, over);
     const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
     if (hand.length) return keuzesOpDag(b, hand);
-    return keuzesOpDag(b, neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
+    return keuzesOpDag(b, herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
   };
   // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
   const extraVan = (b) => {
@@ -13920,7 +14332,15 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
   // Partij-eigen invullaag gaat vóór de (oude) globale productinvulling.
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
-  const invVoor = (b, miceId) => { const e = invLaag(b).find((x) => String(x.miceId) === String(miceId)); if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return prodKoppeling[miceId] || null; };
+  const invVoor = (b, miceId) => {
+    const e = invLaag(b).find((x) => String(x.miceId) === String(miceId));
+    if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" };
+    if (prodKoppeling[miceId]) return prodKoppeling[miceId];
+    // Niets eigens en geen vaste koppeling: dan kijkt hij of deze klant een
+    // sjabloon heeft en rekent de hoeveelheden om naar dit aantal.
+    const k = gekozen(b).find((x) => String(x.miceId) === String(idUitSleutel(miceId)));
+    return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
+  };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   const mepVan = (b) => gekozen(b).filter((k) => isMepRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
@@ -14168,7 +14588,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten" inSom={inSom}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
-                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres} klant_email={b.klant_email} toonEmail={false}
+                    tel={b.tel} contact={b.contact} zaal={b.zaal} adres={adresVan(b)} klant_email={b.klant_email} toonEmail={false}
+                    klantInstel={klantInstelVan ? klantInstelVan(b) : null}
                     miceProducten={miceProducten} producten={producten} />
                   </div>
                 );
@@ -14347,7 +14768,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie }) {
+function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const kaartApi = React.useRef(null); // opslaan-bij-sluiten van de detailkaart
@@ -14392,10 +14813,18 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   // Volgorde: handmatige invulling > Necker-standaard > MICE-bestelling.
   const gekozen = (b) => {
     const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    return keuzesOpDag(b, hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b)));
+    return keuzesOpDag(b, hand.length ? hand : (herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b)));
   };
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
-  const invVoor = (b, miceId) => { const e = invLaag(b).find((x) => String(x.miceId) === String(miceId)); if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return prodKoppeling[miceId] || null; };
+  const invVoor = (b, miceId) => {
+    const e = invLaag(b).find((x) => String(x.miceId) === String(miceId));
+    if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" };
+    if (prodKoppeling[miceId]) return prodKoppeling[miceId];
+    // Niets eigens en geen vaste koppeling: dan kijkt hij of deze klant een
+    // sjabloon heeft en rekent de hoeveelheden om naar dit aantal.
+    const k = gekozen(b).find((x) => String(x.miceId) === String(idUitSleutel(miceId)));
+    return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
+  };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
@@ -14735,7 +15164,8 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
-              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal} adres={detailBoeking.adres} klant_email={detailBoeking.klant_email}
+              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal} adres={adresVan(detailBoeking)} klant_email={detailBoeking.klant_email}
+              klantInstel={klantInstelVan ? klantInstelVan(detailBoeking) : null}
               miceProducten={miceProducten} producten={producten} />
           </div>
         </div>
