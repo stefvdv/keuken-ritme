@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26m"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26p"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3178,6 +3178,10 @@ function App() {
         ].filter(Boolean).join(", "),
       };
     } catch (e) {}
+    // Alleen als álle pagina's zijn opgehaald weten we zeker wat er in MICE
+    // staat; pas dan mogen we lokaal iets opruimen dat daar niet meer bestaat.
+    let volledig = false;
+    const gezien = new Set();
     for (let pagina = 1; pagina <= 30; pagina++) {
       let lijst = [];
       let j = null;
@@ -3186,10 +3190,11 @@ function App() {
         j = await r.json();
         lijst = (j && j.data && j.data.data) || [];
       } catch (e) { break; } // haperende pagina: bewaren wat we al hebben
-      if (!lijst.length) break;
+      if (!lijst.length) { volledig = true; break; }
       for (const e of lijst) {
         const datum = String(e.datetime_start || "").slice(0, 10);
         if (!datum || (vanaf && datum < vanaf) || (tot && datum > tot)) continue;
+        gezien.add(String(e.id));
         // Bestelde productregels: los op het event en per programmadeel.
         const regels = [];
         const pakProducten = (arr, act, tijd, dag) => {
@@ -3243,7 +3248,7 @@ function App() {
         });
       }
       const p = (j && j.data && j.data.page) || {};
-      if (!p.next_url) break;
+      if (!p.next_url) { volledig = true; break; }
     }
     if (!rijen.length) { if (!stil) flash("Geen boekingen gevonden in die periode"); return 0; }
     // Logboek: per boeking vastleggen wat er sinds de vorige keer veranderd is
@@ -3318,6 +3323,14 @@ function App() {
         }
       }
     }
+    // Wat in MICE verdwenen is (verwijderd, of een duplicaat dat is opgeruimd),
+    // hoort ook bij ons weg. Alleen als elke pagina binnen is én er een
+    // datumbereik is opgegeven, want anders weten we niet wat we niet zagen.
+    // Eigen, met de hand toegevoegde boekingen (negatief id) blijven altijd.
+    const weg = volledig && vanaf && tot
+      ? (boekingen || []).filter((x) => Number(x.id) > 0 && String(x.datum) >= vanaf && String(x.datum) <= tot && !gezien.has(String(x.id))).map((x) => String(x.id))
+      : [];
+    if (weg.length && live) { try { await supabase.from("mice_events").delete().in("id", weg); } catch (e) {} }
     // Bewaartermijn: boekingen ouder dan twee maanden gaan weg, zodat de
     // database niet volloopt. Elke sync ruimt meteen op.
     const bewaarGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 62); return localDate(d); })();
@@ -3325,9 +3338,11 @@ function App() {
     setBoekingen((xs) => {
       const per = {};
       for (const b of xs) per[b.id] = b;
+      for (const sl of weg) delete per[sl];
       for (const b of rijen) per[b.id] = b;
       return Object.values(per).filter((b) => String(b.datum) >= bewaarGrens).sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
     });
+    if (weg.length && !stil) flash(weg.length === 1 ? "1 boeking bestaat niet meer in MICE en is hier weggehaald" : weg.length + " boekingen bestaan niet meer in MICE en zijn hier weggehaald");
     if (!stil) flash(rijen.length + " boekingen opgehaald");
     // Categorieën zonder Excel: (a) probeer stilletjes het categories-endpoint
     // (naam per id); (b) leer id→naam uit producten die al een categorie
@@ -10610,9 +10625,35 @@ const isAanvraagStatus = (st) => statusNL(st) === "aanvraag";
 // toont de partij dan op beide dagen, met per dag alleen de programmadelen
 // van die dag. De dagvariant houdt hetzelfde id, zodat de invulling, de
 // aanpassingen en de MICE-link gedeeld blijven — alleen de regels verschillen.
+// De looptijd van de boeking zelf. Let op: MICE sluit een event standaard af
+// op 00:00 de volgende dag — dat is nog dezelfde keukenavond, dus zo'n
+// einddatum telt niet als extra dag. Loopt het event daarna nog door (een tijd
+// ná middernacht), dan is het echt meerdaags, ook als alle producten aan
+// dag één hangen.
+const spanVanBoeking = (b) => {
+  const s = String((b && b.start_tijd) || "").slice(0, 10);
+  let e = String((b && b.eind_tijd) || "").slice(0, 10);
+  if (!s || !e || e <= s) return [];
+  if (String(b.eind_tijd).slice(11, 16) === "00:00") {
+    const d = new Date(e + "T12:00:00");
+    d.setDate(d.getDate() - 1);
+    e = localDate(d);
+  }
+  if (e <= s) return [];
+  const uit = [];
+  const d = new Date(s + "T12:00:00");
+  for (let n = 0; n < 31; n++) {
+    const x = localDate(d);
+    uit.push(x);
+    if (x >= e) break;
+    d.setDate(d.getDate() + 1);
+  }
+  return uit;
+};
 const dagenVanBoeking = (b) => {
   const set = new Set();
   for (const r of (b && b.regels) || []) if (r && r.dag) set.add(r.dag);
+  for (const d of spanVanBoeking(b)) set.add(d);
   if (!set.size) return [];
   if (b.datum) set.add(b.datum);
   return [...set].sort();
@@ -11075,16 +11116,27 @@ const normNaam = (t) => zonderAccent(String(t || "")).toLowerCase().replace(/[^a
 // Losse tekst splitsen op scheidingstekens: elk onderdeel telt apart mee.
 const losSplits = (naam, porties, item, gram) => String(naam || "").split(/[|,\/]+/).map((t) => t.trim()).filter(Boolean).map((t, i) => ({ soort: "los", naam: t, porties, item, gram: i === 0 ? (gram || 0) : 0 }));
 // Sorteren op eetmoment: aankomst → ontbijt → lunch → snack → amuse → diner → borrel.
+// De volgorde waarin eetmomenten op de kaart komen. Een product valt in de
+// eerste groep waarvan een woord voorkomt in de naam of de categorie. Groepen
+// met "eerst" worden vóór alle andere gekeken: een dessert hoort ná het diner,
+// maar zijn categorie heet "Taart en zoetigheid" en zou hem anders bij de
+// zoetigheid van de middag zetten.
 const EETMOMENTEN = [
-  ["aankomst", "ontvangst", "arrival", "welkom"],
-  ["ontbijt", "breakfast"],
-  ["lunch", "brood", "sandwich", "soep"],
-  ["snack", "middag", "taart", "zoet", "koffie", "thee"],
-  ["amuse"],
-  ["diner", "dinner", "buffet", "walking", "hoofdgerecht"],
-  ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"],
+  { w: ["aankomst", "ontvangst", "arrival", "welkom"] },
+  { w: ["ontbijt", "breakfast"] },
+  { w: ["lunch", "brood", "sandwich", "soep"] },
+  { w: ["snack", "middag", "taart", "zoet", "koffie", "thee"] },
+  { w: ["amuse"] },
+  { w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht"] },
+  { w: ["dessert", "nagerecht", "toetje"], eerst: true },
+  { w: ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"] },
 ];
-const eetRang = (t) => { const x = zonderAccent(String(t || "")).toLowerCase(); for (let i = 0; i < EETMOMENTEN.length; i++) if (EETMOMENTEN[i].some((w) => x.includes(w))) return i; return EETMOMENTEN.length; };
+const eetRang = (t) => {
+  const x = zonderAccent(String(t || "")).toLowerCase();
+  for (let i = 0; i < EETMOMENTEN.length; i++) if (EETMOMENTEN[i].eerst && EETMOMENTEN[i].w.some((w) => x.includes(w))) return i;
+  for (let i = 0; i < EETMOMENTEN.length; i++) if (EETMOMENTEN[i].w.some((w) => x.includes(w))) return i;
+  return EETMOMENTEN.length;
+};
 const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRang((a.naam || "") + " " + ((catVan && catVan[a.miceId]) || "")) - eetRang((b.naam || "") + " " + ((catVan && catVan[b.miceId]) || "")));
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
