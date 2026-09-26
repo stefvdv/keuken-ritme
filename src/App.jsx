@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-27b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-27e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8859,7 +8859,7 @@ function ZijBalk({ section, chef, onKies, onHome, onMep, onInstellingen, melding
   const items = [
     { id: "__home", label: "Home", icon: (
       <span className="relative inline-flex">
-        <Home size={22} />
+        <img src={BEUG_B} alt="" style={{ height: 22, width: "auto", display: "block" }} />
         {meldingen > 0 && <span className="absolute -bottom-2 -right-2 min-w-[20px] h-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
       </span>
     ), doe: onHome },
@@ -11151,6 +11151,11 @@ const mepKeuzes = (koppeling, boekingSleutel, b) => {
   // terug op de boeking.
   return over.length ? over : undefined;
 };
+// Een partij die op een vaste lijst draait — een sjabloon dat zich herhaalt,
+// of de vaste Necker-lijst — telt niet mee in "samen maken". Die maak je toch
+// elke week hetzelfde; het gaat daar juist om wat tussen partijen samenvalt.
+const isStandaardPartij = (koppeling, boekingSleutel, b) =>
+  !!herhaalSjabloon(koppeling, b) || !!neckerKeuzes(b, boekingSleutel);
 const leesLaag = (koppeling, boekingSleutel, b, voor) => {
   const idW = koppeling[(voor || "") + "id|" + b.id];
   if (idW !== undefined) return idW;
@@ -12698,7 +12703,12 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
         const dubbel = (e) => {
           e.stopPropagation(); e.preventDefault();
           if (klikRef.current) { clearTimeout(klikRef.current); klikRef.current = null; }
-          zetMark(sleutel, stift || "groen", true);
+          // Staat er al een markering op dit stukje, dan haalt een dubbelklik
+          // hem juist weg. Anders zet hij er groen op (of de kleur van de
+          // stift, als die aanstaat).
+          const eigen = markering[sleutel];
+          if (eigen) zetMark(sleutel, eigen, false);
+          else zetMark(sleutel, stift || "groen", true);
         };
         return (
           <span key={i} onClick={stift || bl ? klik : undefined} onDoubleClick={dubbel}
@@ -14408,6 +14418,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const perBereiding = {};
   for (const b of partijen) {
     if (!somSet.includes(b.datum)) continue;
+    if (isStandaardPartij(koppeling, boekingSleutel, b)) continue; // vaste partij: hoort niet in de optelsom
     for (const m of mepVan(b)) {
       const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + normNaam(m.naam);
       if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, gezien: new Set(), partijen: [] };
@@ -14415,7 +14426,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       r.perDag[b.datum] = (r.perDag[b.datum] || 0) + m.porties;
       r.totaal += m.porties;
       r.gram = (r.gram || 0) + (m.gram || 0);
-      if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); }
+      if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum, gasten: gastenVan(b) }); }
     }
   }
   const overlap = Object.values(perBereiding).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
@@ -14564,7 +14575,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                         <div className="flex flex-wrap gap-1.5 pl-6">
                           {r.partijen.map((p) => (
                             <button key={p.id} onClick={() => springNaar(p)} className="ff rounded-lg px-2 py-1 text-[12px]" style={{ background: "#f2f0e6", border: "1px solid " + T.line }}>
-                              {p.naam} <span className="mute">· {kolKop(p.datum)}</span>
+                              {p.naam} <span className="mute">· {kolKop(p.datum)}{p.gasten ? " · " + p.gasten + " pers." : ""}</span>
                             </button>
                           ))}
                         </div>
@@ -14916,7 +14927,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
       const n = k.aantal || b.gasten || 0;
       r.perDag[b.datum] = (r.perDag[b.datum] || 0) + n;
       r.totaal += n;
-      if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum }); }
+      if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum, gasten: gastenVan(b) }); }
     }
   }
   const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
@@ -15054,7 +15065,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
                         <div className="flex flex-wrap gap-1.5 pl-1">
                           {r.partijen.map((p) => (
                             <button key={p.id} onClick={() => springNaar(p)} className="ff rounded-lg px-2 py-1 text-[12px]" style={{ background: "#f2f0e6", border: "1px solid " + T.line }}>
-                              {p.naam} <span className="mute">· {kolKop(p.datum)}</span>
+                              {p.naam} <span className="mute">· {kolKop(p.datum)}{p.gasten ? " · " + p.gasten + " pers." : ""}</span>
                             </button>
                           ))}
                         </div>
