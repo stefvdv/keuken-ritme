@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26y"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-27b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2756,7 +2756,14 @@ function ShelfIcon({ size = 16 }) {
   );
 }
 
-// Boerderijhuis-icoon (eigen tekening): het logo-rondje wordt de home-knop.
+// Het merkteken van Landgoed De Beug: de B uit het logo, in het donkergroen
+// van de huisstijl. Uitgeknipt uit het logobestand van de website, niet
+// nagetekend. Ingesloten als afbeelding, zodat de home-knop niet van een los
+// bestand afhangt.
+const BEUG_B = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABsCAYAAADaB7STAAAFNElEQVR42u2cf2iVVRjHP9u9N2RDCFOKQQhrQ3CIaCuxIonEkKwoQoJEjUlo80dlSSGFFa0wMjBFo6Qs/MNgRVL9saQIoiaMzT/GQKTBEEYRmDBcy8u1/jjn0uV2ufc9z3vO++Pc9wuXbew858fnvuec55zznLelZ3UPFVoJzABXgBz21Kp/zgGXSZDyFb/3AQ8DsxpAwWI5uSoAf+hPTpdzCfhFw48FQC/wEcnSBeAs8BlwzlUh5UdzFcnTEqAfGAa+AzYCN7oCMEOytRY4DfwJ/AO8aBtA2nQQeMkmgLYUQnhLPw1HbAAYi6jSk3q0n7SYZz/wcdhZ4BzwArBdT1UTejos6sHoXmH+O4DjAdJ1ABuAPcBSQTlbgU49VhRNDFuqHKF24FpVJp3AF8Byw0rtBI4a2hR0/35WCPwbDVI8CF6tQXBSOy2mOiqwKQLPAS3A2wL7B7UzZ30WuMGwIuMW+vbLwGsCu2MmbnxQANcEg50NHQD2G9p06G4U6xNgc8EzIOhOz9sGUDKswG+Wp889Apt5cXqCf1vOrySwWeebKzxomP7ROAG4yHfIMP09wHyfnoALhum7gG6fAMwJbNp8ApCavupKkj3Kok8ASi6+4KwLZAAyABmAtOh6swOQ1NWraVByWOvVWmCBC+cpTQC6DdPPBllApQnA3YbpvwSmfAJgeoL9qW+zQIdh+iGfAMwzTD/hmx9w2jD9Fp8AHMPsuGsnMOILgM2oE2sTz8/oEKU14Y0/aWizwbSQfAIbXgC+AtYb2i1DcCibtCdgFXBe0PiHEJ5IJwXAm6h4n2HMIkROoGIJvpYWHHcXWAIcJuA5XpUeAc6ErUCcAEaBFQK7cWANlo7gXXWBemv3zhCNL9e521ZFXQEo1HFqfg3RePQYMazHjL9QYbT3JQ1ArdDbk4ZOTdA1wlrge+DpJAGYrfr7vHZsXOoD/VT0JwHA1apvfjnR6QjwetyzwGI92D0ZwTdfS68AtwJPxQVgt2540E2MMeBnYJr/bpG0A/eHeHq2og5Ut8UBoI3GwQlvAB+irss0Uh+yGy19GuaWJLnCE8BdwKsBG192eW9HFoC5WXubiQBwCuhBhcxLPMfbdB6m2qXHpVgBnAI2WchnE2rL21Rn4wTwiaXGl/WYwKZLD7SRAxgMMh0JtF9gszoOAI87yncA8+BJqNo2cw3gAcf5vyuweSYqAPuE35CJRgQ26/V+gnMA70TQvaSbIk+4BvADyVavawCHEg6gwyWAcULs0kakRS4BTJF8tboEkIYD15zLys5PAYCSSwBFUqQsVDYDkAHIAGQAMgDNp1z2BDQ5gLlmB/B7swOYaXYAV5odwJQvABYI7X7yBcAyod2YLwDuFM4Ao74A2Ciw+ZGKTZs0A9hFxf6+gQYlnmApgQD2Cu2GJAByCQSwOKwPkGYA7wnt/vdyxyBRYu3AQslS05G+xfxCRVmHJKvBhaigR+OVlgMdDNH43cBFCYCVmF1cdDFglm+USN8nPAS8X+sfQbqAaaG3oIITbRyQLNX9fV2IPEaoc5usEYAD1AgsaqAVqLD444YQ1uiyyp9FFgBOA3fUS5CvM8Xs1c6GRIdREZrlN8i31YCRQ72q8zpwM/Yjyi+hYo0JCuAiKpbOlnqJTwMEDKOrBNCFH9qHQXxSHn+0DRVUbSQfdoTGUJHkJyTGaQVwRje6Rfspo9KMKrvAZeRbTK5VBD5HhdmPIgu3bwjgJj1yF1G3vgoRNa6kPc0c6n3E01GSzdfwmppK2dlgBiAD0Nz6F5SM3YZ1aCuRAAAAAElFTkSuQmCC";
+
+// Boerderijhuis-icoon (eigen tekening) — niet meer in gebruik sinds de B het
+// merkteken werd, maar bewaard voor het geval we hem terugwillen.
 function FarmhouseIcon({ size = 16, style }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} aria-hidden="true">
@@ -3491,7 +3498,14 @@ function App() {
   };
   // Aanpassingen op de mise-en-place staan los van de boeking zelf: eigen
   // sleutel met voorvoegsel, zodat de boekingpagina blijft tonen wat besteld is.
-  const saveMepKoppeling = (b, producten) => saveKoppelingSleutel("mep|id|" + b.id, producten);
+  // Bij een mep-aanpassing leggen we ook vast welke producten de boeking op
+  // dat moment had. Komt er later een product bij de boeking, dan weten we dat
+  // het nieuw is — en niet iets dat hier bewust is weggehaald.
+  const saveMepKoppeling = async (b, producten) => {
+    const basis = (leesLaag(koppeling, boekingSleutel, b, "") || autoKeuzesUitBoeking(b) || []).map(keuzeSleutel);
+    await saveKoppelingSleutel("mep|id|" + b.id, producten);
+    await saveKoppelingSleutel("mepb|id|" + b.id, [{ basis }]);
+  };
   // Overige mep-velden (gasten, tijd, allergie, notitie) als één object in een
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
   const saveMepExtra = (b, extra) => saveKoppelingSleutel("mepx|id|" + b.id, extra ? [extra] : []);
@@ -3564,7 +3578,7 @@ function App() {
     if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
   };
   const wisMepKoppeling = async (b) => {
-    for (const voor of ["mep|id|", "mepx|id|"]) {
+    for (const voor of ["mep|id|", "mepx|id|", "mepb|id|"]) {
       const sleutel = voor + b.id;
       setKoppeling((k) => { const n = { ...k }; delete n[sleutel]; return n; });
       if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
@@ -4958,11 +4972,17 @@ function App() {
     flash(label === READY_KEY ? "Melding afgevinkt" : "Handeling afgevinkt");
   };
   const removeCleaningLog = async (id, quiet) => {
+    const weg = cleaningLogs.find((x) => x.id === id) || null;
     if (live) {
       const { error } = await supabase.from("cleaning_logs").delete().eq("id", id);
       if (dbFail(error)) return;
     }
     setCleaningLogs((ls) => ls.filter((x) => x.id !== id));
+    // Wordt de dagafronding (of de vrije dag) van vandaag teruggedraaid — met
+    // de knop, via "ongedaan maken" in de melding, of door de aftekening te
+    // verwijderen — dan staat de schoonmaak weer open en hoort de herinnering
+    // terug te komen. Zonder dit bleef hij de rest van de dag weg.
+    if (weg && (weg.taskId === DAY_DONE_ID || weg.taskId === DAY_OFF_ID) && String(weg.doneDate).slice(0, 10) === localDate()) heropenSchoonmaak();
     if (!quiet) flash("Aftekening verwijderd");
   };
   const deleteCleaningLog = async (id) => {
@@ -5019,8 +5039,8 @@ function App() {
     const today = localDate();
     const l = cleaningLogs.find((x) => x.taskId === DAY_DONE_ID && x.doneDate === today);
     if (!l) return;
-    await removeCleaningLog(l.id, true);
-    flash("Dag heropend");
+    await removeCleaningLog(l.id, true); // zet zelf de herinnering weer aan
+    flash("Dag heropend — de schoonmaak staat weer open");
   };
   // Een dag handmatig als vrije dag (bedrijf dicht) registreren of terugdraaien.
   const markDayOff = async (dateStr) => {
@@ -5581,6 +5601,14 @@ function App() {
     const t = setInterval(tick, 60000);
     return () => { cancelled = true; clearInterval(t); };
   }, [user, loaded, checkDone, cleaningLogs, checkBanner, checkOpen, checkForDate]);
+  // Dag heropend: de herinnering mag vandaag weer verschijnen en de melding
+  // "Schoonmaak" komt terug in het meldingencentrum. De klok van de banner
+  // draait meteen opnieuw, want checkDone zit in zijn afhankelijkheden.
+  const heropenSchoonmaak = () => {
+    setCheckDone(null);
+    setCheckBanner(false);
+    heropenMelding("schoonmaak:__alles__");
+  };
   const dismissCheckBanner = () => {
     const now = new Date();
     setCheckDone({ key: localDate(), stage: now.getHours() >= REMIND_HOUR ? 2 : 1 });
@@ -5698,6 +5726,11 @@ function App() {
   // altijd staan na een refresh), en wegschrijven naar Supabase zodat andere
   // apparaten hem via het realtime-abonnement ook kwijtraken. Gebruikt voor
   // alles behalve Boekingen.
+  // Het omgekeerde: een melding weer laten opkomen, ook op de andere apparaten.
+  const heropenMelding = async (sleutel) => {
+    setAfgerondSet((s) => { const nieuw = new Set(s); nieuw.delete(sleutel); bewaarAfgerondLokaal(nieuw); return nieuw; });
+    if (live) { try { await supabase.from("melding_afgerond").delete().eq("sleutel", sleutel).eq("dag", kitchenDate()); } catch (e) {} }
+  };
   const rondAf = async (sleutel) => {
     rondAfLokaal(sleutel);
     if (live) {
@@ -6213,8 +6246,8 @@ function Wordmark({ size = "small", onHome, titel, meldingen = 0 }) {
   const Tag = onHome ? "button" : "div";
   return (
     <Tag onClick={onHome} className={"flex items-center gap-2 min-w-0 text-left " + (onHome ? "ff rounded-lg" : "")} title={onHome ? "Naar startscherm" : undefined}>
-      <span className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.green }}>
-        <FarmhouseIcon size={26} style={{ color: T.paper }} />
+      <span className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: T.paper, border: "1.5px solid " + T.green }}>
+        <img src={BEUG_B} alt="" style={{ height: 21, width: "auto", display: "block" }} />
         {meldingen > 0 && <span className="absolute -bottom-1.5 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: "#b3261e", color: "#fff" }}>{meldingen}</span>}
       </span>
       <span className={"serif ink text-base leading-none truncate" + (titel ? " font-bold" : "")}>{titel || "In het ritme van het land"}</span>
@@ -11094,6 +11127,30 @@ const vorigeInvullingUit = ({ boekingen, koppeling, boekingSleutel, catVan, keuz
   return null;
 };
 
+// Herkenningspunt van één gekozen product, ook als het met de hand is
+// toegevoegd en dus geen MICE-nummer heeft.
+const keuzeSleutel = (k) => String(k && k.miceId != null ? k.miceId : "") + "\u0001" + String((k && k.naam) || "");
+// Wat er op de mep staat als daar een eigen aanpassing voor is gemaakt.
+// Zo'n aanpassing mag niet betekenen dat een product dat daarna bij de boeking
+// komt hier stilletjes verdwijnt: we vergelijken met de situatie van toen, en
+// alles wat er sindsdien bij is gekomen hoort er alsnog bij. Geeft undefined
+// terug als er geen mep-aanpassing is — dan telt gewoon de boeking.
+const mepKeuzes = (koppeling, boekingSleutel, b) => {
+  const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
+  if (over === undefined) return undefined;
+  const nu = leesLaag(koppeling, boekingSleutel, b, "") || [];
+  const basisRij = (leesLaag(koppeling, boekingSleutel, b, "mepb|") || [])[0];
+  const toen = basisRij && Array.isArray(basisRij.basis) ? new Set(basisRij.basis) : null;
+  if (toen) {
+    const erin = new Set(over.map(keuzeSleutel));
+    const erbij = nu.filter((k) => !erin.has(keuzeSleutel(k)) && !toen.has(keuzeSleutel(k)));
+    return erbij.length ? [...over, ...erbij] : over;
+  }
+  // Oudere aanpassing zonder die vergelijking: een gevulde lijst laten we met
+  // rust, maar een lege lijst is bijna altijd een ongelukje — dan valt hij
+  // terug op de boeking.
+  return over.length ? over : undefined;
+};
 const leesLaag = (koppeling, boekingSleutel, b, voor) => {
   const idW = koppeling[(voor || "") + "id|" + b.id];
   if (idW !== undefined) return idW;
@@ -14301,7 +14358,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const gekozen = (b) => {
-    const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
+    const over = mepKeuzes(koppeling, boekingSleutel, b);
     if (over !== undefined) return keuzesOpDag(b, over);
     const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
     if (hand.length) return keuzesOpDag(b, hand);
