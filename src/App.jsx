@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-27e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-27g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2820,6 +2820,15 @@ html{font-size:17px}
 .input{width:100%;border:1px solid #d8d5c8;background:#fff;border-radius:10px;font-size:15px;color:#33352c}
 .input:focus{outline:none;box-shadow:0 0 0 2px #3a4b30;border-color:#3a4b30}
 .divi{border-top:1px solid #ece9dd}
+/* Op de kaarten markeer je met een dubbelklik of met de stift. Slepen met de
+   muis of een lange druk op de telefoon selecteert daarom niets — anders
+   krijg je de blauwe selectie van de browser over je markering heen. Tijdens
+   het bewerken staat selecteren wel gewoon aan (invoervelden hieronder). */
+.geenselectie{-webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none}
+.geenselectie input,.geenselectie textarea,.geenselectie select,.geenselectie [contenteditable="true"]{-webkit-user-select:text;-moz-user-select:text;user-select:text;-webkit-touch-callout:default}
+/* Venstertjes die bovenop de kaart openen (adres, menu, geschiedenis) doen
+   weer gewoon mee: daar wil je juist wel iets kunnen selecteren. */
+.geenselectie .z-50,.geenselectie .z-50 *{-webkit-user-select:text;-moz-user-select:text;user-select:text;-webkit-touch-callout:default}
 .mepkolom{column-gap:.625rem}
 @media (min-width:768px){.mepkolom{column-count:2}}
 .mepkolom > *{display:block;width:100%;margin:0 0 .625rem;break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid}
@@ -13514,7 +13523,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   opslaanRef.current = opslaan;
 
   return (
-    <div id={"partij-" + b.id + (b.meerdaags ? "-" + b.datum : "")} className="card p-3 min-w-0" style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
+    <div id={"partij-" + b.id + (b.meerdaags ? "-" + b.datum : "")} className={"card p-3 min-w-0" + (bewerk ? "" : " geenselectie")} style={{ border: invKlaar ? "3px solid " + randKleur : "5px solid #1a1a1a", scrollMarginTop: "0.75rem" }}>
       <div className="flex flex-wrap items-center gap-2">
         {bewerk && magNaamStatus
           ? <div className="w-full space-y-1.5">
@@ -13532,7 +13541,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             </div>
           : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 w-full md:w-auto md:flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
 
-        {!bewerk && (toonKeuzes.length === 0 || !mepRegels.length) && <AlertTriangle size={22} className="shrink-0" style={{ color: "#b3261e" }} title="Vereist nog culinaire invulling" />}
         {statusTekst && !bewerk && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
         {bewerk && magNaamStatus && (
           <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }}
@@ -14539,7 +14547,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // De optelsomtabel staat direct boven de eerste dag vanaf vandaag met partijen.
   const somAnker = dagen.find((d) => d >= vandaag && partijen.some((b) => b.datum === d)) || null;
   const somKaart = partijen.length > 0 && somSet.length > 0 ? (
-        <div id="som-kaart" className="card p-3 mb-4">
+        <div id="som-kaart" className="card p-3 mb-4 geenselectie">
           <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
             style={{ margin: -12, marginBottom: somOpen ? 6 : -12, padding: 12, width: "calc(100% + 24px)" }}>
             {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
