@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26u"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26v"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2813,6 +2813,9 @@ html{font-size:17px}
 .input{width:100%;border:1px solid #d8d5c8;background:#fff;border-radius:10px;font-size:15px;color:#33352c}
 .input:focus{outline:none;box-shadow:0 0 0 2px #3a4b30;border-color:#3a4b30}
 .divi{border-top:1px solid #ece9dd}
+.mepkolom{column-gap:.625rem}
+@media (min-width:768px){.mepkolom{column-count:2}}
+.mepkolom > *{display:block;width:100%;margin:0 0 .625rem;break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid}
 .weglegbalk{position:fixed;z-index:40;display:flex;flex-wrap:wrap;gap:.5rem;left:.75rem;right:.75rem;top:calc(4rem + var(--meldbalk, 0px));transition:top .15s ease}
 @media (min-width:768px){.weglegbalk{left:5.95rem;right:1rem;top:calc(.7rem + var(--meldbalk, 0px))}}
 ::selection{background:#dfe4d3}
@@ -14136,10 +14139,14 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
               <span className="serif ink font-bold text-xl leading-tight">{dagKop(d)}</span>
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
             </button>
-            {!isDicht(d) && <div className="grid gap-2.5 items-start md:grid-cols-2">
+            {/* Twee kolommen die zichzelf vullen: een korte kaart laat geen gat
+                achter, de volgende schuift er meteen onder. Een kaart wordt
+                nooit over twee kolommen gebroken. */}
+            {!isDicht(d) && <div className="mepkolom">
               {items.map((b) => {
                 const sl = boekingSleutel(b.naam);
                 return (
+                  <div key={b.id + "|" + b.datum}>
                   <PartijKaart key={b.id} b={b} invulVervangt invulGesch={invulGesch} naamTekst={naamVan(b)} keuzes={gekozen(b)} mepRegels={mepTellen(mepVan(b))}
                     allergie={allergieEff(b)} noot={nootEff(b)} tijdTekst={tijdVan(b)} gastenTekst={gastenVan(b)}
                     catVan={catVan} stift={stift} markering={markering} zetMark={zetMark}
@@ -14163,6 +14170,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal} adres={b.adres} klant_email={b.klant_email} toonEmail={false}
                     miceProducten={miceProducten} producten={producten} />
+                  </div>
                 );
               })}
             </div>}
