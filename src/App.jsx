@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-27h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-27i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -13013,40 +13013,6 @@ function MenuKopiePopup({ naam, datumKop, blokken, leeg, miceUrl, stempel, verou
   );
 }
 
-// Productinfo uit MICE: de omschrijving die op het event zelf bij het product
-// staat, met de catalogusomschrijving als aanvulling. Sluit met klik ernaast,
-// Escape of de terugknop van het toestel.
-function ProductInfoPopup({ titel, sub, teksten, onSluit }) {
-  const sluitRef = React.useRef(onSluit); sluitRef.current = onSluit;
-  useEffect(() => {
-    const terug = () => sluitRef.current();
-    const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
-    try { window.history.pushState({ app: "ritme", productinfo: true }, ""); } catch (e) {}
-    window.addEventListener("popstate", terug);
-    window.addEventListener("keydown", toets, true);
-    return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
-  }, []);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} {...backdropSluiter(() => sluitRef.current())}>
-      <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper, maxHeight: "80vh", overflowY: "auto" }}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="serif ink text-xl leading-tight">{titel}</div>
-          <button onClick={() => sluitRef.current()} className="ff mute hover:opacity-70 shrink-0"><X size={18} /></button>
-        </div>
-        {sub && <div className="text-[12.5px] mute mt-0.5">{sub}</div>}
-        <div className="mt-3 space-y-3">
-          {teksten.map((t, i) => (
-            <div key={i}>
-              {t.kop && <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1">{t.kop}</div>}
-              <div className="text-sm ink leading-relaxed" style={{ whiteSpace: "pre-wrap" }}>{t.tekst}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const NieuwTag = ({ titel }) => (
   <span title={titel} className="inline-block align-middle ml-1.5 rounded px-1 py-[1px] text-[9.5px] font-bold uppercase tracking-wider" style={{ background: "#fbeadb", color: "#c2611a", border: "1px solid #ecc9a4", cursor: titel ? "help" : undefined }}>nieuw</span>
 );
@@ -13135,13 +13101,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     };
   }, []);
   useEffect(() => { bewerkRef2.current = bewerk; });
-  const [productInfo, setProductInfo] = useState(null); // { titel, sub, teksten }
   const productInfoHover = (k) => {
     const info = productInfoVoor(k);
     if (!info) return undefined;
     const t = info.teksten.map((x) => (x.kop ? x.kop + ": " : "") + x.tekst).join("\n\n");
     return t.length > 600 ? t.slice(0, 600) + "\u2026" : t;
   };
+  // De omschrijving van een product lees je door er met de muis overheen te
+  // zweven (het i-tje laat zien dat er iets te lezen valt). Klikken doet niets
+  // meer: dat zat het markeren met een dubbelklik in de weg.
   const productInfoVoor = (k) => {
     if (!k || !k.miceId) return null;
     const eigen = ((b && b.regels) || []).filter((r) => String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && String(r.oms || "").trim());
@@ -13625,7 +13593,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           </>
         )}
       </div>
-      {productInfo && <ProductInfoPopup titel={productInfo.titel} sub={productInfo.sub} teksten={productInfo.teksten} onSluit={() => setProductInfo(null)} />}
       {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
       {meerdaagsTekst && (
         <div className="text-[11.5px] mt-0.5" style={{ color: "#6a6550" }}>{meerdaagsTekst}</div>
@@ -13699,9 +13666,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 return (
                   <div key={i}>
                     {!zonderKop && (
-                      <div className={(k.miceId || k.productId ? "font-semibold ink" : "ink") + (!stift && productInfoVoor(k) ? " cursor-pointer" : "")}
-                        onClick={() => { if (stift) return; const info = productInfoVoor(k); if (info) setProductInfo(info); }}
-                        title={!stift ? productInfoHover(k) : undefined}>
+                      <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}
+                        title={!stift ? productInfoHover(k) : undefined}
+                        style={!stift && productInfoVoor(k) ? { cursor: "help" } : undefined}>
                         <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
                         {!stift && productInfoVoor(k) && <Info size={13} className="inline ml-1 acc shrink-0" style={{ verticalAlign: "-2px" }} />}
                         {isVers && <NieuwTag titel={isVers.titel} />}
