@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8042,14 +8042,14 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <input autoFocus className="input px-3 py-2 text-sm" value={vorm.naam || ""} onChange={(e) => setVorm((v) => ({ ...v, naam: e.target.value }))} placeholder="Productnaam (bv. citroenen)" />
             <input className="input px-3 py-2 text-sm" value={vorm.inhoud || ""} onChange={(e) => setVorm((v) => ({ ...v, inhoud: e.target.value }))} placeholder="Inkoophoeveelheid (bv. krat 10 kg)" />
-            <input className="input px-3 py-2 text-sm" value={vorm.prijs || ""} onChange={(e) => setVorm((v) => ({ ...v, prijs: e.target.value }))} placeholder="Prijs (bv. \u20ac 24,50)" />
+            <input className="input px-3 py-2 text-sm" value={vorm.prijs || ""} onChange={(e) => setVorm((v) => ({ ...v, prijs: e.target.value }))} placeholder="Prijs (bv. € 24,50)" />
             <input className="input px-3 py-2 text-sm" value={vorm.opmerking || ""} onChange={(e) => setVorm((v) => ({ ...v, opmerking: e.target.value }))} placeholder="Opmerking (bv. bij de groenteboer)" />
           </div>
           <div className="flex items-center gap-2 mt-2">
             <button onClick={bewaarEigen} className="btnp ff rounded-lg px-4 py-2 text-sm font-medium">Opslaan</button>
             <button onClick={() => setVorm(null)} className="btno ff rounded-lg px-4 py-2 text-sm font-medium">Annuleren</button>
           </div>
-          <div className="text-[11.5px] mute mt-2">Wordt later een leverancierslijst ingeladen met dit product erin, dan voegt de app ze vanzelf samen \u2014 de ingeladen informatie wint.</div>
+          <div className="text-[11.5px] mute mt-2">Wordt later een leverancierslijst ingeladen met dit product erin, dan voegt de app ze vanzelf samen — de ingeladen informatie wint.</div>
         </div>
       )}
       {!vorm && <button onClick={() => setVorm({ naam: "", inhoud: "", prijs: "", opmerking: "" })} className="btno ff inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium mb-3"><Plus size={15} /> Product toevoegen</button>}
@@ -10702,7 +10702,10 @@ const menuTekstVan = (blokken) => (blokken || []).map((x) => [String(x.kop || ""
 // achtergrond is de eerste bladzijde van het Word-sjabloon, de letters zijn
 // dezelfde Lora en Archivo als daar.
 const BRIEF_ACHTERGROND = "/brief/briefpapier.png";
-const BRIEF_FONTS = [["RitmeLora", "/brief/lora-400.woff2", 400], ["RitmeArchivo", "/brief/archivo-700.woff2", 700]];
+// Het groen van "Met biologische oogst van Landgoed de Beug"; alle tekst op
+// het gedrukte menu staat in die kleur.
+const BRIEF_GROEN = "#6E7C4B";
+const BRIEF_FONTS = [["RitmeLora", "/brief/lora-400.woff2", 400], ["RitmeArchivo", "/brief/archivo-400.woff2", 400], ["RitmeArchivo", "/brief/archivo-700.woff2", 700]];
 const briefFontCss = () => BRIEF_FONTS.map(([naam, url, gewicht]) =>
   "@font-face{font-family:'" + naam + "';src:url('" + url + "') format('woff2');font-weight:" + gewicht + ";font-style:normal;font-display:block}"
 ).join("");
@@ -10733,12 +10736,16 @@ const briefVoorladen = () => new Promise((klaar) => {
 // 71,1 mm, bovenmarge 57,2 mm, en titel plus ondertitel steken 37,5 mm naar
 // links de kantlijn in. Zo staat de gedrukte bladzijde precies waar hij in
 // Word ook zou staan.
-const menuInhoudHtml = ({ datumTekst, blokken }) =>
-  (datumTekst ? "<p class='ondertitel'>" + pEsc(datumTekst) + "</p>" : "")
-  + "<p class='titel'>Menu</p>"
+const MENU_TITEL = "Proef de smaken<br>uit de tuin";
+// Het product heet in MICE vaak "Diner: Hoofdgerecht vegetarisch". Op een
+// klantmenu hoort daar alleen het eerste deel van te staan.
+const kortProduct = (naam) => String(naam || "").split(":")[0].trim() || String(naam || "").trim();
+const menuInhoudHtml = ({ blokken }) =>
+  "<p class='menulabel'>Menu</p><div class='lijn'></div>"
+  + "<p class='titel'>" + MENU_TITEL + "</p>"
   + "<div class='inhoud'>"
   + (blokken || []).map((x) =>
-      "<div class='blok'><p class='kop'>" + pEsc(String(x.kop || "")) + "</p>"
+      "<div class='blok'><p class='kop'>" + pEsc(kortProduct(x.kop)) + "</p>"
       + x.regels.map((r) => "<p class='regel'>" + pEsc(r) + "</p>").join("")
       + "</div>").join("")
   + "</div>";
@@ -10751,13 +10758,15 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar }) =>
   + "html,body{margin:0;padding:0;background:#fff}"
   + "*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
   + ".blad{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff url('" + BRIEF_ACHTERGROND + "') no-repeat 0 0;background-size:210mm 297mm}"
-  + ".tekst{position:absolute;left:33.6mm;top:57.2mm;width:141.4mm;color:#2E3C2C;font-family:'RitmeLora',Georgia,'Times New Roman',serif}"
-  + ".ondertitel{font-family:'RitmeArchivo',Arial,Helvetica,sans-serif;font-weight:700;text-transform:uppercase;font-size:10pt;letter-spacing:.2pt;line-height:18pt;margin:0 0 2pt}"
-  + ".titel{font-size:40pt;line-height:45pt;letter-spacing:-.25pt;margin:0;padding-bottom:19pt;border-bottom:.75pt solid #2E3C2C}"
-  + ".inhoud{margin-left:37.5mm;width:103.9mm;padding-top:38pt}"
-  + ".kop{font-family:'RitmeArchivo',Arial,Helvetica,sans-serif;font-weight:700;text-transform:uppercase;font-size:10pt;line-height:15pt;margin:0}"
-  + ".regel{font-size:10pt;line-height:14pt;margin:0}"
-  + ".blok+.blok{margin-top:14pt}"
+  + ".tekst{position:absolute;left:33.6mm;top:57.2mm;width:141.4mm;color:" + BRIEF_GROEN + ";font-family:'RitmeArchivo',Arial,Helvetica,sans-serif}"
+  + ".menulabel{font-size:9pt;letter-spacing:2.4pt;text-transform:uppercase;text-align:center;margin:0}"
+  + ".lijn{border-top:.75pt solid " + BRIEF_GROEN + ";margin:9pt 0 0}"
+  + ".titel{font-family:'RitmeLora',Georgia,'Times New Roman',serif;font-size:34pt;line-height:40pt;text-align:center;margin:26pt 0 30pt}"
+  + ".inhoud{margin-left:37.5mm;width:103.9mm}"
+  + ".kop{font-weight:700;font-size:10.5pt;line-height:15pt;margin:0}"
+  + ".regel{font-size:10.5pt;line-height:15pt;margin:0}"
+  + ".regel+.regel{margin-top:15pt}"
+  + ".blok+.blok{margin-top:15pt}"
   + (bewerkbaar ? ".tekst[contenteditable]{outline:1px dashed #b6b2a3;outline-offset:6px}.tekst[contenteditable]:focus{outline-color:#4f7a3a}@media print{.tekst{outline:none !important}}" : "")
   + "</style></head><body><div class='blad'><div class='tekst'" + (bewerkbaar ? " contenteditable='true' spellcheck='false'" : "") + ">"
   + tekstHtml
@@ -11897,7 +11906,7 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
 // tekst is aanpasbaar: handig om vlak voor het printen nog iets recht te
 // zetten. Die wijziging geldt alleen voor deze afdruk en verandert niets aan
 // de invulling van de partij.
-function MenuPrintPopup({ naam, datumTekst, blokken, onSluit }) {
+function MenuPrintPopup({ naam, blokken, onSluit }) {
   const sluitRef = React.useRef(onSluit); sluitRef.current = onSluit;
   const lijstRef = React.useRef(null);
   const [schaal, setSchaal] = useState(1);
@@ -11924,7 +11933,7 @@ function MenuPrintPopup({ naam, datumTekst, blokken, onSluit }) {
     return () => window.removeEventListener("resize", meet);
   }, []);
   useEffect(() => { briefVoorladen().then(() => setKlaar(true)); }, []);
-  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ datumTekst, blokken }), bewerkbaar: true });
+  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ blokken }), bewerkbaar: true });
   const printen = () => {
     const fr = lijstRef.current;
     if (!fr) return;
@@ -12246,14 +12255,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     const top = piekVanDag(b, toonKeuzes);
     const gasten = Number(gastenTekst) || Number(b.gasten) || 0;
     return top && top.aantal > gasten ? top : null;
-  })();
-  // Op het gedrukte menu staat de partijnaam met de datum voluit als ondertitel.
-  const printDatum = (() => {
-    const x = new Date(String(b.datum) + "T12:00:00");
-    if (!isFinite(x)) return String(naamTekst || b.naam || "");
-    const dag = ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()];
-    const mnd = ["januari","februari","maart","april","mei","juni","juli","augustus","september","oktober","november","december"][x.getMonth()];
-    return [String(naamTekst || b.naam || "").trim(), dag + " " + x.getDate() + " " + mnd + " " + x.getFullYear()].filter(Boolean).join(" \u2014 ");
   })();
   const menuVerouderd = !!(menuKopie && menuKopie.vinger && menuNu.blokken.length && menuKopie.vinger !== menuVinger(menuTekstVan(menuNu.blokken)));
 
@@ -12594,7 +12595,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         )}
         {bewerk && (
           <>
-            <button onClick={kopieerInvulling} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + (kopieOk ? "#4f7a3a" : T.line), color: kopieOk ? "#4f7a3a" : T.ink }} title="Hele invulling kopi\u00ebren (ook met Ctrl+C zonder tekstselectie) \u2014 plakken kan in een andere boeking">
+            <button onClick={kopieerInvulling} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + (kopieOk ? "#4f7a3a" : T.line), color: kopieOk ? "#4f7a3a" : T.ink }} title="Hele invulling kopiëren (ook met Ctrl+C zonder tekstselectie) — plakken kan in een andere boeking">
               {kopieOk ? <Check size={17} /> : <Copy size={17} />}
             </button>
             <button onClick={async () => { try { const t = await navigator.clipboard.readText(); if (!plakUitTekst(t)) alert("Geen gekopieerde invulling op het klembord gevonden."); } catch (e) { alert("Plakken kan ook met Ctrl+V in dit blok."); } }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Gekopieerde invulling hier plakken (ook met Ctrl+V)">
@@ -12636,7 +12637,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       )}
 
       {printOpen && (
-        <MenuPrintPopup naam={naamTekst || b.naam} datumTekst={printDatum} blokken={menuNu.blokken} onSluit={() => setPrintOpen(false)} />
+        <MenuPrintPopup naam={naamTekst || b.naam} blokken={menuNu.blokken} onSluit={() => setPrintOpen(false)} />
       )}
 
       {menuOpen && (
