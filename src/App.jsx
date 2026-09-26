@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26k"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26m"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2895,6 +2895,7 @@ function App() {
   const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
   const [fermentControles, setFermentControles] = useState(FERMENT_CONTROLES_STANDAARD); // controles per fermentatiebatch
+  const [briefpapier, setBriefpapier] = useState(BRIEF_STANDAARD); // eigen briefpapier voor het gedrukte menu
   const [catZicht, setCatZicht] = useState({}); // zichtbaarheid per MICE-categorie
   const [paklijsten, setPaklijsten] = useState([]); // [{ id, naam, items: [{ naam, aantal }] }]
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
@@ -3277,6 +3278,15 @@ function App() {
         r.log = w.length ? [...vorig, { t: new Date().toISOString(), w }].slice(-30) : vorig;
       }
     }
+    // Wijzigt MICE het aantal van een product of van de hele partij, dan gaan
+    // de invulregels mee die precies op het oude aantal stonden.
+    for (const r of rijen) {
+      const o = (boekingen || []).find((x) => String(x.id) === String(r.id));
+      if (!o) continue;
+      const laag = leesLaag(koppeling, boekingSleutel, r, "inv|");
+      const nieuweLaag = invullingBijNieuwAantal(o, r, laag);
+      if (nieuweLaag) saveKoppelingSleutel("inv|id|" + r.id, nieuweLaag);
+    }
     // Ontdubbelen (voor het geval de API pagina's herhaalt) en in brokken
     // opslaan: één reuzenverzoek loopt bij honderden events tegen limieten aan.
     {
@@ -3510,6 +3520,12 @@ function App() {
   React.useMemo(() => zetHaccpInterval(haccpInterval), [haccpInterval]);
   React.useMemo(() => zetFermentControles(fermentControles), [fermentControles]);
   React.useMemo(() => zetCatZicht(catZicht), [catZicht]);
+  React.useMemo(() => zetBriefVorm(briefpapier), [briefpapier]);
+  const saveBriefpapier = async (v) => {
+    const n = { ...BRIEF_STANDAARD, ...(v && typeof v === "object" ? v : {}) };
+    setBriefpapier(n);
+    if (live) await veiligUpsert(supabase, "app_settings", { key: "briefpapier", value: n, updated_at: new Date().toISOString() });
+  };
   const saveCatZicht = async (cat, zicht) => {
     const sleutel = String(cat || "").toLowerCase().trim();
     if (!sleutel) return;
@@ -4206,7 +4222,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4271,6 +4287,8 @@ function App() {
     if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
     const fcRow = (cs && cs.data && cs.data.find((r) => r.key === "ferment_controles")) || null;
     if (fcRow && fcRow.value && Number(fcRow.value.aantal) > 0) setFermentControles(Number(fcRow.value.aantal));
+    const bpRow = (cs && cs.data && cs.data.find((r) => r.key === "briefpapier")) || null;
+    if (bpRow && bpRow.value && typeof bpRow.value === "object") setBriefpapier({ ...BRIEF_STANDAARD, ...bpRow.value });
     const czRow = (cs && cs.data && cs.data.find((r) => r.key === "cat_zichtbaarheid")) || null;
     if (czRow && czRow.value && typeof czRow.value === "object") setCatZicht(czRow.value);
     const plRow = (cs && cs.data && cs.data.find((r) => r.key === "paklijsten")) || null;
@@ -5859,6 +5877,7 @@ function App() {
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })}
           allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} onImportCategorieen={canEdit ? importMiceCategorieen : null}
+          briefpapier={briefpapier} onBriefpapier={canEdit ? saveBriefpapier : null}
           catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -8159,7 +8178,103 @@ function AllergenenBeheer({ rijen, onSave }) {
   );
 }
 
-function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht }) {
+// Eigen briefpapier voor het gedrukte menu. Een afbeelding van een A4 erin,
+// de plek van het tekstblok in millimeters erbij, en klaar — daar komt geen
+// nieuwe app-versie aan te pas. De afbeelding wordt naar A4 op 150 dpi
+// geschaald en zo klein mogelijk bewaard, want hij gaat als instelling mee
+// naar alle apparaten.
+function BriefpapierBeheer({ waarde, onSave }) {
+  const kiesRef = React.useRef(null);
+  const [vorm, setVorm] = useState(() => ({ ...BRIEF_STANDAARD, ...(waarde || {}) }));
+  const [bezig, setBezig] = useState(false);
+  const [melding, setMelding] = useState("");
+  useEffect(() => { setVorm({ ...BRIEF_STANDAARD, ...(waarde || {}) }); }, [waarde]);
+  const getal = (sleutel, label, uitleg) => (
+    <label key={sleutel} className="flex items-center justify-between gap-2 text-sm ink">
+      <span title={uitleg}>{label}</span>
+      <span className="inline-flex items-center gap-1">
+        <input type="text" inputMode="decimal" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.6rem" }}
+          value={String(vorm[sleutel])} onChange={(e) => setVorm((v) => ({ ...v, [sleutel]: e.target.value.replace(",", ".") }))} />
+        <span className="mute text-[12.5px]">mm</span>
+      </span>
+    </label>
+  );
+  const inlezen = (bestand) => {
+    if (!bestand) return;
+    setBezig(true); setMelding("");
+    const lezer = new FileReader();
+    lezer.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = 1240; c.height = 1754; // A4 op 150 dpi
+          const ctx = c.getContext("2d");
+          ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          const png = c.toDataURL("image/png");
+          const jpg = c.toDataURL("image/jpeg", 0.85);
+          const beste = jpg.length < png.length ? jpg : png;
+          setVorm((v) => ({ ...v, img: beste }));
+          setMelding("Ingelezen (" + Math.round(beste.length / 1400) + " kB). Controleer hieronder waar de tekst komt en sla op.");
+        } catch (e) { setMelding("Deze afbeelding lukte niet: " + String((e && e.message) || e)); }
+        setBezig(false);
+      };
+      img.onerror = () => { setMelding("Dit bestand is geen afbeelding die de browser kan openen."); setBezig(false); };
+      img.src = String(lezer.result || "");
+    };
+    lezer.onerror = () => { setMelding("Inlezen mislukt."); setBezig(false); };
+    lezer.readAsDataURL(bestand);
+  };
+  const achtergrond = vorm.img || BRIEF_ACHTERGROND;
+  const schaal = 0.42; // voorbeeld op ~88 mm breed
+  const mm = (x) => Number(x) * schaal + "mm";
+  const bewaren = () => {
+    const n = { ...vorm };
+    for (const sl of ["top", "links", "breedte", "inspring"]) n[sl] = Number(n[sl]) || BRIEF_STANDAARD[sl];
+    onSave(n);
+    setMelding("Opgeslagen — geldt meteen op alle apparaten.");
+  };
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">Het papier waarop het menu gedrukt wordt. Lees een afbeelding van een leeg A4 in (PNG of JPG, staand) en geef aan waar het tekstblok komt. Zonder eigen afbeelding gebruikt de app het briefpapier uit de map <span className="ink font-medium">public/brief</span>.</p>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => { try { kiesRef.current.click(); } catch (e) {} }} disabled={bezig} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 disabled:opacity-60">
+          <Download size={15} /> {bezig ? "Bezig…" : "Afbeelding inlezen"}
+        </button>
+        <input ref={kiesRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) inlezen(f); e.target.value = ""; }} />
+        {vorm.img && <button onClick={() => setVorm((v) => ({ ...v, img: "" }))} className="btno ff rounded-lg text-sm font-medium px-4 py-2.5">Eigen afbeelding weghalen</button>}
+      </div>
+      {melding && <p className="text-[12.5px] mt-2 mb-0" style={{ color: "#44502f" }}>{melding}</p>}
+
+      <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: "1px solid " + T.line }}>
+        {getal("top", "Tekst begint van boven", "Afstand van de bovenrand tot de eerste regel")}
+        {getal("links", "Tekst begint van links", "Afstand van de linkerrand tot het kopje MENU en de titel")}
+        {getal("breedte", "Breedte van het tekstblok", "Hoe breed de titel en de lijn mogen worden")}
+        {getal("inspring", "Gerechten springen in", "Hoeveel de gerechtenlijst verder naar rechts staat dan de titel")}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-start gap-3">
+        <div style={{ position: "relative", width: 210 * schaal + "mm", height: 297 * schaal + "mm", background: "#fff url(" + achtergrond + ") no-repeat 0 0", backgroundSize: "100% 100%", border: "1px solid " + T.line, borderRadius: 4, flex: "0 0 auto" }}>
+          <div style={{ position: "absolute", left: mm(vorm.links), top: mm(vorm.top), width: mm(vorm.breedte), height: mm(60), border: "1px dashed #b3261e" }} />
+          <div style={{ position: "absolute", left: mm(Number(vorm.links) + Number(vorm.inspring)), top: mm(Number(vorm.top) + 62), width: mm(Math.max(20, Number(vorm.breedte) - Number(vorm.inspring))), height: mm(70), border: "1px dashed #4f7a3a" }} />
+        </div>
+        <div className="text-[12px] mute" style={{ maxWidth: "16rem" }}>
+          <p className="mb-1"><span style={{ color: "#b3261e" }}>Rood</span>: MENU, de lijn en de titel.</p>
+          <p className="mb-1"><span style={{ color: "#4f7a3a" }}>Groen</span>: de gerechten.</p>
+          <p className="mb-0">Print daarna een menu om het te controleren; de maten zijn dezelfde millimeters als in Word.</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-3">
+        <button onClick={bewaren} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Opslaan</button>
+        <button onClick={() => { setVorm({ ...BRIEF_STANDAARD }); onSave({ ...BRIEF_STANDAARD }); setMelding("Terug op het standaard briefpapier."); }} className="btno ff rounded-lg text-sm font-medium px-4 py-2.5">Terug naar standaard</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier }) {
   const catImportRef = React.useRef(null);
   const [catZichtOpen, setCatZichtOpen] = useState(false);
   const herstelRef = React.useRef(null);
@@ -8290,6 +8405,13 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
               </div>
             )}
           </div>
+        </>
+      )}
+
+      {onBriefpapier && (
+        <>
+          <SectionTitle>Briefpapier voor het menu</SectionTitle>
+          <BriefpapierBeheer waarde={briefpapier} onSave={onBriefpapier} />
         </>
       )}
 
@@ -10567,6 +10689,44 @@ const catSleutel = (catVan, miceId) => String((catVan && catVan[idUitSleutel(mic
 // op hetzelfde soort (lunch, diner, buffet…), want een lunch van vorige week
 // is een prima startpunt voor de lunch van deze week. Hetzelfde product gaat
 // wel voor. De hoeveelheden komen geschaald terug.
+// Nieuwe aantallen uit MICE doorzetten naar de invulling van die partij. Alleen
+// regels die exact op het oude aantal stonden gaan mee, en alleen bij het
+// product waar het aantal veranderde; een buffet voor 52 blijft dus staan als
+// de lunch van 15 naar 20 gaat. Geeft null terug als er niets te doen is.
+const invullingBijNieuwAantal = (oud, nieuw, laag) => {
+  if (!oud || !nieuw || !Array.isArray(laag) || !laag.length) return null;
+  const oudAantal = {};
+  for (const x of oud.regels || []) oudAantal[String(x.id) + "\u0001" + normNaam(x.naam)] = Number(x.aantal) || 0;
+  const wissels = [];
+  for (const x of nieuw.regels || []) {
+    const van = oudAantal[String(x.id) + "\u0001" + normNaam(x.naam)];
+    const naar = Number(x.aantal) || 0;
+    if (van > 0 && naar > 0 && van !== naar) wissels.push({ id: String(x.id), naam: normNaam(x.naam), van, naar });
+  }
+  const gastenVan = Number(oud.gasten) || 0, gastenNaar = Number(nieuw.gasten) || 0;
+  const gastenWissel = gastenVan > 0 && gastenNaar > 0 && gastenVan !== gastenNaar;
+  if (!wissels.length && !gastenWissel) return null;
+  let veranderd = false;
+  const uit = laag.map((e) => {
+    const basis = idUitSleutel(e.miceId);
+    const naamDeel = String(e.miceId == null ? "" : e.miceId).split("\u0001")[1] || "";
+    const passend = wissels.filter((x) => x.id === basis);
+    const w = (naamDeel && passend.find((x) => x.naam === naamDeel)) || passend[0] || null;
+    const van = w ? w.van : gastenVan;
+    const naar = w ? w.naar : gastenNaar;
+    if (!(van > 0 && naar > 0 && van !== naar)) return e;
+    let raak = false;
+    const od = (e.onderdelen || []).map((x) => {
+      if (String(x.hoeveelheid || "").trim() !== String(van)) return x;
+      raak = true;
+      return { ...x, hoeveelheid: String(naar) };
+    });
+    if (!raak) return e;
+    veranderd = true;
+    return { ...e, onderdelen: od };
+  });
+  return veranderd ? uit : null;
+};
 const vorigeInvullingUit = ({ boekingen, koppeling, boekingSleutel, catVan, keuzesVan }, b, miceId, doelAantal) => {
   const cat = catSleutel(catVan, miceId);
   const eerder = (boekingen || [])
@@ -10772,6 +10932,22 @@ const menuTekstVan = (blokken) => (blokken || []).map((x) => [String(x.kop || ""
 // achtergrond is de eerste bladzijde van het Word-sjabloon, de letters zijn
 // dezelfde Lora en Archivo als daar.
 const BRIEF_ACHTERGROND = "/brief/briefpapier.png";
+// Het briefpapier is te vervangen zonder de code aan te passen: in Extras kan
+// een nieuwe A4-afbeelding worden ingeladen, met de plek van het tekstblok
+// erbij (in millimeters, net als in Word). Die instelling staat in Supabase,
+// dus hij geldt meteen op alle apparaten en overleeft een nieuwe versie.
+const BRIEF_STANDAARD = { img: "", top: 57.2, links: 33.6, breedte: 141.4, inspring: 37.5 };
+let briefVorm = { ...BRIEF_STANDAARD };
+const zetBriefVorm = (v) => {
+  const n = { ...BRIEF_STANDAARD, ...(v && typeof v === "object" ? v : {}) };
+  for (const sleutel of ["top", "links", "breedte", "inspring"]) {
+    const g = Number(n[sleutel]);
+    n[sleutel] = isFinite(g) ? g : BRIEF_STANDAARD[sleutel];
+  }
+  n.img = String(n.img || "");
+  briefVorm = n;
+};
+const briefAchtergrond = () => briefVorm.img || BRIEF_ACHTERGROND;
 // Het groen van "Met biologische oogst van Landgoed de Beug"; alle tekst op
 // het gedrukte menu staat in die kleur.
 const BRIEF_GROEN = "#6E7C4B";
@@ -10788,7 +10964,7 @@ const briefVoorladen = () => new Promise((klaar) => {
   try {
     const img = new Image();
     img.onload = af; img.onerror = af;
-    img.src = BRIEF_ACHTERGROND;
+    img.src = briefAchtergrond();
     if (img.complete) { af(); }
   } catch (e) { af(); }
   try {
@@ -10827,12 +11003,12 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar }) =>
   + "@page{size:A4;margin:0}"
   + "html,body{margin:0;padding:0;background:#fff}"
   + "*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
-  + ".blad{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff url('" + BRIEF_ACHTERGROND + "') no-repeat 0 0;background-size:210mm 297mm}"
-  + ".tekst{position:absolute;left:33.6mm;top:57.2mm;width:141.4mm;color:" + BRIEF_GROEN + ";font-family:'RitmeArchivo',Arial,Helvetica,sans-serif}"
+  + ".blad{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff url('" + briefAchtergrond() + "') no-repeat 0 0;background-size:210mm 297mm}"
+  + ".tekst{position:absolute;left:" + briefVorm.links + "mm;top:" + briefVorm.top + "mm;width:" + briefVorm.breedte + "mm;color:" + BRIEF_GROEN + ";font-family:'RitmeArchivo',Arial,Helvetica,sans-serif}"
   + ".menulabel{font-size:9pt;letter-spacing:2.4pt;text-transform:uppercase;text-align:center;margin:0}"
   + ".lijn{border-top:.75pt solid " + BRIEF_GROEN + ";margin:9pt 0 0}"
   + ".titel{font-family:'RitmeLora',Georgia,'Times New Roman',serif;font-size:34pt;line-height:40pt;text-align:center;margin:26pt 0 30pt}"
-  + ".inhoud{margin-left:37.5mm;width:103.9mm}"
+  + ".inhoud{margin-left:" + briefVorm.inspring + "mm;width:" + Math.max(20, briefVorm.breedte - briefVorm.inspring) + "mm}"
   + ".kop{font-weight:700;font-size:10.5pt;line-height:15pt;margin:0}"
   + ".regel{font-size:10.5pt;line-height:15pt;margin:0}"
   + ".regel+.regel{margin-top:15pt}"
@@ -12968,15 +13144,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               const mid = invulSleutel(b, k);
               return (
                 <div key={i} className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <input className="input px-2 py-1.5 text-sm" style={{ width: "3.2rem", flex: "0 0 3.2rem" }} inputMode="numeric" data-pa={b.id + "-" + i}
-                      value={String(k.aantal == null ? "" : k.aantal)} onChange={(e) => zetR(i, "aantal", e.target.value)} placeholder={String(b.gasten || "")}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); return; }
-                        pijlNav(e, null, '[data-oa="' + b.id + "-" + i + '-0"]', '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
-                      }} />
+                  {/* Geen eigen aantalvak meer bij het product: het aantal boven
+                      aan de partij en dat bij de invulregels is genoeg. De naam
+                      begint nu op dezelfde hoogte als het hoeveelheidsvak eronder. */}
+                  <div className="flex items-center gap-1.5 pl-3">
                     {magProductNaam
-                      ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" title={productInfoHover(k)} value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)} />
+                      ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" data-pn={b.id + "-" + i} title={productInfoHover(k)} value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); return; }
+                            pijlNav(e, null, '[data-oa="' + b.id + "-" + i + '-0"]', '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
+                          }} />
                       : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate" title={productInfoHover(k)} style={productInfoHover(k) ? { cursor: "help" } : undefined}>{k.naam}</span>}
                     {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
                     {vorigeInvulling && vorigeInvulling(k.miceId, k.aantal || b.gasten) && (
@@ -12996,13 +13173,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                               if (e.key === "Enter") { e.preventDefault(); focusNa('[data-op="' + b.id + "-" + i + "-" + j + '"]'); return; }
                               if (e.key === "Backspace" && !String(o.hoeveelheid || "")) {
                                 e.preventDefault();
-                                if (!e.repeat) { if (!veldFocus('[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]', true)) veldFocus('[data-pa="' + b.id + "-" + i + '"]', true); }
+                                if (!e.repeat) { if (!veldFocus('[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]', true)) veldFocus('[data-pn="' + b.id + "-" + i + '"]', true); }
                                 return;
                               }
                               pijlNav(e,
-                                j > 0 ? '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pa="' + b.id + "-" + i + '"]',
+                                j > 0 ? '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pn="' + b.id + "-" + i + '"]',
                                 '[data-op="' + b.id + "-" + i + "-" + j + '"]',
-                                j > 0 ? '[data-oa="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pa="' + b.id + "-" + i + '"]',
+                                j > 0 ? '[data-oa="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pn="' + b.id + "-" + i + '"]',
                                 '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
                           <input className="input px-2 py-1.5 text-sm" style={{ width: "3.6rem", flex: "0 0 3.6rem" }} inputMode="numeric" data-op={b.id + "-" + i + "-" + j}
