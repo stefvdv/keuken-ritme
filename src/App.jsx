@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-26b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-26c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3412,17 +3412,17 @@ function App() {
   // Alles rond boekingen terugzetten naar de kale MICE-stand: kaartlagen weg,
   // eigen testboekingen weg, events vers opgehaald. Invullingen (product →
   // gerecht) blijven bewust staan.
+  // De culinaire invulling blijft altijd staan: die is met de hand gemaakt en
+  // heeft niets met MICE te maken. Alleen de boekingen zelf en de handmatige
+  // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
   const resetBoekingen = async () => {
-    if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?")) return;
-    const ookInvulling = window.confirm("Ook de culinaire invullingen (product → gerecht) wissen?\n\nOK = ja, ook invullingen weg. Annuleren = invullingen bewaren.");
+    if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling (product → gerecht) blijft staan.")) return;
     setBoekingenLaden(true);
     if (live) {
-      try { await supabase.from("mice_koppeling").delete().neq("sleutel", ""); } catch (e) {}
+      try { await supabase.from("mice_koppeling").delete().neq("sleutel", "").not("sleutel", "like", "inv|%"); } catch (e) {}
       try { await supabase.from("mice_events").delete().neq("id", 0); } catch (e) {}
-      if (ookInvulling) { try { await supabase.from("mice_prodkoppeling").delete().neq("mice_id", 0); } catch (e) {} }
     }
-    if (ookInvulling) setProdKoppeling({});
-    setKoppeling({});
+    setKoppeling((k) => { const houd = {}; for (const sl of Object.keys(k)) if (String(sl).startsWith("inv|")) houd[sl] = k[sl]; return houd; });
     setBoekingen([]);
     bewaarMepMark({ markering: {}, somAf: {} });
     const van = new Date(); van.setDate(van.getDate() - 62);
@@ -7860,48 +7860,6 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
   );
 }
 
-// Zoekt uit welke endpoints de MICE-API teruggeeft. Praat met /api/mice, dat op
-// de server de sleutel toevoegt — die staat dus nooit in de browser.
-function MiceVerkenner() {
-  const [pad, setPad] = useState("events");
-  const [extra, setExtra] = useState("");
-  const [bezig, setBezig] = useState(false);
-  const [uit, setUit] = useState(null);
-  const haal = async () => {
-    setBezig(true); setUit(null);
-    try {
-      const url = "/api/mice?path=" + encodeURIComponent(pad.trim()) + (extra.trim() ? "&" + extra.trim().replace(/^[?&]/, "") : "");
-      const r = await fetch(url);
-      const j = await r.json();
-      setUit(j);
-    } catch (e) { setUit({ fout: String((e && e.message) || e) }); }
-    setBezig(false);
-  };
-  const tekst = uit ? JSON.stringify(uit, null, 2) : "";
-  return (
-    <>
-      <SectionTitle>MICE-koppeling</SectionTitle>
-      <div className="card p-4">
-        <p className="text-sm mute mb-3">Uitzoeken welke gegevens MICE teruggeeft. Werkt alleen als <span className="ink font-medium">MICE_API_KEY</span> in Vercel staat. Elk pad mag: probeer bijvoorbeeld <span className="ink font-medium">documents</span>, of <span className="ink font-medium">events/1370</span> met extra <span className="ink font-medium">include_documents=1</span>.</p>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Pad"><input className="input px-3 py-2 w-full text-sm" value={pad} onChange={(e) => setPad(e.target.value)} placeholder="events" /></Field>
-          <Field label="Extra (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="date_from=2026-09-01" /></Field>
-        </div>
-        <div className="flex flex-wrap gap-2 mt-2">
-          <button onClick={haal} disabled={bezig} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">{bezig ? "Bezig…" : "Ophalen"}</button>
-          {["events", "documents", "document_templates", "products", "packages", "locations", "event_types"].map((p) => (
-            <button key={p} onClick={() => setPad(p)} className="btno ff rounded-lg px-2.5 py-2 text-[12.5px] font-medium">{p}</button>
-          ))}
-          {tekst && <button onClick={() => { try { navigator.clipboard.writeText(tekst); } catch (e) {} }} className="btno ff rounded-lg px-2.5 py-2 text-[12.5px] font-medium">Kopieer</button>}
-        </div>
-        {uit && (
-          <pre className="mt-3 text-[11px] p-3 rounded-lg overflow-auto" style={{ background: "#f3f1e7", maxHeight: "22rem", whiteSpace: "pre-wrap" }}>{tekst}</pre>
-        )}
-      </div>
-    </>
-  );
-}
-
 // Bestellijst: alle ingeladen leverancierslijsten plus de eigen items op één
 // pagina. Per product een invulvakje voor het aantal; ingevulde regels komen
 // bovenaan onder "Te bestellen". Sortering binnen een lijst: vaakst besteld
@@ -8212,13 +8170,61 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         </>
       )}
 
-      {onSaveAllergenFix && (
-        <>
-          <SectionTitle>Allergenen per ingrediënt</SectionTitle>
-          <AllergenenBeheer rijen={allergenFixRijen || []} onSave={onSaveAllergenFix} />
-        </>
-      )}
+      <SectionTitle>Chef</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute mb-3">De chef-versie toont Calculaties (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
+        <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
+        {chefMode && onResetBoekingen && (
+          <button onClick={onResetBoekingen} disabled={boekingenLaden} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
+            {boekingenLaden ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+            {boekingenLaden ? "Bezig met laden uit MICE\u2026" : "Boekingen resetten en opnieuw uit MICE laden"}
+          </button>
+        )}
+        {chefOpen && (
+          <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefFout}
+            hint="Prijzen en het assortiment blijven zichtbaar tot de app ververst wordt."
+            onCancel={() => setChefOpen(false)}
+            onOk={(code) => { if (onChef(true, code)) setChefOpen(false); else setChefFout("Die code klopt niet."); }} />
+        )}
+      </div>
 
+      <SectionTitle>App installeren</SectionTitle>
+      <div className="card p-4">
+        {installed ? (
+          <div className="flex items-center gap-2 text-sm ink"><Check size={16} className="acc" /> De app staat op je beginscherm — je opent 'm nu schermvullend.</div>
+        ) : canInstall ? (
+          <>
+            <p className="text-sm mute mb-3">Zet <span className="ink font-medium">In het ritme van het land</span> op je beginscherm. De app opent dan schermvullend, zonder browserbalk, en start sneller.</p>
+            <button onClick={onInstall} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Download size={16} /> Installeer als app</button>
+          </>
+        ) : iOS ? (
+          <div className="text-sm mute space-y-2">
+            <p className="ink font-medium flex items-center gap-1.5"><Share size={15} className="acc" /> Op iPhone of iPad (Safari)</p>
+            <ol className="space-y-1 list-decimal list-inside">
+              <li>Tik onderin op de <span className="ink">Deel</span>-knop.</li>
+              <li>Kies <span className="ink">Zet op beginscherm</span>.</li>
+              <li>Bevestig met <span className="ink">Voeg toe</span>.</li>
+            </ol>
+          </div>
+        ) : (
+          <div className="text-sm mute space-y-2">
+            <p className="ink font-medium flex items-center gap-1.5"><Smartphone size={15} className="acc" /> Toevoegen aan beginscherm</p>
+            <p>Open het browsermenu (de drie puntjes) en kies <span className="ink">App installeren</span> of <span className="ink">Toevoegen aan startscherm</span>. Zodra je browser dit ondersteunt, verschijnt hier vanzelf een groene installatieknop.</p>
+          </div>
+        )}
+      </div>
+      <p className="text-xs mute mt-2 flex items-start gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /> Installeren werkt op jullie eigen webadres, nadat de app is gepubliceerd. In deze preview is de knop nog niet actief.</p>
+
+      <SectionTitle>Over</SectionTitle>
+      <div className="card p-4 text-sm mute space-y-1">
+        <div className="serif ink text-lg leading-tight">In het ritme van het land</div>
+        <div>Wilde Wortels · Landgoed de Beug · Odijk</div>
+        <div>Digitaal receptenboek van de moestuinkeuken · versie 1.0</div>
+      </div>
+      {/* Alles hieronder is beheer: alleen in chef-modus, en onder de
+          dagelijkse onderdelen zodat die als eerste in beeld staan. */}
+      {chefMode && (
+        <>
       <SectionTitle>Recepten delen</SectionTitle>
       <div className="card p-4">
         <p className="text-sm mute mb-3">Stuur een link waarmee iemand alleen de recepten kan bekijken — zonder wachtwoord, alleen-lezen, zonder boekingen of andere onderdelen. Een los recept deel je met de <Link size={13} className="inline align-[-2px]" />-knop op het recept zelf.</p>
@@ -8271,6 +8277,25 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         </>
       )}
 
+      <SectionTitle>Backup</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute mb-3">Download een reservekopie van de <span className="ink font-medium">voorraad, recepten (incl. fermentatie) en gerechten</span> als bestand, of zet een eerdere backup terug. Terugzetten overschrijft gelijknamige items; nieuwere items blijven staan.</p>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={onBackup} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Download size={16} /> Backup downloaden</button>
+          <button onClick={onWordBackup} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><BookOpen size={16} /> Word-backup (per recept)</button>
+          <button onClick={() => { if (herstelRef.current) { herstelRef.current.value = ""; herstelRef.current.click(); } }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Share size={16} /> Backup terugzetten</button>
+          <input ref={herstelRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onRestore(f); }} />
+        </div>
+      </div>
+
+
+      {onSaveAllergenFix && (
+        <>
+          <SectionTitle>Allergenen per ingrediënt</SectionTitle>
+          <AllergenenBeheer rijen={allergenFixRijen || []} onSave={onSaveAllergenFix} />
+        </>
+      )}
+
       {onFermentControles && (
         <>
           <SectionTitle>Fermentatie</SectionTitle>
@@ -8288,71 +8313,9 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
       )}
 
 
-      <SectionTitle>Chef</SectionTitle>
-      <div className="card p-4">
-        <p className="text-sm mute mb-3">De chef-versie toont Calculaties (kost- en verkoopprijzen) en kostprijzen bij recepten, gerechten en voorraad. Geldt alleen voor deze sessie: bij het verversen van de app sluit hij vanzelf.</p>
-        <button onClick={() => { if (chefMode) onChef(false); else { setChefFout(""); setChefOpen(true); } }} className={(chefMode ? "btno" : "btnp") + " ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"}><ChefHat size={16} /> {chefMode ? "Chef-modus verlaten" : "Chef-modus openen…"}</button>
-        {chefMode && onResetBoekingen && (
-          <button onClick={onResetBoekingen} disabled={boekingenLaden} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
-            {boekingenLaden ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
-            {boekingenLaden ? "Bezig met laden uit MICE\u2026" : "Boekingen resetten en opnieuw uit MICE laden"}
-          </button>
-        )}
-        {chefOpen && (
-          <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefFout}
-            hint="Prijzen en het assortiment blijven zichtbaar tot de app ververst wordt."
-            onCancel={() => setChefOpen(false)}
-            onOk={(code) => { if (onChef(true, code)) setChefOpen(false); else setChefFout("Die code klopt niet."); }} />
-        )}
-      </div>
+        </>
+      )}
 
-      {chefMode && <MiceVerkenner />}
-
-      <SectionTitle>Backup</SectionTitle>
-      <div className="card p-4">
-        <p className="text-sm mute mb-3">Download een reservekopie van de <span className="ink font-medium">voorraad, recepten (incl. fermentatie) en gerechten</span> als bestand, of zet een eerdere backup terug. Terugzetten overschrijft gelijknamige items; nieuwere items blijven staan.</p>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={onBackup} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Download size={16} /> Backup downloaden</button>
-          <button onClick={onWordBackup} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><BookOpen size={16} /> Word-backup (per recept)</button>
-          <button onClick={() => { if (herstelRef.current) { herstelRef.current.value = ""; herstelRef.current.click(); } }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Share size={16} /> Backup terugzetten</button>
-          <input ref={herstelRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onRestore(f); }} />
-        </div>
-      </div>
-
-
-      <SectionTitle>App installeren</SectionTitle>
-      <div className="card p-4">
-        {installed ? (
-          <div className="flex items-center gap-2 text-sm ink"><Check size={16} className="acc" /> De app staat op je beginscherm — je opent 'm nu schermvullend.</div>
-        ) : canInstall ? (
-          <>
-            <p className="text-sm mute mb-3">Zet <span className="ink font-medium">In het ritme van het land</span> op je beginscherm. De app opent dan schermvullend, zonder browserbalk, en start sneller.</p>
-            <button onClick={onInstall} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Download size={16} /> Installeer als app</button>
-          </>
-        ) : iOS ? (
-          <div className="text-sm mute space-y-2">
-            <p className="ink font-medium flex items-center gap-1.5"><Share size={15} className="acc" /> Op iPhone of iPad (Safari)</p>
-            <ol className="space-y-1 list-decimal list-inside">
-              <li>Tik onderin op de <span className="ink">Deel</span>-knop.</li>
-              <li>Kies <span className="ink">Zet op beginscherm</span>.</li>
-              <li>Bevestig met <span className="ink">Voeg toe</span>.</li>
-            </ol>
-          </div>
-        ) : (
-          <div className="text-sm mute space-y-2">
-            <p className="ink font-medium flex items-center gap-1.5"><Smartphone size={15} className="acc" /> Toevoegen aan beginscherm</p>
-            <p>Open het browsermenu (de drie puntjes) en kies <span className="ink">App installeren</span> of <span className="ink">Toevoegen aan startscherm</span>. Zodra je browser dit ondersteunt, verschijnt hier vanzelf een groene installatieknop.</p>
-          </div>
-        )}
-      </div>
-      <p className="text-xs mute mt-2 flex items-start gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /> Installeren werkt op jullie eigen webadres, nadat de app is gepubliceerd. In deze preview is de knop nog niet actief.</p>
-
-      <SectionTitle>Over</SectionTitle>
-      <div className="card p-4 text-sm mute space-y-1">
-        <div className="serif ink text-lg leading-tight">In het ritme van het land</div>
-        <div>Wilde Wortels · Landgoed de Beug · Odijk</div>
-        <div>Digitaal receptenboek van de moestuinkeuken · versie 1.0</div>
-      </div>
       <div className="mt-8">
         <button onClick={onSignOut} className="ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-3 py-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }}><LogOut size={15} /> Dit apparaat uitloggen</button>
         <p className="text-[11px] mute mt-1.5">Daarna is opnieuw het keukenwachtwoord nodig.</p>
