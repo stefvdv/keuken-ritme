@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-28q2"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-28r2"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -14245,7 +14245,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const [histOpen, setHistOpen] = useState(false);
 
   // Vak vullen bij openen en bij tabwissel.
-  const zetVak = (html) => { if (vak.current) vak.current.innerHTML = html || ""; };
+  const zetVak = (html) => { if (vak.current) { vak.current.innerHTML = html || ""; try { netjesRef.current(); } catch (e) {} } };
+  const netjesRef = React.useRef(() => {});
   useEffect(() => { zetVak(bladen[actief] ? bladen[actief].html : ""); if (vak.current) vak.current.focus(); }, [actief]);
 
   // Huidige vakinhoud terugschrijven in het actieve blad.
@@ -14332,6 +14333,157 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const cmd = (naam, waarde) => { try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); checkFmt(); getypt(); };
   const kopToggle = () => cmd("formatBlock", fmt.kop ? "<div>" : "<h2>");
 
+  // Het blok (regel) waar de cursor in staat.
+  const BLOKKEN = /^(DIV|P|LI|H1|H2|H3|BLOCKQUOTE)$/;
+  const blokVan = (node) => {
+    let el = node && node.nodeType === 3 ? node.parentElement : node;
+    while (el && el !== vak.current && !BLOKKEN.test(el.tagName || "")) el = el.parentElement;
+    return el && el !== vak.current ? el : null;
+  };
+  const cursorBlok = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !vak.current || !vak.current.contains(sel.anchorNode)) return null;
+    return blokVan(sel.anchorNode);
+  };
+  const leegBlok = (el) => !!el && !String(el.textContent || "").replace(/\u00a0/g, " ").trim();
+  // Chrome plakt een nieuwe opsomming vast aan de lijst erboven en slikt de lege
+  // regel ertussen op. Begon je buiten een lijst, dan bedoelde je een niéuwe
+  // lijst: die knippen we hier weer los, met de lege regel terug op zijn plek.
+  const losseLijst = (metLegeRegel) => {
+    const li = cursorBlok();
+    if (!li || li.tagName !== "LI" || !li.previousElementSibling) return;
+    const lijst = li.parentElement;
+    if (!lijst || !/^(UL|OL)$/.test(lijst.tagName || "")) return;
+    const nieuw = document.createElement(lijst.tagName.toLowerCase());
+    let n = li;
+    while (n) { const v = n.nextElementSibling; nieuw.appendChild(n); n = v; }
+    lijst.after(nieuw);
+    if (metLegeRegel) { const leeg = document.createElement("div"); leeg.appendChild(document.createElement("br")); lijst.after(leeg); }
+    try {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.selectNodeContents(li); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    } catch (e) {}
+  };
+  // Een opsomming beginnen, of er een van maken. Stond de cursor buiten een
+  // lijst, dan wordt het er altijd een op zichzelf.
+  const maakLijst = (soort) => {
+    const blok = cursorBlok();
+    const buiten = !blok || blok.tagName !== "LI";
+    const boven = blok && blok.previousElementSibling;
+    const legeRegelBoven = !!(boven && !/^(UL|OL)$/.test(boven.tagName || "") && leegBlok(boven));
+    // Op een helemaal lege regel kijkt Chrome over de regelgrens heen en trekt
+    // de kop of alinea erboven de lijst in. Even een letter neerzetten houdt
+    // hem binnen deze regel; daarna halen we die er weer af.
+    const opvullen = !!(blok && leegBlok(blok));
+    if (opvullen) {
+      const vul = document.createElement("span");
+      vul.setAttribute("data-vul", "1");
+      vul.textContent = "\u00a0";
+      while (blok.firstChild) blok.removeChild(blok.firstChild);
+      blok.appendChild(vul);
+      try {
+        const sel = window.getSelection();
+        const r = document.createRange();
+        r.selectNodeContents(vul); r.collapse(false);
+        sel.removeAllRanges(); sel.addRange(r);
+      } catch (e) {}
+    }
+    try { document.execCommand(soort, false, null); } catch (e) {}
+    if (opvullen && vak.current) {
+      for (const vul of [...vak.current.querySelectorAll("[data-vul]")]) {
+        const ouder = vul.parentNode;
+        vul.remove();
+        try {
+          const sel = window.getSelection();
+          const r = document.createRange();
+          r.selectNodeContents(ouder); r.collapse(false);
+          sel.removeAllRanges(); sel.addRange(r);
+        } catch (e) {}
+      }
+    }
+    if (buiten) losseLijst(legeRegelBoven);
+    netjes();
+    if (vak.current) vak.current.focus();
+    checkFmt(); getypt();
+  };
+
+  // Elke regel van een opsomming (ook een sub-opsomming) krijgt een afvinkvakje;
+  // aangevinkt betekent doorgestreept. Nummeringen houden hun cijfers.
+  const DAGKOP = /^\s*(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)\s*:?\s*$/i;
+  const netjes = () => {
+    const v = vak.current;
+    if (!v) return;
+    const anker0 = (() => { const sel = window.getSelection(); return sel && sel.anchorNode; })();
+    const raaktCursorLi = (n) => n === anker0 || (anker0 && n.contains && n.contains(anker0));
+    for (const li of v.querySelectorAll("ul li")) {
+      let cb = li.querySelector(":scope > input.nt-cb");
+      const isNieuw = !cb;
+      if (!cb) { cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "nt-cb"; }
+      // Vooraan zetten: kwam hij erachter terecht, dan typte je vóór het vakje.
+      if (li.firstChild !== cb) li.insertBefore(cb, li.firstChild);
+      // Bij een verse lege regel staat de cursor nog vóór het nieuwe vakje;
+      // die zetten we erachter, anders belandt je tekst aan de verkeerde kant.
+      if (isNieuw && leegBlok(li) && raaktCursorLi(li)) {
+        try {
+          const sel = window.getSelection();
+          const r = document.createRange();
+          r.setStartAfter(cb); r.collapse(true);
+          sel.removeAllRanges(); sel.addRange(r);
+        } catch (e) {}
+      }
+      const aan = cb.hasAttribute("checked");
+      cb.checked = aan;
+      li.style.textDecoration = aan ? "line-through" : "";
+      li.style.opacity = aan ? ".55" : "";
+    }
+    // Losse tekst boven in het vak (de eerste regel zit vaak nog in geen enkel
+    // blok) eerst in een div wikkelen, anders valt die overal buiten. De regel
+    // waar de cursor in staat laten we met rust.
+    const sel = window.getSelection();
+    const anker = sel && sel.anchorNode;
+    const raaktCursor = (n) => n === anker || (n.contains && anker && n.contains(anker));
+    let groep = [];
+    const spoel = () => {
+      if (!groep.length) return;
+      if (groep.some(raaktCursor)) { groep = []; return; }
+      const d = document.createElement("div");
+      groep[0].before(d);
+      for (const x of groep) d.appendChild(x);
+      groep = [];
+    };
+    for (const n of [...v.childNodes]) {
+      if (n.nodeType === 1 && /^(DIV|P|UL|OL|H1|H2|H3|BLOCKQUOTE|TABLE|HR|PRE)$/.test(n.tagName)) { spoel(); continue; }
+      if (n.nodeType === 3 && !String(n.textContent || "").trim()) { spoel(); continue; }
+      groep.push(n);
+      if (n.nodeType === 1 && n.tagName === "BR") spoel();
+    }
+    spoel();
+    // Een lijst die in een lege div terecht is gekomen eruit tillen, anders
+    // stapelen de omhulsels zich op en klopt de inspringing niet meer.
+    for (const d of [...v.querySelectorAll("div")]) {
+      const kind = d.firstElementChild;
+      if (!kind || !/^(UL|OL)$/.test(kind.tagName) || d.children.length !== 1) continue;
+      if (String(d.textContent || "") !== String(kind.textContent || "")) continue;
+      d.replaceWith(kind);
+    }
+    // Een regel met alleen een dagnaam erop is een kop — behalve de regel waar
+    // je op dat moment in staat, anders springt hij weg terwijl je typt.
+    // Nooit het stukje tekst verplaatsen waar de cursor in hangt: die reist dan
+    // mee naar de kop en al het volgende belandt daarbinnen. Zodra je verder
+    // typt op de volgende regel wordt de dagnaam alsnog een kop.
+    const nu = cursorBlok();
+    for (const el of v.querySelectorAll("div, p")) {
+      if (el === nu || raaktCursor(el) || el.closest("li") || el.querySelector("ul, ol, div, p, h1, h2, h3")) continue;
+      if (!DAGKOP.test(el.textContent || "")) continue;
+      const h = document.createElement("h2");
+      while (el.firstChild) h.appendChild(el.firstChild);
+      el.replaceWith(h);
+    }
+  };
+  netjesRef.current = netjes;
+
   // "- ", "* ", "1. " en "[] " aan het regelbegin worden lijst of afvinkvakje.
   const CB_HTML = '<input type="checkbox" class="nt-cb">&nbsp;';
   const autoLijst = () => {
@@ -14356,10 +14508,29 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     if (!soort) return;
     n.textContent = txt.slice(lengte);
     try { const r = document.createRange(); r.setStart(n, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
-    try { document.execCommand(soort, false, null); } catch (e) {}
-    checkFmt();
+    maakLijst(soort);
   };
   const toetsVak = (e) => {
+    // Enter op een lege regel van een lijst stapt eruit, zoals overal. Doordat
+    // elke regel een afvinkvakje heeft is zo'n regel voor de browser niet leeg
+    // meer; daarom halen we het vakje er hier even af — dan werkt de gewone
+    // Enter weer, en zet netjes() er daarna vanzelf weer een neer waar nodig.
+    if (e.key === "Enter" && !e.shiftKey) {
+      const li = cursorBlok();
+      if (li && li.tagName === "LI" && leegBlok(li)) {
+        const cb = li.querySelector(":scope > input.nt-cb");
+        if (cb) {
+          cb.remove();
+          try {
+            const sel = window.getSelection();
+            const r = document.createRange();
+            r.selectNodeContents(li); r.collapse(true);
+            sel.removeAllRanges(); sel.addRange(r);
+          } catch (x) {}
+        }
+      }
+      return;
+    }
     if (e.key !== "Tab") return;
     e.preventDefault();
     const sel = window.getSelection();
@@ -14424,18 +14595,44 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     if (rid && onOpenRecipe) onOpenRecipe(rid);
     else if (pid && onOpenPartij) onOpenPartij(pid);
   };
-  const stiftSelectie = () => {
-    if (!stift) return;
-    const k = MARKEER_KLEUREN.find((x) => x.naam === stift);
+  const hexNaarRgb = (hex) => { const n = parseInt(String(hex).slice(1), 16); return "rgb(" + ((n >> 16) & 255) + ", " + ((n >> 8) & 255) + ", " + (n & 255) + ")"; };
+  // Het spannetje van een bestaande markering waar de selectie in zit.
+  const markSpanVan = (node) => {
+    let el = node && node.nodeType === 3 ? node.parentElement : node;
+    while (el && el !== vak.current) {
+      if (el.tagName === "SPAN" && el.style && el.style.backgroundColor) return el;
+      el = el.parentElement;
+    }
+    return null;
+  };
+  const markeer = (kleurNaam) => {
+    const k = MARKEER_KLEUREN.find((x) => x.naam === kleurNaam);
     if (!k) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !vak.current || !vak.current.contains(sel.anchorNode)) return;
-    const hexNaarRgb = (hex) => { const n = parseInt(hex.slice(1), 16); return "rgb(" + ((n >> 16) & 255) + ", " + ((n >> 8) & 255) + ", " + (n & 255) + ")"; };
-    let nu = ""; try { nu = String(document.queryCommandValue("hiliteColor") || ""); } catch (e) {}
-    const zelfde = nu && (nu.toLowerCase() === k.kleur.toLowerCase() || nu.replace(/\s/g, "") === hexNaarRgb(k.kleur).replace(/\s/g, ""));
-    cmd("hiliteColor", zelfde ? "transparent" : k.kleur);
+    // Zit de selectie al in een markering van dezelfde kleur, dan halen we die
+    // eraf door het spannetje op te heffen. Met hiliteColor "transparent" blijft
+    // het spannetje namelijk gewoon staan en zie je de kleur nog.
+    const span = markSpanVan(sel.anchorNode);
+    const nu = span ? String(span.style.backgroundColor || "").replace(/\s/g, "") : "";
+    if (span && (nu === hexNaarRgb(k.kleur).replace(/\s/g, "") || nu === k.kleur.toLowerCase())) {
+      const ouder = span.parentNode;
+      while (span.firstChild) ouder.insertBefore(span.firstChild, span);
+      span.remove();
+      try { ouder.normalize(); } catch (e) {}
+      try { sel.removeAllRanges(); } catch (e) {}
+      if (vak.current) vak.current.focus();
+      getypt();
+      return;
+    }
+    cmd("hiliteColor", k.kleur);
     try { sel.removeAllRanges(); } catch (e) {}
   };
+  const stiftSelectie = () => { if (stift) markeer(stift); };
+  // Dubbelklik markeert het woord eronder, net als op de partijkaarten: nog een
+  // keer haalt de markering er weer af. Staat de stift aan, dan is het slepen
+  // al genoeg — dan doet de dubbelklik niets, anders zou hij het meteen wissen.
+  const dubbelMark = () => { if (!stift) markeer("groen"); };
 
   // Bladen (tabjes): toevoegen, hernoemen, weghalen, wissen, printen.
   const wisselBlad = (i) => { if (i === actief) return; const lijst = syncVak(); setBladen(lijst); setActief(i); };
@@ -14472,7 +14669,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Notities</title><style>"
       + "@page{size:A4;margin:16mm}body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:18px;margin:0 0 1mm}.sub{color:#6a6550;margin:0 0 5mm;font-size:11px}"
-      + "h2{font-size:15px;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}"
+      + "h2{font-size:15px;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}ul{list-style:none}"
       + "a{color:#44502f;font-weight:600;text-decoration:underline}input[type=checkbox]{width:3.2mm;height:3.2mm;margin-right:1.5mm}"
       + "</style></head><body><h1>" + esc2(b.naam || "Notities") + "</h1><div class='sub'>"
       + esc2((b.door ? "Laatst aangepast door " + b.door + " · " : "") + new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }))
@@ -14501,8 +14698,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
             <Knop doe={() => cmd("underline")} actief={fmt.onder} titel="Onderstreept (Ctrl+U)"><Underline size={14} /></Knop>
             <Knop doe={() => cmd("italic")} actief={fmt.cursief} titel="Cursief (Ctrl+I)"><Italic size={14} /></Knop>
             <Knop doe={kopToggle} actief={fmt.kop} titel="Kop"><Heading size={14} /></Knop>
-            <Knop doe={() => cmd("insertUnorderedList")} actief={fmt.ul} titel="Opsomming — typ ook: - en spatie"><List size={14} /></Knop>
-            <Knop doe={() => cmd("insertOrderedList")} actief={fmt.ol} titel="Nummering — typ ook: 1. en spatie"><ListOrdered size={14} /></Knop>
+            <Knop doe={() => maakLijst("insertUnorderedList")} actief={fmt.ul} titel="Afvinklijst — typ ook: - en spatie"><List size={14} /></Knop>
+            <Knop doe={() => maakLijst("insertOrderedList")} actief={fmt.ol} titel="Nummering — typ ook: 1. en spatie"><ListOrdered size={14} /></Knop>
             <Knop doe={() => { linkRange.current = null; plaatsHtml(CB_HTML); }} titel="Afvinkvakje — typ ook: [] en spatie"><CheckSquare size={14} /></Knop>
             <Knop doe={openLinkZoek} actief={linkZoek != null} titel="Link naar een recept of partij invoegen"><Link size={14} /></Knop>
             <Knop doe={printBlad} titel="Dit blad printen (A4)"><Printer size={14} /></Knop>
@@ -14562,15 +14759,16 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           </div>
         )}
         <style>{".mep-notitie a[data-recept],.mep-notitie a[data-partij]{color:#44502f;font-weight:600;text-decoration:underline;text-decoration-color:#9fae84;cursor:pointer}"
-          + ".mep-notitie input.nt-cb{width:1em;height:1em;accent-color:#44502f;margin-right:.35em;vertical-align:-2px}"
+          + ".mep-notitie input.nt-cb{width:1em;height:1em;accent-color:#44502f;margin-right:.4em;vertical-align:-2px;cursor:pointer}"
+          + ".mep-notitie li input.nt-cb{margin-left:-1.35em}"
           + ".mep-notitie h2{font-size:1.25em;font-weight:700;margin:.35em 0 .15em}"
-          + ".mep-notitie ul{list-style:disc;padding-left:1.5em;margin:.15em 0}"
-          + ".mep-notitie ul ul{list-style:circle}.mep-notitie ul ul ul{list-style:square}"
+          + ".mep-notitie ul{list-style:none;padding-left:1.35em;margin:.15em 0}"
+          + ".mep-notitie ul ul{padding-left:1.5em}"
           + ".mep-notitie ol{list-style:decimal;padding-left:1.6em;margin:.15em 0}"
           + ".mep-notitie ol ol{list-style:lower-alpha}.mep-notitie ol ol ol{list-style:lower-roman}"
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
         <div ref={vak} contentEditable suppressContentEditableWarning
-          onInput={() => { autoLijst(); getypt(); }} onBlur={() => bewaar()} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
+          onInput={() => { autoLijst(); netjes(); getypt(); }} onBlur={() => bewaar()} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie flex-1 overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
