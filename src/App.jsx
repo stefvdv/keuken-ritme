@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-28o"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-28p2"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3536,7 +3536,7 @@ function App() {
   // dat moment had. Komt er later een product bij de boeking, dan weten we dat
   // het nieuw is — en niet iets dat hier bewust is weggehaald.
   const saveMepKoppeling = async (b, producten) => {
-    const rijen = leesLaag(koppeling, boekingSleutel, b, "") || autoKeuzesUitBoeking(b) || [];
+    const rijen = mepBasisVan(koppeling, boekingSleutel, b);
     await saveKoppelingSleutel("mep|id|" + b.id, producten);
     // De rijen zelf erbij, zodat later te zien is welk veld op de mep is
     // aangepast en welk veld nog gewoon uit de boeking komt.
@@ -11343,10 +11343,18 @@ const mepSamen = (over, toen, nu) => {
   }
   return uit;
 };
+// De stand van de boeking waartegen een mep-aanpassing wordt afgezet: de
+// handmatige laag, en anders wat er uit MICE besteld is. Bewust zónder de
+// Necker-weeklijst en het herhaal-sjabloon: dat zijn vaste lijsten die een
+// mep-aanpassing juist vervangt, geen producten die er later bij zijn gekomen.
+// Het opslaan en het teruglezen moeten hier allebei van uitgaan — keken ze
+// naar verschillende lijsten, dan zag de mep zijn eigen aangepaste regels aan
+// voor nieuwe en zette hij de oude er weer naast.
+const mepBasisVan = (koppeling, boekingSleutel, b) => leesLaag(koppeling, boekingSleutel, b, "") || autoKeuzesUitBoeking(b) || [];
 const mepKeuzes = (koppeling, boekingSleutel, b) => {
   const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
   if (over === undefined) return undefined;
-  const nu = alleKeuzesVan(koppeling, boekingSleutel, b);
+  const nu = mepBasisVan(koppeling, boekingSleutel, b);
   const basisRij = (leesLaag(koppeling, boekingSleutel, b, "mepb|") || [])[0];
   const toen = basisRij && Array.isArray(basisRij.basis) ? new Set(basisRij.basis) : null;
   if (toen) {
