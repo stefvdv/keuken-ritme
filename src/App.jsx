@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-28l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-28o"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2935,10 +2935,30 @@ function App() {
   // Gedeelde bestellijst (aantallen, besteltelling, notitie, eigen producten).
   const [bestelLijst, setBestelLijst] = useState(null);
   const bestelLijstRef = React.useRef(null);
+  // Gedeelde instellingen schrijven we hier weg en halen we elders binnen. Die
+  // twee kunnen elkaar in de weg zitten: een binnenhaalronde die al liep vóór
+  // onze eigen schrijfactie komt met de vorige stand terug en zou net gedane
+  // wijzigingen terugdraaien. Daarom onthouden we per sleutel wanneer onze
+  // laatste schrijfactie klaar was; een binnengehaalde stand telt alleen als
+  // hij dáárna is opgehaald. Zonder die rem verdween een net gezette markering
+  // of een net getypt materiaal soms een seconde later weer.
+  const instelSchrijf = React.useRef({}); // sleutel -> moment waarop onze laatste schrijfactie klaar was
+  const instelBezig = React.useRef({}); // sleutel -> hoeveel schrijfacties er nu lopen
+  const instelUpsert = async (sleutel, waarde) => {
+    instelBezig.current[sleutel] = (instelBezig.current[sleutel] || 0) + 1;
+    try {
+      return await veiligUpsert(supabase, "app_settings", { key: sleutel, value: waarde, updated_at: new Date().toISOString() });
+    } finally {
+      instelBezig.current[sleutel] = Math.max(0, (instelBezig.current[sleutel] || 1) - 1);
+      instelSchrijf.current[sleutel] = Date.now();
+    }
+  };
+  // Mag een binnenhaalronde die om "gestart" begon deze instelling zetten?
+  const instelVers = (sleutel, gestart) => !instelBezig.current[sleutel] && gestart > (instelSchrijf.current[sleutel] || 0);
   const bewaarBestelLijst = async (obj) => {
     bestelLijstRef.current = obj;
     setBestelLijst(obj);
-    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "bestellijst", value: obj, updated_at: new Date().toISOString() }); } catch (e) {} }
+    if (live) { try { await instelUpsert("bestellijst", obj); } catch (e) {} }
   };
   // Na het inladen van een leverancierslijst: zelf toegevoegde bestelproducten
   // met een overeenkomende naam samenvoegen — de ingeladen informatie wint,
@@ -2976,7 +2996,7 @@ function App() {
   const [mepNotitie, setMepNotitie] = useState(null);
   const bewaarMepNotitie = async (obj) => {
     setMepNotitie(obj);
-    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "mep_notitie", value: obj, updated_at: new Date().toISOString() }); } catch (e) {} }
+    if (live) { try { await instelUpsert("mep_notitie", obj); } catch (e) {} }
   };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
   const [miceProducten, setMiceProducten] = useState([]); // catalogus uit MICE
@@ -3609,7 +3629,7 @@ function App() {
   React.useMemo(() => zetMenuOpmaak(menuOpmaak), [menuOpmaak]);
   React.useMemo(() => zetKlantAdres(klantAdres), [klantAdres]);
   const bewaarInstelling = async (sleutel, waarde) => {
-    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: sleutel, value: waarde, updated_at: new Date().toISOString() }); } catch (e) { flash("Alleen op dit apparaat bewaard"); } }
+    if (live) { try { await instelUpsert(sleutel, waarde); } catch (e) { flash("Alleen op dit apparaat bewaard"); } }
   };
   const saveProdZicht = async (id, zicht) => {
     const sleutel = String(id == null ? "" : id);
@@ -3682,7 +3702,7 @@ function App() {
   const saveBriefpapier = async (v) => {
     const n = { ...BRIEF_STANDAARD, ...(v && typeof v === "object" ? v : {}) };
     setBriefpapier(n);
-    if (live) await veiligUpsert(supabase, "app_settings", { key: "briefpapier", value: n, updated_at: new Date().toISOString() });
+    if (live) await instelUpsert("briefpapier", n);
   };
   const saveCatZicht = async (cat, zicht) => {
     const sleutel = String(cat || "").toLowerCase().trim();
@@ -3690,24 +3710,24 @@ function App() {
     const n = { ...catZicht };
     if (!zicht || zicht === catZichtStandaard(sleutel)) delete n[sleutel]; else n[sleutel] = zicht;
     setCatZicht(n);
-    if (live) await veiligUpsert(supabase, "app_settings", { key: "cat_zichtbaarheid", value: n, updated_at: new Date().toISOString() });
+    if (live) await instelUpsert("cat_zichtbaarheid", n);
   };
   const saveFermentControles = async (n) => {
     const x = Math.min(30, Math.max(1, Math.round(Number(n) || FERMENT_CONTROLES_STANDAARD)));
     setFermentControles(x);
-    if (live) await veiligUpsert(supabase, "app_settings", { key: "ferment_controles", value: { aantal: x }, updated_at: new Date().toISOString() });
+    if (live) await instelUpsert("ferment_controles", { aantal: x });
   };
   const saveHaccpInterval = async (n) => {
     const x = Math.max(1, Math.round(Number(n) || HACCP_INTERVAL_STANDAARD));
     setHaccpInterval(x);
-    if (live) await veiligUpsert(supabase, "app_settings", { key: "haccp_interval", value: { dagen: x }, updated_at: new Date().toISOString() });
+    if (live) await instelUpsert("haccp_interval", { dagen: x });
   };
   React.useMemo(() => zetVormen(eigenVormen), [eigenVormen]);
   const saveVormen = async (lijst) => {
     const uit = [...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))];
     setEigenVormen(uit);
     if (live) {
-      const { error } = await veiligUpsert(supabase, "app_settings", { key: "verpakkingsvormen", value: { namen: uit }, updated_at: new Date().toISOString() });
+      const { error } = await instelUpsert("verpakkingsvormen", { namen: uit });
       if (error) flash("Vorm alleen op dit apparaat bewaard");
     }
   };
@@ -3734,7 +3754,7 @@ function App() {
       if (mepMarkTimer.current) clearTimeout(mepMarkTimer.current);
       mepMarkTimer.current = setTimeout(async () => {
         if (!live) { mepMarkOnbewaard.current = false; return; }
-        try { await veiligUpsert(supabase, "app_settings", { key: "mep_markering", value: n, updated_at: new Date().toISOString() }); } catch (e) {}
+        try { await instelUpsert("mep_markering", n); } catch (e) {}
         // Alleen vrijgeven als er intussen niets nieuws is bijgekomen.
         if (mepMarkRef.current === JSON.stringify(n)) mepMarkOnbewaard.current = false;
       }, 600);
@@ -3748,7 +3768,7 @@ function App() {
     if (DEEL_GAST) return;
     gebruikGewijzigd = () => {
       if (t) clearTimeout(t);
-      t = setTimeout(() => { try { const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}"); if (live) veiligUpsert(supabase, "app_settings", { key: "gebruik_telling", value: d, updated_at: new Date().toISOString() }); } catch (e) {} }, 5000);
+      t = setTimeout(() => { try { const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}"); if (live) instelUpsert("gebruik_telling", d); } catch (e) {} }, 5000);
     };
     return () => { gebruikGewijzigd = null; if (t) clearTimeout(t); };
     // live wordt binnen de timeout gelezen (na initialisatie); [live] als
@@ -3763,14 +3783,14 @@ function App() {
       items: (l.items || []).map((i) => ({ naam: String(i.naam || "").trim(), aantal: String(i.aantal == null ? "" : i.aantal).trim() })).filter((i) => i.naam),
     }));
     setPaklijsten(schoon);
-    if (live) await veiligUpsert(supabase, "app_settings", { key: "paklijsten", value: { lijsten: schoon }, updated_at: new Date().toISOString() });
+    if (live) await instelUpsert("paklijsten", { lijsten: schoon });
   };
   const saveInventaris = async (nieuweItems, nieuweCategorieen) => {
     const items = nieuweItems != null ? nieuweItems : materiaalItems;
     const categorieen = nieuweCategorieen != null ? nieuweCategorieen : materiaalCategorieen;
     setMateriaalItems(items); setMateriaalCategorieen(categorieen);
     if (live) {
-      const { error } = await veiligUpsert(supabase, "app_settings", { key: "bezorg_materialen", value: { items, categorieen }, updated_at: new Date().toISOString() });
+      const { error } = await instelUpsert("bezorg_materialen", { items, categorieen });
       if (error) flash("Materiaal alleen op dit apparaat bewaard");
     }
   };
@@ -3779,7 +3799,7 @@ function App() {
     setTeamNamen(uit);
     // "volledig" zegt dat dit de héle lijst is; zonder die vlag is het een
     // oude opslag met alleen de zelf toegevoegde namen.
-    if (live) { try { await veiligUpsert(supabase, "app_settings", { key: "team_namen", value: { namen: uit, volledig: true }, updated_at: new Date().toISOString() }); } catch (e) {} }
+    if (live) { try { await instelUpsert("team_namen", { namen: uit, volledig: true }); } catch (e) {} }
   };
   // Nieuwe naam getypt in de "wie doet dit"-popup: voortaan overal beschikbaar.
   const voegNaamToe = (naam) => {
@@ -3866,7 +3886,7 @@ function App() {
   const spellingUitzondering = async (namen) => {
     const volgende = [...new Set([...spellingUit, ...namen.map((x) => String(x).toLowerCase())])];
     setSpellingUit(volgende);
-    if (live) await veiligUpsert(supabase, "app_settings", { key: "calc_spelling", value: { namen: volgende }, updated_at: new Date().toISOString() });
+    if (live) await instelUpsert("calc_spelling", { namen: volgende });
   };
   const corrigeerNamen = (nieuw, oud) => {
     const oudeNamen = new Set(((oud && oud.ingredients) || []).map((x) => String((x && x.item) || "").trim().toLowerCase()));
@@ -3895,7 +3915,7 @@ function App() {
     const volgende = { ...naamAlias, [String(van).toLowerCase()]: naar };
     setNaamAlias(volgende);
     if (live) {
-      const { error } = await veiligUpsert(supabase, "app_settings", { key: "calc_alias", value: { paren: volgende }, updated_at: new Date().toISOString() });
+      const { error } = await instelUpsert("calc_alias", { paren: volgende });
       if (error) flash("Alleen lokaal samengevoegd — draai eerst de app_settings-SQL in Supabase");
       else flash(van + " telt nu mee als " + naar);
     } else flash(van + " telt nu mee als " + naar);
@@ -3905,7 +3925,7 @@ function App() {
     const volgende = [...new Set([...negeerIng, String(naam).toLowerCase()])];
     setNegeerIng(volgende);
     if (live) {
-      const { error } = await veiligUpsert(supabase, "app_settings", { key: "calc_negeer", value: { namen: volgende }, updated_at: new Date().toISOString() });
+      const { error } = await instelUpsert("calc_negeer", { namen: volgende });
       if (error) flash("Alleen lokaal weggehaald — draai eerst de app_settings-SQL in Supabase");
     }
   };
@@ -4329,7 +4349,7 @@ function App() {
     setCatSettings(next);
     try { localStorage.setItem("ritme:cats-eigen", JSON.stringify(next.eigen)); localStorage.setItem("ritme:cats-verborgen", JSON.stringify(next.verborgen)); } catch (e) {}
     if (live) {
-      const { error } = await veiligUpsert(supabase, "app_settings", { key: "recipe_categories", value: next, updated_at: new Date().toISOString() });
+      const { error } = await instelUpsert("recipe_categories", next);
       if (error) flash("Categorieën alleen lokaal bewaard — draai eerst de app_settings-SQL in Supabase");
     }
   };
@@ -4380,6 +4400,15 @@ function App() {
   // ---------- Supabase: gedeelde laag laden + live meekijken ----------
   const loadShared = async () => {
     if (!live) { setLoaded(true); return; }
+    // Vanaf hier is alles wat terugkomt een foto van dít moment. Instellingen
+    // die hier daarna zelf zijn gewijzigd, laten we met rust.
+    const gestart = Date.now();
+    // Eén plek waar een instellingsrij vandaan komt: staat er een verse eigen
+    // wijziging tegenover, dan doet deze (oudere) foto niet mee.
+    const instelRij = (sleutel) => {
+      if (!instelVers(sleutel, gestart)) return null;
+      return (cs && cs.data && cs.data.find((r) => r.key === sleutel)) || null;
+    };
     snapshotUitCache = false;
     const [ov, cu, en, pk, di, ba, hi, fp, dh, ct, cl, tn, hc, hr, wd, vs, cs, mev, mko, mpr, mpk, ass, bda, cit] = await Promise.all([
       metSnapshot("recipe_overrides", supabase.from("recipe_overrides").select("*")),
@@ -4450,54 +4479,54 @@ function App() {
     setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
     setStock((vs.data || []).map((r) => ({ id: r.id, product: r.product, qty: r.qty === null ? 0 : Number(r.qty), initialQty: r.initial_qty === null ? 0 : Number(r.initial_qty), unit: r.unit || "", ingredients: Array.isArray(r.ingredients) ? r.ingredients : [], productionDate: String(r.production_date || "").slice(0, 10), expiryDate: String(r.expiry_date || "").slice(0, 10), by: r.made_by || "", recipeId: r.recipe_id || null, storage: r.storage || "", categorie: r.categorie || "" })));
     // Gedeelde categorielijst; ontbreekt de tabel of rij nog, dan blijft de lokale cache gelden.
-    const csRow = (cs && cs.data && cs.data.find((r) => r.key === "recipe_categories")) || null;
-    const negRow = (cs && cs.data && cs.data.find((r) => r.key === "calc_negeer")) || null;
+    const csRow = instelRij("recipe_categories");
+    const negRow = instelRij("calc_negeer");
     if (negRow && negRow.value && Array.isArray(negRow.value.namen)) setNegeerIng(negRow.value.namen);
-    const spRow = (cs && cs.data && cs.data.find((r) => r.key === "calc_spelling")) || null;
+    const spRow = instelRij("calc_spelling");
     if (spRow && spRow.value && Array.isArray(spRow.value.namen)) setSpellingUit(spRow.value.namen);
-    const alRow = (cs && cs.data && cs.data.find((r) => r.key === "calc_alias")) || null;
+    const alRow = instelRij("calc_alias");
     if (alRow && alRow.value && alRow.value.paren) setNaamAlias(alRow.value.paren);
-    const vmRow = (cs && cs.data && cs.data.find((r) => r.key === "verpakkingsvormen")) || null;
+    const vmRow = instelRij("verpakkingsvormen");
     if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
-    const hiRow = (cs && cs.data && cs.data.find((r) => r.key === "haccp_interval")) || null;
+    const hiRow = instelRij("haccp_interval");
     if (hiRow && hiRow.value && Number(hiRow.value.dagen) > 0) setHaccpInterval(Number(hiRow.value.dagen));
-    const fcRow = (cs && cs.data && cs.data.find((r) => r.key === "ferment_controles")) || null;
+    const fcRow = instelRij("ferment_controles");
     if (fcRow && fcRow.value && Number(fcRow.value.aantal) > 0) setFermentControles(Number(fcRow.value.aantal));
-    const bpRow = (cs && cs.data && cs.data.find((r) => r.key === "briefpapier")) || null;
+    const bpRow = instelRij("briefpapier");
     if (bpRow && bpRow.value && typeof bpRow.value === "object") setBriefpapier({ ...BRIEF_STANDAARD, ...bpRow.value });
-    const czRow = (cs && cs.data && cs.data.find((r) => r.key === "cat_zichtbaarheid")) || null;
+    const czRow = instelRij("cat_zichtbaarheid");
     if (czRow && czRow.value && typeof czRow.value === "object") setCatZicht(czRow.value);
-    const pzRow = (cs && cs.data && cs.data.find((r) => r.key === "prod_zicht")) || null;
+    const pzRow = instelRij("prod_zicht");
     if (pzRow && pzRow.value && typeof pzRow.value === "object") setProdZicht(pzRow.value);
-    const evRow = (cs && cs.data && cs.data.find((r) => r.key === "eetvolgorde")) || null;
+    const evRow = instelRij("eetvolgorde");
     if (evRow && evRow.value && Array.isArray(evRow.value.momenten) && evRow.value.momenten.length) setEetvolgorde(schoonEetmomenten(evRow.value.momenten));
-    const moRow = (cs && cs.data && cs.data.find((r) => r.key === "menu_opmaak")) || null;
+    const moRow = instelRij("menu_opmaak");
     if (moRow && moRow.value && typeof moRow.value === "object") setMenuOpmaak({ titel: moRow.value.titel || MENU_TITEL_STANDAARD, kleur: moRow.value.kleur || BRIEF_GROEN_STANDAARD });
-    const kaRow = (cs && cs.data && cs.data.find((r) => r.key === "klant_adres")) || null;
+    const kaRow = instelRij("klant_adres");
     if (kaRow && kaRow.value && typeof kaRow.value === "object") setKlantAdres(kaRow.value);
-    const plRow = (cs && cs.data && cs.data.find((r) => r.key === "paklijsten")) || null;
+    const plRow = instelRij("paklijsten");
     if (plRow && plRow.value && Array.isArray(plRow.value.lijsten)) setPaklijsten(plRow.value.lijsten);
-    const bmRow = (cs && cs.data && cs.data.find((r) => r.key === "bezorg_materialen")) || null;
+    const bmRow = instelRij("bezorg_materialen");
     if (bmRow && bmRow.value) {
       if (Array.isArray(bmRow.value.items)) setMateriaalItems(bmRow.value.items);
       else if (Array.isArray(bmRow.value.namen)) setMateriaalItems(bmRow.value.namen.map((n) => ({ naam: n, categorie: "Overige", opmerking: "", hoeveelheid: "" }))); // migratie oude vorm
       if (Array.isArray(bmRow.value.categorieen) && bmRow.value.categorieen.length) setMateriaalCategorieen(bmRow.value.categorieen);
     }
-    const tnRow = (cs && cs.data && cs.data.find((r) => r.key === "team_namen")) || null;
+    const tnRow = instelRij("team_namen");
     if (tnRow && tnRow.value && Array.isArray(tnRow.value.namen)) {
       const lijst = tnRow.value.volledig ? tnRow.value.namen : [...TEAM.map((m) => m.name), ...tnRow.value.namen];
       setTeamNamen([...new Set(lijst.map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl")));
     }
-    const blRow = (cs && cs.data && cs.data.find((r) => r.key === "bestellijst")) || null;
+    const blRow = instelRij("bestellijst");
     if (blRow && blRow.value && typeof blRow.value === "object") { bestelLijstRef.current = blRow.value; setBestelLijst(blRow.value); }
-    const mmRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_markering")) || null;
+    const mmRow = instelRij("mep_markering");
     if (mmRow && mmRow.value && typeof mmRow.value === "object") {
       const binnen = JSON.stringify(mmRow.value);
       if (!mepMarkOnbewaard.current && binnen !== mepMarkRef.current) { mepMarkRef.current = binnen; setMepMark({ markering: mmRow.value.markering || {}, somAf: mmRow.value.somAf || {} }); }
     }
-    const gtRow = (cs && cs.data && cs.data.find((r) => r.key === "gebruik_telling")) || null;
+    const gtRow = instelRij("gebruik_telling");
     if (gtRow && gtRow.value && typeof gtRow.value === "object") gebruikSamenvoegen(gtRow.value);
-    const mnRow = (cs && cs.data && cs.data.find((r) => r.key === "mep_notitie")) || null;
+    const mnRow = instelRij("mep_notitie");
     if (mnRow && mnRow.value) {
       const v = mnRow.value;
       if (Array.isArray(v.bladen)) setMepNotitie(v);
@@ -4736,6 +4765,21 @@ function App() {
   }, []);
   const openCalc = () => { setCalcOpen(true); try { window.history.pushState({ app: "ritme", calc: true }, ""); } catch (e) {} };
   const closeCalc = () => { setCalcOpen(false); };
+  // Bezorgmateriaal werkt met twee lijsten. De volledige lijst (met de naam
+  // zoals die op de boeking is aangepast) is er voor de kaarten van bestaande
+  // bezorgingen; die moeten hun partij kunnen blijven vinden. De keuzelijst
+  // voor een nieuwe bezorging laat geannuleerde en weggehaalde partijen weg:
+  // daar gaat niets meer heen.
+  const bezorgBoekingen = React.useMemo(
+    () => (boekingen || []).map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; }),
+    [boekingen, koppeling]);
+  const bezorgKeuzeBoekingen = React.useMemo(
+    () => (boekingen || []).filter((b) => {
+      if (isVerwijderd(koppeling, b)) return false;
+      const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null;
+      return statusNL((e && e.status) || b.status) !== "geannuleerd";
+    }).map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; }),
+    [boekingen, koppeling]);
   const recipeById = (id) => recipes.find((r) => r.id === id);
   // Recepten die naar elkaar verwijzen (kruidenrub in buikspek) rekenen door.
   React.useMemo(() => zetRecepten(recipes), [recipes]);
@@ -6140,7 +6184,7 @@ function App() {
           } else flash("Chef-modus aan — geen dubbele artikelen gevonden");
           return true;
         }} onSignOut={() => { if (live) supabase.auth.signOut(); setUser(null); resetTo({ screen: "list" }); }} />}
-        {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={boekingen.map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; })} bezorgLijst={bezorgLijst} canEdit={canEdit}
+        {current.screen === "bezorgmateriaal" && <BezorgScreen boekingen={bezorgBoekingen} keuzeBoekingen={bezorgKeuzeBoekingen} bezorgLijst={bezorgLijst} canEdit={canEdit}
           materiaalItems={materiaalItems} materiaalCategorieen={materiaalCategorieen} onSaveInventaris={canEdit ? saveInventaris : null}
           paklijsten={paklijsten} onSavePaklijsten={canEdit ? savePaklijsten : null}
           onSave={saveBezorgRegistratie} onTerug={boekBezorgTerugname} onBewerk={canEdit ? bewerkBezorgRegistratie : null} onDelete={canEdit ? verwijderBezorgRegistratie : null} onAskName={askName}
@@ -17936,7 +17980,7 @@ function PaklijstKaart({ lijst, canEdit, bewerk, onWijzig, onVerwijder }) {
   );
 }
 
-function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategorieen, onSaveInventaris, paklijsten, onSavePaklijsten, canEdit, onSave, onTerug, onBewerk, onDelete, onAskName, onBack, focusId }) {
+function BezorgScreen({ boekingen, keuzeBoekingen, bezorgLijst, materiaalItems, materiaalCategorieen, onSaveInventaris, paklijsten, onSavePaklijsten, canEdit, onSave, onTerug, onBewerk, onDelete, onAskName, onBack, focusId }) {
   const vandaag = localDate();
   const [nieuwOpen, setNieuwOpen] = useState(false);
   const [gekozen, setGekozen] = useState(null); // { id, naam, datum }
@@ -17950,16 +17994,21 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const partijQuery = zonderAccent(zoek).toLowerCase().trim();
   const striktPartij = (b) => strictMatchAny([b.naam || ""], zoek);
   const zachtPartij = (b) => softMatchAny([b.naam || ""], zoek);
-  const bedoeldeJe = !!partijQuery && !(boekingen || []).some(striktPartij) && (boekingen || []).some(zachtPartij);
+  // Alleen partijen waar nog materiaal heen kan: geannuleerde en weggehaalde
+  // staan er niet tussen. De kaarten van bestaande bezorgingen kijken wél naar
+  // de volledige lijst, anders raakt zo'n kaart zijn partijnaam kwijt zodra de
+  // partij later wordt afgezegd.
+  const kiesbaar = keuzeBoekingen || boekingen;
+  const bedoeldeJe = !!partijQuery && !(kiesbaar || []).some(striktPartij) && (kiesbaar || []).some(zachtPartij);
   const matchtPartij = bedoeldeJe ? zachtPartij : striktPartij;
   const vandaagBoekingen = React.useMemo(() =>
-    (boekingen || []).filter((b) => b.datum === vandaag && matchtPartij(b)).sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || ""))),
-    [boekingen, vandaag, partijQuery, bedoeldeJe]);
+    (kiesbaar || []).filter((b) => b.datum === vandaag && matchtPartij(b)).sort((a, b) => String(a.start_tijd || "").localeCompare(String(b.start_tijd || ""))),
+    [kiesbaar, vandaag, partijQuery, bedoeldeJe]);
   const ouderBoekingen = React.useMemo(() =>
-    (boekingen || []).filter((b) => b.datum !== vandaag && matchtPartij(b))
+    (kiesbaar || []).filter((b) => b.datum !== vandaag && matchtPartij(b))
       .sort((a, b) => String(b.datum || "").localeCompare(String(a.datum || "")))
       .slice(0, partijQuery ? 60 : 30),
-    [boekingen, vandaag, partijQuery, bedoeldeJe]);
+    [kiesbaar, vandaag, partijQuery, bedoeldeJe]);
 
   // Wat staat er in totaal nog buiten, per materiaal (over alle bezorgingen)?
   const buitenPerMateriaal = React.useMemo(() => {
@@ -18019,11 +18068,16 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   const [bezorgModus, setBezorgModus] = useState(false);
   const [bezorgAantallen, setBezorgAantallen] = useState({});
   const zetBezorgAantal = (naam, w) => setBezorgAantallen((m) => { const n = { ...m }; if (String(w).trim()) n[naam] = w; else delete n[naam]; return n; });
+  // Iets meegeven wat niet in de inventaris staat: alleen voor deze ene
+  // bezorging. Het gaat gewoon mee en moet ook gewoon terug, maar de
+  // inventaris blijft ongemoeid — daar horen alleen vaste spullen in.
+  const [losNaam, setLosNaam] = useState("");
+  const [losAantal, setLosAantal] = useState("");
   const startBezorgModus = () => {
     setToonInventaris(true); setBezorgModus(true); setInventarisBewerk(false); setVanafPaklijst(null);
     setTimeout(() => { const el = document.getElementById("bezorg-inventaris"); if (el) el.scrollIntoView({ block: "start" }); }, 60);
   };
-  const stopBezorgModus = () => { setBezorgModus(false); setBezorgAantallen({}); setGekozen(null); setZoek(""); setNotitie(""); setVanafPaklijst(null); };
+  const stopBezorgModus = () => { setBezorgModus(false); setBezorgAantallen({}); setGekozen(null); setZoek(""); setNotitie(""); setVanafPaklijst(null); setLosNaam(""); setLosAantal(""); };
   const opslaanVanuitLijst = async () => {
     const materialen = Object.entries(bezorgAantallen).map(([naam, aantal]) => ({ naam, aantal: Number(aantal) || 0 })).filter((m) => m.aantal > 0);
     if (!gekozen) { alert("Kies eerst de partij waar dit materiaal mee gaat."); return; }
@@ -18052,6 +18106,16 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
   // paklijst): die horen er wél bij, maar hebben geen rij in de lijst.
   const inventarisNamen = React.useMemo(() => new Set((materiaalItems || []).map((i) => String(i.naam || "").trim()).filter(Boolean)), [materiaalItems]);
   const buitenInventaris = Object.keys(bezorgAantallen).filter((n) => !inventarisNamen.has(n));
+  // Typ je toevallig iets dat al in de inventaris staat (ook met andere
+  // hoofdletters), dan vult hij dat vakje in plaats van er een losse regel
+  // naast te zetten.
+  const voegLosToe = () => {
+    const ruw = String(losNaam || "").trim();
+    if (!ruw) return;
+    const bestaand = (materiaalItems || []).map((i) => String(i.naam || "").trim()).find((n) => n && n.toLowerCase() === ruw.toLowerCase());
+    zetBezorgAantal(bestaand || ruw, String(Number(losAantal) > 0 ? Number(losAantal) : 1));
+    setLosNaam(""); setLosAantal("");
+  };
   const wijzigPaklijst = (nieuw) => onSavePaklijsten((paklijsten || []).map((l) => (l.id === nieuw.id ? nieuw : l)));
   const verwijderPaklijst = (id) => onSavePaklijsten((paklijsten || []).filter((l) => l.id !== id));
   return (
@@ -18126,10 +18190,10 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
           {toonInventaris && bezorgModus && (
             <div className="card p-3.5 mb-3 space-y-3" style={{ border: "2px solid " + T.green }}>
               <div className="serif ink text-lg leading-tight">Nieuwe bezorging — vul hieronder per materiaal in wat er meegaat</div>
-              {buitenInventaris.length > 0 && (
-                <div>
-                  <span className="block text-sm font-medium ink mb-1.5">Van de paklijst (staat niet in de inventaris)</span>
-                  <div className="space-y-1.5">
+              <div>
+                <span className="block text-sm font-medium ink mb-1.5">Alleen voor deze bezorging (staat niet in de inventaris)</span>
+                {buitenInventaris.length > 0 && (
+                  <div className="space-y-1.5 mb-1.5">
                     {buitenInventaris.map((n) => (
                       <div key={n} className="flex items-center gap-2">
                         <span className="text-sm ink min-w-0 flex-1 truncate" title={n}>{n}</span>
@@ -18138,8 +18202,19 @@ function BezorgScreen({ boekingen, bezorgLijst, materiaalItems, materiaalCategor
                       </div>
                     ))}
                   </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <input type="text" className="input px-2 py-1.5 text-sm min-w-0 flex-1" placeholder="Bijv. statafel, kruiwagen…" value={losNaam}
+                    onChange={(e) => setLosNaam(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); voegLosToe(); } }} />
+                  <input type="text" inputMode="numeric" className="input px-2 py-1.5 text-sm text-right" style={{ width: "4.5rem" }} placeholder="1" value={losAantal}
+                    onChange={(e) => setLosAantal(e.target.value.replace(/[^0-9]/g, ""))}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); voegLosToe(); } }} />
+                  <button onClick={voegLosToe} className="ff pill rounded-lg px-2.5 py-1.5 text-sm font-medium shrink-0 inline-flex items-center gap-1"
+                    style={{ opacity: losNaam.trim() ? 1 : 0.5 }}><Plus size={13} /> Erbij</button>
                 </div>
-              )}
+                <div className="text-[11.5px] mute mt-1">Gaat mee met deze bezorging en moet ook gewoon terug — de inventaris blijft ongemoeid.</div>
+              </div>
               <div>
                 <span className="block text-sm font-medium ink mb-1.5">Partij</span>
                 {gekozen ? (
@@ -18230,19 +18305,36 @@ function InventarisBeheer({ categorieen: categorieenProp, items: itemsProp, bewe
   const laatst = React.useRef(JSON.stringify({ items: itemsProp, categorieen: categorieenProp }));
   const timer = React.useRef(null);
   const wachtend = React.useRef(null);
+  // Wanneer er hier voor het laatst zelf iets is getypt. Zolang er nog een
+  // opslag klaarstaat én de eerste seconden daarna is wat er binnenkomt ouder
+  // dan wat hier op het scherm staat — dan zou het net getypte teruggedraaid
+  // worden, middenin een woord. Die binnengekomen stand gooien we niet weg: als
+  // het even later nog steeds afwijkt, komt hij alsnog binnen.
+  const getypt = React.useRef(0);
+  const hertest = React.useRef(null);
+  const [hertel, setHertel] = useState(0);
   useEffect(() => {
     const ser = JSON.stringify({ items: itemsProp, categorieen: categorieenProp });
-    if (ser !== laatst.current) { laatst.current = ser; setLokaal({ items: itemsProp, categorieen: categorieenProp }); }
-  }, [itemsProp, categorieenProp]);
+    if (ser === laatst.current) { getypt.current = 0; return; }
+    const rest = getypt.current ? 4000 - (Date.now() - getypt.current) : 0;
+    if (wachtend.current || rest > 0) {
+      if (hertest.current) clearTimeout(hertest.current);
+      hertest.current = setTimeout(() => { hertest.current = null; setHertel((x) => x + 1); }, Math.max(rest, 250));
+      return;
+    }
+    laatst.current = ser;
+    setLokaal({ items: itemsProp, categorieen: categorieenProp });
+  }, [itemsProp, categorieenProp, hertel]);
   const geef = (nItems, nCats) => setLokaal((l) => {
     const n = { items: nItems != null ? nItems : l.items, categorieen: nCats != null ? nCats : l.categorieen };
     laatst.current = JSON.stringify(n);
     wachtend.current = n;
+    getypt.current = Date.now();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { wachtend.current = null; onOpslaan(n.items, n.categorieen); }, 800);
     return n;
   });
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); if (wachtend.current) onOpslaan(wachtend.current.items, wachtend.current.categorieen); }, []);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); if (hertest.current) clearTimeout(hertest.current); if (wachtend.current) onOpslaan(wachtend.current.items, wachtend.current.categorieen); }, []);
   const items = lokaal.items;
   const categorieen = lokaal.categorieen;
   const perCat = (cat) => items.filter((i) => (i.categorie || "Overige") === cat).filter(inZoek);
