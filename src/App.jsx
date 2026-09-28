@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-28p2"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-28q2"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3658,9 +3658,12 @@ function App() {
   // Deze partij als sjabloon voor de volgende keer: de productenlijst en de
   // invulling zoals ze nu staan.
   const bouwSjabloon = (b, dag) => {
-    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    const bron = hand.length ? hand : (autoKeuzesUitBoeking(b) || []);
-    const keuzes = bron.map((k) => ({ miceId: k.miceId != null ? k.miceId : null, naam: k.naam || "", aantal: k.aantal != null ? k.aantal : null, ...(k.kern ? { kern: k.kern } : {}) }));
+    // Precies de lijst die op de kaart staat — dus ook een vaste weeklijst zoals
+    // die van Necker, of een sjabloon dat er al was. Werd hier alleen naar de
+    // handmatige laag en de MICE-bestelling gekeken, dan legde hij voor zo'n
+    // partij een lege lijst vast en leek het herhalen niet opgeslagen.
+    const bron = alleKeuzesVan(koppeling, boekingSleutel, b) || [];
+    const keuzes = bron.map((k) => ({ miceId: k.miceId != null ? k.miceId : null, naam: k.naam || "", aantal: k.aantal != null ? k.aantal : null, ...(k.kern ? { kern: k.kern } : {}), ...(k.tijd ? { tijd: k.tijd } : {}) }));
     const laag = leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
     const inv = laag.filter((x) => (x.onderdelen || []).some((o) => String((o && o.naam) || "").trim())).map((x) => {
       const k = keuzes.find((y) => String(y.miceId) === String(idUitSleutel(x.miceId)));
@@ -3670,13 +3673,15 @@ function App() {
   };
   const zetHerhaal = async (b, keuze) => {
     const dagNu = weekdagVan(b);
+    const dag = keuze === "dag" ? dagNu : null;
+    // Eerst vastleggen wat er nu staat, dan pas de oude sjablonen opruimen —
+    // andersom haalt het opruimen de bron weg waaruit we willen vastleggen.
+    const sj = keuze ? bouwSjabloon(b, dag) : null;
+    if (sj && !sj.keuzes.length && !sj.inv.length) { flash("Er is nog niets om te herhalen — vul de partij eerst in"); return; }
     for (const sl of [herhaalSleutel(b, null), dagNu == null ? null : herhaalSleutel(b, dagNu)]) {
       if (sl && koppeling[sl]) await saveKoppelingSleutel(sl, []);
     }
     if (!keuze) { flash("Deze partij wordt niet meer herhaald"); return; }
-    const dag = keuze === "dag" ? dagNu : null;
-    const sj = bouwSjabloon(b, dag);
-    if (!sj.keuzes.length && !sj.inv.length) { flash("Er is nog niets om te herhalen — vul de partij eerst in"); return; }
     await saveKoppelingSleutel(herhaalSleutel(b, dag), [sj]);
     flash("Herhaalt voortaan voor " + (b.klant || b.naam || "deze klant") + (dag == null ? "" : " op " + DAGNAMEN[dag]));
   };
