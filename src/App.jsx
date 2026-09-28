@@ -560,7 +560,12 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-28k"; // versiestempel — check dit na elke deploy
+// Vensters en tabellen die eerst dicht moeten als je Escape indrukt, in de
+// volgorde waarin ze bovenop elkaar liggen. Een scherm meldt zich hier aan
+// zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
+// beneden af en sluit het eerste wat openstaat.
+const ESC_SLUITERS = { rekentabel: null, som: null };
+const RITME_VERSIE = "2026-09-28l"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -4709,12 +4714,16 @@ function App() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
+      // De rekentabel (verlies of koken) ligt bovenop de rekenmachine zelf.
+      if (ESC_SLUITERS.rekentabel) { e.preventDefault(); ESC_SLUITERS.rekentabel(); return; }
       if (calcOpenRef.current) { e.preventDefault(); setCalcOpen(false); return; }
       if (fabLabelRef.current) { e.preventDefault(); setFabLabelOpen(false); return; }
       // Sta je in een invoerveld, dan stapt de eerste druk daar alleen uit.
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) { e.preventDefault(); try { el.blur(); } catch (x) {} return; }
       if (gastRef.current || DEEL_GAST) return;
+      // Staat de tabel "samen maken" open, dan klapt die eerst in.
+      if (ESC_SLUITERS.som) { e.preventDefault(); ESC_SLUITERS.som(); return; }
       // Op een invulformulier blijven we staan: wegspringen zou het halve werk
       // weggooien. Daar gebruik je de terugknop.
       if (FORM_SCREENS.has(String(schermRef.current || ""))) return;
@@ -6269,6 +6278,12 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+  // Zolang een rekentabel openstaat, sluit Escape die eerst — en pas daarna de
+  // rekenmachine zelf.
+  useEffect(() => {
+    ESC_SLUITERS.rekentabel = tabel ? () => setTabel(null) : null;
+    return () => { ESC_SLUITERS.rekentabel = null; };
+  }, [tabel]);
   const keys = [["Wis", "(", ")", "÷"], ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="]];
   return (
     <>
@@ -13203,7 +13218,7 @@ const versWijzigingen = (b) => {
   return uit;
 };
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, inSom, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, klantInstel }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, klantInstel }) {
   const [geschVoor, setGeschVoor] = useState(null); // { mid, aantal } voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
@@ -13856,8 +13871,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       return (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
                         <MarkTekst tekst={regelTekst} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur}
-                          receptPer={gekoppeld.perIndex} onRecept={onOpenRecipe}
-                          style={inSom && inSom(o) ? { textDecoration: "underline", textUnderlineOffset: "2px" } : undefined} />
+                          receptPer={gekoppeld.perIndex} onRecept={onOpenRecipe} />
                         {zonderKop && j === 0 && isVers && <NieuwTag titel={isVers.titel} />}
                         {!stift && gekoppeld.rest.map((bl, bi) => (
                           <button key={bi} onClick={() => onOpenRecipe(bl.recipeId)} className="ff underline ml-1.5 text-[12.5px]" style={{ color: "#44502f", textDecorationColor: "#b6b2a3" }}>
@@ -14521,6 +14535,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
   const somDagen = 7; // optelsom altijd een hele week
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
+  // Escape klapt "samen maken" eerst in, voordat hij je ergens heen stuurt.
+  useEffect(() => {
+    ESC_SLUITERS.som = somOpen ? () => setSomOpen(false) : null;
+    return () => { ESC_SLUITERS.som = null; };
+  }, [somOpen]);
   const [klaarOpen, setKlaarOpen] = useState(false);
   const [somRij, setSomRij] = useState(null); // uitgeklapte bereiding met partijnamen
   // Vinkjes en stiftmarkeringen zijn gedeeld met het hele team (via de app).
@@ -14666,9 +14685,6 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     }
   }
   const overlap = Object.values(perBereiding).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
-  // Invullingsregels die in de optelsom staan, worden op de kaarten onderstreept.
-  const somSleutels = new Set(Object.values(perBereiding).filter((r) => r.partijen.length > 1).map((r) => r.sleutel));
-  const inSom = (o) => somSleutels.has(o && o.recipeId ? "r:" + o.recipeId : "x:" + normNaam((o && o.naam) || ""));
   const overlapActief = overlap.filter((r) => !somAf[r.sleutel]);
   const overlapKlaar = overlap.filter((r) => somAf[r.sleutel]);
   // Naar de kaart van een partij springen: dag openklappen en scrollen.
@@ -14895,7 +14911,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                         onMepExtra(b, leeg ? null : velden);
                       }
                     }}
-                    onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten" inSom={inSom}
+                    onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten"
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal} adres={adresVan(b)} klant_email={b.klant_email} toonEmail={false}
