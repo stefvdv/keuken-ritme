@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-28h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-28k"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3511,9 +3511,11 @@ function App() {
   // dat moment had. Komt er later een product bij de boeking, dan weten we dat
   // het nieuw is — en niet iets dat hier bewust is weggehaald.
   const saveMepKoppeling = async (b, producten) => {
-    const basis = (leesLaag(koppeling, boekingSleutel, b, "") || autoKeuzesUitBoeking(b) || []).map(keuzeSleutel);
+    const rijen = leesLaag(koppeling, boekingSleutel, b, "") || autoKeuzesUitBoeking(b) || [];
     await saveKoppelingSleutel("mep|id|" + b.id, producten);
-    await saveKoppelingSleutel("mepb|id|" + b.id, [{ basis }]);
+    // De rijen zelf erbij, zodat later te zien is welk veld op de mep is
+    // aangepast en welk veld nog gewoon uit de boeking komt.
+    await saveKoppelingSleutel("mepb|id|" + b.id, [{ basis: rijen.map(keuzeSleutel), rijen }]);
   };
   // Overige mep-velden (gasten, tijd, allergie, notitie) als één object in een
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
@@ -6236,6 +6238,37 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
     setExpr((e) => e + t);
   };
   useEffect(() => { setResult(open ? evalExpr(expr) : ""); }, [expr, open]);
+  // Ook gewoon met het toetsenbord te bedienen: cijfers, komma en rekentekens,
+  // Enter voor "=", backspace wist het laatste teken, Delete wist alles. Staat
+  // de cursor in een invoerveld, dan blijft het typen daar — anders zou de
+  // rekenmachine tekens uit een naam of invulling wegkapen. Escape laten we
+  // met rust: die sluit de rekenmachine al.
+  const tapRef = React.useRef(tap);
+  tapRef.current = tap;
+  useEffect(() => {
+    if (!open) return;
+    const inVeld = () => { try { const el = document.activeElement; return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable); } catch (e) { return false; } };
+    const onKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || inVeld()) return;
+      const k = e.key;
+      let t = null;
+      if (/^[0-9]$/.test(k)) t = k;
+      else if (k === "," || k === ".") t = ",";
+      else if (k === "+") t = "+";
+      else if (k === "-") t = "−";
+      else if (k === "*" || k === "x" || k === "X") t = "×";
+      else if (k === "/" || k === ":") t = "÷";
+      else if (k === "%" || k === "(" || k === ")") t = k;
+      else if (k === "Enter" || k === "=") t = "=";
+      else if (k === "Backspace") t = "⌫";
+      else if (k === "Delete" || k === "c" || k === "C") t = "Wis";
+      if (t == null) return;
+      e.preventDefault();
+      tapRef.current(t);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   const keys = [["Wis", "(", ")", "÷"], ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="]];
   return (
     <>
@@ -11071,14 +11104,15 @@ const splitsPerDag = (lijst) => (lijst || []).flatMap(dagVarianten);
 // Bij welke dag hoort een gekozen product? Handmatige aanpassingen bewaren de
 // hele lijst in één laag, dus de dag zoeken we op in de oorspronkelijke regels.
 // Wat daar niet in staat (zelf toegevoegde producten) hoort bij de eerste dag.
-const keuzeOpDag = (b, k) => {
-  if (!b || !b.meerdaags) return true;
-  if (k && k.dag) return String(k.dag) === b.datum; // zelf op een dag gezet
+const dagVanKeuze = (b, k) => {
+  if (!b || !b.meerdaags) return "";
+  if (k && k.dag) return String(k.dag); // zelf op een dag gezet
   for (const r of b.alleRegels || []) {
-    if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam)) return (r.dag || b.meerdaags.eersteDag) === b.datum;
+    if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam)) return String(r.dag || b.meerdaags.eersteDag);
   }
-  return b.datum === b.meerdaags.eersteDag;
+  return String(b.meerdaags.eersteDag);
 };
+const keuzeOpDag = (b, k) => (!b || !b.meerdaags ? true : dagVanKeuze(b, k) === b.datum);
 const keuzesOpDag = (b, lijst) => (b && b.meerdaags ? (lijst || []).filter((k) => keuzeOpDag(b, k)) : (lijst || []));
 // Alle producten van een boeking, ook die van de andere dagen. Een dagvariant
 // toont maar één dag; bij het opslaan moeten we de rest kennen.
@@ -11093,13 +11127,26 @@ const alleKeuzesVan = (koppeling, boekingSleutel, b) => {
 // dag mee waarop het is gezet. Zonder dat laatste viel zo'n product terug op
 // de eerste dag en leek het verdwenen.
 const keuzesBewaren = (koppeling, boekingSleutel, b, regels) => {
-  // Alles wat niet uit de boeking zelf komt — met de hand toegevoegd, met of
-  // zonder MICE-nummer — hoort bij de dag waarop het is gezet.
-  const uitDeBoeking = (k) => ((b && b.alleRegels) || []).some((r) => String(r.id) === String(k && k.miceId) && (!k.naam || !r.naam || r.naam === k.naam));
-  const lijst = (regels || []).map((k) => (b && b.meerdaags && k && !k.dag && !uitDeBoeking(k) ? { ...k, dag: b.datum } : k));
+  // Wat op déze dag niet in de boeking staat, is hier met de hand toegevoegd en
+  // hoort dus bij déze dag — ook als hetzelfde product op een andere dag wél uit
+  // MICE komt. Werd daar de hele boeking vergeleken, dan kreeg zo'n product geen
+  // dagstempel, viel het terug op de dag van die MICE-regel en stapelde het zich
+  // daar bij elke keer opslaan opnieuw op.
+  const opDezeDag = (k) => ((b && b.regels) || []).some((r) => String(r.id) === String(k && k.miceId) && (!k.naam || !r.naam || r.naam === k.naam));
+  const lijst = (regels || []).map((k) => (b && b.meerdaags && k && !k.dag && !opDezeDag(k) ? { ...k, dag: b.datum } : k));
   if (!b || !b.meerdaags) return lijst;
   const anderen = alleKeuzesVan(koppeling, boekingSleutel, b).filter((k) => !keuzeOpDag(b, k));
-  return [...anderen, ...lijst];
+  // Hetzelfde product met hetzelfde aantal op dezelfde dag komt één keer in de
+  // laag. Dat houdt het opslaan herhaalbaar en ruimt op wat eerder stapelde.
+  const uit = [];
+  const gezien = new Set();
+  for (const k of [...anderen, ...lijst]) {
+    const s = keuzeSleutel(k) + "\u0001" + dagVanKeuze(b, k) + "\u0001" + String(k && k.aantal == null ? "" : k.aantal);
+    if (gezien.has(s)) continue;
+    gezien.add(s);
+    uit.push(k);
+  }
+  return uit;
 };
 // Het hoogste productaantal van deze dag, om naast het aantal gasten te zetten
 // wanneer een programmadeel voor veel meer mensen is dan de boeking zelf.
@@ -11218,16 +11265,38 @@ const keuzeSleutel = (k) => String(k && k.miceId != null ? k.miceId : "") + "\u0
 // komt hier stilletjes verdwijnt: we vergelijken met de situatie van toen, en
 // alles wat er sindsdien bij is gekomen hoort er alsnog bij. Geeft undefined
 // terug als er geen mep-aanpassing is — dan telt gewoon de boeking.
+// Velden die vanuit de boeking door mogen stromen naar de mep zolang ze op de
+// mep zelf niet zijn aangeraakt.
+const MEP_VELDEN = ["aantal", "tijd", "act", "dag", "kern"];
+const gelijk = (a, b) => String(a == null ? "" : a) === String(b == null ? "" : b);
+// Drie standen naast elkaar: wat de boeking toen had, wat de mep ervan maakte
+// en wat de boeking nu heeft. Staat er op de mep nog de waarde van toen, dan is
+// dat veld hier niet aangeraakt en telt de nieuwe waarde uit de boeking. Is het
+// op de mep wél veranderd, dan heeft die verandering het laatste woord.
+const mepSamen = (over, toen, nu) => {
+  if (!toen || !nu) return over;
+  let uit = over;
+  for (const v of MEP_VELDEN) {
+    if (!gelijk(over && over[v], toen[v])) continue; // op de mep aangepast: die wint
+    if (gelijk(nu[v], toen[v])) continue; // in de boeking niets veranderd
+    if (uit === over) uit = { ...over };
+    if (nu[v] == null || nu[v] === "") delete uit[v]; else uit[v] = nu[v];
+  }
+  return uit;
+};
 const mepKeuzes = (koppeling, boekingSleutel, b) => {
   const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
   if (over === undefined) return undefined;
-  const nu = leesLaag(koppeling, boekingSleutel, b, "") || [];
+  const nu = alleKeuzesVan(koppeling, boekingSleutel, b);
   const basisRij = (leesLaag(koppeling, boekingSleutel, b, "mepb|") || [])[0];
   const toen = basisRij && Array.isArray(basisRij.basis) ? new Set(basisRij.basis) : null;
   if (toen) {
-    const erin = new Set(over.map(keuzeSleutel));
+    const nuBij = new Map((nu || []).map((k) => [keuzeSleutel(k), k]));
+    const toenBij = Array.isArray(basisRij.rijen) ? new Map(basisRij.rijen.map((k) => [keuzeSleutel(k), k])) : null;
+    const samen = toenBij ? over.map((k) => mepSamen(k, toenBij.get(keuzeSleutel(k)), nuBij.get(keuzeSleutel(k)))) : over;
+    const erin = new Set(samen.map(keuzeSleutel));
     const erbij = nu.filter((k) => !erin.has(keuzeSleutel(k)) && !toen.has(keuzeSleutel(k)));
-    return erbij.length ? [...over, ...erbij] : over;
+    return erbij.length ? [...samen, ...erbij] : samen;
   }
   // Oudere aanpassing zonder die vergelijking: een gevulde lijst laten we met
   // rust, maar een lege lijst is bijna altijd een ongelukje — dan valt hij
@@ -11677,7 +11746,14 @@ const autoKeuzesUitBoeking = (b) => {
 // in de optelsom samenvallen.
 const normNaam = (t) => zonderAccent(String(t || "")).toLowerCase().replace(/[^a-z0-9]+/g, "");
 // Losse tekst splitsen op scheidingstekens: elk onderdeel telt apart mee.
-const losSplits = (naam, porties, item, gram) => String(naam || "").split(/[|,\/]+/).map((t) => t.trim()).filter(Boolean).map((t, i) => ({ soort: "los", naam: t, porties, item, gram: i === 0 ? (gram || 0) : 0 }));
+// Met heel=true blijft de regel in één stuk, scheidingstekens en al: zo staat er
+// in "samen maken" één bereiding per invulregel in plaats van los woord voor
+// los woord. De markering knipt hem bij het tonen alsnog in stukjes.
+const losSplits = (naam, porties, item, gram, heel) => {
+  const t = String(naam || "").trim();
+  if (heel) return t ? [{ soort: "los", naam: t.replace(/\s*([|,\/])\s*/g, " $1 ").replace(/\s{2,}/g, " ").trim(), porties, item, gram: gram || 0 }] : [];
+  return String(naam || "").split(/[|,\/]+/).map((x) => x.trim()).filter(Boolean).map((x, i) => ({ soort: "los", naam: x, porties, item, gram: i === 0 ? (gram || 0) : 0 }));
+};
 // Sorteren op eetmoment: aankomst → ontbijt → lunch → snack → amuse → diner → borrel.
 // De volgorde waarin eetmomenten op de kaart komen. Een product valt in de
 // eerste groep waarvan een woord voorkomt in de naam of de categorie. Groepen
@@ -11748,7 +11824,7 @@ const portieGram = (t) => { const p = eersteGetal(t); if (!(p > 0) || !portieIsG
 // Eén keuze omzetten naar mep-regels via de culinaire invulling. Een invulling
 // kan uit meerdere onderdelen bestaan (recept, calc-product of vrije tekst),
 // elk met een eigen hoeveelheid; elk onderdeel telt los mee in de optelsom.
-const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishById, recipeById) => {
+const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishById, recipeById, heel) => {
   const vert = keuze.miceId && prodKoppeling ? (prodKoppeling[invulSleutel(boeking, keuze)] || prodKoppeling[keuze.miceId]) : null;
   const aantal = keuze.aantal || boeking.gasten || 0;
   const perOnderdeel = (o) => {
@@ -11761,30 +11837,30 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
       const r = recipeById(o.recipeId);
       return [{ soort: "recept", id: o.recipeId, naam: (r && r.name) || o.receptNaam || "recept", porties, item: keuze.naam || "", gram }];
     }
-    if (o.recipeId) return losSplits(o.naam, porties, keuze.naam || "", gram);
+    if (o.recipeId) return losSplits(o.naam, porties, keuze.naam || "", gram, heel);
     if (o.productId) {
       const p = (producten || []).find((x) => x.id === o.productId) || null;
       const uit = p ? mepVoorProduct(p, porties, calcItems, dishById, recipeById) : [];
-      return uit.length ? uit : losSplits(o.naam, porties, keuze.naam || "");
+      return uit.length ? uit : losSplits(o.naam, porties, keuze.naam || "", 0, heel);
     }
-    return o.naam ? losSplits(o.naam, porties, keuze.naam || "", gram) : [];
+    return o.naam ? losSplits(o.naam, porties, keuze.naam || "", gram, heel) : [];
   };
   if (vert && Array.isArray(vert.onderdelen) && vert.onderdelen.length) return vert.onderdelen.flatMap(perOnderdeel);
   if (vert && vert.recipeId) {
     const r = recipeById(vert.recipeId);
     return [{ soort: "recept", id: vert.recipeId, naam: (r && r.name) || vert.naam || "recept", porties: aantal, item: keuze.naam || "" }];
   }
-  if (vert && vert.tekst) return losSplits(vert.tekst, aantal, keuze.naam || "");
+  if (vert && vert.tekst) return losSplits(vert.tekst, aantal, keuze.naam || "", 0, heel);
   const id = (vert && vert.productId) || keuze.productId;
   if (id) {
     const p = (producten || []).find((x) => x.id === id) || null;
     return p ? mepVoorProduct(p, aantal, calcItems, dishById, recipeById) : [];
   }
   // Vrije regel (geen MICE-product, geen eigen product): telt als losse bereiding.
-  if (!keuze.miceId && keuze.naam) return losSplits(keuze.kern || keuze.naam, aantal, "");
+  if (!keuze.miceId && keuze.naam) return losSplits(keuze.kern || keuze.naam, aantal, "", 0, heel);
   // Hernoemde regels uit oudere versies dragen nog een miceId maar zijn
   // duidelijk eigen tekst (scheidingstekens): tel ze toch als los.
-  if (keuze.miceId && /[|,\/]/.test(String(keuze.naam || ""))) return losSplits(keuze.naam, aantal, "");
+  if (keuze.miceId && /[|,\/]/.test(String(keuze.naam || ""))) return losSplits(keuze.naam, aantal, "", 0, heel);
   return [];
 };
 const heeftInvulling = (keuze, prodKoppeling) => {
@@ -13720,9 +13796,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 const groepVan = (k) => {
                   // Een tijd die hier zelf is ingevuld gaat voor op die van MICE:
                   // zo zet je een zelf toegevoegd product op zijn eigen moment.
-                  if (k && k.tijd) return { act: String(k.act || ""), tijd: String(k.tijd) };
-                  if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) return { act: r.act || "", tijd: r.tijd || "" };
-                  return { act: "", tijd: "" };
+                  const uitMice = (k && k.miceId) ? ((b && b.regels) || []).find((r) => String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) : null;
+                  // Alleen de tijd verzetten laat de naam van het programmadeel staan.
+                  if (k && k.tijd) return { act: String(k.act || (uitMice && uitMice.act) || ""), tijd: String(k.tijd) };
+                  if (uitMice) return { act: uitMice.act || "", tijd: uitMice.tijd || "" };
+                  return { act: String((k && k.act) || ""), tijd: "" };
                 };
                 const groepen = [];
                 for (const k of toonKeuzes) {
@@ -14565,7 +14643,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   // Nonfood telt niet mee in de mep-berekening en dus ook niet in "samen
   // maken": servies wordt niet bereid.
-  const mepVan = (b) => gekozen(b).filter((k) => isMepRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
+  const mepVan = (b, heel) => gekozen(b).filter((k) => isMepRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById, heel));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
   // te nemen met het herhaalknopje in de bewerkstand.
   const vorigeInvulling = (b, miceId, doelAantal) =>
@@ -14575,7 +14653,9 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   for (const b of partijen) {
     if (!somSet.includes(b.datum)) continue;
     if (isStandaardPartij(koppeling, boekingSleutel, b)) continue; // vaste partij: hoort niet in de optelsom
-    for (const m of mepVan(b)) {
+    // Hele invulregels, inclusief de scheidingstekens: "Soep | courgette |
+    // komijn" is één bereiding, geen drie losse woorden.
+    for (const m of mepVan(b, true)) {
       const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + normNaam(m.naam);
       if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, gezien: new Set(), partijen: [] };
       const r = perBereiding[sleutel];
