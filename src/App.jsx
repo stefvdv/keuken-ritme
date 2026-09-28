@@ -560,7 +560,7 @@ const CLEANING_SEED = [
 ];
 const CHECK_HOUR = 16, CHECK_MIN = 45; // dagelijkse schoonmaakcontrole
 const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
-const RITME_VERSIE = "2026-09-27j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-28h"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -4648,6 +4648,10 @@ function App() {
     zet();
     const t1 = setTimeout(zet, 60);
     const t2 = setTimeout(zet, 250);
+    // De knop waarmee je zojuist navigeerde houdt de focus vast. Enter zou dan
+    // die knop opnieuw indrukken in plaats van het etiketvenster te openen —
+    // vandaar dat het pas werkte nadat je ergens op de pagina had geklikt.
+    try { const el = document.activeElement; if (el && el.tagName === "BUTTON") el.blur(); } catch (e) {}
     return () => {
       clearTimeout(t1); clearTimeout(t2);
       if (terugNaar) delete scrollPerDiepte.current[diepte]; // eenmalig terugzetten
@@ -4657,6 +4661,15 @@ function App() {
   const FORM_SCREENS = new Set(["recipeForm", "dishForm", "batchForm", "voorraadForm", "werkDocForm", "fermentGuideForm", "techTableForm", "haccpForm", "haccpRecordForm", "noteForm", "batchEindmeting"]);
   const calcOpenRef = React.useRef(false);
   useEffect(() => { calcOpenRef.current = calcOpen; }, [calcOpen]);
+  // Sta je op een invulformulier, dan is dat werk in uitvoering.
+  useEffect(() => {
+    const opForm = FORM_SCREENS.has(String((current && current.screen) || ""));
+    zetBezig("formulier", opForm);
+    return () => zetBezig("formulier", false);
+  }, [current]);
+  const gastRef = React.useRef(false); // meelezer via een deellink: geen mep
+  const schermRef = React.useRef(null); // welk scherm er nu open staat, voor de Escape-toets
+  schermRef.current = current && current.screen;
   const [fabLabelOpen, setFabLabelOpen] = useState(false); // vrij etiket via de zwevende etiket-knop
   // Enter zonder cursor in een invoerveld opent het etiketvenster — handig als
   // je met natte handen net even geen muis wil pakken.
@@ -4686,9 +4699,27 @@ function App() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  // Escape sluit eerst de rekenmachine.
+  // Escape brengt je terug naar de mise en place, waar je ook bent. Staat er
+  // eerst nog iets open — een venster, de rekenmachine, het etiket, een kaart
+  // in bewerkstand — dan sluit de eerste druk dat, en brengt de tweede je naar
+  // de mep. Vensters luisteren zelf mee in de vangfase en houden de toets dan
+  // tegen, dus die komen hier niet eens aan.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") { if (calcOpenRef.current) { e.preventDefault(); setCalcOpen(false); } else if (fabLabelRef.current) { e.preventDefault(); setFabLabelOpen(false); } } };
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (calcOpenRef.current) { e.preventDefault(); setCalcOpen(false); return; }
+      if (fabLabelRef.current) { e.preventDefault(); setFabLabelOpen(false); return; }
+      // Sta je in een invoerveld, dan stapt de eerste druk daar alleen uit.
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) { e.preventDefault(); try { el.blur(); } catch (x) {} return; }
+      if (gastRef.current || DEEL_GAST) return;
+      // Op een invulformulier blijven we staan: wegspringen zou het halve werk
+      // weggooien. Daar gebruik je de terugknop.
+      if (FORM_SCREENS.has(String(schermRef.current || ""))) return;
+      e.preventDefault();
+      resetTo({ screen: "list" });
+      setSection("mep");
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -5937,6 +5968,7 @@ function App() {
   const actieveSectie = current.screen === "list" ? section : screenSectie(current);
 
   const gast = !!(user && user.gast);
+  gastRef.current = gast;
   return (
     <div className="min-h-screen flex" style={{ background: T.paper, color: "#33352c" }}>
       <BrandCSS />
@@ -8539,7 +8571,7 @@ function ProductZichtBeheer({ producten, catVan, waarde, onZet }) {
   const getoond = alles || q ? lijst : lijst.slice(0, 12);
   return (
     <div className="card p-4">
-      <p className="text-sm mute mb-3">Per product bepalen waar het thuishoort. Dit wint van de categorie, dus hier zet je de uitzonderingen. Zonder eigen keuze volgt een product zijn categorie; die staat er dan tussen haakjes bij.</p>
+      <p className="text-sm mute mb-3">Per product bepalen waar het thuishoort. Dit wint van de categorie, dus hier zet je de uitzonderingen. Zonder eigen keuze volgt een product zijn categorie; die staat er dan tussen haakjes bij. <span className="ink">Nonfood</span> is voor servies, bestek en glaswerk: die blijven met hun eigen naam en aantal op de kaart staan en krijgen een opmerkingveld in plaats van een culinaire invulling.</p>
       <input className="input px-2 py-1.5 text-sm w-full" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een product" />
       {!q && !lijst.length && <p className="text-xs mute mt-2">Nog geen uitzonderingen ingesteld — zoek hierboven een product op.</p>}
       {!q && lijst.length > 0 && <p className="text-xs mute mt-2">{lijst.length} {lijst.length === 1 ? "uitzondering" : "uitzonderingen"} ingesteld.</p>}
@@ -8555,8 +8587,9 @@ function ProductZichtBeheer({ producten, catVan, waarde, onZet }) {
               </span>
               <select className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "auto" }} value={nu}
                 onChange={(e) => onZet(p.id, e.target.value)}>
-                <option value="">Volgt de categorie ({standaard === "keuken" ? "keuken" : standaard === "boeking" ? "alleen boeking" : "verborgen"})</option>
+                <option value="">Volgt de categorie ({standaard === "keuken" ? "keuken" : standaard === "nonfood" ? "nonfood" : standaard === "boeking" ? "alleen boeking" : "verborgen"})</option>
                 <option value="keuken">Keuken (mep + boeking)</option>
+                <option value="nonfood">Nonfood (mep + boeking, met opmerking)</option>
                 <option value="boeking">Alleen boeking</option>
                 <option value="verborgen">Verborgen (onder Overige)</option>
               </select>
@@ -8749,6 +8782,7 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
                           <select className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "auto" }} value={huidig}
                             onChange={(e) => onCatZicht(sleutel, e.target.value)}>
                             <option value="keuken">Keuken (mep + boeking)</option>
+                            <option value="nonfood">Nonfood (mep + boeking, met opmerking)</option>
                             <option value="boeking">Alleen boeking</option>
                             <option value="verborgen">Verborgen (onder Overige)</option>
                           </select>
@@ -11039,12 +11073,34 @@ const splitsPerDag = (lijst) => (lijst || []).flatMap(dagVarianten);
 // Wat daar niet in staat (zelf toegevoegde producten) hoort bij de eerste dag.
 const keuzeOpDag = (b, k) => {
   if (!b || !b.meerdaags) return true;
+  if (k && k.dag) return String(k.dag) === b.datum; // zelf op een dag gezet
   for (const r of b.alleRegels || []) {
     if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam)) return (r.dag || b.meerdaags.eersteDag) === b.datum;
   }
   return b.datum === b.meerdaags.eersteDag;
 };
 const keuzesOpDag = (b, lijst) => (b && b.meerdaags ? (lijst || []).filter((k) => keuzeOpDag(b, k)) : (lijst || []));
+// Alle producten van een boeking, ook die van de andere dagen. Een dagvariant
+// toont maar één dag; bij het opslaan moeten we de rest kennen.
+const alleKeuzesVan = (koppeling, boekingSleutel, b) => {
+  const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
+  if (hand.length) return hand;
+  const heel = b && b.alleRegels ? { ...b, regels: b.alleRegels } : b;
+  return herhaalKeuzes(koppeling, heel) || neckerKeuzes(heel, boekingSleutel) || autoKeuzesUitBoeking(heel) || [];
+};
+// Opslaan vanuit één dag van een meerdaagse boeking: de producten van de
+// andere dagen blijven staan, en wat hier met de hand is toegevoegd krijgt de
+// dag mee waarop het is gezet. Zonder dat laatste viel zo'n product terug op
+// de eerste dag en leek het verdwenen.
+const keuzesBewaren = (koppeling, boekingSleutel, b, regels) => {
+  // Alles wat niet uit de boeking zelf komt — met de hand toegevoegd, met of
+  // zonder MICE-nummer — hoort bij de dag waarop het is gezet.
+  const uitDeBoeking = (k) => ((b && b.alleRegels) || []).some((r) => String(r.id) === String(k && k.miceId) && (!k.naam || !r.naam || r.naam === k.naam));
+  const lijst = (regels || []).map((k) => (b && b.meerdaags && k && !k.dag && !uitDeBoeking(k) ? { ...k, dag: b.datum } : k));
+  if (!b || !b.meerdaags) return lijst;
+  const anderen = alleKeuzesVan(koppeling, boekingSleutel, b).filter((k) => !keuzeOpDag(b, k));
+  return [...anderen, ...lijst];
+};
 // Het hoogste productaantal van deze dag, om naast het aantal gasten te zetten
 // wanneer een programmadeel voor veel meer mensen is dan de boeking zelf.
 const piekVanDag = (b, lijst) => {
@@ -11216,6 +11272,16 @@ const catZichtVan = (cat) => CAT_ZICHT[String(cat || "").toLowerCase().trim()] |
 let PROD_ZICHT = {};
 const zetProdZicht = (m) => { PROD_ZICHT = m && typeof m === "object" ? m : {}; };
 const prodZichtVan = (id) => (id == null ? "" : PROD_ZICHT[String(id)] || "");
+// Nonfood: servies, bestek, glaswerk — spullen die wel klaargezet moeten
+// worden maar geen gerecht zijn. Ze staan gewoon op de mep en de boeking, met
+// hun eigen naam en aantal, en krijgen een opmerkingveld in plaats van een
+// culinaire invulling. In te stellen per categorie en per product in Extras.
+const isNonfoodRegel = (k, catVan) => {
+  if (prodZichtVan(k.miceId) === "nonfood") return true;
+  if (prodZichtVan(k.miceId)) return false; // een andere eigen keuze gaat voor
+  const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
+  return catZichtVan(cat) === "nonfood";
+};
 const isKeukenRegel = (k, catVan) => {
   const id = Number(k.miceId);
   const eigen = prodZichtVan(k.miceId);
@@ -11241,11 +11307,11 @@ const MEP_VERBERG_NAAM = /(podium|partybox|microfoon|geluidsman|geluidstechniek|
 const isMepRegel = (k, catVan) => {
   if (!isKeukenRegel(k, catVan)) return false;
   const eigen = prodZichtVan(k.miceId);
-  if (eigen) return eigen === "keuken";
+  if (eigen) return eigen === "keuken" || eigen === "nonfood";
   if (TOON_IDS.has(Number(k.miceId))) return true;
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
   const zicht = catZichtVan(cat);
-  if (zicht) return zicht === "keuken"; // expliciete keuze wint, ook van het naam-vangnet
+  if (zicht) return zicht === "keuken" || zicht === "nonfood"; // expliciete keuze wint, ook van het naam-vangnet
   if (cat && MEP_VERBERG_CAT.test(cat)) return false;
   return !MEP_VERBERG_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase());
 };
@@ -11255,7 +11321,7 @@ const prodZichtStandaard = (p, catVan) => {
   const k = { miceId: p.id, naam: p.naam };
   const bewaar = PROD_ZICHT; PROD_ZICHT = {};
   let uit;
-  try { uit = !isKeukenRegel(k, catVan) ? "verborgen" : isMepRegel(k, catVan) ? "keuken" : "boeking"; }
+  try { uit = !isKeukenRegel(k, catVan) ? "verborgen" : isNonfoodRegel(k, catVan) ? "nonfood" : isMepRegel(k, catVan) ? "keuken" : "boeking"; }
   finally { PROD_ZICHT = bewaar; }
   return uit;
 };
@@ -12705,8 +12771,10 @@ const koppelBijlagen = (tekst, bijlagen) => {
 // Markeren met de stift, en zonder stift het gerecht aanklikken om het recept
 // te openen. Een snelle dubbelklik markeert altijd (groen als er geen stift
 // aanstaat), zodat afvinken geen omweg via de stiftknoppen nodig heeft.
-function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept }) {
-  const delen = String(tekst || "").split(MARK_SCHEIDING);
+function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept, heel }) {
+  // heel=true: niet opknippen in stukjes, maar de hele tekst als één
+  // markeerbaar blok behandelen. Zo kleurt een productregel in één keer.
+  const delen = heel ? [String(tekst || "")] : String(tekst || "").split(MARK_SCHEIDING);
   const klikRef = React.useRef(null);
   useEffect(() => () => { if (klikRef.current) clearTimeout(klikRef.current); }, []);
   let idx = 0;
@@ -12754,6 +12822,14 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
   );
 }
 
+// Wie iets aan het invullen is, zet zichzelf hier even op de lijst. De
+// service worker leest dat uit (window.__ritmeBezig) en wacht met het
+// doorvoeren van een nieuwe versie — die ververst namelijk de bladzijde.
+const BEZIG_MET = new Set();
+const zetBezig = (sleutel, aan) => {
+  if (aan) BEZIG_MET.add(sleutel); else BEZIG_MET.delete(sleutel);
+  try { window.__ritmeBezig = BEZIG_MET.size > 0; } catch (e) {}
+};
 const GEEN_MARKERING = {};
 const fmtGram = (n) => { const g = Math.round(Number(n) || 0); return g >= 10000 ? (Math.round(g / 100) / 10).toLocaleString("nl-NL") + " kg" : g.toLocaleString("nl-NL") + " g"; };
 const fmtPorties = (n) => { const r = Math.round((Number(n) || 0) * 10) / 10; return r % 1 ? r.toFixed(1).replace(".", ",") : String(r); };
@@ -13092,17 +13168,21 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   // Openstaand bewerkwerk gaat nooit verloren: bij het verlaten van de pagina,
   // het wegleggen van de app of het sluiten van het tabblad wordt het bewaard.
   useEffect(() => {
-    const bewaar = () => { if (bewerkRef2.current) opslaanRef.current(); };
-    const bijVerbergen = () => { if (document.visibilityState === "hidden") bewaar(); };
-    window.addEventListener("pagehide", bewaar);
+    // Wegleggen van de app of naar een ander tabblad: alleen bewaren, de kaart
+    // blijft openstaan zodat je verder kunt waar je gebleven was.
+    const bewaar = (sluiten) => { if (bewerkRef2.current) opslaanRef.current(sluiten); };
+    const bijVerbergen = () => { if (document.visibilityState === "hidden") bewaar(false); };
+    const bijWeggaan = () => bewaar(false);
+    window.addEventListener("pagehide", bijWeggaan);
     document.addEventListener("visibilitychange", bijVerbergen);
     return () => {
-      window.removeEventListener("pagehide", bewaar);
+      window.removeEventListener("pagehide", bijWeggaan);
       document.removeEventListener("visibilitychange", bijVerbergen);
-      bewaar(); // ook bij het wegklikken van de kaart zelf
+      bewaar(false); // ook bij het wegklikken van de kaart zelf
     };
   }, []);
   useEffect(() => { bewerkRef2.current = bewerk; });
+  useEffect(() => { zetBezig("kaart:" + b.id, bewerk); return () => zetBezig("kaart:" + b.id, false); }, [bewerk, b.id]);
   const productInfoHover = (k) => {
     const info = productInfoVoor(k);
     if (!info) return undefined;
@@ -13160,7 +13240,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   // popup kan melden dat er iets is overgeslagen.
   const menuVanPartij = () => {
     const uit = []; let leeg = 0;
-    for (const k of keuzesS.filter((k2) => !/bezorg/i.test(String(k2.naam || ""))).filter((k2) => isMepRegel(k2, catVan))) {
+    for (const k of keuzesS.filter((k2) => !/bezorg/i.test(String(k2.naam || ""))).filter((k2) => isMepRegel(k2, catVan) && !isNonfoodRegel(k2, catVan))) {
       const od = k.miceId ? onderdelenVan(invulSleutel(b, k)) : null;
       const regels = [];
       for (const o of od || []) {
@@ -13318,6 +13398,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 
   const startBewerk = () => {
     const groepTijd = (k) => {
+      if (k && k.tijd) return String(k.tijd); // een zelf gezette tijd gaat voor
       if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) return r.tijd || "";
       return "";
     };
@@ -13483,7 +13564,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     return { ...m, [mid]: rs.filter((_, jj) => jj !== j) };
   });
   const opslaanRef = React.useRef(() => {});
-  const opslaan = () => {
+  // sluiten=false bewaart het werk maar laat de kaart open staan — dat is wat
+  // er moet gebeuren als je even naar een ander tabblad gaat.
+  const opslaan = (sluiten) => {
     laatsteOpslaan.current = Date.now();
     const schoon = regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim());
     onOpslaan(schoon, magExtra ? { ...velden, allergie: alTekst(alRijen), naam: magNaamStatus ? velden.naam : "", status: magNaamStatus ? velden.status : "" } : null);
@@ -13503,7 +13586,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         else for (const w of wijzigingen) onInvulling(w.miceId, w.inv);
       }
     }
-    setBewerk(false);
+    if (sluiten !== false) setBewerk(false);
   };
   opslaanRef.current = opslaan;
 
@@ -13635,6 +13718,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // Groeperen per programmadeel (MICE-activity): kop met naam en
                 // tijd, witregel ertussen. Zonder programmadeel: geen kop.
                 const groepVan = (k) => {
+                  // Een tijd die hier zelf is ingevuld gaat voor op die van MICE:
+                  // zo zet je een zelf toegevoegd product op zijn eigen moment.
+                  if (k && k.tijd) return { act: String(k.act || ""), tijd: String(k.tijd) };
                   if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) return { act: r.act || "", tijd: r.tijd || "" };
                   return { act: "", tijd: "" };
                 };
@@ -13656,11 +13742,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     )}
                     {g.items.map((k, i) => {
                 const od = k.miceId ? onderdelenVan(invulSleutel(b, k)) : null;
+                // Nonfood (servies, bestek, glaswerk) houdt altijd zijn eigen
+                // naam en aantal; wat erbij getypt is, is een opmerking en komt
+                // er achter te staan.
+                const nonfood = isNonfoodRegel(k, catVan);
+                const opmerking = nonfood ? ((od || []).map((o) => String((o && o.naam) || "").trim()).filter(Boolean).join(" · ")) : "";
                 // Op de mep vervangt de invulling de productnaam: is er een
                 // invulling, dan verdwijnt de productregel en staan de
                 // invullingsregels er direct (zonder inspringing).
-                const zonderKop = invulVervangt && od && od.length > 0;
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + prijsVan(k.miceId);
+                const zonderKop = !nonfood && invulVervangt && od && od.length > 0;
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
@@ -13671,12 +13762,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}
                         title={!stift ? productInfoHover(k) : undefined}
                         style={!stift && productInfoVoor(k) ? { cursor: "help" } : undefined}>
-                        <MarkTekst tekst={kop} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMark} />
+                        {/* heel: de hele productregel is één blok, zodat markeren
+                            meteen het product én al zijn invulling raakt. */}
+                        <MarkTekst tekst={kop} basis={kopBasis} heel stift={stift} markering={markering} zetMark={zetMark} />
                         {!stift && productInfoVoor(k) && <Info size={13} className="inline ml-1 acc shrink-0" style={{ verticalAlign: "-2px" }} />}
                         {isVers && <NieuwTag titel={isVers.titel} />}
                       </div>
                     )}
-                    {od && od.map((o, j) => {
+                    {!nonfood && od && od.map((o, j) => {
                       // De gerechten in de regel zijn zelf de link naar hun recept;
                       // alleen een koppeling die nergens op lijkt komt er nog achter
                       // te staan, anders zou dat recept onbereikbaar worden.
@@ -13756,6 +13849,18 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                             pijlNav(e, null, '[data-oa="' + b.id + "-" + i + '-0"]', '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
                           }} />
                       : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate" title={productInfoHover(k)} style={productInfoHover(k) ? { cursor: "help" } : undefined}>{k.naam}</span>}
+                    {/* Tijd waarop dit product op tafel komt. Leeg laten betekent:
+                        volg wat MICE zegt. Zelf toegevoegde producten hebben niets
+                        uit MICE, dus daar bepaal je het hier. */}
+                    {magProductNaam && (() => {
+                      const eigen = String(k.tijd || "").slice(0, 5);
+                      const uitMice = (() => { const t = String(tijdenVoorKeuze(b, k) || "").slice(0, 5); return /^\d{2}:\d{2}$/.test(t) ? t : ""; })();
+                      return (
+                        <input type="time" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "5.4rem" }}
+                          value={eigen || uitMice} onChange={(e) => zetR(i, "tijd", e.target.value)}
+                          title="Tijd waarop dit product op tafel komt — bepaalt onder welk kopje het op de kaart staat" />
+                      );
+                    })()}
                     {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
                     {vorigeInvulling && vorigeInvulling(k.miceId, k.aantal || b.gasten) && (
                       <button onClick={() => { const vd = vorigeInvulling(k.miceId, k.aantal || b.gasten); if (vd) setInv((m) => ({ ...m, [mid]: vd.map((o) => ({ ...o })) })); }}
@@ -13763,7 +13868,17 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     )}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
                   </div>
-                  {((inv[mid] && inv[mid].length ? inv[mid] : [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }])).map((o, j) => {
+                  {/* Nonfood krijgt geen culinaire invulling maar één
+                      opmerkingveld: het servies zelf staat al met naam en
+                      aantal op de kaart. */}
+                  {isNonfoodRegel(k, catVan) ? (
+                    <div className="flex items-center gap-1.5 pl-3">
+                      <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-0"}
+                        value={(inv[mid] && inv[mid][0] && inv[mid][0].naam) || ""}
+                        onChange={(e) => zetO(mid, 0, "naam", e.target.value)}
+                        placeholder="opmerking (bijvoorbeeld: wit servies, los bestek erbij)" />
+                    </div>
+                  ) : ((inv[mid] && inv[mid].length ? inv[mid] : [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }])).map((o, j) => {
                     const sleutel = mid + ":" + j;
                     return (
                       <div key={j}>
@@ -13812,8 +13927,26 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                                 setTimeout(() => { try { el.setSelectionRange(a + 1, z + 1); } catch (x) {} }, 0);
                                 return;
                               }
-                              if (e.key === "Enter") { e.preventDefault(); setKoppelRij(""); plusO(mid, j + 1); focusNa('[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]'); return; }
-                              if (e.key === "Backspace" && !String(o.naam || "")) { e.preventDefault(); if (!e.repeat) veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true); return; }
+                              // Enter schuift deze regel naar beneden en zet een lege
+                              // regel op zijn plek, met de cursor er meteen in.
+                              if (e.key === "Enter") { e.preventDefault(); setKoppelRij(""); plusO(mid, j); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); return; }
+                              // Backspace in een leeg naamvak haalt de hele regel weg — maar
+                              // alleen als er verder niets in staat (geen aantal, geen
+                              // gram) én het niet de laatste regel van dit product is.
+                              // Anders springt hij alleen terug naar het gramvak.
+                              if (e.key === "Backspace" && !String(o.naam || "")) {
+                                e.preventDefault();
+                                if (e.repeat) return;
+                                const rijenNu = (inv[mid] || []).length;
+                                const rijLeeg = !String(o.hoeveelheid || "").trim() && !String(o.portie || "").trim();
+                                if (rijLeeg && rijenNu > 1) {
+                                  wegO(mid, j);
+                                  veldFocus('[data-on="' + b.id + "-" + i + "-" + (j > 0 ? j - 1 : 0) + '"]', true);
+                                  return;
+                                }
+                                veldFocus('[data-op="' + b.id + "-" + i + "-" + j + '"]', true);
+                                return;
+                              }
                               pijlNav(e,
                                 '[data-op="' + b.id + "-" + i + "-" + j + '"]',
                                 '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]',
@@ -13880,6 +14013,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     if (e.key === "Enter") { e.preventDefault(); setRegels((rs) => [...rs.slice(0, i + 1), { naam: "", aantal: "" }, ...rs.slice(i + 1)]); focusNa('[data-fa="' + b.id + "-" + (i + 1) + '"]'); }
                     if (e.key === "Backspace" && !String(k.naam || "") && !String(k.aantal || "")) { e.preventDefault(); setRegels((rs) => rs.filter((_, j) => j !== i)); focusNa('[data-regel="' + b.id + "-" + (i - 1) + '"]'); }
                   }} />
+                {magProductNaam && (
+                  <input type="time" className="input px-1.5 py-1 text-[13px] shrink-0" style={{ width: "5.4rem" }}
+                    value={String(k.tijd || "").slice(0, 5)} onChange={(e) => zetR(i, "tijd", e.target.value)}
+                    title="Tijd waarop dit product op tafel komt — bepaalt onder welk kopje het op de kaart staat" />
+                )}
                 <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
               </div>
             );
@@ -14397,6 +14535,22 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const partijen = splitsPerDag(boekingen)
     .filter((b) => alleDagen.includes(b.datum) && !afgezegd(b) && !isAanvraagStatus(statusVan(b)) && !isVerwijderd(koppeling, b))
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
+  // Volgorde binnen een dag: de partij die als eerste iets op tafel krijgt
+  // staat vooraan. We kijken naar de tijden van de programmadelen zelf — bij
+  // een meerdaagse boeking zegt de begintijd van het event niets over deze dag.
+  // Staat er geen enkele tijd bij de producten, dan telt de tijd van de kaart.
+  const eersteTijd = (b) => {
+    let vroegste = "";
+    for (const k of gekozen(b)) {
+      const t = String(tijdenVoorKeuze(b, k) || "").slice(0, 5);
+      if (/^\d{1,2}:\d{2}$/.test(t) && (!vroegste || t.padStart(5, "0") < vroegste)) vroegste = t.padStart(5, "0");
+    }
+    if (vroegste) return vroegste;
+    const eigen = String(tijdVan(b) || "");
+    return /^\d{1,2}:\d{2}$/.test(eigen) ? eigen.padStart(5, "0") : "99:99";
+  };
+  const partijenOpDag = (d) => partijen.filter((b) => b.datum === d)
+    .sort((a, c) => eersteTijd(a).localeCompare(eersteTijd(c)) || String(naamVan(a) || "").localeCompare(String(naamVan(c) || ""), "nl"));
   // Partij-eigen invullaag gaat vóór de (oude) globale productinvulling.
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
   const invVoor = (b, miceId) => {
@@ -14409,7 +14563,9 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
-  const mepVan = (b) => gekozen(b).filter((k) => isMepRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
+  // Nonfood telt niet mee in de mep-berekening en dus ook niet in "samen
+  // maken": servies wordt niet bereid.
+  const mepVan = (b) => gekozen(b).filter((k) => isMepRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
   // te nemen met het herhaalknopje in de bewerkstand.
   const vorigeInvulling = (b, miceId, doelAantal) =>
@@ -14463,7 +14619,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     };
     const onderdeelNaam = (o) => String(o.naam || "").trim() || o.receptNaam || (o.recipeId && ((recipeById(o.recipeId) || {}).name || "recept")) || "";
     const dagBlok = (d) => {
-      const items = partijen.filter((b) => b.datum === d);
+      const items = partijenOpDag(d);
       if (!items.length) return "";
       // Een hele dag blijft bij elkaar op één bladzijde. Dat kan alleen als de
       // dag ook op een bladzijde pást; zo niet, dan zou de browser hem in zijn
@@ -14490,6 +14646,12 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           const inv = k.miceId ? invVoor(b, invulSleutel(b, k)) : null;
           const od = ((inv && inv.onderdelen) || []).filter((o) => onderdeelNaam(o));
           const tijdK = tijdenVoorKeuze(b, k);
+          // Nonfood (servies, bestek): naam en aantal blijven staan, met de
+          // opmerking erachter — geen invulling die de naam vervangt.
+          if (isNonfoodRegel(k, catVan)) {
+            const opm = od.map((o) => onderdeelNaam(o)).join(" · ");
+            return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam + (tijdK ? " · " + tijdK : "")) + (opm ? " <span class='mut'>· " + pEsc(opm) + "</span>" : "") + "</div></div>";
+          }
           if (od.length) {
             // Invulling vervangt de productkop (zoals op de mep-kaart), niet vet.
             return "<div class='blok'>" + od.map((o) => "<div class='inv0'>" + pEsc(o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || gastenVan(b)) + "× ") + opmaakHtml(onderdeelNaam(o)) + "</div>").join("") + "</div>";
@@ -14616,7 +14778,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
 
   // Eén dag renderen; gebruikt voor de huidige week én het volgende-week-blok.
   const renderDag = (d) => {
-        const items = partijen.filter((b) => b.datum === d);
+        const items = partijenOpDag(d);
         if (!items.length) return null;
         return (
           <React.Fragment key={d}>
@@ -14646,7 +14808,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     onInvulling={(miceId, inv) => onInvulPartij(b, miceId, inv)} onInvullingBatch={(lijst) => onInvulPartijBatch(b, lijst)}
                     vorigeInvulling={(miceId, aantal) => vorigeInvulling(b, miceId, aantal)}
                     onOpslaan={(regels, velden) => {
-                      onKoppel(b, regels);
+                      onKoppel(b, keuzesBewaren(koppeling, boekingSleutel, b, regels));
                       if (velden) {
                         const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
                           && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === (b.start_tijd ? String(b.start_tijd).slice(11, 16) : "");
@@ -14894,7 +15056,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
-  const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
+  const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
   // te nemen met het herhaalknopje in de bewerkstand.
   const vorigeInvulling = (b, miceId, doelAantal) =>
@@ -15219,7 +15381,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
               vorigeInvulling={(miceId, aantal) => vorigeInvulling(detailBoeking, miceId, aantal)}
               onInvullen={null}
               onOpslaan={(regels, velden) => {
-                onKoppel(detailBoeking, regels);
+                onKoppel(detailBoeking, keuzesBewaren(koppeling, boekingSleutel, detailBoeking, regels));
                 if (velden) {
                   const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
                     && String(velden.gasten || "") === String(detailBoeking.gasten || "") && (velden.tijd || "") === tijd(detailBoeking.start_tijd)
