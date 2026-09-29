@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-29a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-29b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -13103,14 +13103,28 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
   // bijschaven. De hoogte volgt het venster; wat er niet in past scrol je erbij.
   useEffect(() => {
     const meet = () => {
-      const breed = Math.min((window.innerWidth || 900) - 24, 1040);
+      const breed = Math.min((window.innerWidth || 900) - 16, 1040);
       setSchaal(Math.max(0.4, Math.min(1.6, breed / BLAD_BREED)));
-      setVakHoog(Math.max(240, (window.innerHeight || 800) - 150));
     };
     meet();
     window.addEventListener("resize", meet);
     return () => window.removeEventListener("resize", meet);
   }, []);
+  // De hoogte niet schatten maar meten: alles onder de knoppenbalk tot vlak
+  // boven de onderrand van het scherm is voor het blad. Zo blijft er geen
+  // strook ongebruikt, ook niet als de balk over twee regels valt.
+  React.useLayoutEffect(() => {
+    const meetHoog = () => {
+      const el = rolRef.current;
+      if (!el) return;
+      const boven = el.getBoundingClientRect().top;
+      const h = Math.max(240, (window.innerHeight || 800) - boven - 8);
+      setVakHoog((v) => (Math.abs(v - h) < 2 ? v : h));
+    };
+    meetHoog();
+    window.addEventListener("resize", meetHoog);
+    return () => window.removeEventListener("resize", meetHoog);
+  }, [schaal, klaar]);
   // Meteen op de tekst beginnen.
   useEffect(() => { const el = rolRef.current; if (el) el.scrollTop = tekstTop * schaal; }, [schaal, klaar]);
   useEffect(() => { briefVoorladen().then(() => setKlaar(true)); }, []);
@@ -13128,9 +13142,9 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
     } catch (e) {}
   };
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-start p-4 overflow-y-auto" style={{ background: "rgba(43,46,36,.6)" }} {...backdropSluiter(() => sluitRef.current())}>
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-start p-2" style={{ background: "rgba(43,46,36,.6)" }} {...backdropSluiter(() => sluitRef.current())}>
       <div className="w-full" style={{ maxWidth: 1040 }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-1.5">
           <span className="text-[13px]" style={{ color: "#fbf9f2" }}>Klik in de tekst om nog iets aan te passen — scrol voor het hele blad.</span>
           <button onClick={printen} disabled={!klaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 ml-auto disabled:opacity-50"><Printer size={16} /> {klaar ? "Printen" : "Bezig\u2026"}</button>
           <button onClick={() => sluitRef.current()} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium" style={{ background: T.paper }}>Sluiten</button>
