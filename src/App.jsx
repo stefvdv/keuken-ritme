@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-29c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-29f"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -4781,12 +4781,16 @@ function App() {
   const bezorgBoekingen = React.useMemo(
     () => (boekingen || []).map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; }),
     [boekingen, koppeling]);
+  // Een partij die over meerdere draaidagen loopt, staat in de keuzelijst op
+  // elke dag apart. Je bezorgt op de dag zelf, niet op de begindag van de
+  // boeking — en zonder deze splitsing stond zo'n partij alleen op zijn
+  // eerste dag en dus bij "ouder" in plaats van bij vandaag.
   const bezorgKeuzeBoekingen = React.useMemo(
-    () => (boekingen || []).filter((b) => {
+    () => splitsPerDag((boekingen || []).filter((b) => {
       if (isVerwijderd(koppeling, b)) return false;
       const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null;
       return statusNL((e && e.status) || b.status) !== "geannuleerd";
-    }).map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; }),
+    }).map((b) => { const e = ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null; return e && e.naam ? { ...b, naam: e.naam } : b; })),
     [boekingen, koppeling]);
   const recipeById = (id) => recipes.find((r) => r.id === id);
   // Recepten die naar elkaar verwijzen (kruidenrub in buikspek) rekenen door.
@@ -12044,6 +12048,32 @@ const allergieRegels = (bericht) => {
 };
 // Regeleinden uit MICE (alinea's, <br>) blijven staan zodat de notitie leest
 // zoals hij is ingevoerd.
+// Wat er van een bewerkte kaart echt eigen is. Het bewerkvak staat vol met de
+// waarden zoals ze nu zijn — ook die uit MICE — en die sloegen we allemaal op.
+// Verzette je de tijd, dan bevroor stilletjes ook de notitie en het aantal zoals
+// ze op dat moment stonden, en kwam een latere wijziging uit MICE niet meer door.
+// Alles wat gelijk is aan wat er onder ligt, laten we daarom weg.
+const eigenVelden = (velden, b, onder) => {
+  if (!velden) return null;
+  const o = onder || {};
+  const bericht = kaalBericht(b && b.bericht);
+  const standaard = {
+    notitie: String(o.notitie || "").trim() || bericht,
+    allergie: String(o.allergie || "").trim() || (allergieVanBoeking(b) || []).join("\n"),
+    gasten: o.gasten != null && String(o.gasten) !== "" ? o.gasten : (b && b.gasten),
+    tijd: String(o.tijd || "") || (b && b.start_tijd ? String(b.start_tijd).slice(11, 16) : ""),
+    naam: String(o.naam || "") || (b && b.naam),
+    status: String(o.status || "") || (b && b.status),
+  };
+  const uit = {};
+  for (const sleutel of ["notitie", "allergie", "gasten", "tijd", "naam", "status"]) {
+    const w = String(velden[sleutel] == null ? "" : velden[sleutel]).trim();
+    if (!w) continue; // leeg gelaten: dan geldt gewoon wat eronder ligt
+    if (w === String(standaard[sleutel] == null ? "" : standaard[sleutel]).trim()) continue;
+    uit[sleutel] = velden[sleutel];
+  }
+  return Object.keys(uit).length ? uit : null;
+};
 const kaalBericht = (bericht) => String(bericht || "")
   .replace(/<\s*(br|\/p|\/div|\/li)[^>]*>/gi, "\n")
   .replace(/<[^>]*>/g, " ")
@@ -14557,7 +14587,59 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     try { const r = document.createRange(); r.setStart(n, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
     maakLijst(soort);
   };
+  // Staat de cursor helemaal vooraan in deze regel (het afvinkvakje telt niet mee)?
+  const aanBegin = (blok) => {
+    try {
+      const sel = window.getSelection();
+      if (!sel || !sel.isCollapsed || !sel.anchorNode || !blok.contains(sel.anchorNode)) return false;
+      const r = document.createRange();
+      r.selectNodeContents(blok);
+      r.setEnd(sel.anchorNode, sel.anchorOffset);
+      return !r.toString().replace(/\u00a0/g, " ").trim();
+    } catch (e) { return false; }
+  };
+  // De regel uit de lijst halen, hoe diep hij ook ingesprongen staat.
+  const uitLijst = () => {
+    for (let n = 0; n < 6; n++) {
+      const nu = cursorBlok();
+      if (!nu || nu.tagName !== "LI") break;
+      try { document.execCommand("outdent"); } catch (e) {}
+    }
+  };
   const toetsVak = (e) => {
+    // Backspace vooraan een regel haalt het afvinkvakje weg en maakt er een
+    // gewone regel van — zo kom je van een vakje af dat je daar niet wilde,
+    // en houd je een lege regel over om tussenruimte te maken.
+    if (e.key === "Backspace" && !e.shiftKey) {
+      const li = cursorBlok();
+      if (li && li.tagName === "LI" && aanBegin(li)) {
+        e.preventDefault();
+        // Het uitspringen maakt een nieuwe regel en gooit de oude weg, dus een
+        // vastgehouden vakje is daarna nergens meer. We zetten er een merkje op:
+        // dat reist mee naar de nieuwe regel en daar zoeken we het straks op.
+        const cb = li.querySelector("input.nt-cb");
+        if (cb) cb.setAttribute("data-weg", "1");
+        uitLijst();
+        let waar = null;
+        for (const x of [...(vak.current ? vak.current.querySelectorAll("input[data-weg]") : [])]) {
+          waar = waar || x.parentNode;
+          x.remove();
+        }
+        if (waar) {
+          // Een regel die helemaal leeg achterblijft heeft een regeleinde nodig,
+          // anders kan de cursor er niet in staan en typ je verderop.
+          if (!waar.firstChild) waar.appendChild(document.createElement("br"));
+          try {
+            const sel = window.getSelection();
+            const r = document.createRange();
+            r.selectNodeContents(waar); r.collapse(true);
+            sel.removeAllRanges(); sel.addRange(r);
+          } catch (x) {}
+        }
+        netjes(); checkFmt(); getypt();
+        return;
+      }
+    }
     // Enter op een lege regel van een lijst stapt eruit, zoals overal. Doordat
     // elke regel een afvinkvakje heeft is zo'n regel voor de browser niet leeg
     // meer; daarom halen we het vakje er hier even af — dan werkt de gewone
@@ -15207,11 +15289,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     vorigeInvulling={(miceId, aantal) => vorigeInvulling(b, miceId, aantal)}
                     onOpslaan={(regels, velden) => {
                       onKoppel(b, keuzesBewaren(koppeling, boekingSleutel, b, regels));
-                      if (velden) {
-                        const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
-                          && String(velden.gasten || "") === String(b.gasten || "") && (velden.tijd || "") === (b.start_tijd ? String(b.start_tijd).slice(11, 16) : "");
-                        onMepExtra(b, leeg ? null : velden);
-                      }
+                      if (velden) onMepExtra(b, eigenVelden(velden, b, (leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]));
                     }}
                     onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten"
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
@@ -15780,13 +15858,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
               onInvullen={null}
               onOpslaan={(regels, velden) => {
                 onKoppel(detailBoeking, keuzesBewaren(koppeling, boekingSleutel, detailBoeking, regels));
-                if (velden) {
-                  const leeg = !String(velden.allergie || "").trim() && !String(velden.notitie || "").trim()
-                    && String(velden.gasten || "") === String(detailBoeking.gasten || "") && (velden.tijd || "") === tijd(detailBoeking.start_tijd)
-                    && (!velden.naam || velden.naam === (detailBoeking.naam || ""))
-                    && (!velden.status || velden.status === (detailBoeking.status || ""));
-                  onBkExtra(detailBoeking, leeg ? null : velden);
-                }
+                if (velden) onBkExtra(detailBoeking, eigenVelden(velden, detailBoeking, null));
               }}
               onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); onWisInv(detailBoeking); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
@@ -18489,11 +18561,11 @@ function BezorgScreen({ boekingen, keuzeBoekingen, bezorgLijst, materiaalItems, 
                       {bedoeldeJe && <div className="px-3 py-2 text-[12.5px]" style={{ background: "#f3ecdc", borderBottom: "1px solid #e4d6b8", color: "#6a5326" }}>Geen resultaten voor "{zoek}" — bedoelde je:</div>}
                       {vandaagBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc underline" style={{ textUnderlineOffset: "2px" }}>Vandaag</div>}
                       {vandaagBoekingen.map((b) => (
-                        <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.indexOf(b) ? "" : "mute"}>· {b.gasten || 0} pers.</span></button>
+                        <button key={b.id + "|" + b.datum} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.indexOf(b) ? "" : "mute"}>· {b.gasten || 0} pers.{b.meerdaags ? " · meerdaagse boeking" : ""}</span></button>
                       ))}
                       {ouderBoekingen.length > 0 && <div className="px-3 pt-1.5 pb-0.5 text-[10.5px] font-semibold uppercase tracking-widest acc underline" style={{ textUnderlineOffset: "2px" }}>Ouder</div>}
                       {ouderBoekingen.map((b) => (
-                        <button key={b.id} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "" : "mute"}>· {fmtDMY(b.datum)}</span></button>
+                        <button key={b.id + "|" + b.datum} onClick={() => kiesPartij(b)} className={"ff w-full text-left px-3 py-2 text-sm " + (partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "pillon" : "hover:opacity-70")} style={{ borderBottom: "1px solid " + T.line }}>{b.naam || "Zonder naam"} <span className={partijIdx === vandaagBoekingen.length + ouderBoekingen.indexOf(b) ? "" : "mute"}>· {fmtDMY(b.datum)}</span></button>
                       ))}
                       {vandaagBoekingen.length === 0 && ouderBoekingen.length === 0 && <div className="px-3 py-3 text-sm mute">Niets gevonden.</div>}
                     </div>
