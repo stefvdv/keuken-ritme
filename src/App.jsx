@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-28r2"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-29a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -13080,10 +13080,17 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
 function MenuPrintPopup({ naam, blokken, onSluit }) {
   const sluitRef = React.useRef(onSluit); sluitRef.current = onSluit;
   const lijstRef = React.useRef(null);
+  const rolRef = React.useRef(null);
   const [schaal, setSchaal] = useState(1);
+  const [vakHoog, setVakHoog] = useState(560);
   const [klaar, setKlaar] = useState(false);
   const BLAD_BREED = 794; // 210 mm bij 96 dpi
   const BLAD_HOOG = 1123;
+  const MM = 96 / 25.4; // millimeters naar beeldpunten
+  // Waar de tekst begint. Daar zetten we het voorbeeld op open: het logo erboven
+  // en de gegevens onderaan staan toch vast, die hoef je niet te zien om te
+  // kunnen bijschaven. Wegscrollen kan alsnog als je het hele blad wilt zien.
+  const tekstTop = Math.max(0, (briefVorm.top - 7) * MM);
   useEffect(() => {
     const terug = () => sluitRef.current();
     const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
@@ -13092,17 +13099,20 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
     window.addEventListener("keydown", toets, true);
     return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
   }, []);
-  // Het blad past zelden op het scherm; verkleinen tot het past.
+  // Zo breed als het scherm toelaat — de tekst moet leesbaar zijn om te kunnen
+  // bijschaven. De hoogte volgt het venster; wat er niet in past scrol je erbij.
   useEffect(() => {
     const meet = () => {
-      const breed = Math.min((window.innerWidth || 900) - 32, 900);
-      const hoog = (window.innerHeight || 900) - 150;
-      setSchaal(Math.max(0.25, Math.min(1, breed / BLAD_BREED, hoog / BLAD_HOOG)));
+      const breed = Math.min((window.innerWidth || 900) - 24, 1040);
+      setSchaal(Math.max(0.4, Math.min(1.6, breed / BLAD_BREED)));
+      setVakHoog(Math.max(240, (window.innerHeight || 800) - 150));
     };
     meet();
     window.addEventListener("resize", meet);
     return () => window.removeEventListener("resize", meet);
   }, []);
+  // Meteen op de tekst beginnen.
+  useEffect(() => { const el = rolRef.current; if (el) el.scrollTop = tekstTop * schaal; }, [schaal, klaar]);
   useEffect(() => { briefVoorladen().then(() => setKlaar(true)); }, []);
   const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ blokken }), bewerkbaar: true });
   const printen = () => {
@@ -13119,15 +13129,17 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
   };
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-start p-4 overflow-y-auto" style={{ background: "rgba(43,46,36,.6)" }} {...backdropSluiter(() => sluitRef.current())}>
-      <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full" style={{ maxWidth: 1040 }} onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <span className="text-[13px]" style={{ color: "#fbf9f2" }}>Klik in de tekst om nog iets aan te passen.</span>
+          <span className="text-[13px]" style={{ color: "#fbf9f2" }}>Klik in de tekst om nog iets aan te passen — scrol voor het hele blad.</span>
           <button onClick={printen} disabled={!klaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 ml-auto disabled:opacity-50"><Printer size={16} /> {klaar ? "Printen" : "Bezig\u2026"}</button>
           <button onClick={() => sluitRef.current()} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium" style={{ background: T.paper }}>Sluiten</button>
         </div>
-        <div style={{ width: BLAD_BREED * schaal, height: BLAD_HOOG * schaal, margin: "0 auto" }}>
-          <iframe ref={lijstRef} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
-            style={{ width: BLAD_BREED, height: BLAD_HOOG, border: 0, transform: "scale(" + schaal + ")", transformOrigin: "top left", background: "#fff", boxShadow: "0 8px 30px rgba(0,0,0,.35)" }} />
+        <div ref={rolRef} style={{ width: BLAD_BREED * schaal, maxWidth: "100%", height: vakHoog, margin: "0 auto", overflowY: "auto", overflowX: "hidden", background: "#fff", boxShadow: "0 8px 30px rgba(0,0,0,.35)" }}>
+          <div style={{ width: BLAD_BREED * schaal, height: BLAD_HOOG * schaal }}>
+            <iframe ref={lijstRef} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
+              style={{ width: BLAD_BREED, height: BLAD_HOOG, border: 0, transform: "scale(" + schaal + ")", transformOrigin: "top left", background: "#fff" }} />
+          </div>
         </div>
       </div>
     </div>
