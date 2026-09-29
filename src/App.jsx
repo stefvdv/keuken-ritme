@@ -565,7 +565,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-29b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-29c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3022,6 +3022,7 @@ function App() {
     for (const r of rijen) if (catBij[r.id]) r.categorie = catBij[r.id];
     if (live) {
       const { error } = await supabase.from("mice_producten").upsert(rijen);
+      if (error && netwerkFout(error)) { flash("Even geen verbinding — probeer het zo nog eens"); return; }
       if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_producten.sql in Supabase."); return; }
     }
     setMiceProducten(rijen.sort((a, b) => a.naam.localeCompare(b.naam, "nl")));
@@ -3188,6 +3189,7 @@ function App() {
     if (!geraakt) { alert("Geen overeenkomsten gevonden tussen de export en de opgehaalde productenlijst."); return; }
     if (live) {
       const { error } = await supabase.from("mice_producten").upsert(bijgewerkt.filter((p) => p.categorie).map((p) => ({ id: p.id, naam: p.naam, omschrijving: p.omschrijving || "", prijs: p.prijs || 0, groep_id: p.groep_id, categorie: p.categorie, opgehaald_op: p.opgehaald_op || new Date().toISOString() })));
+      if (error && netwerkFout(error)) { flash("Even geen verbinding — probeer het zo nog eens"); return; }
       if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst het regeltje uit mice_categorie.sql in Supabase."); return; }
     }
     setMiceProducten(bijgewerkt);
@@ -3371,6 +3373,7 @@ function App() {
             flash("Kolom \"" + mColumn[1] + "\" ontbreekt nog in Supabase — sync gaat door zonder dat veld");
             continue;
           }
+          if (netwerkFout(error)) { flash("Even geen verbinding — de boekingen worden zo vanzelf opnieuw opgehaald"); return 0; }
           alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase.");
           return 0;
         }
@@ -4827,7 +4830,7 @@ function App() {
     p.resolve(naam);
   };
 
-  const dbFail = (error) => { if (error) flash("Opslaan lukte niet — probeer opnieuw"); return !!error; };
+  const dbFail = (error) => { if (error) flash(netwerkFout(error) ? "Even geen verbinding — nog niet opgeslagen" : "Opslaan lukte niet — probeer opnieuw"); return !!error; };
 
   // Gemiste (vrije) dagen automatisch registreren zodra de data er is.
   useEffect(() => { if (loaded && user && user.canEdit) { backfillDaysOff(); pruneOldRecords(); } }, [loaded, user]);
@@ -5393,6 +5396,15 @@ function App() {
       const uit = await zet(kaal);
       error = uit.error;
       if (!error) flash("Categorie alleen lokaal — voeg de kolom categorie toe aan voorraad");
+    }
+    // Geen bereik? Dan gaat de wijziging in de wachtrij en telt hij op het
+    // scherm gewoon mee; zodra er weer verbinding is gaat hij alsnog mee. Dat
+    // geldt ook voor een nieuwe pot: die krijgt zijn nummer hier, niet van de
+    // database. Zonder dit sprong de voorraad terug bij elke hik in het netwerk.
+    if (error && netwerkFout(error)) {
+      wachtrijVoegToe("voorraad", row);
+      flash("Even geen verbinding — bewaard op dit toestel, gaat mee zodra je weer online bent");
+      return true;
     }
     return !dbFail(error);
   };
@@ -11542,6 +11554,15 @@ async function wachtrijVerwerk(supabase) {
   wachtrijZet(rest);
   wachtrijBezig = false;
 }
+// Even geen verbinding is iets heel anders dan een probleem met de database.
+// Het eerste is een hik van het toestel (lift in, kelder uit, 5G weg) die
+// zichzelf oplost zodra er weer bereik is; het tweede vraagt om een ingreep.
+// Alleen dat laatste mag je werk onderbreken met een melding in beeld.
+const netwerkFout = (e) => {
+  const t = String((e && (e.message || e.details || e.hint)) || (typeof e === "string" ? e : "") || "").toLowerCase();
+  if (!t) return true;
+  return /failed to fetch|networkerror|network request failed|load failed|timeout|timed out|aborted|offline|err_internet|err_network|err_connection|socket|connectie|verbinding/.test(t);
+};
 // Veilige upsert: bij mislukking in de wachtrij (het scherm werkte al door
 // op de lokale state, dus de gebruiker merkt er niets van).
 async function veiligUpsert(supabase, tabel, rij) {
