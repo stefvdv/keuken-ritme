@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01h"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3607,6 +3607,42 @@ function App() {
       voorbeeld: dagSl ? [toon("mice|"), toon("bk|"), toon("mep|")].join("\n\n") : "",
     };
   };
+  // De omzetting echt wegschrijven. Optellend: er komen alleen rijen bij
+  // (mice|, bk|, mep|), de bestaande lagen blijven onaangeroerd staan. Gaat er
+  // iets mis, dan negeren we de nieuwe rijen en is er niets kwijt.
+  const [omzetBezig, setOmzetBezig] = useState(false);
+  const omzetDoen = async () => {
+    const uit = omzetting(koppeling, boekingen, boekingSleutel, prodKoppeling);
+    const sleutels = Object.keys(uit.lagen);
+    if (!sleutels.length) { flash("Er is niets om om te zetten"); return null; }
+    if (!window.confirm("De omzetting nu echt wegschrijven?\n\n" + sleutels.length + " rijen erbij in mice_koppeling. Je bestaande gegevens blijven staan en de app blijft zich hetzelfde gedragen — die nieuwe rijen worden nog door niemand gelezen.\n\nMaak eerst een backup als je dat nog niet hebt gedaan.")) return null;
+    setOmzetBezig(true);
+    const nu = new Date().toISOString();
+    let gelukt = 0;
+    const mislukt = [];
+    // In brokken, met de lokale stand meteen bij: één reuzenverzoek loopt bij
+    // honderden rijen tegen limieten aan.
+    for (let i = 0; i < sleutels.length; i += 50) {
+      const brok = sleutels.slice(i, i + 50);
+      const rijen = brok.map((sl) => ({ sleutel: sl, producten: kernIn(uit.lagen[sl]), updated_by: user || "", updated_at: nu }));
+      setKoppeling((k) => { const n = { ...k }; for (const r of rijen) n[r.sleutel] = r.producten; return n; });
+      if (!live) { gelukt += rijen.length; continue; }
+      try {
+        const { error } = await supabase.from("mice_koppeling").upsert(rijen);
+        if (error) throw error;
+        gelukt += rijen.length;
+      } catch (e) {
+        if (netwerkFout(e)) { for (const r of rijen) wachtrijVoegToe("mice_koppeling", r); gelukt += rijen.length; }
+        else mislukt.push(String((e && e.message) || e));
+      }
+    }
+    setOmzetBezig(false);
+    const tekst = mislukt.length
+      ? gelukt + " van de " + sleutels.length + " rijen weggeschreven. Er ging iets mis: " + mislukt[0]
+      : gelukt + " rijen weggeschreven. De app gedraagt zich hetzelfde; de nieuwe opslag staat klaar.";
+    flash(mislukt.length ? "Omzetting deels mislukt" : "Omzetting klaar");
+    return { tekst, waarschuwingen: uit.verslag.waarschuwingen, voorbeeld: "" };
+  };
   const resetBoekingen = async () => {
     if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling, de vlag \"invulling afgerond\" en het menustempel naar MICE blijven staan.")) return;
     setBoekingenLaden(true);
@@ -6304,7 +6340,7 @@ function App() {
           teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
-          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} onOmzetProef={omzetProef}
+          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} onOmzetProef={omzetProef} onOmzetDoen={omzetDoen} omzetBezig={omzetBezig}
           catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -8878,7 +8914,7 @@ function EetvolgordeBeheer({ momenten, onSave }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, onOmzetProef }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, onOmzetProef, onOmzetDoen, omzetBezig }) {
   const catImportRef = React.useRef(null);
   const [catZichtOpen, setCatZichtOpen] = useState(false);
   const [omzetUit, setOmzetUit] = useState(null);
@@ -8922,6 +8958,15 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
               <RotateCcw size={15} /> Omzetting proefdraaien
             </button>
             <p className="text-xs mute mt-1.5">Rekent uit wat de nieuwe opslag zou worden en laat het zien. Er wordt niets weggeschreven.</p>
+            {onOmzetDoen && (
+              <>
+                <button onClick={async () => { const r = await onOmzetDoen(); if (r) setOmzetUit(r); }} disabled={omzetBezig} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2 disabled:opacity-60">
+                  {omzetBezig ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                  {omzetBezig ? "Bezig met wegschrijven\u2026" : "Omzetting echt wegschrijven"}
+                </button>
+                <p className="text-xs mute mt-1.5">Schrijft de nieuwe opslag weg. Je bestaande gegevens blijven staan en de app blijft zich hetzelfde gedragen. Maak eerst een backup.</p>
+              </>
+            )}
             {omzetUit && (
               <div className="card p-3 mt-2 text-sm">
                 <pre className="whitespace-pre-wrap text-[12.5px] leading-relaxed">{omzetUit.tekst}</pre>
@@ -11985,6 +12030,17 @@ const omzetting = (koppeling, boekingen, boekingSleutel, prodKoppeling) => {
   }
   return { lagen, verslag };
 };
+
+// De lagen worden bewaard in dezelfde tabel als al het andere, en die kolom is
+// een lijst. Een laag gaat er dus als eenelement-lijst in, net als de eigen
+// velden van een kaart. Zo hoeft er geen nieuwe tabel bij.
+const kernIn = (laag) => [laag || {}];
+const kernUit = (koppeling, voor, id, datum) => ((koppeling || {})[kernSleutel(voor, id, datum)] || [])[0] || {};
+const kernLagen = (koppeling, id, datum) => ({
+  mice: kernUit(koppeling, "mice|", id, datum),
+  bk: kernUit(koppeling, "bk|", id, datum),
+  mep: kernUit(koppeling, "mep|", id, datum),
+});
 
 // Wat de omzetting oplevert, in gewone taal. Dit is wat de proefknop laat zien.
 const omzetVerslag = (v) => [
