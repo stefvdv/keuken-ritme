@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30p"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3316,14 +3316,25 @@ function App() {
         if (!datum || (vanaf && datum < vanaf) || (tot && datum > tot)) continue;
         gezien.add(String(e.id));
         // Bestelde productregels: los op het event en per programmadeel.
+        // MICE hangt elk product aan een draaidag ("event_timeline_id"); de
+        // losse producten van de boeking dragen daarnaast een eigen "date".
+        // Zo weet elke regel bij welke dag hij hoort, ook los van een
+        // programmadeel — anders belanden de dagen bij elkaar op dag 1.
         const regels = [];
+        const tlDag = {};
+        for (const a of e.activities || []) {
+          const d = String(a.datetime_start || "").slice(0, 10);
+          if (a.event_timeline_id && d && !tlDag[a.event_timeline_id]) tlDag[a.event_timeline_id] = d;
+        }
+        const dagVanProduct = (p, dag) => String(p.date || "").slice(0, 10) || tlDag[p.event_timeline_id] || dag || "";
         const pakProducten = (arr, act, tijd, dag) => {
           const kaal = (h) => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/g, "&").trim();
           for (const p of arr || []) {
             if (p.object_type !== "product") continue;
             const oms = kaal(p.description || p.remark || "");
             const pid = p.object_id != null && p.object_id !== "" ? p.object_id : "vrij:" + String(p.name || "").trim().toLowerCase();
-            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", ...(dag && dag !== datum ? { dag } : {}), catId: p.object_category_id || null, ...(oms ? { oms } : {}) });
+            const pDag = dagVanProduct(p, dag);
+            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", ...(pDag && pDag !== datum ? { dag: pDag } : {}), catId: p.object_category_id || null, ...(oms ? { oms } : {}) });
           }
         };
         pakProducten(e.products, "", "", "");
@@ -3567,6 +3578,28 @@ function App() {
   // De culinaire invulling blijft altijd staan: die is met de hand gemaakt en
   // heeft niets met MICE te maken. Alleen de boekingen zelf en de handmatige
   // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
+  // De omzetting proefdraaien: rekent uit wat de nieuwe opslag zou worden en
+  // geeft een verslag terug. Er wordt niets weggeschreven — dit is om te kijken
+  // of het klopt voordat we het echt doen.
+  const omzetProef = () => {
+    const uit = omzetting(koppeling, boekingen, boekingSleutel);
+    const sleutels = Object.keys(uit.lagen);
+    // Eén dag helemaal uitgeschreven, zodat er iets te controleren valt: bij
+    // voorkeur een dag waar zowel de boekingpagina als de mep iets heeft staan.
+    const kies = sleutels.filter((sl) => sl.startsWith("bk|")).find((sl) => uit.lagen["mep|" + sl.slice(3)]) || sleutels.find((sl) => sl.startsWith("bk|")) || sleutels[0];
+    const dagSl = kies ? kies.slice(kies.indexOf("id|")) : "";
+    const toon = (voor) => {
+      const laag = uit.lagen[voor + dagSl];
+      if (!laag) return voor + dagSl + "\n  (leeg)";
+      const regels = Object.keys(laag).sort().map((naam) => "  " + naam + " = " + JSON.stringify(laag[naam].w) + "   [" + laag[naam].van + " " + String(laag[naam].t).slice(0, 10) + "]");
+      return voor + dagSl + "\n" + regels.join("\n");
+    };
+    return {
+      tekst: omzetVerslag(uit.verslag) + "\n" + sleutels.length + " rijen in mice_koppeling",
+      waarschuwingen: uit.verslag.waarschuwingen,
+      voorbeeld: dagSl ? [toon("mice|"), toon("bk|"), toon("mep|")].join("\n\n") : "",
+    };
+  };
   const resetBoekingen = async () => {
     if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling, de vlag \"invulling afgerond\" en het menustempel naar MICE blijven staan.")) return;
     setBoekingenLaden(true);
@@ -6264,7 +6297,7 @@ function App() {
           teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
-          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null}
+          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} onOmzetProef={omzetProef}
           catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -8838,9 +8871,10 @@ function EetvolgordeBeheer({ momenten, onSave }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, onOmzetProef }) {
   const catImportRef = React.useRef(null);
   const [catZichtOpen, setCatZichtOpen] = useState(false);
+  const [omzetUit, setOmzetUit] = useState(null);
   const herstelRef = React.useRef(null);
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
@@ -8874,6 +8908,31 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
             {boekingenLaden ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
             {boekingenLaden ? "Bezig met laden uit MICE\u2026" : "Boekingen resetten en opnieuw uit MICE laden"}
           </button>
+        )}
+        {chefMode && onOmzetProef && (
+          <>
+            <button onClick={() => setOmzetUit(onOmzetProef())} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-2">
+              <RotateCcw size={15} /> Omzetting proefdraaien
+            </button>
+            <p className="text-xs mute mt-1.5">Rekent uit wat de nieuwe opslag zou worden en laat het zien. Er wordt niets weggeschreven.</p>
+            {omzetUit && (
+              <div className="card p-3 mt-2 text-sm">
+                <pre className="whitespace-pre-wrap text-[12.5px] leading-relaxed">{omzetUit.tekst}</pre>
+                {!!(omzetUit.waarschuwingen || []).length && (
+                  <>
+                    <p className="text-xs font-medium mt-2 mb-1">Aandachtspunten</p>
+                    <ul className="text-xs mute list-disc pl-4 space-y-0.5">{omzetUit.waarschuwingen.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                  </>
+                )}
+                {!!omzetUit.voorbeeld && (
+                  <>
+                    <p className="text-xs font-medium mt-2 mb-1">Voorbeeld van één dag</p>
+                    <pre className="whitespace-pre-wrap text-[11.5px] leading-snug mute">{omzetUit.voorbeeld}</pre>
+                  </>
+                )}
+              </div>
+            )}
+          </>
         )}
         {chefOpen && (
           <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefFout}
@@ -11571,6 +11630,316 @@ const leesLaag = (koppeling, boekingSleutel, b, voor) => {
   if (idW !== undefined) return idW;
   return koppeling[p + boekingSleutel(b.naam)];
 };
+// ─────────────────────────────────────────────────────────────────────────────
+// De kern: één richting, MICE → boeking → mep.
+//
+// Per draaidag drie lagen, elk een verzameling velden:
+//
+//   mice|id|<nummer>@<datum>   wat MICE stuurt
+//   bk|id|<nummer>@<datum>     wat op de boekingpagina is gezet
+//   mep|id|<nummer>@<datum>    wat op de mep is aangepast
+//
+// Een veld is { w: waarde, t: moment, van: bron }. Wie wint, beslist het
+// moment: de bovenste laag wint, tenzij de laag eronder dát veld ná die
+// aanpassing nog veranderd heeft. Zo wint een aanpassing met de hand van MICE,
+// en een mep-aanpassing van de boeking — tot er een nieuwere update onderuit
+// komt. Niemand leest een laag rechtstreeks: wie een waarde nodig heeft vraagt
+// de gevouwen stand op (boekingVelden of mepVelden).
+//
+// De productregels zitten als gewone velden in dezelfde laag, op merk:
+// "p:m:224617" is de regel, "i:m:224617" de invulling ervan. Zo kan één
+// product op twee dagen los bestaan, en telt een hernoemd product niet als
+// nieuw.
+const KERN_LAGEN = ["mice|", "bk|", "mep|"];
+const kernSleutel = (voor, id, datum) => String(voor) + "id|" + String(id) + "@" + String(datum);
+const kernVeld = (w, t, van) => ({ w, t: String(t || new Date().toISOString()), van: String(van || "hand") });
+const kernProdVeld = (merk) => "p:" + merk;
+const kernInvVeld = (merk) => "i:" + merk;
+const kernIsProd = (naam) => String(naam || "").slice(0, 2) === "p:";
+const kernMerkVan = (naam) => String(naam || "").slice(2);
+const kernGelijk = (a, b) => {
+  if (a === b) return true;
+  if (a == null || b == null) return a == null && b == null;
+  if (typeof a !== "object" || typeof b !== "object") return String(a) === String(b);
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+};
+
+// Lagen over elkaar vouwen: per veld wint het nieuwste moment. Staat er twee
+// keer hetzelfde moment, dan wint de bovenste laag — die is later gezet.
+const vouwSamen = (...lagen) => {
+  const uit = {};
+  for (const laag of lagen) {
+    for (const naam of Object.keys(laag || {})) {
+      const v = laag[naam];
+      if (!v || typeof v !== "object" || !("w" in v)) continue;
+      const nu = uit[naam];
+      if (!nu || String(v.t || "") >= String(nu.t || "")) uit[naam] = v;
+    }
+  }
+  return uit;
+};
+const kernWaarde = (velden, naam) => (velden && velden[naam] ? velden[naam].w : undefined);
+const boekingVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk);
+const mepVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk, (lagen || {}).mep);
+
+// De productregels uit een gevouwen stand, in de volgorde waarin ze op de dag
+// staan. Een regel met waarde null is weggehaald en telt niet mee.
+const kernRegels = (velden) => {
+  const uit = [];
+  for (const naam of Object.keys(velden || {})) {
+    if (!kernIsProd(naam)) continue;
+    const w = velden[naam].w;
+    if (!w) continue;
+    uit.push({ ...w, merk: kernMerkVan(naam) });
+  }
+  return uit.sort((a, b) => String(a.tijd || "").localeCompare(String(b.tijd || "")) || String(a.naam || "").localeCompare(String(b.naam || "")));
+};
+const kernInvulling = (velden, merk) => {
+  const v = (velden || {})[kernInvVeld(merk)];
+  return Array.isArray(v && v.w) ? v.w : [];
+};
+
+// Wat MICE voor één draaidag stuurt, als kale waarden (nog zonder moment).
+const miceVelden = (b, datum) => {
+  const dag = String(datum || (b && b.datum) || "");
+  const eersteDag = String((b && b.datum) || "");
+  const uit = {
+    gasten: Number(((b && b.gastenPerDag) || {})[dag]) || Number(b && b.gasten) || 0,
+    naam: String((b && b.naam) || ""),
+    status: String((b && b.status) || ""),
+    zaal: String((b && b.zaal) || ""),
+    tijd: String((b && b.start_tijd) || "").slice(11, 16),
+    notitie: typeof kaalBericht === "function" ? kaalBericht(b && b.bericht) : String((b && b.bericht) || ""),
+    dieet: String((b && b.dieet) || ""),
+  };
+  for (const r of (b && b.regels) || []) {
+    // Een regel zonder eigen dag hoort bij de eerste draaidag: zo stuurt MICE
+    // het voor een gewone, eendaagse boeking.
+    if (String(r.dag || eersteDag) !== dag) continue;
+    const merk = prodMerk({ miceId: r.id, naam: r.naam });
+    const sl = kernProdVeld(merk);
+    const staat = uit[sl];
+    // Twee keer hetzelfde product op één dag telt op — dat is hoe MICE een
+    // dubbele bestelling doorgeeft.
+    uit[sl] = staat
+      ? { ...staat, aantal: (Number(staat.aantal) || 0) + (Number(r.aantal) || 0) }
+      : { miceId: r.id, naam: String(r.naam || ""), aantal: Number(r.aantal) || 0, act: String(r.act || ""), tijd: String(r.tijd || ""), catId: r.catId == null ? null : r.catId, oms: String(r.oms || "") };
+  }
+  return uit;
+};
+
+// De MICE-laag opnieuw zetten na een sync. Een veld dat hetzelfde blijft houdt
+// zijn oude moment — anders zou elke sync een aanpassing met de hand opnieuw
+// overrulen. Alleen wat echt verandert krijgt het moment van nu.
+const verversMice = (oud, waarden, nu) => {
+  const t = String(nu || new Date().toISOString());
+  const uit = {};
+  for (const naam of Object.keys(waarden || {})) {
+    const o = (oud || {})[naam];
+    uit[naam] = o && kernGelijk(o.w, waarden[naam]) ? o : kernVeld(waarden[naam], t, "mice");
+  }
+  // Wat MICE niet meer stuurt is daar weggehaald. Ook dat is een wijziging en
+  // krijgt dus een moment, anders blijft de oude waarde eeuwig winnen.
+  for (const naam of Object.keys(oud || {})) {
+    if (naam in uit) continue;
+    uit[naam] = oud[naam] && oud[naam].w === null ? oud[naam] : kernVeld(null, t, "mice");
+  }
+  return uit;
+};
+
+// Een hoeveelheid in de invulling schuift alleen mee als het een kaal getal is
+// dat precies op het oude aantal stond. "9 curry" bij een regel van 20 blijft
+// 9, en "7 liter" blijft 7 liter: daar staat een maat bij.
+const schuifInvulling = (onderdelen, oud, nieuw) => {
+  const o = Number(oud) || 0, n = Number(nieuw) || 0;
+  if (!Array.isArray(onderdelen) || !o || !n || o === n) return onderdelen;
+  return onderdelen.map((x) => {
+    const h = String((x && x.hoeveelheid) == null ? "" : x.hoeveelheid).trim();
+    return /^\d+$/.test(h) && Number(h) === o ? { ...x, hoeveelheid: String(n) } : x;
+  });
+};
+
+// Productregels die precies op het oude aantal gasten stonden schuiven mee naar
+// het nieuwe, en hun invulling schuift met die regel mee. Een regel met een
+// eigen aantal (9 warme maaltijden bij 20 gasten) blijft staan.
+const schuifNaarGasten = (eigenLaag, velden, oud, nieuw, nu, van) => {
+  const t = String(nu || new Date().toISOString());
+  const bron = String(van || "hand");
+  const o = Number(oud) || 0, n = Number(nieuw) || 0;
+  const uit = { ...(eigenLaag || {}) };
+  if (!o || !n || o === n) return uit;
+  for (const naam of Object.keys(velden || {})) {
+    if (!kernIsProd(naam)) continue;
+    const w = velden[naam].w;
+    if (!w || Number(w.aantal) !== o) continue;
+    uit[naam] = kernVeld({ ...w, aantal: n }, t, bron);
+    const merk = kernMerkVan(naam);
+    const inv = kernInvulling(velden, merk);
+    if (inv.length) {
+      const na = schuifInvulling(inv, o, n);
+      if (!kernGelijk(na, inv)) uit[kernInvVeld(merk)] = kernVeld(na, t, bron);
+    }
+  }
+  return uit;
+};
+
+// Het aantal gasten zetten, met alles wat daaraan hing.
+const zetGasten = (eigenLaag, velden, nieuw, nu, van) => {
+  const t = String(nu || new Date().toISOString());
+  const oud = Number(kernWaarde(velden, "gasten")) || 0;
+  const n = Number(nieuw) || 0;
+  return { ...schuifNaarGasten(eigenLaag, velden, oud, n, t, van), gasten: kernVeld(n, t, van || "hand") };
+};
+
+// Wat er na een sync met de dag gebeurt. MICE komt binnen, de momenten blijven
+// staan waar niets veranderde, en wijzigt MICE het aantal gasten, dan schuiven
+// de aantallen die daaraan hingen mee — ook de aantallen die eerder met de hand
+// zijn gezet. Geeft de twee lagen terug die bewaard moeten worden.
+const naSync = (lagen, waarden, nu) => {
+  const t = String(nu || new Date().toISOString());
+  const oudeVelden = boekingVelden(lagen);
+  const oudGasten = Number(kernWaarde(oudeVelden, "gasten")) || 0;
+  const mice = verversMice((lagen || {}).mice, waarden, t);
+  const nieuwGasten = Number(kernWaarde(vouwSamen(mice, (lagen || {}).bk), "gasten")) || 0;
+  const bk = oudGasten && nieuwGasten && oudGasten !== nieuwGasten
+    ? schuifNaarGasten((lagen || {}).bk, oudeVelden, oudGasten, nieuwGasten, t, "mice")
+    : { ...((lagen || {}).bk || {}) };
+  return { mice, bk };
+};
+
+// Eén veld zetten in je eigen laag. Meer is het niet: wie wint wordt pas bij
+// het vouwen bepaald.
+const zetVeld = (eigenLaag, naam, w, nu, van) => ({ ...(eigenLaag || {}), [naam]: kernVeld(w, nu, van) });
+// Een productregel weghalen is een veld met waarde null: zo weten we dat het
+// een besluit is en niet een gat.
+const haalWeg = (eigenLaag, merk, nu, van) => zetVeld(eigenLaag, kernProdVeld(merk), null, nu, van);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Omzetting: de oude lagen naar de nieuwe kern.
+//
+// Wat er nu in mice_koppeling staat is per soort een eigen laag, zonder
+// momenten. Bij de omzetting krijgt alles een moment uit het jaar 2000, in de
+// volgorde waarin het hoort te winnen: MICE onderop, de boekingpagina erboven,
+// de mep bovenop. Elke echte wijziging daarna is nieuwer en wint dus vanzelf —
+// precies zoals de voorrangsregel het wil. Een aanpassing die zelf al een
+// moment had (de eigen velden, de invulvlag) houdt dat moment.
+const OMZET_T = { mice: "2000-01-01T00:00:00.000Z", hand: "2000-01-02T00:00:00.000Z", mep: "2000-01-03T00:00:00.000Z" };
+
+// De eigen velden van een kaart (gasten, tijd, naam, status, notitie,
+// allergie) staan als één object in een eenelement-array. Leeg gelaten velden
+// stonden er niet in en horen er dus ook nu niet in.
+const omzetExtra = (rij, t, van) => {
+  const uit = {};
+  if (!rij) return uit;
+  const moment = String(rij.t || t);
+  for (const naam of ["gasten", "tijd", "naam", "status", "notitie", "allergie"]) {
+    const w = rij[naam];
+    if (w == null || String(w).trim() === "") continue;
+    uit[naam] = kernVeld(naam === "gasten" ? Number(w) || 0 : w, moment, van);
+  }
+  return uit;
+};
+// Een gekozen product als veldwaarde, met dezelfde vorm als wat MICE stuurt.
+const omzetKeuze = (k) => ({
+  miceId: k && k.miceId != null && String(k.miceId) !== "" ? k.miceId : null,
+  naam: String((k && k.naam) || ""),
+  aantal: Number(k && k.aantal) || 0,
+  act: String((k && k.act) || ""),
+  tijd: String((k && k.tijd) || ""),
+  catId: k && k.catId != null ? k.catId : null,
+  oms: String((k && k.oms) || ""),
+});
+
+// Zet alles om en geeft terug wat er weggeschreven zou worden, met een verslag
+// erbij. Schrijft zelf niets: de proef en het echte werk draaien dezelfde
+// functie, alleen doet de proef er niets mee.
+const omzetting = (koppeling, boekingen, boekingSleutel) => {
+  const lagen = {};
+  const verslag = { boekingen: 0, dagen: 0, meerdaags: 0, velden: 0, mice: 0, bk: 0, mep: 0, regels: 0, invullingen: 0, overgeslagen: 0, waarschuwingen: [] };
+  const waarschuw = (b, wat) => { if (verslag.waarschuwingen.length < 50) verslag.waarschuwingen.push(String(b.naam || b.id) + " · " + b.datum + ": " + wat); };
+
+  for (const bron of boekingen || []) {
+    if (isVerwijderd(koppeling, bron)) { verslag.overgeslagen++; continue; }
+    verslag.boekingen++;
+    const dagen = dagVarianten(bron);
+    if (dagen.length > 1) verslag.meerdaags++;
+    for (const b of dagen) {
+      verslag.dagen++;
+      const dag = String(b.datum);
+
+      // ── MICE onderop ────────────────────────────────────────────────────
+      const mice = verversMice({}, miceVelden(bron, dag), OMZET_T.mice);
+
+      // ── De boekingpagina erboven ────────────────────────────────────────
+      const bk = omzetExtra((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0], OMZET_T.hand, "hand");
+      const hand = leesLaag(koppeling, boekingSleutel, b, "");
+      if (Array.isArray(hand)) {
+        // De handmatige lijst is compleet voor die dag: wat erin staat is
+        // gekozen, wat MICE stuurt en er niet in staat is weggehaald.
+        const staat = new Set();
+        for (const k of keuzesOpDag(b, hand)) {
+          const merk = prodMerk(k);
+          staat.add(merk);
+          bk[kernProdVeld(merk)] = kernVeld(omzetKeuze(k), OMZET_T.hand, "hand");
+          verslag.regels++;
+        }
+        for (const naam of Object.keys(mice)) {
+          if (!kernIsProd(naam) || mice[naam].w == null) continue;
+          if (staat.has(kernMerkVan(naam))) continue;
+          bk[naam] = kernVeld(null, OMZET_T.hand, "hand");
+        }
+      }
+      for (const inv of leesLaag(koppeling, boekingSleutel, b, "inv|") || []) {
+        const merk = prodMerk({ miceId: inv.miceId, naam: inv.naam });
+        bk[kernInvVeld(merk)] = kernVeld(Array.isArray(inv.onderdelen) ? inv.onderdelen : [], OMZET_T.hand, "hand");
+        verslag.invullingen++;
+      }
+      const klaar = (leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0];
+      if (klaar && typeof klaar.klaar === "boolean") bk.invklaar = kernVeld(!!klaar.klaar, String(klaar.t || OMZET_T.hand), "hand");
+      const kop = (leesLaag(koppeling, boekingSleutel, b, "menukop|") || [])[0];
+      if (kop) bk.menukop = kernVeld({ t: String(kop.t || ""), vinger: String(kop.vinger || "") }, String(kop.t || OMZET_T.hand), "hand");
+
+      // ── De mep bovenop: alleen wat daar echt is aangepast ───────────────
+      const mep = omzetExtra((leesLaag(koppeling, boekingSleutel, b, "mepx|") || [])[0], OMZET_T.mep, "mep");
+      const mepLijst = leesLaag(koppeling, boekingSleutel, b, "mep|");
+      if (Array.isArray(mepLijst)) {
+        const basisRij = (leesLaag(koppeling, boekingSleutel, b, "mepb|") || [])[0];
+        const toenRijen = basisRij && Array.isArray(basisRij.rijen)
+          ? keuzesOpDag(b, basisRij.rijen)
+          : keuzesOpDag(b, mepBasisVan(koppeling, boekingSleutel, b));
+        if (!basisRij) waarschuw(b, "mep-aanpassing zonder vastgelegde basis — vergeleken met de boeking zoals die nu is");
+        const toen = new Map();
+        for (const k of toenRijen) toen.set(prodMerk(k), k);
+        const nu = new Map();
+        for (const k of keuzesOpDag(b, mepLijst)) nu.set(prodMerk(k), k);
+        for (const merk of nu.keys()) {
+          const k = nu.get(merk), was = toen.get(merk);
+          if (was && Number(was.aantal) === Number(k.aantal)) continue; // ongewijzigd: laat de boeking dit sturen
+          mep[kernProdVeld(merk)] = kernVeld(omzetKeuze(k), OMZET_T.mep, "mep");
+        }
+        for (const merk of toen.keys()) if (!nu.has(merk)) mep[kernProdVeld(merk)] = kernVeld(null, OMZET_T.mep, "mep");
+      }
+
+      const tel = (x) => Object.keys(x || {}).length;
+      verslag.mice += tel(mice); verslag.bk += tel(bk); verslag.mep += tel(mep);
+      verslag.velden += tel(mice) + tel(bk) + tel(mep);
+      lagen[kernSleutel("mice|", bron.id, dag)] = mice;
+      if (tel(bk)) lagen[kernSleutel("bk|", bron.id, dag)] = bk;
+      if (tel(mep)) lagen[kernSleutel("mep|", bron.id, dag)] = mep;
+    }
+  }
+  return { lagen, verslag };
+};
+
+// Wat de omzetting oplevert, in gewone taal. Dit is wat de proefknop laat zien.
+const omzetVerslag = (v) => [
+  v.boekingen + " boekingen, " + v.dagen + " draaidagen (" + v.meerdaags + " meerdaags)",
+  v.velden + " velden: " + v.mice + " uit MICE, " + v.bk + " van de boekingpagina, " + v.mep + " van de mep",
+  v.regels + " gekozen productregels en " + v.invullingen + " invullingen overgezet",
+  v.overgeslagen ? v.overgeslagen + " verwijderde boekingen overgeslagen" : "",
+  v.waarschuwingen.length ? v.waarschuwingen.length + " aandachtspunten" : "geen aandachtspunten",
+].filter(Boolean).join("\n");
+
 const allergieVanBoeking = (b) => {
   const uitVeld = String((b && b.dieet) || "").trim();
   if (uitVeld) return uitVeld.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean);
