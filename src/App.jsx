@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3612,8 +3612,8 @@ function App() {
   };
   // Overige mep-velden (gasten, tijd, allergie, notitie) als één object in een
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
-  const saveMepExtra = (b, extra) => saveKoppelingSleutel("mepx|id|" + b.id, extra ? [extra] : []);
-  const saveBkExtra = (b, extra) => saveKoppelingSleutel("bkx|id|" + b.id, extra ? [extra] : []);
+  const saveMepExtra = (b, extra) => saveKoppelingSleutel(laagSleutel(b, "mepx|"), extra ? [extra] : []);
+  const saveBkExtra = (b, extra) => saveKoppelingSleutel(laagSleutel(b, "bkx|"), extra ? [extra] : []);
   // Culinaire invulling per pártij (laag "inv|id|…"): bewerken op een kaart
   // raakt alleen die partij. Een lege set onderdelen maskeert bewust een
   // eventueel nog bestaande oude globale invulling van dat product.
@@ -3641,13 +3641,13 @@ function App() {
   };
   // Heropenen legt een expliciete "nee" vast; anders zou de invulling zelf hem
   // meteen weer op afgerond zetten.
-  const zetInvKlaar = (b, klaar) => saveKoppelingSleutel("invklaar|id|" + b.id, [{ klaar: !!klaar, t: new Date().toISOString() }]);
+  const zetInvKlaar = (b, klaar) => saveKoppelingSleutel(laagSleutel(b, "invklaar|"), [{ klaar: !!klaar, t: new Date().toISOString() }]);
   // Wanneer het menu van een partij voor het laatst naar het MICE-document is
   // gekopieerd, met een vingerafdruk van die tekst. Wijzigt de invulling
   // daarna, dan meldt de boekingkaart dat MICE bijgewerkt moet worden.
   // Gedeeld via dezelfde koppelingslaag, dus op alle apparaten gelijk.
   const menuKopieVan = (b) => (leesLaag(koppeling, boekingSleutel, b, "menukop|") || [])[0] || null;
-  const zetMenuKopie = (b, tekst) => saveKoppelingSleutel("menukop|id|" + b.id, [{ t: new Date().toISOString(), vinger: menuVinger(tekst) }]);
+  const zetMenuKopie = (b, tekst) => saveKoppelingSleutel(laagSleutel(b, "menukop|"), [{ t: new Date().toISOString(), vinger: menuVinger(tekst) }]);
   const saveInvullingenPartij = (b, wijzigingen) => {
     // Alle gewijzigde producten in één keer in de laag zetten; losse
     // aanroepen na elkaar overschreven elkaar via de verouderde state.
@@ -3656,10 +3656,10 @@ function App() {
       laag = laag.filter((x) => String(x.miceId) !== String(w.miceId));
       laag.push({ miceId: w.miceId, onderdelen: w.inv ? w.inv.onderdelen : [], naam: w.inv ? w.inv.naam : "" });
     }
-    return saveKoppelingSleutel("inv|id|" + b.id, laag);
+    return saveKoppelingSleutel(laagSleutel(b, "inv|"), laag);
   };
   const saveInvullingPartij = (b, miceId, inv) => saveInvullingenPartij(b, [{ miceId, inv }]);
-  const wisInvullingPartij = (b) => saveKoppelingSleutel("inv|id|" + b.id, []);
+  const wisInvullingPartij = (b) => saveKoppelingSleutel(laagSleutel(b, "inv|"), []);
   // Verwijderen = verbergen met een terugzetlaag; de sync haalt MICE-partijen
   // anders gewoon opnieuw binnen.
   const verwijderBoeking = (b) => saveKoppelingSleutel("del|" + b.id, [{ naam: b.naam || "Zonder naam", datum: b.datum, t: new Date().toISOString() }]);
@@ -3682,8 +3682,12 @@ function App() {
     if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
   };
   const wisMepKoppeling = async (b) => {
-    for (const voor of ["mep|id|", "mepx|id|", "mepb|id|"]) {
-      const sleutel = voor + b.id;
+    // Ook de dag-eigen mep-velden van deze draaidag mee, anders blijft daar een
+    // aangepast aantal of een eigen notitie achter na het resetten.
+    const sleutels = ["mep|id|" + b.id, "mepb|id|" + b.id, "mepx|id|" + b.id];
+    const dagSleutel = laagSleutel(b, "mepx|");
+    if (!sleutels.includes(dagSleutel)) sleutels.push(dagSleutel);
+    for (const sleutel of sleutels) {
       setKoppeling((k) => { const n = { ...k }; delete n[sleutel]; return n; });
       if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
     }
@@ -11461,10 +11465,26 @@ const mepKeuzes = (koppeling, boekingSleutel, b) => {
 // elke week hetzelfde; het gaat daar juist om wat tussen partijen samenvalt.
 const isStandaardPartij = (koppeling, boekingSleutel, b) =>
   !!herhaalSjabloon(koppeling, b) || !!neckerKeuzes(b, boekingSleutel);
+// Een boeking die over meerdere draaidagen loopt is in de keuken gewoon twee
+// losse dagen: ander aantal gasten, andere allergenen, een ander menu. Daarom
+// krijgt elke dag zijn eigen laag, met de datum achter het nummer.
+// De productkeuzes en de mep-aanpassing daarop staan bewust niet in deze lijst:
+// die houden hun eigen dagstempel bínnen één lijst, en dat werkt al.
+const DAG_LAGEN = ["bkx|", "mepx|", "inv|", "invklaar|", "menukop|"];
+const isDagLaag = (b, voor) => !!(b && b.meerdaags && b.datum && DAG_LAGEN.includes(voor || ""));
+const laagSleutel = (b, voor) => (voor || "") + "id|" + b.id + (isDagLaag(b, voor) ? "@" + b.datum : "");
 const leesLaag = (koppeling, boekingSleutel, b, voor) => {
-  const idW = koppeling[(voor || "") + "id|" + b.id];
+  const p = voor || "";
+  // Eerst wat er voor déze dag staat; is er nog niets apart gezet, dan geldt
+  // wat er voor de hele boeking stond. Zo blijft bestaand werk staan en gaat
+  // alleen wat je vanaf nu aanpast per dag.
+  if (isDagLaag(b, p)) {
+    const dagW = koppeling[p + "id|" + b.id + "@" + b.datum];
+    if (dagW !== undefined) return dagW;
+  }
+  const idW = koppeling[p + "id|" + b.id];
   if (idW !== undefined) return idW;
-  return koppeling[(voor || "") + boekingSleutel(b.naam)];
+  return koppeling[p + boekingSleutel(b.naam)];
 };
 const allergieVanBoeking = (b) => {
   const uitVeld = String((b && b.dieet) || "").trim();
@@ -11488,7 +11508,14 @@ const VERBERG_NAAM = /(koffie|thee\b|dranken|frisdrank|wijn|bier|bubbels|cava|ci
 // volgen de vaste lijsten en tonen anders gewoon (liever te veel dan te weinig).
 let CAT_ZICHT = {};
 const zetCatZicht = (m) => { CAT_ZICHT = m && typeof m === "object" ? m : {}; };
-const catZichtVan = (cat) => CAT_ZICHT[String(cat || "").toLowerCase().trim()] || "";
+// Servies, bestek en glaswerk horen wel op de mep (ze moeten klaargezet worden)
+// maar niet op de menukaart voor de gast. Zonder eigen keuze in Extras gelden
+// deze categorien alvast als nonfood; een keuze daar wint er altijd van.
+const NONFOOD_CATEGORIEEN = new Set(["servies", "serviesgoed", "bestek", "glaswerk", "glazen", "linnen", "meubilair", "materiaal", "materialen", "materiaalhuur", "buffetmateriaal", "keukenmateriaal", "inventaris", "non-food", "nonfood", "non food"]);
+const catZichtVan = (cat) => {
+  const c = String(cat || "").toLowerCase().trim();
+  return CAT_ZICHT[c] || (NONFOOD_CATEGORIEEN.has(c) ? "nonfood" : "");
+};
 // Zichtbaarheid per los product (Extras → Producten tonen). Wint van de
 // categorie en van de vaste lijsten; zonder keuze geldt de standaard.
 let PROD_ZICHT = {};
@@ -11551,6 +11578,7 @@ const prodZichtStandaard = (p, catVan) => {
 const catZichtStandaard = (cat) => {
   const c = String(cat || "").toLowerCase().trim();
   if (VERBERG_CATEGORIEEN.has(c)) return "verborgen";
+  if (NONFOOD_CATEGORIEEN.has(c)) return "nonfood";
   if (MEP_VERBERG_CAT.test(c)) return "boeking";
   return "keuken";
 };
@@ -11863,6 +11891,12 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel }) =>
   + (tafel ? ".vel{position:relative;width:297mm;height:210mm;display:flex;overflow:hidden}"
       + ".helft{position:relative;width:148.5mm;height:210mm;overflow:hidden}"
       + ".helft .blad{transform:scale(" + TAFEL_KRIMP + ");transform-origin:top left}"
+      // Alles krimpt mee met het vel, en dan wordt 10,5 pt op de kaart nog maar
+      // ruim 7 pt — te klein om aan tafel te lezen. De menuregels gaan daarom
+      // een slag omhoog, zodat ze op het kaartje rond de 9 pt uitkomen. De
+      // titel en de MENU-regel laten we staan: die zijn al goed leesbaar.
+      + ".helft .kop,.helft .regel{font-size:13pt;line-height:18pt}"
+      + ".helft .regel+.regel,.helft .blok+.blok{margin-top:18pt}"
       + ".vouw{position:absolute;left:148.5mm;top:0;bottom:0;border-left:.3pt dashed #d6d3c6;pointer-events:none}" : "")
   + (bewerkbaar ? ".tekst[contenteditable]{outline:1px dashed #b6b2a3;outline-offset:6px}.tekst[contenteditable]:focus{outline-color:#4f7a3a}@media print{.tekst{outline:none !important}}" : "")
   + "</style></head><body>"
@@ -14930,9 +14964,9 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const b = bladen[actief]; if (!b) return;
     const html = vak.current ? vak.current.innerHTML : b.html;
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Notities</title><style>"
-      + "@page{size:A4;margin:16mm}body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
-      + "h1{font-size:18px;margin:0 0 1mm}.sub{color:#6a6550;margin:0 0 5mm;font-size:11px}"
-      + "h2{font-size:15px;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}ul{list-style:none}"
+      + "@page{size:A4;margin:16mm}body{font:11.5pt/1.45 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
+      + "h1{font-size:16pt;margin:0 0 1mm}.sub{color:#6a6550;margin:0 0 5mm;font-size:9.5pt}"
+      + "h2{font-size:13pt;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}ul{list-style:none}"
       + "a{color:#44502f;font-weight:600;text-decoration:underline}input[type=checkbox]{width:3.2mm;height:3.2mm;margin-right:1.5mm}"
       + "</style></head><body><h1>" + esc2(b.naam || "Notities") + "</h1><div class='sub'>"
       + esc2((b.door ? "Laatst aangepast door " + b.door + " · " : "") + new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }))
