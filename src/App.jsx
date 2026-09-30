@@ -272,10 +272,17 @@ function openPrint(title, bodyHTML) {
 }
 const pEsc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-function printRecipe(r) {
-  const ing = (r.ingredients || []).map((x) => "<li>" + pEsc(x.amount) + (x.amount ? " — " : "") + pEsc(x.item) + "</li>").join("");
-  const steps = (r.steps || []).map((x) => "<li>" + pEsc(x) + "</li>").join("");
-  const chips = [r.category, r.yield && ("opbrengst " + r.yield), r.fermentMethod, (r.season || []).join("/")].filter(Boolean).join(" · ");
+// Het recept gaat op papier zoals het op het scherm staat: met de ingestelde
+// hoeveelheid (×2, ×4 of op maat), de omgerekende opbrengst én een bereiding
+// waarin de hoeveelheden meegeschaald zijn. Wie het blad meeneemt naar de
+// werkbank hoeft dan niets meer in zijn hoofd om te rekenen.
+function printRecipe(r, factor, inGram) {
+  const f = isFinite(factor) && factor > 0 ? factor : 1;
+  const bedrag = (x) => (inGram ? naarGram(x.item, x.amount, f) : null) || scaleAmount(x.amount, f);
+  const ing = (r.ingredients || []).map((x) => "<li>" + pEsc(bedrag(x)) + (x.amount ? " — " : "") + pEsc(x.item) + "</li>").join("");
+  const steps = (r.steps || []).map((x) => "<li>" + pEsc(schaalBereiding(x, f, r.ingredients)) + "</li>").join("");
+  const maat = f === 1 ? null : (Math.round(f * 100) / 100).toString().replace(".", ",") + "× de hoeveelheid";
+  const chips = [r.category, r.yield && ("opbrengst " + scaleAmount(r.yield, f)), maat, r.fermentMethod, (r.season || []).join("/")].filter(Boolean).join(" · ");
   openPrint(r.name, "<h1>" + pEsc(r.name) + "</h1><div class='chips'>" + pEsc(chips) + "</div>" +
     (ing ? "<h2>Ingrediënten</h2><ul>" + ing + "</ul>" : "") +
     (steps ? "<h2>Bereiding</h2><ol>" + steps + "</ol>" : "") +
@@ -565,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-29f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2591,6 +2598,64 @@ function scaleAmount(str, f) {
   }
   return str;
 }
+// De bereidingswijze meeschalen met de hoeveelheid. Alleen getallen die écht een
+// hoeveelheid zijn gaan mee: een getal met een maat erachter ("500 g", "2 el"),
+// of een getal vóór een ingrediënt dat in dít recept staat ("3 citroenen" bij een
+// recept met citroen). Tijden, temperaturen, percentages, afmetingen en pH
+// blijven met rust — een dubbele batch staat niet twee keer zo lang op het vuur
+// en gaat niet de oven in op 360°C.
+const STAP_MAAT = /^(?:g|gr|gram|kg|mg|ml|cl|dl|l|ltr|liter|liters|el|tl|eetlepel|eetlepels|theelepel|theelepels|kop|koppen|snuf|snufje|snufjes|teen|tenen|bos|bosje|bosjes|blad|blaadje|blaadjes|takje|takjes|plak|plakken|stuk|stuks|pot|potten|bak|bakken|bakje|bakjes|schaal|schalen|zak|zakken|vel|vellen|blik|blikken|druppel|druppels|portie|porties|persoon|personen)$/;
+const STAP_VAST = /^(?:c|f|graden|graad|min|minuut|minuten|uur|uren|sec|seconde|seconden|dag|dagen|nacht|nachten|week|weken|maand|maanden|jaar|jaren|cm|mm|m|procent|ph|bar|maal|keer|x|graad|stand)$/;
+// De woorden waaraan we een ingrediënt van dit recept herkennen.
+const ingWoorden = (ingredienten) => {
+  const uit = [];
+  for (const ing of ingredienten || []) {
+    for (const w of zonderAccent(String((ing && ing.item) || "")).toLowerCase().split(/[^a-z]+/)) {
+      if (w.length >= 4 && !uit.includes(w)) uit.push(w);
+    }
+  }
+  return uit;
+};
+const schaalBereiding = (tekst, factor, ingredienten) => {
+  const t = String(tekst == null ? "" : tekst);
+  if (!isFinite(factor) || factor === 1 || factor <= 0 || !t.trim()) return t;
+  const woorden = ingWoorden(ingredienten);
+  const telt = (woord) => {
+    const w = zonderAccent(String(woord || "")).toLowerCase().replace(/[^a-z]/g, "");
+    if (!w) return false;
+    if (STAP_VAST.test(w)) return false;
+    if (STAP_MAAT.test(w)) return true;
+    // Enkelvoud/meervoud: het kortste van de twee moet het begin van het andere
+    // zijn ("citroen" in "citroenen"), en lang genoeg om niet toevallig te passen.
+    return woorden.some((s2) => (w.length >= 4 && s2.startsWith(w)) || (s2.length >= 4 && w.startsWith(s2)));
+  };
+  const toon = (v) => {
+    const afgerond = Math.round(v * 100) / 100;
+    return String(afgerond).replace(".", ",");
+  };
+  const getal = (g) => toon(parseFloat(String(g).replace(",", ".")) * factor);
+  // Wat al omgerekend is, leggen we even opzij zodat een volgende ronde er niet
+  // nog een keer overheen gaat.
+  const opzij = [];
+  const bewaar = (stuk) => { opzij.push(stuk); return "\u0001" + (opzij.length - 1) + "\u0001"; };
+  const WOORD = "([a-z\u00e0-\u00ff']+)";
+  let uit = t;
+  // Breuken: "1/2 citroen" wordt bij ×2 gewoon "1 citroen".
+  uit = uit.replace(new RegExp("(\\d+(?:[.,]\\d+)?)\\s*\\/\\s*(\\d+(?:[.,]\\d+)?)(\\s*)" + WOORD, "gi"),
+    (m, a2, b2, sp, w) => { const d = parseFloat(String(b2).replace(",", ".")); if (!telt(w) || !d) return m; return bewaar(toon(parseFloat(String(a2).replace(",", ".")) / d * factor) + sp + w); });
+  // Van-tot: "3–4 citroenen" gaat aan beide kanten mee.
+  uit = uit.replace(new RegExp("(\\d+(?:[.,]\\d+)?)(\\s*(?:-|\u2013|\u2014|tot|\u00e0)\\s*)(\\d+(?:[.,]\\d+)?)(\\s*)" + WOORD, "gi"),
+    (m, a2, mid, b2, sp, w) => (telt(w) ? bewaar(getal(a2) + mid + getal(b2) + sp + w) : m));
+  // Breuktekens: "½ citroen".
+  const BREUK = { "\u00bd": 0.5, "\u00bc": 0.25, "\u00be": 0.75, "\u2153": 1 / 3, "\u2154": 2 / 3, "\u215b": 0.125 };
+  uit = uit.replace(new RegExp("([\u00bd\u00bc\u00be\u2153\u2154\u215b])(\\s*)" + WOORD, "gi"),
+    (m, f2, sp, w) => (telt(w) ? bewaar(toon(BREUK[f2] * factor) + sp + w) : m));
+  // En de gewone getallen.
+  uit = uit.replace(new RegExp("(\\d+(?:[.,]\\d+)?)(\\s*)" + WOORD, "gi"),
+    (m, g, sp, w) => (telt(w) ? getal(g) + sp + w : m));
+  return uit.replace(/\u0001(\d+)\u0001/g, (m, i) => opzij[Number(i)]);
+};
+
 // Grootte van een verpakking in gram(equivalent): "1 kg" → 1000, "500 gram" → 500,
 // "1,5 l" → 1500, kaal getal → gram. Gebruikt door het meeschalen van ingrediënten
 // én de Excel-totalen, zodat kg en gram eerlijk met elkaar vergeleken worden.
@@ -17028,7 +17093,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
   const critical = criticalValues(recipe);
   return (
     <div>
-      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe)}
+      <BackBar onBack={onBack} onEdit={canEdit ? onEdit : null} onPrint={() => printRecipe(recipe, factor, inGram)}
         onDelete={canEdit ? () => onDelete(recipe.id) : null}
         extra={(canEdit || (user && !user.gast)) ? (
           <>
@@ -17174,8 +17239,11 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
 
       <div className="min-w-0">
       <SectionTitle>Bereiding</SectionTitle>
+      {factor !== 1 && recipe.steps.some((s) => schaalBereiding(s, factor, recipe.ingredients) !== s) && (
+        <p className="text-[12px] mute -mt-1 mb-2">De hoeveelheden in de stappen zijn omgerekend naar {fracLabel}. Tijden, temperaturen en afmetingen blijven zoals ze zijn.</p>
+      )}
       <ol className="space-y-2.5">
-        {recipe.steps.map((s, i) => (<li key={i} className="flex gap-3"><span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-0.5" style={{ background: T.green, color: T.paper }}>{i + 1}</span><span className="leading-relaxed" style={{ color: "#3b3d33" }}>{s}</span></li>))}
+        {recipe.steps.map((s, i) => { const t = schaalBereiding(s, factor, recipe.ingredients); return (<li key={i} className="flex gap-3"><span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-0.5" style={{ background: T.green, color: T.paper }}>{i + 1}</span><span className={"leading-relaxed" + (t !== s ? " font-medium" : "")} style={{ color: t !== s ? "#44502f" : "#3b3d33" }}>{t}</span></li>); })}
       </ol>
       {recipe.updatedBy && <div className="mt-5 pt-3 text-[12.5px] mute" style={{ borderTop: "1px solid " + T.line }}>Laatst aangepast door <span className="ink font-medium">{recipe.updatedBy}</span>{recipe.updatedAt ? " · " + recipe.updatedAt : ""}</div>}
       </div>
