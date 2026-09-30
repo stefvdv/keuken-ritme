@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11760,7 +11760,11 @@ const BRIEF_ACHTERGROND = "/brief/briefpapier.png";
 // een nieuwe A4-afbeelding worden ingeladen, met de plek van het tekstblok
 // erbij (in millimeters, net als in Word). Die instelling staat in Supabase,
 // dus hij geldt meteen op alle apparaten en overleeft een nieuwe versie.
-const BRIEF_STANDAARD = { img: "", top: 57.2, links: 33.6, breedte: 141.4, inspring: 37.5 };
+// Het logo op het briefpapier eindigt op 32,5 mm. De tekst begon op 57,2 mm,
+// dus er zat bijna 25 mm wit tussen het logo en de MENU-regel. Dat is gehalveerd:
+// 12,3 mm wit, dus de tekst begint nu op 44,9 mm.
+const BRIEF_TOP_OUD = 57.2; // de oude stand, met die dubbel zo grote witruimte
+const BRIEF_STANDAARD = { img: "", top: 44.9, links: 33.6, breedte: 141.4, inspring: 37.5 };
 let briefVorm = { ...BRIEF_STANDAARD };
 const zetBriefVorm = (v) => {
   const n = { ...BRIEF_STANDAARD, ...(v && typeof v === "object" ? v : {}) };
@@ -11768,6 +11772,9 @@ const zetBriefVorm = (v) => {
     const g = Number(n[sleutel]);
     n[sleutel] = isFinite(g) ? g : BRIEF_STANDAARD[sleutel];
   }
+  // Stond de opgeslagen stand nog precies op de oude standaard, dan is er nooit
+  // met de hand aan gedraaid en gaat hij mee naar de nieuwe, krappere witruimte.
+  if (n.top === BRIEF_TOP_OUD) n.top = BRIEF_STANDAARD.top;
   n.img = String(n.img || "");
   briefVorm = n;
 };
@@ -13049,15 +13056,36 @@ const koppelBijlagen = (tekst, bijlagen) => {
 // Markeren met de stift, en zonder stift het gerecht aanklikken om het recept
 // te openen. Een snelle dubbelklik markeert altijd (groen als er geen stift
 // aanstaat), zodat afvinken geen omweg via de stiftknoppen nodig heeft.
-function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept, heel }) {
+function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept, heel, aantal }) {
   // heel=true: niet opknippen in stukjes, maar de hele tekst als één
   // markeerbaar blok behandelen. Zo kleurt een productregel in één keer.
   const delen = heel ? [String(tekst || "")] : String(tekst || "").split(MARK_SCHEIDING);
   const klikRef = React.useRef(null);
   useEffect(() => () => { if (klikRef.current) clearTimeout(klikRef.current); }, []);
   let idx = 0;
+  // Het aantal vooraan hoort bij de hele regel: tik of dubbelklik je daarop,
+  // dan gaat de markering over alles wat erachter staat. Zo streep je een regel
+  // in één keer af in plaats van woord voor woord.
+  const rijSleutels = () => {
+    const uit = [basis + ":a"];
+    let n = 0;
+    for (const w of delen) if (!isScheiding(w)) { uit.push(basis + ":" + n); n++; }
+    return uit;
+  };
+  const zetRij = (kleur) => {
+    if (!kleur) return;
+    const sleutels = rijSleutels();
+    const staatAl = sleutels.every((sl) => markering[sl] === kleur);
+    for (const sl of sleutels) zetMark(sl, kleur, staatAl ? "uit" : "aan");
+  };
+  const aantalKleur = MARKEER_KLEUREN.find((x) => x.naam === (markering[basis + ":a"] || erf));
   return (
     <span className={className} style={style}>
+      {aantal != null && String(aantal) !== "" && (
+        <span onClick={stift ? (e) => { e.stopPropagation(); zetRij(stift); } : undefined}
+          onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); if (klikRef.current) { clearTimeout(klikRef.current); klikRef.current = null; } zetRij(stift || "groen"); }}
+          style={{ background: aantalKleur ? aantalKleur.kleur : undefined, borderRadius: 3, cursor: stift ? "cell" : undefined }}>{aantal}</span>
+      )}
       {delen.map((w, i) => {
         if (isScheiding(w)) return w;
         const eigen = idx++;
@@ -14102,11 +14130,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       // De gerechten in de regel zijn zelf de link naar hun recept;
                       // alleen een koppeling die nergens op lijkt komt er nog achter
                       // te staan, anders zou dat recept onbereikbaar worden.
-                      const regelTekst = (o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : ""; })();
+                      // Het aantal staat los van de tekst: daarmee markeer je de
+                      // hele regel in één keer. De woorden erachter blijven los te
+                      // markeren, en houden hun eigen plek in de markering.
+                      const aantalTekst = o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ";
+                      const regelTekst = o.naam + (() => { const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0; return p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : ""; })();
                       const gekoppeld = koppelBijlagen(regelTekst, (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam || "" }] : [])).filter((bl) => bl.recipeId));
                       return (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
-                        <MarkTekst tekst={regelTekst} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur}
+                        <MarkTekst aantal={aantalTekst} tekst={regelTekst} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur}
                           receptPer={gekoppeld.perIndex} onRecept={onOpenRecipe} />
                         {zonderKop && j === 0 && isVers && <NieuwTag titel={isVers.titel} />}
                         {!stift && gekoppeld.rest.map((bl, bi) => (
@@ -15064,14 +15096,16 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const isDicht = (d) => (dagDicht[d] != null ? dagDicht[d] : d < mepDag);
   // modus: leeg = gedrag van de stift (nog eens klikken met dezelfde kleur
   // haalt hem weg), "wissel" = staat er al iets, dan gaat het eraf, anders
-  // erop. Het rekenwerk gebeurt op de laatste stand, niet op de stand van het
-  // moment dat deze functie gemaakt werd.
+  // erop, "aan" = altijd zetten, "uit" = altijd weghalen (die twee gebruikt de
+  // hele regel in één keer). Het rekenwerk gebeurt op de laatste stand, niet op
+  // de stand van het moment dat deze functie gemaakt werd.
   const zetMark = (sleutel, kleur, modus) => {
     const k = kleur || stift;
     if (!k) return;
     onMepMark({ markering: (huidig) => {
       const n = { ...(huidig || {}) };
       if (modus === "wissel") { if (n[sleutel]) delete n[sleutel]; else n[sleutel] = k; }
+      else if (modus === "uit") delete n[sleutel];
       else if (!modus && n[sleutel] === k) delete n[sleutel];
       else n[sleutel] = k;
       return n;
