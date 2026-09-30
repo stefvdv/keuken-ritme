@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30n"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30o"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11448,23 +11448,24 @@ const mepKeuzes = (koppeling, boekingSleutel, b) => {
     const nuBij = new Map((nu || []).map((k) => [keuzeSleutel(k), k]));
     const toenBij = Array.isArray(basisRij.rijen) ? new Map(basisRij.rijen.map((k) => [keuzeSleutel(k), k])) : null;
     const samen = toenBij ? over.map((k) => mepSamen(k, toenBij.get(keuzeSleutel(k)), nuBij.get(keuzeSleutel(k)))) : over;
-    const erin = new Set(samen.map(keuzeSleutel));
-    // Nieuw is een product dat er één keer váker staat dan voorheen — niet een
-    // product waarvan alleen de naam op de boekingpagina is bijgeschaafd. Op de
-    // naam alleen afgaan liet zo'n regel op de mep dubbel verschijnen: één keer
-    // onder de oude naam en één keer onder de nieuwe.
+    // Wat op de boeking van deze dag staat, staat ook op de mep. Op de mep pas
+    // je aantallen, namen en tijden aan en zet je er gerust iets bij, maar een
+    // besteld gerecht verdwijnt hier niet uit de keukenlijst — dat ging eerder
+    // stilletjes mis en dan mist de keuken een gang zonder te weten waarom.
+    // Hoort iets echt niet op de mep, haal het dan van de boeking of zet de
+    // categorie in Extras op "alleen boeking".
+    // Tellen gaat per próduct, niet per naam: schaaf je een naam bij, dan is dat
+    // geen tweede gerecht dat er ook nog bij moet.
     const tel = (lijst) => {
       const m = new Map();
       for (const k of lijst || []) { const id = prodMerk(k); m.set(id, (m.get(id) || 0) + 1); }
       return m;
     };
-    const toenRijen = Array.isArray(basisRij.rijen) ? basisRij.rijen : [...toen].map(keuzeUitSleutel);
-    const bekend = tel(samen), toenTel = tel(toenRijen);
+    const bekend = tel(samen);
     const ruimte = new Map();
-    for (const [id, n] of tel(nu)) ruimte.set(id, n - Math.max(bekend.get(id) || 0, toenTel.get(id) || 0));
+    for (const [id, n] of tel(nu)) ruimte.set(id, n - (bekend.get(id) || 0));
     const erbij = [];
     for (const k of nu) {
-      if (erin.has(keuzeSleutel(k)) || toen.has(keuzeSleutel(k))) continue;
       const id = prodMerk(k);
       if ((ruimte.get(id) || 0) <= 0) continue;
       ruimte.set(id, ruimte.get(id) - 1);
@@ -11505,26 +11506,6 @@ const mepErbij = (koppeling, boekingSleutel, b) => {
     const id = prodMerk(k);
     if ((ruimte.get(id) || 0) <= 0) continue;
     ruimte.set(id, ruimte.get(id) - 1);
-    uit.push(k);
-  }
-  return uit;
-};
-// Wat er op de boeking van déze dag staat maar niet op de mep. Een product op
-// de mep weghalen mag — daar is een mep-aanpassing voor — maar het hoort niet
-// ongemerkt te gebeuren: een oude aanpassing kan een product laten wegvallen
-// dat er later bij is gekomen, en dan mis je het in de keuken zonder dat je
-// weet waarom. Hiermee staat het onder de lijst, en zet je het met één tik terug.
-const mepGemist = (koppeling, boekingSleutel, b, catVan) => {
-  const mep = mepKeuzes(koppeling, boekingSleutel, b);
-  if (mep === undefined) return [];
-  const opMep = new Map();
-  for (const k of keuzesOpDag(b, mep)) opMep.set(prodMerk(k), (opMep.get(prodMerk(k)) || 0) + 1);
-  const uit = [];
-  for (const k of keuzesOpDag(b, boekingKeuzes(koppeling, boekingSleutel, b))) {
-    if (/bezorg/i.test(String(k.naam || ""))) continue;
-    if (!isMepRegel(k, catVan)) continue;
-    const id = prodMerk(k);
-    if ((opMep.get(id) || 0) > 0) { opMep.set(id, opMep.get(id) - 1); continue; }
     uit.push(k);
   }
   return uit;
@@ -13658,7 +13639,7 @@ const versWijzigingen = (b) => {
   return uit;
 };
 
-function PartijKaart({ b, keuzes, gemist, onTerugzetten, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, klantInstel }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, invulGesch, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, klantInstel }) {
   const [geschVoor, setGeschVoor] = useState(null); // { mid, aantal } voor de invulgeschiedenis-popup
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
@@ -14338,20 +14319,6 @@ function PartijKaart({ b, keuzes, gemist, onTerugzetten, mepRegels, allergie, no
                   </div>
                 ));
               })()}
-            </div>
-          )}
-          {/* Staat er iets op de boeking van deze dag dat hier niet meekomt,
-              dan zeggen we dat — met een tik om het terug te zetten. */}
-          {(gemist || []).length > 0 && (
-            <div className="mt-1.5 text-[13px]" style={{ color: "#a05a00" }}>
-              {gemist.map((k, i) => (
-                <div key={i}>
-                  <span className="font-semibold">Niet op de mep: {(k.aantal || b.gasten) + "\u00d7 " + k.naam}</span>
-                  {onTerugzetten && !stift && (
-                    <button onClick={() => onTerugzetten(k)} className="ff underline ml-1.5 font-medium" style={{ color: "#a05a00" }}>terugzetten</button>
-                  )}
-                </div>
-              ))}
             </div>
           )}
           {allergie.length > 0 && (
@@ -15624,8 +15591,6 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     invullingVan={(miceId) => invVoor(b, miceId)}
                     onInvulling={(miceId, inv) => onInvulPartij(b, miceId, inv)} onInvullingBatch={(lijst) => onInvulPartijBatch(b, lijst)}
                     vorigeInvulling={(miceId, aantal) => vorigeInvulling(b, miceId, aantal)}
-                    gemist={mepGemist(koppeling, boekingSleutel, b, catVan)}
-                    onTerugzetten={(k) => onKoppel(b, keuzesBewaren(koppeling, boekingSleutel, b, [...gekozen(b), k]))}
                     onOpslaan={(regels, velden) => {
                       onKoppel(b, keuzesBewaren(koppeling, boekingSleutel, b, regels));
                       if (velden) onMepExtra(b, eigenVelden(velden, b, (leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]));
