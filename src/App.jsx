@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3549,7 +3549,13 @@ function App() {
     setKoppeling((k) => ({ ...k, [sleutel]: producten }));
     if (live) await veiligUpsert(supabase, "mice_koppeling", { sleutel, producten, updated_by: user || "", updated_at: new Date().toISOString() });
   };
-  const saveKoppeling = (b, producten) => saveKoppelingSleutel("id|" + b.id, producten);
+  // De boekingpagina toont ook wat er op de mep is bijgezet; haal je zoiets
+  // hier weg, dan gaat het ook van de mep af.
+  const saveKoppeling = async (b, producten) => {
+    const mepNa = mepZonderWeggehaalde(koppeling, boekingSleutel, b, producten);
+    await saveKoppelingSleutel("id|" + b.id, producten);
+    if (mepNa) await saveKoppelingSleutel("mep|id|" + b.id, mepNa);
+  };
   // Eigen boeking (niet uit MICE): negatief id zodat het nooit botst met MICE.
   const [boekingenLaden, setBoekingenLaden] = useState(false); // zichtbare voortgang bij handmatige sync/reset
   const [nieuwBoekingOpen, setNieuwBoekingOpen] = useState(false);
@@ -11460,6 +11466,47 @@ const mepKeuzes = (koppeling, boekingSleutel, b) => {
   // terug op de boeking.
   return over.length ? over : undefined;
 };
+// En de andere kant op. Wat er op de mep bij is gezet — een soepkom, een
+// extra schaal — is iets wat de partíj nodig heeft, niet alleen de
+// keukenlijst; op de boekingpagina verdween dat stilletjes. Alleen
+// toévoegingen stromen terug: een aantal dat op de mep is bijgesteld en een
+// regel die daar is weggehaald blijven mep-eigen, want de boeking blijft tonen
+// wat de klant besteld heeft. Zonder ijkpunt (een aanpassing van vóór de
+// mepb-laag) valt er niets te vergelijken en houden we ons stil.
+const mepErbij = (koppeling, boekingSleutel, b) => {
+  const over = leesLaag(koppeling, boekingSleutel, b, "mep|");
+  if (!Array.isArray(over) || !over.length) return [];
+  const basisRij = (leesLaag(koppeling, boekingSleutel, b, "mepb|") || [])[0];
+  if (!basisRij || !Array.isArray(basisRij.basis)) return [];
+  const toen = new Set(basisRij.basis);
+  const nu = new Set((mepBasisVan(koppeling, boekingSleutel, b) || []).map(keuzeSleutel));
+  return over.filter((k) => !nu.has(keuzeSleutel(k)) && !toen.has(keuzeSleutel(k)));
+};
+// Haal je zo'n bijgezette regel op de boekingpagina weg, dan hoort hij ook van
+// de mep af — anders zet de mep hem bij de volgende blik gewoon terug en lijkt
+// het opslaan niet gewerkt te hebben. Geeft de nieuwe mep-lijst terug, of null
+// als er niets hoeft te veranderen. Een lege lijst is een reset van de boeking
+// en laat de mep met rust.
+const mepZonderWeggehaalde = (koppeling, boekingSleutel, b, producten) => {
+  if (!(producten || []).length) return null;
+  const extras = keuzesOpDag(b, mepErbij(koppeling, boekingSleutel, b));
+  if (!extras.length) return null;
+  const houd = new Set((producten || []).map(keuzeSleutel));
+  const weg = new Set(extras.filter((k) => !houd.has(keuzeSleutel(k))).map(keuzeSleutel));
+  if (!weg.size) return null;
+  const over = leesLaag(koppeling, boekingSleutel, b, "mep|") || [];
+  return over.filter((k) => !weg.has(keuzeSleutel(k)));
+};
+// De productlijst zoals de boekingpagina hem toont: wat er besteld is (of met
+// de hand is neergezet), aangevuld met wat de keuken op de mep heeft bijgezet.
+const boekingKeuzes = (koppeling, boekingSleutel, b) => {
+  const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
+  const basis = keuzesOpDag(b, hand.length ? hand : (herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b)));
+  const erbij = keuzesOpDag(b, mepErbij(koppeling, boekingSleutel, b));
+  if (!erbij.length) return basis;
+  const erin = new Set(basis.map(keuzeSleutel));
+  return [...basis, ...erbij.filter((k) => !erin.has(keuzeSleutel(k)))];
+};
 // Een partij die op een vaste lijst draait — een sjabloon dat zich herhaalt,
 // of de vaste Necker-lijst — telt niet mee in "samen maken". Die maak je toch
 // elke week hetzelfde; het gaat daar juist om wat tussen partijen samenvalt.
@@ -15653,6 +15700,22 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
   const [detail, setDetail] = useState(null); // boekings-id in de detailweergave
   const [detailDag, setDetailDag] = useState(null); // welke dag van een meerdaagse boeking
+  // De terugknop van het toestel sluit de geopende boeking. Staat de kaart in
+  // bewerkstand, dan heeft die zijn eigen terugknop: de eerste druk sluit het
+  // bewerken (die luisteraar hangt er later in en is dus later aan de beurt),
+  // de tweede pas de kaart zelf — net als de Escape-toets, en net als daar
+  // sluit de terugknop het bewerken zonder op te slaan.
+  useEffect(() => {
+    if (!detail) return;
+    const terug = () => {
+      const api = kaartApi.current;
+      if (api && api.inBewerking && api.inBewerking()) return; // de bewerkstand vangt deze druk op
+      setDetail(null);
+    };
+    try { window.history.pushState({ app: "ritme", boeking: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", terug);
+    return () => window.removeEventListener("popstate", terug);
+  }, [detail]);
   // Partijen die tijdens het bewerken even zijn weggelegd: opgeslagen en
   // gesloten, zodat er een tweede boeking open kan. Ze staan als pillen
   // onderaan het scherm, zoals een taakbalk, en openen weer in bewerkstand.
@@ -15687,10 +15750,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   }, [nieuwBewerk]);
 
   // Volgorde: handmatige invulling > Necker-standaard > MICE-bestelling.
-  const gekozen = (b) => {
-    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    return keuzesOpDag(b, hand.length ? hand : (herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b)));
-  };
+  const gekozen = (b) => boekingKeuzes(koppeling, boekingSleutel, b);
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
   const invVoor = (b, miceId) => {
     const e = invLaag(b).find((x) => String(x.miceId) === String(miceId));
