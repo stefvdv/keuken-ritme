@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30m"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30n"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11257,17 +11257,13 @@ const dagVarianten = (b) => {
   }));
 };
 const splitsPerDag = (lijst) => (lijst || []).flatMap(dagVarianten);
-// Bij welke dag hoort een gekozen product? Handmatige aanpassingen bewaren de
-// hele lijst in één laag, dus de dag zoeken we op in de oorspronkelijke regels.
-// Wat daar niet in staat (zelf toegevoegde producten) hoort bij de eerste dag.
-const dagVanKeuze = (b, k) => {
-  if (!b || !b.meerdaags) return "";
-  if (k && k.dag) return String(k.dag); // zelf op een dag gezet
-  for (const r of b.alleRegels || []) {
-    if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam)) return String(r.dag || b.meerdaags.eersteDag);
-  }
-  return String(b.meerdaags.eersteDag);
-};
+// Bij welke draaidag een gekozen product hoort. Staat de dag erbij, dan die;
+// anders die van de lijst waarin het staat — elke dag heeft immers zijn eigen
+// laag, en wat rechtstreeks uit de MICE-regels van deze dag komt is per
+// definitie van deze dag. Eerder zocht hij de dag op in de oorspronkelijke
+// regels, en dan was hetzelfde product op twee dagen niet uit elkaar te houden:
+// het viel dan terug op de dag van de éérste regel die erop leek.
+const dagVanKeuze = (b, k) => (!b || !b.meerdaags ? "" : String((k && k.dag) || b.datum));
 const keuzeOpDag = (b, k) => (!b || !b.meerdaags ? true : dagVanKeuze(b, k) === b.datum);
 const keuzesOpDag = (b, lijst) => (b && b.meerdaags ? (lijst || []).filter((k) => keuzeOpDag(b, k)) : (lijst || []));
 // De hele productenlijst van deze kaart zoals hij er staat: eerst wat er met de
@@ -11276,9 +11272,8 @@ const keuzesOpDag = (b, lijst) => (b && b.meerdaags ? (lijst || []).filter((k) =
 // want die heeft zijn eigen laag.
 const alleKeuzesVan = (koppeling, boekingSleutel, b) => {
   const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-  if (hand.length) return hand;
-  const heel = b && b.alleRegels ? { ...b, regels: b.alleRegels } : b;
-  return herhaalKeuzes(koppeling, heel) || neckerKeuzes(heel, boekingSleutel) || autoKeuzesUitBoeking(heel) || [];
+  if (hand.length) return keuzesOpDag(b, hand);
+  return herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b) || [];
 };
 // Opslaan vanuit één dag van een meerdaagse boeking: elke draaidag heeft zijn
 // eigen laag, dus hier gaat alleen de lijst van déze dag in — de andere dag
@@ -11552,8 +11547,7 @@ const mepZonderWeggehaalde = (koppeling, boekingSleutel, b, producten) => {
 // De productlijst zoals de boekingpagina hem toont: wat er besteld is (of met
 // de hand is neergezet), aangevuld met wat de keuken op de mep heeft bijgezet.
 const boekingKeuzes = (koppeling, boekingSleutel, b) => {
-  const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-  const basis = keuzesOpDag(b, hand.length ? hand : (herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b)));
+  const basis = alleKeuzesVan(koppeling, boekingSleutel, b);
   const erbij = keuzesOpDag(b, mepErbij(koppeling, boekingSleutel, b));
   if (!erbij.length) return basis;
   const erin = new Set(basis.map(keuzeSleutel));
@@ -11584,6 +11578,13 @@ const leesLaag = (koppeling, boekingSleutel, b, voor) => {
   if (isDagLaag(b, p)) {
     const dagW = koppeling[p + "id|" + b.id + "@" + b.datum];
     if (dagW !== undefined) return dagW;
+    // Die gedeelde stand komt uit de tijd dat de dagen nog niet apart waren en
+    // is op één kaart gemaakt — die van de eerste draaidag. Hem op elke dag
+    // herhalen zet op dag twee een aantal, een menu of een mep-aanpassing neer
+    // die daar nooit is gezet; dan loopt dag twee stil uit de pas met MICE.
+    // Alleen de eerste dag erft hem dus; de dagen erna beginnen bij MICE, tot
+    // je daar zelf iets bewaart.
+    if (String(b.datum) !== String((b.meerdaags && b.meerdaags.eersteDag) || b.datum)) return undefined;
   }
   const idW = koppeling[p + "id|" + b.id];
   if (idW !== undefined) return idW;
@@ -15326,11 +15327,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const gekozen = (b) => {
     const over = mepKeuzes(koppeling, boekingSleutel, b);
-    const hand = over !== undefined ? null : leesLaag(koppeling, boekingSleutel, b, "") || [];
-    const lijst = over !== undefined ? over
-      : hand.length ? hand
-      : herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b);
-    return volgGasten(b, keuzesOpDag(b, lijst), gastenVan(b));
+    const lijst = over !== undefined ? keuzesOpDag(b, over) : alleKeuzesVan(koppeling, boekingSleutel, b);
+    return volgGasten(b, lijst, gastenVan(b));
   };
   // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
   const extraVan = (b) => {
