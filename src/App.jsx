@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11840,22 +11840,44 @@ const omzetExtra = (rij, t, van) => {
   return uit;
 };
 // Een gekozen product als veldwaarde, met dezelfde vorm als wat MICE stuurt.
-const omzetKeuze = (k) => ({
-  miceId: k && k.miceId != null && String(k.miceId) !== "" ? k.miceId : null,
-  naam: String((k && k.naam) || ""),
-  aantal: Number(k && k.aantal) || 0,
-  act: String((k && k.act) || ""),
-  tijd: String((k && k.tijd) || ""),
-  catId: k && k.catId != null ? k.catId : null,
-  oms: String((k && k.oms) || ""),
-});
+// De opgeslagen keuzes dragen alleen een nummer, een naam en een aantal — het
+// programmadeel, de tijd, de categorie en de omschrijving stonden er nooit in.
+// Die halen we uit de MICE-regel van diezelfde dag, anders zou de omzetting ze
+// wegpoetsen en valt de kaart uit elkaar: geen kopjes meer, geen tijden, en
+// producten die hun categorie kwijt zijn worden overal zichtbaar.
+const omzetKeuze = (k, uitMice) => {
+  const m = uitMice || {};
+  return {
+    miceId: k && k.miceId != null && String(k.miceId) !== "" ? k.miceId : (m.miceId != null ? m.miceId : null),
+    naam: String((k && k.naam) || m.naam || ""),
+    aantal: Number(k && k.aantal) || 0,
+    act: String((k && k.act) || m.act || ""),
+    tijd: String((k && k.tijd) || m.tijd || ""),
+    catId: k && k.catId != null ? k.catId : (m.catId != null ? m.catId : null),
+    oms: String((k && k.oms) || m.oms || ""),
+  };
+};
+// Een veld dat precies hetzelfde zegt als de laag eronder hoeft er niet te
+// staan. Sterker: het moet er niet staan, want dan bevriest het die waarde en
+// komt een latere wijziging van onderaf er nooit meer doorheen. Zo raakten
+// namen, tijden en statussen achter op MICE.
+const snoeiDubbel = (laag, onder) => {
+  const uit = {};
+  let weg = 0;
+  for (const naam of Object.keys(laag || {})) {
+    const o = (onder || {})[naam];
+    if (o && kernGelijk(o.w, laag[naam].w)) { weg++; continue; }
+    uit[naam] = laag[naam];
+  }
+  return { laag: uit, weg };
+};
 
 // Zet alles om en geeft terug wat er weggeschreven zou worden, met een verslag
 // erbij. Schrijft zelf niets: de proef en het echte werk draaien dezelfde
 // functie, alleen doet de proef er niets mee.
 const omzetting = (koppeling, boekingen, boekingSleutel) => {
   const lagen = {};
-  const verslag = { boekingen: 0, dagen: 0, meerdaags: 0, velden: 0, mice: 0, bk: 0, mep: 0, regels: 0, invullingen: 0, overgeslagen: 0, waarschuwingen: [] };
+  const verslag = { boekingen: 0, dagen: 0, meerdaags: 0, velden: 0, mice: 0, bk: 0, mep: 0, regels: 0, invullingen: 0, gesnoeid: 0, overgeslagen: 0, waarschuwingen: [] };
   const waarschuw = (b, wat) => { if (verslag.waarschuwingen.length < 50) verslag.waarschuwingen.push(String(b.naam || b.id) + " · " + b.datum + ": " + wat); };
 
   for (const bron of boekingen || []) {
@@ -11880,7 +11902,8 @@ const omzetting = (koppeling, boekingen, boekingSleutel) => {
         for (const k of keuzesOpDag(b, hand)) {
           const merk = prodMerk(k);
           staat.add(merk);
-          bk[kernProdVeld(merk)] = kernVeld(omzetKeuze(k), OMZET_T.hand, "hand");
+          const uitMice = mice[kernProdVeld(merk)] && mice[kernProdVeld(merk)].w;
+          bk[kernProdVeld(merk)] = kernVeld(omzetKeuze(k, uitMice), OMZET_T.hand, "hand");
           verslag.regels++;
         }
         for (const naam of Object.keys(mice)) {
@@ -11915,17 +11938,24 @@ const omzetting = (koppeling, boekingen, boekingSleutel) => {
         for (const merk of nu.keys()) {
           const k = nu.get(merk), was = toen.get(merk);
           if (was && Number(was.aantal) === Number(k.aantal)) continue; // ongewijzigd: laat de boeking dit sturen
-          mep[kernProdVeld(merk)] = kernVeld(omzetKeuze(k), OMZET_T.mep, "mep");
+          const uitBk = (bk[kernProdVeld(merk)] && bk[kernProdVeld(merk)].w) || (mice[kernProdVeld(merk)] && mice[kernProdVeld(merk)].w);
+          mep[kernProdVeld(merk)] = kernVeld(omzetKeuze(k, uitBk), OMZET_T.mep, "mep");
         }
         for (const merk of toen.keys()) if (!nu.has(merk)) mep[kernProdVeld(merk)] = kernVeld(null, OMZET_T.mep, "mep");
       }
 
+      // Snoeien: eerst de boekingpagina tegen MICE, dan de mep tegen wat de
+      // boeking daarna oplevert.
+      const bkGesnoeid = snoeiDubbel(bk, mice);
+      const mepGesnoeid = snoeiDubbel(mep, vouwSamen(mice, bkGesnoeid.laag));
+      verslag.gesnoeid += bkGesnoeid.weg + mepGesnoeid.weg;
+
       const tel = (x) => Object.keys(x || {}).length;
-      verslag.mice += tel(mice); verslag.bk += tel(bk); verslag.mep += tel(mep);
-      verslag.velden += tel(mice) + tel(bk) + tel(mep);
+      verslag.mice += tel(mice); verslag.bk += tel(bkGesnoeid.laag); verslag.mep += tel(mepGesnoeid.laag);
+      verslag.velden += tel(mice) + tel(bkGesnoeid.laag) + tel(mepGesnoeid.laag);
       lagen[kernSleutel("mice|", bron.id, dag)] = mice;
-      if (tel(bk)) lagen[kernSleutel("bk|", bron.id, dag)] = bk;
-      if (tel(mep)) lagen[kernSleutel("mep|", bron.id, dag)] = mep;
+      if (tel(bkGesnoeid.laag)) lagen[kernSleutel("bk|", bron.id, dag)] = bkGesnoeid.laag;
+      if (tel(mepGesnoeid.laag)) lagen[kernSleutel("mep|", bron.id, dag)] = mepGesnoeid.laag;
     }
   }
   return { lagen, verslag };
@@ -11936,6 +11966,7 @@ const omzetVerslag = (v) => [
   v.boekingen + " boekingen, " + v.dagen + " draaidagen (" + v.meerdaags + " meerdaags)",
   v.velden + " velden: " + v.mice + " uit MICE, " + v.bk + " van de boekingpagina, " + v.mep + " van de mep",
   v.regels + " gekozen productregels en " + v.invullingen + " invullingen overgezet",
+  v.gesnoeid ? v.gesnoeid + " velden gesnoeid die hetzelfde zeiden als de laag eronder" : "",
   v.overgeslagen ? v.overgeslagen + " verwijderde boekingen overgeslagen" : "",
   v.waarschuwingen.length ? v.waarschuwingen.length + " aandachtspunten" : "geen aandachtspunten",
 ].filter(Boolean).join("\n");
