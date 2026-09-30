@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01f"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3582,7 +3582,7 @@ function App() {
   // geeft een verslag terug. Er wordt niets weggeschreven — dit is om te kijken
   // of het klopt voordat we het echt doen.
   const omzetProef = () => {
-    const uit = omzetting(koppeling, boekingen, boekingSleutel);
+    const uit = omzetting(koppeling, boekingen, boekingSleutel, prodKoppeling);
     const sleutels = Object.keys(uit.lagen);
     // Eén dag helemaal uitgeschreven, zodat er iets te controleren valt: bij
     // voorkeur een dag waar zowel de boekingpagina als de mep iets heeft staan.
@@ -11875,9 +11875,9 @@ const snoeiDubbel = (laag, onder) => {
 // Zet alles om en geeft terug wat er weggeschreven zou worden, met een verslag
 // erbij. Schrijft zelf niets: de proef en het echte werk draaien dezelfde
 // functie, alleen doet de proef er niets mee.
-const omzetting = (koppeling, boekingen, boekingSleutel) => {
+const omzetting = (koppeling, boekingen, boekingSleutel, prodKoppeling) => {
   const lagen = {};
-  const verslag = { boekingen: 0, dagen: 0, meerdaags: 0, velden: 0, mice: 0, bk: 0, mep: 0, regels: 0, invullingen: 0, gesnoeid: 0, overgeslagen: 0, waarschuwingen: [] };
+  const verslag = { boekingen: 0, dagen: 0, meerdaags: 0, velden: 0, mice: 0, bk: 0, mep: 0, regels: 0, invullingen: 0, ingebakken: 0, gesnoeid: 0, overgeslagen: 0, waarschuwingen: [] };
   const waarschuw = (b, wat) => { if (verslag.waarschuwingen.length < 50) verslag.waarschuwingen.push(String(b.naam || b.id) + " · " + b.datum + ": " + wat); };
 
   for (const bron of boekingen || []) {
@@ -11916,6 +11916,24 @@ const omzetting = (koppeling, boekingen, boekingSleutel) => {
         const merk = prodMerk({ miceId: inv.miceId, naam: inv.naam });
         bk[kernInvVeld(merk)] = kernVeld(Array.isArray(inv.onderdelen) ? inv.onderdelen : [], OMZET_T.hand, "hand");
         verslag.invullingen++;
+      }
+      // De globale invulling per product (mice_prodkoppeling) vervalt. Wat er
+      // nu op het scherm staat doordat de app daarop terugvalt, bakken we hier
+      // één keer in de partij zelf: dan verandert er niets zichtbaars, en
+      // verdwijnt alleen het gedrag dat er ongevraagd iets werd bijgeschreven.
+      if (prodKoppeling) {
+        for (const naam of Object.keys(vouwSamen(mice, bk))) {
+          if (!kernIsProd(naam)) continue;
+          const w = vouwSamen(mice, bk)[naam].w;
+          if (!w || !w.miceId) continue;
+          const merk = kernMerkVan(naam);
+          if (bk[kernInvVeld(merk)]) continue; // eigen invulling gaat voor
+          const glob = prodKoppeling[invulSleutel(b, w)] || prodKoppeling[w.miceId];
+          const od = glob && Array.isArray(glob.onderdelen) ? glob.onderdelen : null;
+          if (!od || !od.length) continue;
+          bk[kernInvVeld(merk)] = kernVeld(od, OMZET_T.hand, "hand");
+          verslag.ingebakken++;
+        }
       }
       const klaar = (leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0];
       if (klaar && typeof klaar.klaar === "boolean") bk.invklaar = kernVeld(!!klaar.klaar, String(klaar.t || OMZET_T.hand), "hand");
@@ -11966,6 +11984,7 @@ const omzetVerslag = (v) => [
   v.boekingen + " boekingen, " + v.dagen + " draaidagen (" + v.meerdaags + " meerdaags)",
   v.velden + " velden: " + v.mice + " uit MICE, " + v.bk + " van de boekingpagina, " + v.mep + " van de mep",
   v.regels + " gekozen productregels en " + v.invullingen + " invullingen overgezet",
+  v.ingebakken ? v.ingebakken + " invullingen uit de globale tabel in de partij zelf gezet" : "",
   v.gesnoeid ? v.gesnoeid + " velden gesnoeid die hetzelfde zeiden als de laag eronder" : "",
   v.overgeslagen ? v.overgeslagen + " verwijderde boekingen overgeslagen" : "",
   v.waarschuwingen.length ? v.waarschuwingen.length + " aandachtspunten" : "geen aandachtspunten",
