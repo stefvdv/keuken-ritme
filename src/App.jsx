@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30o"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30p"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -12147,7 +12147,7 @@ const mepVoorKeuze = (keuze, boeking, prodKoppeling, producten, calcItems, dishB
     }
     return o.naam ? losSplits(o.naam, porties, keuze.naam || "", gram, heel) : [];
   };
-  if (vert && Array.isArray(vert.onderdelen) && vert.onderdelen.length) return vert.onderdelen.flatMap(perOnderdeel);
+  if (vert && Array.isArray(vert.onderdelen) && vert.onderdelen.length) return onderdelenVolgenAantal(vert.onderdelen, keuze, boeking).flatMap(perOnderdeel);
   if (vert && vert.recipeId) {
     const r = recipeById(vert.recipeId);
     return [{ soort: "recept", id: vert.recipeId, naam: (r && r.name) || vert.naam || "recept", porties: aantal, item: keuze.naam || "" }];
@@ -12307,6 +12307,21 @@ const volgGasten = (b, lijst, gasten) => {
   const nu = Number(gasten) || 0;
   if (!uitMice || !nu || uitMice === nu) return lijst || [];
   return (lijst || []).map((k) => (Number(k && k.aantal) === uitMice ? { ...k, aantal: nu } : k));
+};
+// En hetzelfde één laag dieper, voor de ingevulde gerechten. Een invulregel die
+// voor het hele gezelschap is — het getal ervoor is precies het aantal dat
+// besteld was — volgt het aantal van zijn productregel. Zo staat er na het
+// bijstellen van het aantal gasten geen oud getal meer voor de soep. Een regel
+// met een eigen hoeveelheid (negen porties curry bij twintig gasten) of met een
+// maat erbij ("7 liter") blijft staan waar hij staat.
+const onderdelenVolgenAantal = (onderdelen, k, b) => {
+  const uitMice = Number(b && b.gasten) || 0;
+  const nu = Number(k && k.aantal) || 0;
+  if (!onderdelen || !uitMice || !nu || uitMice === nu) return onderdelen;
+  return onderdelen.map((o) => {
+    const t = String((o && o.hoeveelheid) == null ? "" : o.hoeveelheid).trim();
+    return /^\d+$/.test(t) && Number(t) === uitMice ? { ...o, hoeveelheid: String(nu) } : o;
+  });
 };
 const kaalBericht = (bericht) => String(bericht || "")
   .replace(/<\s*(br|\/p|\/div|\/li)[^>]*>/gi, "\n")
@@ -13745,6 +13760,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     if (v.recipeId || v.productId || v.tekst) return [{ hoeveelheid: "", naam: v.naam || v.tekst || "", recipeId: v.recipeId || null, productId: v.productId || null }];
     return null;
   };
+  // De invulling van één productregel, met de hoeveelheden die het aantal van die
+  // regel volgen.
+  const odVan = (k) => onderdelenVolgenAantal(k && k.miceId ? onderdelenVan(invulSleutel(b, k)) : null, k, b);
   // Het menu voor het MICE-document: alleen productregels die voor de keuken
   // tellen (huur, techniek en dranken vallen af), met per regel de ingevulde
   // gerechtnamen. Producten zonder invulling leveren geen kop op — een lege
@@ -13753,7 +13771,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const menuVanPartij = () => {
     const uit = []; let leeg = 0;
     for (const k of keuzesS.filter((k2) => !/bezorg/i.test(String(k2.naam || ""))).filter((k2) => isMepRegel(k2, catVan) && !isNonfoodRegel(k2, catVan))) {
-      const od = k.miceId ? onderdelenVan(invulSleutel(b, k)) : null;
+      const od = odVan(k);
       const regels = [];
       for (const o of od || []) {
         const n = String(o.naam || "").trim() || String(o.receptNaam || "").trim();
@@ -13831,7 +13849,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const printPartij = () => {
     const rijen = [];
     for (const k of toonKeuzes) {
-      const od = onderdelenVan(invulSleutel(b, k));
+      const od = odVan(k);
       rijen.push("<div class='pr'>" + pEsc((k.aantal || b.gasten) + "× " + k.naam) + "</div>");
       if (od) for (const o of od) {
         const p = eersteGetal(o.portie); const n2 = eersteGetal(o.hoeveelheid) || Number(k.aantal) || b.gasten || 0;
@@ -13919,7 +13937,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       .map((x) => ({ ...x.k }));
     setRegels(gesorteerd);
     const m = {};
-    for (const k of keuzesS) if (k.miceId) m[invulSleutel(b, k)] = (onderdelenVan(invulSleutel(b, k)) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o }));
+    for (const k of keuzesS) if (k.miceId) m[invulSleutel(b, k)] = (odVan(k) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o }));
     setInv(m);
     setVelden({
       gasten: String((extra && extra.gasten) != null && (extra && extra.gasten) !== "" ? extra.gasten : (b.gasten || "")),
@@ -14262,7 +14280,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       </div>
                     )}
                     {g.items.map((k, i) => {
-                const od = k.miceId ? onderdelenVan(invulSleutel(b, k)) : null;
+                const od = odVan(k);
                 // Nonfood (servies, bestek, glaswerk) houdt altijd zijn eigen
                 // naam en aantal; wat erbij getypt is, is een opmerking en komt
                 // er achter te staan.
