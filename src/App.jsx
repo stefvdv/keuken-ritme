@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30k"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3553,8 +3553,8 @@ function App() {
   // hier weg, dan gaat het ook van de mep af.
   const saveKoppeling = async (b, producten) => {
     const mepNa = mepZonderWeggehaalde(koppeling, boekingSleutel, b, producten);
-    await saveKoppelingSleutel("id|" + b.id, producten);
-    if (mepNa) await saveKoppelingSleutel("mep|id|" + b.id, mepNa);
+    await saveKoppelingSleutel(laagSleutel(b, ""), producten);
+    if (mepNa) await saveKoppelingSleutel(laagSleutel(b, "mep|"), mepNa);
   };
   // Eigen boeking (niet uit MICE): negatief id zodat het nooit botst met MICE.
   const [boekingenLaden, setBoekingenLaden] = useState(false); // zichtbare voortgang bij handmatige sync/reset
@@ -3611,10 +3611,10 @@ function App() {
   // het nieuw is — en niet iets dat hier bewust is weggehaald.
   const saveMepKoppeling = async (b, producten) => {
     const rijen = mepBasisVan(koppeling, boekingSleutel, b);
-    await saveKoppelingSleutel("mep|id|" + b.id, producten);
+    await saveKoppelingSleutel(laagSleutel(b, "mep|"), producten);
     // De rijen zelf erbij, zodat later te zien is welk veld op de mep is
     // aangepast en welk veld nog gewoon uit de boeking komt.
-    await saveKoppelingSleutel("mepb|id|" + b.id, [{ basis: rijen.map(keuzeSleutel), rijen }]);
+    await saveKoppelingSleutel(laagSleutel(b, "mepb|"), [{ basis: rijen.map(keuzeSleutel), rijen }]);
   };
   // Overige mep-velden (gasten, tijd, allergie, notitie) als één object in een
   // eenelement-array onder een eigen voorvoegsel — zelfde tabel, geen schema.
@@ -3690,9 +3690,10 @@ function App() {
   const wisMepKoppeling = async (b) => {
     // Ook de dag-eigen mep-velden van deze draaidag mee, anders blijft daar een
     // aangepast aantal of een eigen notitie achter na het resetten.
-    const sleutels = ["mep|id|" + b.id, "mepb|id|" + b.id, "mepx|id|" + b.id];
-    const dagSleutel = laagSleutel(b, "mepx|");
-    if (!sleutels.includes(dagSleutel)) sleutels.push(dagSleutel);
+    const sleutels = [];
+    for (const voor of ["mep|", "mepb|", "mepx|"]) {
+      for (const sl of [voor + "id|" + b.id, laagSleutel(b, voor)]) if (!sleutels.includes(sl)) sleutels.push(sl);
+    }
     for (const sleutel of sleutels) {
       setKoppeling((k) => { const n = { ...k }; delete n[sleutel]; return n; });
       if (live) await supabase.from("mice_koppeling").delete().eq("sleutel", sleutel);
@@ -11269,40 +11270,23 @@ const dagVanKeuze = (b, k) => {
 };
 const keuzeOpDag = (b, k) => (!b || !b.meerdaags ? true : dagVanKeuze(b, k) === b.datum);
 const keuzesOpDag = (b, lijst) => (b && b.meerdaags ? (lijst || []).filter((k) => keuzeOpDag(b, k)) : (lijst || []));
-// Alle producten van een boeking, ook die van de andere dagen. Een dagvariant
-// toont maar één dag; bij het opslaan moeten we de rest kennen.
+// De hele productenlijst van deze kaart zoals hij er staat: eerst wat er met de
+// hand is neergezet, en anders het sjabloon, de vaste weeklijst of de
+// MICE-bestelling. Bij een meerdaagse boeking is dat de lijst van déze draaidag,
+// want die heeft zijn eigen laag.
 const alleKeuzesVan = (koppeling, boekingSleutel, b) => {
   const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
   if (hand.length) return hand;
   const heel = b && b.alleRegels ? { ...b, regels: b.alleRegels } : b;
   return herhaalKeuzes(koppeling, heel) || neckerKeuzes(heel, boekingSleutel) || autoKeuzesUitBoeking(heel) || [];
 };
-// Opslaan vanuit één dag van een meerdaagse boeking: de producten van de
-// andere dagen blijven staan, en wat hier met de hand is toegevoegd krijgt de
-// dag mee waarop het is gezet. Zonder dat laatste viel zo'n product terug op
-// de eerste dag en leek het verdwenen.
-const keuzesBewaren = (koppeling, boekingSleutel, b, regels) => {
-  // Wat op déze dag niet in de boeking staat, is hier met de hand toegevoegd en
-  // hoort dus bij déze dag — ook als hetzelfde product op een andere dag wél uit
-  // MICE komt. Werd daar de hele boeking vergeleken, dan kreeg zo'n product geen
-  // dagstempel, viel het terug op de dag van die MICE-regel en stapelde het zich
-  // daar bij elke keer opslaan opnieuw op.
-  const opDezeDag = (k) => ((b && b.regels) || []).some((r) => String(r.id) === String(k && k.miceId) && (!k.naam || !r.naam || r.naam === k.naam));
-  const lijst = (regels || []).map((k) => (b && b.meerdaags && k && !k.dag && !opDezeDag(k) ? { ...k, dag: b.datum } : k));
-  if (!b || !b.meerdaags) return lijst;
-  const anderen = alleKeuzesVan(koppeling, boekingSleutel, b).filter((k) => !keuzeOpDag(b, k));
-  // Hetzelfde product met hetzelfde aantal op dezelfde dag komt één keer in de
-  // laag. Dat houdt het opslaan herhaalbaar en ruimt op wat eerder stapelde.
-  const uit = [];
-  const gezien = new Set();
-  for (const k of [...anderen, ...lijst]) {
-    const s = keuzeSleutel(k) + "\u0001" + dagVanKeuze(b, k) + "\u0001" + String(k && k.aantal == null ? "" : k.aantal);
-    if (gezien.has(s)) continue;
-    gezien.add(s);
-    uit.push(k);
-  }
-  return uit;
-};
+// Opslaan vanuit één dag van een meerdaagse boeking: elke draaidag heeft zijn
+// eigen laag, dus hier gaat alleen de lijst van déze dag in — de andere dag
+// staat in zijn eigen laag en blijft dus vanzelf staan. De datum zetten we er
+// toch bij: dan blijft een lijst ook los van zijn sleutel te lezen, en weet de
+// terugval op de oude gedeelde lijst nog bij welke dag een regel hoort.
+const keuzesBewaren = (koppeling, boekingSleutel, b, regels) =>
+  !b || !b.meerdaags ? regels || [] : (regels || []).map((k) => ({ ...k, dag: b.datum }));
 // Het hoogste productaantal van deze dag, om naast het aantal gasten te zetten
 // wanneer een programmadeel voor veel meer mensen is dan de boeking zelf.
 const piekVanDag = (b, lijst) => {
@@ -11312,6 +11296,13 @@ const piekVanDag = (b, lijst) => {
     if (!top || n > top.aantal) top = { aantal: n, naam: String(k.naam || "") };
   }
   return top;
+};
+// Welke dag van de reeks dit is — voor de uitleg bij de i-knop.
+const meerdaagsInfo = (b) => {
+  if (!b || !b.meerdaags) return null;
+  const dg = b.meerdaags.dagen || [];
+  const i = dg.indexOf(b.datum);
+  return { nummer: (i < 0 ? 0 : i) + 1, totaal: dg.length, reeks: String(meerdaagsLabel(b)).split("\u00b7").slice(1).join("\u00b7").trim() };
 };
 const meerdaagsLabel = (b) => {
   if (!b || !b.meerdaags) return "";
@@ -11514,10 +11505,14 @@ const isStandaardPartij = (koppeling, boekingSleutel, b) =>
   !!herhaalSjabloon(koppeling, b) || !!neckerKeuzes(b, boekingSleutel);
 // Een boeking die over meerdere draaidagen loopt is in de keuken gewoon twee
 // losse dagen: ander aantal gasten, andere allergenen, een ander menu. Daarom
-// krijgt elke dag zijn eigen laag, met de datum achter het nummer.
-// De productkeuzes en de mep-aanpassing daarop staan bewust niet in deze lijst:
-// die houden hun eigen dagstempel bínnen één lijst, en dat werkt al.
-const DAG_LAGEN = ["bkx|", "mepx|", "inv|", "invklaar|", "menukop|"];
+// krijgt elke dag zijn eigen laag, met de datum achter het nummer — ook de
+// productkeuzes ("" is de handmatige laag) en de mep-aanpassing daarop.
+// Die stonden eerst met een dagstempel in één gedeelde lijst, maar twee dagen
+// met hetzelfde product waren daarin niet uit elkaar te houden: wat je op dag
+// twee aanpaste kwam er op dag één naast te staan. Met een eigen laag per dag
+// kan dat niet meer. Boekingen van vóór deze verdeling vallen terug op de
+// gedeelde lijst, totdat je die dag één keer opslaat.
+const DAG_LAGEN = ["", "mep|", "mepb|", "bkx|", "mepx|", "inv|", "invklaar|", "menukop|"];
 const isDagLaag = (b, voor) => !!(b && b.meerdaags && b.datum && DAG_LAGEN.includes(voor || ""));
 const laagSleutel = (b, voor) => (voor || "") + "id|" + b.id + (isDagLaag(b, voor) ? "@" + b.datum : "");
 const leesLaag = (koppeling, boekingSleutel, b, voor) => {
@@ -13232,13 +13227,22 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 // potlood zet de kaart zelf om in invoervelden — geen popup.
 // Partij-informatiepopup: hergebruikt op Mep én op de bezorgmateriaal-pagina,
 // zodat contact/adres-info er overal precies hetzelfde uitziet.
-function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, klantInstel }) {
+function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, klantInstel, meerdaags }) {
   const [adresVeld, setAdresVeld] = useState(() => (klantInstel && klantInstel.adres) || "");
   useEffect(() => { setAdresVeld((klantInstel && klantInstel.adres) || ""); }, [klantInstel && klantInstel.adres]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
         <div className="serif ink font-bold text-lg leading-tight mb-2">{naam || "Zonder naam"}</div>
+        {/* Een boeking over meerdere draaidagen is in de keuken twee losse
+            dagen. Dat spreekt niet vanzelf, dus het staat hier met zoveel
+            woorden: wat je hier aanpast blijft op deze dag. */}
+        {meerdaags && (
+          <div className="rounded-lg px-2.5 py-2 mb-2.5 text-[12.5px] leading-relaxed" style={{ background: "#f2f0e6", color: "#5c5a4c" }}>
+            <div className="font-semibold ink">Meerdaagse boeking{meerdaags.reeks ? " \u00b7 " + meerdaags.reeks : ""}</div>
+            <div className="mt-0.5">Dag {meerdaags.nummer} van {meerdaags.totaal}. Elke draaidag staat op zichzelf: menu, aantal gasten, allergenen, tijden en notitie stel je per dag in, en wat je hier bewaart raakt de andere dag{meerdaags.totaal > 2 ? "en" : ""} niet.</div>
+          </div>
+        )}
         <div className="space-y-1.5 text-[14px]">
           <div><span className="mute">Datum · tijd: </span><span className="ink">{datumKop} · {tijdTekst || "—"}</span></div>
           <div><span className="mute">Gasten: </span><span className="ink">{gastenTekst}{bezorging ? " · bezorging" : ""}</span></div>
@@ -14143,6 +14147,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
           statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
+          meerdaags={meerdaagsInfo(b)}
           klantInstel={klantInstel} onSluit={() => setInfoOpen(false)} />
       )}
 
@@ -14821,6 +14826,32 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       try { document.execCommand("outdent"); } catch (e) {}
     }
   };
+  // De regel uit de lijst tillen én het afvinkvakje eraf, met de cursor op de
+  // lege regel die overblijft. Het uitspringen maakt een nieuwe regel en gooit
+  // de oude weg, dus een vastgehouden vakje is daarna nergens meer: we zetten
+  // er een merkje op dat meereist naar de nieuwe regel, en zoeken het daar op.
+  const uitLijstZonderVakje = (li) => {
+    const cb = li.querySelector("input.nt-cb");
+    if (cb) cb.setAttribute("data-weg", "1");
+    uitLijst();
+    let waar = null;
+    for (const x of [...(vak.current ? vak.current.querySelectorAll("input[data-weg]") : [])]) {
+      waar = waar || x.parentNode;
+      x.remove();
+    }
+    if (waar) {
+      // Een regel die helemaal leeg achterblijft heeft een regeleinde nodig,
+      // anders kan de cursor er niet in staan en typ je verderop.
+      if (!waar.firstChild) waar.appendChild(document.createElement("br"));
+      try {
+        const sel = window.getSelection();
+        const r = document.createRange();
+        r.selectNodeContents(waar); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+      } catch (x) {}
+    }
+    netjes(); checkFmt(); getypt();
+  };
   const toetsVak = (e) => {
     // Backspace vooraan een regel haalt het afvinkvakje weg en maakt er een
     // gewone regel van — zo kom je van een vakje af dat je daar niet wilde,
@@ -14829,50 +14860,30 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       const li = cursorBlok();
       if (li && li.tagName === "LI" && aanBegin(li)) {
         e.preventDefault();
-        // Het uitspringen maakt een nieuwe regel en gooit de oude weg, dus een
-        // vastgehouden vakje is daarna nergens meer. We zetten er een merkje op:
-        // dat reist mee naar de nieuwe regel en daar zoeken we het straks op.
-        const cb = li.querySelector("input.nt-cb");
-        if (cb) cb.setAttribute("data-weg", "1");
-        uitLijst();
-        let waar = null;
-        for (const x of [...(vak.current ? vak.current.querySelectorAll("input[data-weg]") : [])]) {
-          waar = waar || x.parentNode;
-          x.remove();
-        }
-        if (waar) {
-          // Een regel die helemaal leeg achterblijft heeft een regeleinde nodig,
-          // anders kan de cursor er niet in staan en typ je verderop.
-          if (!waar.firstChild) waar.appendChild(document.createElement("br"));
-          try {
-            const sel = window.getSelection();
-            const r = document.createRange();
-            r.selectNodeContents(waar); r.collapse(true);
-            sel.removeAllRanges(); sel.addRange(r);
-          } catch (x) {}
-        }
-        netjes(); checkFmt(); getypt();
+        uitLijstZonderVakje(li);
         return;
       }
     }
-    // Enter op een lege regel van een lijst stapt eruit, zoals overal. Doordat
-    // elke regel een afvinkvakje heeft is zo'n regel voor de browser niet leeg
-    // meer; daarom halen we het vakje er hier even af — dan werkt de gewone
-    // Enter weer, en zet netjes() er daarna vanzelf weer een neer waar nodig.
+    // Enter op een lege regel van een opsomming stapt eruit, zoals overal.
+    // Staat die regel in een sub-opsomming, dan ga je eerst een niveau omhoog.
+    // Sta je al bovenaan, dan gaat het vakje eraf en wordt het een gewone lege
+    // regel op diezelfde plek — er komt géén regel bij. Pas de Enter dáárna
+    // maakt een echte lege regel, want dan is het geen lijstregel meer.
     if (e.key === "Enter" && !e.shiftKey) {
       const li = cursorBlok();
-      if (li && li.tagName === "LI" && leegBlok(li)) {
-        const cb = li.querySelector(":scope > input.nt-cb");
-        if (cb) {
-          cb.remove();
-          try {
-            const sel = window.getSelection();
-            const r = document.createRange();
-            r.selectNodeContents(li); r.collapse(true);
-            sel.removeAllRanges(); sel.addRange(r);
-          } catch (x) {}
-        }
+      if (!li || li.tagName !== "LI" || !leegBlok(li)) return;
+      e.preventDefault();
+      const lijst = li.parentElement;
+      // Chrome hangt een sub-opsomming naast het bovenliggende punt in dezelfde
+      // lijst, niet erbinnen — daarom kijken we naar een lijst erboven, niet
+      // naar een li erboven.
+      const genest = !!(lijst && lijst.parentElement && lijst.parentElement.closest && lijst.parentElement.closest("ul, ol"));
+      if (genest) {
+        try { document.execCommand("outdent"); } catch (x) {}
+        netjes(); checkFmt(); getypt();
+        return;
       }
+      uitLijstZonderVakje(li);
       return;
     }
     if (e.key !== "Tab") return;
