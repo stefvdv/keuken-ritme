@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3586,13 +3586,15 @@ function App() {
     const sleutels = Object.keys(uit.lagen);
     // Eén dag helemaal uitgeschreven, zodat er iets te controleren valt: bij
     // voorkeur een dag waar zowel de boekingpagina als de mep iets heeft staan.
-    const kies = sleutels.filter((sl) => sl.startsWith("bk|")).find((sl) => uit.lagen["mep|" + sl.slice(3)]) || sleutels.find((sl) => sl.startsWith("bk|")) || sleutels[0];
+    const bkSleutels = sleutels.filter((sl) => sl.indexOf(KERN_VOOR + "bk|") === 0);
+    const kies = bkSleutels.find((sl) => uit.lagen[KERN_VOOR + "mep|" + sl.slice((KERN_VOOR + "bk|").length)]) || bkSleutels[0] || sleutels[0];
     const dagSl = kies ? kies.slice(kies.indexOf("id|")) : "";
     const toon = (voor) => {
-      const laag = uit.lagen[voor + dagSl];
-      if (!laag) return voor + dagSl + "\n  (leeg)";
+      const naamVanLaag = KERN_VOOR + voor + dagSl;
+      const laag = uit.lagen[naamVanLaag];
+      if (!laag) return naamVanLaag + "\n  (leeg)";
       const regels = Object.keys(laag).sort().map((naam) => "  " + naam + " = " + JSON.stringify(laag[naam].w) + "   [" + laag[naam].van + " " + String(laag[naam].t).slice(0, 10) + "]");
-      return voor + dagSl + "\n" + regels.join("\n");
+      return naamVanLaag + "\n" + regels.join("\n");
     };
     // Wat er in de globale producttabel staat, zodat te zien is of het inbakken
     // niets deed omdat er niets in staat, of omdat er iets misgaat.
@@ -11703,7 +11705,11 @@ const leesLaag = (koppeling, boekingSleutel, b, voor) => {
 // product op twee dagen los bestaan, en telt een hernoemd product niet als
 // nieuw.
 const KERN_LAGEN = ["mice|", "bk|", "mep|"];
-const kernSleutel = (voor, id, datum) => String(voor) + "id|" + String(id) + "@" + String(datum);
+// Eigen voorvoegsel, zodat de nieuwe lagen nooit botsen met de bestaande.
+// "mep|id|<nummer>@<datum>" is namelijk al in gebruik voor de mep-laag van een
+// meerdaagse dag: zonder dit voorvoegsel zou de omzetting die overschrijven.
+const KERN_VOOR = "kern:";
+const kernSleutel = (voor, id, datum) => KERN_VOOR + String(voor) + "id|" + String(id) + "@" + String(datum);
 const kernVeld = (w, t, van) => ({ w, t: String(t || new Date().toISOString()), van: String(van || "hand") });
 const kernProdVeld = (merk) => "p:" + merk;
 const kernInvVeld = (merk) => "i:" + merk;
