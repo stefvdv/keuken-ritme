@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3594,8 +3594,15 @@ function App() {
       const regels = Object.keys(laag).sort().map((naam) => "  " + naam + " = " + JSON.stringify(laag[naam].w) + "   [" + laag[naam].van + " " + String(laag[naam].t).slice(0, 10) + "]");
       return voor + dagSl + "\n" + regels.join("\n");
     };
+    // Wat er in de globale producttabel staat, zodat te zien is of het inbakken
+    // niets deed omdat er niets in staat, of omdat er iets misgaat.
+    const globaal = Object.values(prodKoppeling || {}).filter(Boolean);
+    const metOnderdelen = globaal.filter((x) => Array.isArray(x.onderdelen) && x.onderdelen.some((o) => String((o && o.naam) || "").trim())).length;
+    const sleutelSoorten = Object.keys(prodKoppeling || {}).filter((x) => x.indexOf("\u0001") >= 0).length;
     return {
-      tekst: omzetVerslag(uit.verslag) + "\n" + sleutels.length + " rijen in mice_koppeling",
+      tekst: omzetVerslag(uit.verslag)
+        + "\n" + sleutels.length + " rijen in mice_koppeling"
+        + "\nglobale producttabel: " + globaal.length + " producten, " + metOnderdelen + " met onderdelen, " + sleutelSoorten + " met naam-sleutel",
       waarschuwingen: uit.verslag.waarschuwingen,
       voorbeeld: dagSl ? [toon("mice|"), toon("bk|"), toon("mep|")].join("\n\n") : "",
     };
