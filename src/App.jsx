@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11832,10 +11832,15 @@ const menuInhoudHtml = ({ blokken }) =>
   + "</div>";
 // bewerkbaar=true levert dezelfde bladzijde op, maar met de tekst aanpasbaar —
 // dat is het afdrukvoorbeeld, waarin nog snel iets rechtgezet kan worden.
-const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar }) =>
+// Twee menu's op één liggende A4 voor op tafel: elk menu wordt een A5, precies
+// de helft van het vel. De verkleining is √2 (210 → 148,5 mm), dus het hele
+// briefpapier — logo, titel, lijn en tekst — krimpt in één keer mee en de
+// verhoudingen blijven kloppen. In het midden een haarlijntje om langs te snijden.
+const TAFEL_KRIMP = 148.5 / 210; // ≈ 0,7071
+const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel }) =>
   "<!doctype html><html lang='nl'><head><meta charset='utf-8'><title>" + pEsc("Menu " + (naam || "")) + "</title><style>"
   + briefFontCss()
-  + "@page{size:A4;margin:0}"
+  + (tafel ? "@page{size:A4 landscape;margin:0}" : "@page{size:A4;margin:0}")
   + "html,body{margin:0;padding:0;background:#fff}"
   + "*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
   + ".blad{position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff url('" + briefAchtergrond() + "') no-repeat 0 0;background-size:210mm 297mm}"
@@ -11848,10 +11853,19 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar }) =>
   + ".regel{font-size:10.5pt;line-height:15pt;margin:0}"
   + ".regel+.regel{margin-top:15pt}"
   + ".blok+.blok{margin-top:15pt}"
+  + (tafel ? ".vel{position:relative;width:297mm;height:210mm;display:flex;overflow:hidden}"
+      + ".helft{position:relative;width:148.5mm;height:210mm;overflow:hidden}"
+      + ".helft .blad{transform:scale(" + TAFEL_KRIMP + ");transform-origin:top left}"
+      + ".vouw{position:absolute;left:148.5mm;top:0;bottom:0;border-left:.3pt dashed #d6d3c6;pointer-events:none}" : "")
   + (bewerkbaar ? ".tekst[contenteditable]{outline:1px dashed #b6b2a3;outline-offset:6px}.tekst[contenteditable]:focus{outline-color:#4f7a3a}@media print{.tekst{outline:none !important}}" : "")
-  + "</style></head><body><div class='blad'><div class='tekst'" + (bewerkbaar ? " contenteditable='true' spellcheck='false'" : "") + ">"
-  + tekstHtml
-  + "</div></div></body></html>";
+  + "</style></head><body>"
+  + (() => {
+      const blad = (eigen) => "<div class='blad'><div class='tekst'" + (bewerkbaar && eigen ? " contenteditable='true' spellcheck='false'" : "") + ">" + tekstHtml + "</div></div>";
+      // Alleen het linker menu is te bewerken; het rechter volgt precies.
+      if (!tafel) return blad(true);
+      return "<div class='vel'><div class='helft'>" + blad(true) + "</div><div class='helft'>" + blad(false) + "</div><div class='vouw'></div></div>";
+    })()
+  + "</body></html>";
 
 const kopieerRijkeTekst = (html) => {
   try {
@@ -13200,13 +13214,15 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
   const [schaal, setSchaal] = useState(1);
   const [vakHoog, setVakHoog] = useState(560);
   const [klaar, setKlaar] = useState(false);
-  const BLAD_BREED = 794; // 210 mm bij 96 dpi
-  const BLAD_HOOG = 1123;
+  const [tafel, setTafel] = useState(false); // twee menu's op één liggend vel
   const MM = 96 / 25.4; // millimeters naar beeldpunten
+  // Staand één menu (210×297 mm), liggend twee naast elkaar (297×210 mm).
+  const BLAD_BREED = tafel ? 1123 : 794;
+  const BLAD_HOOG = tafel ? 794 : 1123;
   // Waar de tekst begint. Daar zetten we het voorbeeld op open: het logo erboven
   // en de gegevens onderaan staan toch vast, die hoef je niet te zien om te
   // kunnen bijschaven. Wegscrollen kan alsnog als je het hele blad wilt zien.
-  const tekstTop = Math.max(0, (briefVorm.top - 7) * MM);
+  const tekstTop = tafel ? 0 : Math.max(0, (briefVorm.top - 7) * MM);
   useEffect(() => {
     const terug = () => sluitRef.current();
     const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
@@ -13225,7 +13241,7 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
     meet();
     window.addEventListener("resize", meet);
     return () => window.removeEventListener("resize", meet);
-  }, []);
+  }, [tafel]);
   // De hoogte niet schatten maar meten: alles onder de knoppenbalk tot vlak
   // boven de onderrand van het scherm is voor het blad. Zo blijft er geen
   // strook ongebruikt, ook niet als de balk over twee regels valt.
@@ -13240,17 +13256,33 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
     meetHoog();
     window.addEventListener("resize", meetHoog);
     return () => window.removeEventListener("resize", meetHoog);
-  }, [schaal, klaar]);
+  }, [schaal, klaar, tafel]);
   // Meteen op de tekst beginnen.
-  useEffect(() => { const el = rolRef.current; if (el) el.scrollTop = tekstTop * schaal; }, [schaal, klaar]);
+  useEffect(() => { const el = rolRef.current; if (el) el.scrollTop = tekstTop * schaal; }, [schaal, klaar, tafel]);
   useEffect(() => { briefVoorladen().then(() => setKlaar(true)); }, []);
-  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ blokken }), bewerkbaar: true });
+  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ blokken }), bewerkbaar: true, tafel });
+  // Op het tafelvel is alleen het linker menu te bewerken; wat je daar typt gaat
+  // meteen één op één naar het rechter, zodat de twee kaartjes nooit ongemerkt
+  // uit elkaar lopen.
+  const koppelSpiegel = () => {
+    try {
+      const fr = lijstRef.current;
+      const doc = fr && fr.contentDocument;
+      if (!doc) return;
+      const bron = doc.querySelector(".tekst[contenteditable]");
+      const spiegels = [...doc.querySelectorAll(".tekst")].filter((x) => x !== bron);
+      if (!bron || !spiegels.length) return;
+      const gelijk = () => { for (const sp of spiegels) sp.innerHTML = bron.innerHTML; };
+      bron.addEventListener("input", gelijk);
+      gelijk();
+    } catch (e) {}
+  };
   const printen = () => {
     const fr = lijstRef.current;
     if (!fr) return;
     try {
       const doc = fr.contentDocument;
-      const tekst = doc && doc.querySelector(".tekst");
+      const tekst = doc && doc.querySelector(".tekst[contenteditable]");
       if (tekst) tekst.removeAttribute("contenteditable");
       fr.contentWindow.focus();
       fr.contentWindow.print();
@@ -13261,13 +13293,18 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-start p-2" style={{ background: "rgba(43,46,36,.6)" }} {...backdropSluiter(() => sluitRef.current())}>
       <div className="w-full" style={{ maxWidth: 1040 }} onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-center gap-2 mb-1.5">
-          <span className="text-[13px]" style={{ color: "#fbf9f2" }}>Klik in de tekst om nog iets aan te passen — scrol voor het hele blad.</span>
-          <button onClick={printen} disabled={!klaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 ml-auto disabled:opacity-50"><Printer size={16} /> {klaar ? "Printen" : "Bezig\u2026"}</button>
+          <span className="text-[13px]" style={{ color: "#fbf9f2" }}>{tafel ? "Pas het linker menu aan — het rechter gaat vanzelf mee. Snijd langs de middenlijn." : "Klik in de tekst om nog iets aan te passen — scrol voor het hele blad."}</span>
+          <button onClick={() => setTafel((v) => !v)} className="ff rounded-lg px-3 py-2 text-[13px] font-semibold inline-flex items-center gap-1.5 ml-auto"
+            style={tafel ? { background: T.green, color: T.paper, border: "1px solid " + T.green } : { background: T.paper, color: T.green, border: "1px solid " + T.green }}
+            title={tafel ? "Terug naar \u00e9\u00e9n menu op een staand vel" : "Twee menu's naast elkaar op een liggend vel, om doormidden te snijden voor op tafel"}>
+            <Copy size={15} /> Tafelkaarten
+          </button>
+          <button onClick={printen} disabled={!klaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"><Printer size={16} /> {klaar ? "Printen" : "Bezig\u2026"}</button>
           <button onClick={() => sluitRef.current()} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium" style={{ background: T.paper }}>Sluiten</button>
         </div>
         <div ref={rolRef} style={{ width: BLAD_BREED * schaal, maxWidth: "100%", height: vakHoog, margin: "0 auto", overflowY: "auto", overflowX: "hidden", background: "#fff", boxShadow: "0 8px 30px rgba(0,0,0,.35)" }}>
           <div style={{ width: BLAD_BREED * schaal, height: BLAD_HOOG * schaal }}>
-            <iframe ref={lijstRef} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
+            <iframe ref={lijstRef} key={tafel ? "tafel" : "enkel"} onLoad={koppelSpiegel} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
               style={{ width: BLAD_BREED, height: BLAD_HOOG, border: 0, transform: "scale(" + schaal + ")", transformOrigin: "top left", background: "#fff" }} />
           </div>
         </div>
