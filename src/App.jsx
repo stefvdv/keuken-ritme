@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-09-30k"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-09-30l"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11406,6 +11406,11 @@ const vorigeInvullingUit = ({ boekingen, koppeling, boekingSleutel, catVan, keuz
 // Herkenningspunt van één gekozen product, ook als het met de hand is
 // toegevoegd en dus geen MICE-nummer heeft.
 const keuzeSleutel = (k) => String(k && k.miceId != null ? k.miceId : "") + "\u0001" + String((k && k.naam) || "");
+const keuzeUitSleutel = (sl) => { const d = String(sl || "").split("\u0001"); return { miceId: d[0] || null, naam: d.slice(1).join("\u0001") }; };
+// Welk próduct dit is, los van de naam die erbij staat. Met een MICE-nummer is
+// dat het nummer; een eigen regel heeft alleen zijn naam om zich mee te
+// onderscheiden.
+const prodMerk = (k) => (k && k.miceId != null && String(k.miceId) !== "" ? "m:" + k.miceId : "n:" + String((k && k.naam) || "").toLowerCase().trim());
 // Wat er op de mep staat als daar een eigen aanpassing voor is gemaakt.
 // Zo'n aanpassing mag niet betekenen dat een product dat daarna bij de boeking
 // komt hier stilletjes verdwijnt: we vergelijken met de situatie van toen, en
@@ -11449,7 +11454,27 @@ const mepKeuzes = (koppeling, boekingSleutel, b) => {
     const toenBij = Array.isArray(basisRij.rijen) ? new Map(basisRij.rijen.map((k) => [keuzeSleutel(k), k])) : null;
     const samen = toenBij ? over.map((k) => mepSamen(k, toenBij.get(keuzeSleutel(k)), nuBij.get(keuzeSleutel(k)))) : over;
     const erin = new Set(samen.map(keuzeSleutel));
-    const erbij = nu.filter((k) => !erin.has(keuzeSleutel(k)) && !toen.has(keuzeSleutel(k)));
+    // Nieuw is een product dat er één keer váker staat dan voorheen — niet een
+    // product waarvan alleen de naam op de boekingpagina is bijgeschaafd. Op de
+    // naam alleen afgaan liet zo'n regel op de mep dubbel verschijnen: één keer
+    // onder de oude naam en één keer onder de nieuwe.
+    const tel = (lijst) => {
+      const m = new Map();
+      for (const k of lijst || []) { const id = prodMerk(k); m.set(id, (m.get(id) || 0) + 1); }
+      return m;
+    };
+    const toenRijen = Array.isArray(basisRij.rijen) ? basisRij.rijen : [...toen].map(keuzeUitSleutel);
+    const bekend = tel(samen), toenTel = tel(toenRijen);
+    const ruimte = new Map();
+    for (const [id, n] of tel(nu)) ruimte.set(id, n - Math.max(bekend.get(id) || 0, toenTel.get(id) || 0));
+    const erbij = [];
+    for (const k of nu) {
+      if (erin.has(keuzeSleutel(k)) || toen.has(keuzeSleutel(k))) continue;
+      const id = prodMerk(k);
+      if ((ruimte.get(id) || 0) <= 0) continue;
+      ruimte.set(id, ruimte.get(id) - 1);
+      erbij.push(k);
+    }
     return erbij.length ? [...samen, ...erbij] : samen;
   }
   // Oudere aanpassing zonder die vergelijking: een gevulde lijst laten we met
@@ -11470,8 +11495,24 @@ const mepErbij = (koppeling, boekingSleutel, b) => {
   const basisRij = (leesLaag(koppeling, boekingSleutel, b, "mepb|") || [])[0];
   if (!basisRij || !Array.isArray(basisRij.basis)) return [];
   const toen = new Set(basisRij.basis);
-  const nu = new Set((mepBasisVan(koppeling, boekingSleutel, b) || []).map(keuzeSleutel));
-  return over.filter((k) => !nu.has(keuzeSleutel(k)) && !toen.has(keuzeSleutel(k)));
+  const nuLijst = mepBasisVan(koppeling, boekingSleutel, b) || [];
+  const nu = new Set(nuLijst.map(keuzeSleutel));
+  // Ook hier telt het próduct, niet de naam: schaaf je op de mep een naam bij,
+  // dan is dat geen nieuw product dat naar de boeking terug hoort te stromen.
+  const tel = (lijst) => { const m = new Map(); for (const k of lijst || []) { const id = prodMerk(k); m.set(id, (m.get(id) || 0) + 1); } return m; };
+  const toenRijen = Array.isArray(basisRij.rijen) ? basisRij.rijen : [...toen].map(keuzeUitSleutel);
+  const bekend = tel(nuLijst), toenTel = tel(toenRijen);
+  const ruimte = new Map();
+  for (const [id, n] of tel(over)) ruimte.set(id, n - Math.max(bekend.get(id) || 0, toenTel.get(id) || 0));
+  const uit = [];
+  for (const k of over) {
+    if (nu.has(keuzeSleutel(k)) || toen.has(keuzeSleutel(k))) continue;
+    const id = prodMerk(k);
+    if ((ruimte.get(id) || 0) <= 0) continue;
+    ruimte.set(id, ruimte.get(id) - 1);
+    uit.push(k);
+  }
+  return uit;
 };
 // Haal je zo'n bijgezette regel op de boekingpagina weg, dan hoort hij ook van
 // de mep af — anders zet de mep hem bij de volgende blik gewoon terug en lijkt
@@ -12234,7 +12275,36 @@ const eigenVelden = (velden, b, onder) => {
     if (w === String(standaard[sleutel] == null ? "" : standaard[sleutel]).trim()) continue;
     uit[sleutel] = velden[sleutel];
   }
-  return Object.keys(uit).length ? uit : null;
+  // Wanneer dit is gezet, zodat later te zien is of MICE er ná deze aanpassing
+  // nog overheen is gegaan.
+  return Object.keys(uit).length ? { ...uit, t: new Date().toISOString() } : null;
+};
+// Heeft MICE ná dit moment zelf nog een ander aantal gasten doorgegeven? Dan is
+// die versie nieuwer en gaat die voor op wat hier met de hand stond.
+const miceGastenNa = (b, sinds) => {
+  if (!sinds) return false;
+  for (const e of (b && b.log) || []) {
+    if (!e || !e.t || String(e.t) <= String(sinds)) continue;
+    if ((e.w || []).some((x) => /^Gasten:/.test(String(x)))) return true;
+  }
+  return false;
+};
+// Het aantal gasten zoals het geldt: wat er met de hand is gezet wint van MICE,
+// tenzij MICE daarna zelf een ander aantal doorgaf.
+const gastenUit = (extra, b) => {
+  const g = extra && extra.gasten !== "" && extra.gasten != null ? Number(extra.gasten) : null;
+  if (g != null && isFinite(g) && !miceGastenNa(b, extra && extra.t)) return g;
+  return (b && b.gasten) || 0;
+};
+// Producten die voor het hele gezelschap zijn — hun aantal is precies het
+// aantal gasten dat MICE meestuurde — volgen het aantal gasten. Zet je dat met
+// de hand op achttien, dan schuiven ze mee. Een product met een eigen aantal
+// (negen warme maaltijden bij achttien gasten) blijft staan waar het staat.
+const volgGasten = (b, lijst, gasten) => {
+  const uitMice = Number(b && b.gasten) || 0;
+  const nu = Number(gasten) || 0;
+  if (!uitMice || !nu || uitMice === nu) return lijst || [];
+  return (lijst || []).map((k) => (Number(k && k.aantal) === uitMice ? { ...k, aantal: nu } : k));
 };
 const kaalBericht = (bericht) => String(bericht || "")
   .replace(/<\s*(br|\/p|\/div|\/li)[^>]*>/gi, "\n")
@@ -14159,9 +14229,15 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // Groeperen per programmadeel (MICE-activity): kop met naam en
                 // tijd, witregel ertussen. Zonder programmadeel: geen kop.
                 const groepVan = (k) => {
+                  // Bij welke MICE-regel dit product hoort. Eerst op naam én
+                  // nummer, zodat twee regels met hetzelfde product uit elkaar
+                  // blijven; levert dat niets op, dan telt het nummer alleen —
+                  // anders raakt een regel zijn programmadeel kwijt zodra je de
+                  // naam bijschaaft, en valt hij onder een kaal tijdstip.
+                  const kandidaten = (k && k.miceId) ? ((b && b.regels) || []).filter((r) => String(r.id) === String(k.miceId) && (r.act || r.tijd)) : [];
                   // Een tijd die hier zelf is ingevuld gaat voor op die van MICE:
                   // zo zet je een zelf toegevoegd product op zijn eigen moment.
-                  const uitMice = (k && k.miceId) ? ((b && b.regels) || []).find((r) => String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) : null;
+                  const uitMice = kandidaten.find((r) => !k.naam || !r.naam || r.naam === k.naam) || kandidaten[0] || null;
                   // Alleen de tijd verzetten laat de naam van het programmadeel staan.
                   if (k && k.tijd) return { act: String(k.act || (uitMice && uitMice.act) || ""), tijd: String(k.tijd) };
                   if (uitMice) return { act: uitMice.act || "", tijd: uitMice.tijd || "" };
@@ -15216,10 +15292,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const gekozen = (b) => {
     const over = mepKeuzes(koppeling, boekingSleutel, b);
-    if (over !== undefined) return keuzesOpDag(b, over);
-    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    if (hand.length) return keuzesOpDag(b, hand);
-    return keuzesOpDag(b, herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b));
+    const hand = over !== undefined ? null : leesLaag(koppeling, boekingSleutel, b, "") || [];
+    const lijst = over !== undefined ? over
+      : hand.length ? hand
+      : herhaalKeuzes(koppeling, b) || neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b);
+    return volgGasten(b, keuzesOpDag(b, lijst), gastenVan(b));
   };
   // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
   const extraVan = (b) => {
@@ -15230,7 +15307,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     return Object.keys(uit).length ? uit : null;
   };
   const tijdVan = (b) => { const e = extraVan(b); return (e && e.tijd) || (b.start_tijd ? String(b.start_tijd).slice(11, 16) : ""); };
-  const gastenVan = (b) => { const e = extraVan(b); const g = e && e.gasten !== "" && e.gasten != null ? Number(e.gasten) : null; return g != null && isFinite(g) ? g : (b.gasten || 0); };
+  const gastenVan = (b) => gastenUit(extraVan(b), b);
   const allergieEff = (b) => { const e = extraVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
   const nootEff = (b) => { const e = extraVan(b); return (e && String(e.notitie || "").trim()) || kaalBericht(b.bericht); };
   const statusVan = (b) => { const e = extraVan(b); return (e && e.status) || b.status; };
@@ -15761,7 +15838,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   }, [nieuwBewerk]);
 
   // Volgorde: handmatige invulling > Necker-standaard > MICE-bestelling.
-  const gekozen = (b) => boekingKeuzes(koppeling, boekingSleutel, b);
+  const gekozen = (b) => volgGasten(b, boekingKeuzes(koppeling, boekingSleutel, b), gastenVan(b));
   const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
   const invVoor = (b, miceId) => {
     const e = invLaag(b).find((x) => String(x.miceId) === String(miceId));
@@ -15784,7 +15861,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   const tijd = (iso) => (iso ? String(iso).slice(11, 16) : "");
   const bkxVan = (b) => ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null;
   const tijdVan = (b) => { const e = bkxVan(b); return (e && e.tijd) || tijd(b.start_tijd); };
-  const gastenVan = (b) => { const e = bkxVan(b); const g = e && e.gasten !== "" && e.gasten != null ? Number(e.gasten) : null; return g != null && isFinite(g) ? g : (b.gasten || 0); };
+  const gastenVan = (b) => gastenUit(bkxVan(b), b);
   const allergieEff = (b) => { const e = bkxVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
   const nootEff = (b) => { const e = bkxVan(b); return (e && String(e.notitie || "").trim()) || kaalBericht(b.bericht); };
   const statusVan = (b) => { const e = bkxVan(b); return (e && e.status) || b.status; };
