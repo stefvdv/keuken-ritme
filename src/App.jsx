@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01s"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01t"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -15009,7 +15009,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // die regels bij horen, zeker nu het kopje van het programmadeel
                 // ook weg is. De naam staat er dus altijd.
                 const zonderKop = false;
-                const kop = (g.tijd ? g.tijd + " · " : "") + (k.aantal || b.gasten) + "× " + k.naam + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
@@ -15107,6 +15107,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       aan de partij en dat bij de invulregels is genoeg. De naam
                       begint nu op dezelfde hoogte als het hoeveelheidsvak eronder. */}
                   <div className="flex items-center gap-1.5 pl-3">
+                    {/* Het aantal van het product zelf. Dat ontbrak hier, waardoor
+                        je een bestelling van 100 broodjes niet kon bijstellen —
+                        alleen de hoeveelheden in de invulling eronder. */}
+                    <input className="input px-2 py-1.5 text-sm shrink-0" style={{ width: "3.2rem", flex: "0 0 3.2rem" }} inputMode="numeric"
+                      data-pa={b.id + "-" + i} value={String(k.aantal == null ? "" : k.aantal)} placeholder={String(b.gasten || "")}
+                      onChange={(e) => zetR(i, "aantal", e.target.value)}
+                      title="Aantal van dit product" />
                     {magProductNaam
                       ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" data-pn={b.id + "-" + i} title={productInfoHover(k)} value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
                           onKeyDown={(e) => {
