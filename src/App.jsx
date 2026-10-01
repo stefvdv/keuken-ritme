@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01t"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01u"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -15009,7 +15009,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // die regels bij horen, zeker nu het kopje van het programmadeel
                 // ook weg is. De naam staat er dus altijd.
                 const zonderKop = false;
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
+                // De opmerking bij nonfood stond vroeger achter de naam geplakt.
+                // Bij servies was dat kort ("wit servies"), maar bij een product
+                // met een hele invulling werd de naam een menukaart. Hij staat nu
+                // op zijn eigen regel eronder, net als bij de andere producten.
+                const kop = (k.aantal || b.gasten) + "× " + k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId);
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
@@ -15030,6 +15034,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         )}
                         {isVers && <NieuwTag titel={isVers.titel} />}
                       </div>
+                    )}
+                    {nonfood && opmerking && (
+                      <div className="ink pl-3"><MarkTekst tekst={opmerking} basis={kopBasis + ":op"} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} /></div>
                     )}
                     {!nonfood && od && od.map((o, j) => {
                       // De gerechten in de regel zijn zelf de link naar hun recept;
@@ -16098,9 +16105,9 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const invVoor = (b, miceId) => {
     const v = veldenVan(b);
     const sl = kernInvVeld(prodMerk({ miceId }));
-    if (kernHeeft(v, sl)) return { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" };
-    const k = gekozen(b).find((x) => String(x.miceId) === String(idUitSleutel(miceId)));
-    return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
+    // Geen stille terugval op een sjabloon: wat hier staat is wat er in de
+    // boeking of op de mep is gezet.
+    return kernHeeft(v, sl) ? { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" } : null;
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   // Nonfood telt niet mee in de mep-berekening en dus ook niet in "samen
@@ -16605,11 +16612,11 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     const sl = kernInvVeld(prodMerk({ miceId }));
     // Staat het veld er, dan telt dat — ook als het leeggemaakt is. Zo blijft
     // een bewust lege invulling leeg.
-    if (kernHeeft(v, sl)) return { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" };
-    // Nog nooit ingevuld: dan kijkt hij of deze klant een sjabloon heeft en
-    // rekent de hoeveelheden om naar dit aantal.
-    const k = gekozen(b).find((x) => String(x.miceId) === String(idUitSleutel(miceId)));
-    return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
+    // Staat het veld er niet, dan is er niets ingevuld. Vroeger pakte hij hier
+    // stilletjes het sjabloon van deze klant erbij, waardoor er invulling
+    // verscheen die je nooit had gezet. Wil je die overnemen, dan is daar het
+    // knopje voor in de bewerkstand.
+    return kernHeeft(v, sl) ? { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" } : null;
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
