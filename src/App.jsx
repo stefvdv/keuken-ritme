@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01j"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3467,6 +3467,24 @@ function App() {
     // database niet volloopt. Elke sync ruimt meteen op.
     const bewaarGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 62); return localDate(d); })();
     if (live) { try { await supabase.from("mice_events").delete().lt("datum", bewaarGrens); } catch (e) {} }
+    // De kern bijwerken: per draaidag de MICE-laag verversen, en als het aantal
+    // gasten verandert schuiven de aantallen die daaraan hingen mee. Alleen wat
+    // echt verandert wordt weggeschreven.
+    try {
+      const bij = kernBijwerken(koppeling, rijen, new Date().toISOString());
+      const sleutels = Object.keys(bij);
+      if (sleutels.length) {
+        setKoppeling((k) => { const n = { ...k }; for (const sl of sleutels) n[sl] = kernIn(bij[sl]); return n; });
+        if (live) {
+          const stamp = new Date().toISOString();
+          for (let i = 0; i < sleutels.length; i += 50) {
+            const rij = sleutels.slice(i, i + 50).map((sl) => ({ sleutel: sl, producten: kernIn(bij[sl]), updated_by: user || "", updated_at: stamp }));
+            try { const { error } = await supabase.from("mice_koppeling").upsert(rij); if (error) throw error; }
+            catch (e) { for (const r of rij) wachtrijVoegToe("mice_koppeling", r); }
+          }
+        }
+      }
+    } catch (e) {}
     setBoekingen((xs) => {
       const per = {};
       for (const b of xs) per[b.id] = b;
@@ -12047,6 +12065,25 @@ const kernLagen = (koppeling, id, datum) => ({
   bk: kernUit(koppeling, "bk|", id, datum),
   mep: kernUit(koppeling, "mep|", id, datum),
 });
+
+// Wat er na een sync aan de kern bijgewerkt moet worden. Geeft alleen de lagen
+// terug die echt veranderen, zodat een sync waarin niets gebeurt ook niets
+// wegschrijft — hij draait elke tien minuten.
+const kernBijwerken = (koppeling, rijen, nu) => {
+  const t = String(nu || new Date().toISOString());
+  const uit = {};
+  for (const bron of rijen || []) {
+    if (isVerwijderd(koppeling, bron)) continue;
+    for (const b of dagVarianten(bron)) {
+      const dag = String(b.datum);
+      const oud = kernLagen(koppeling, bron.id, dag);
+      const na = naSync(oud, miceVelden(bron, dag), t);
+      if (!kernGelijk(na.mice, oud.mice)) uit[kernSleutel("mice|", bron.id, dag)] = na.mice;
+      if (!kernGelijk(na.bk, oud.bk)) uit[kernSleutel("bk|", bron.id, dag)] = na.bk;
+    }
+  }
+  return uit;
+};
 
 // Wat de omzetting oplevert, in gewone taal. Dit is wat de proefknop laat zien.
 const omzetVerslag = (v) => [
