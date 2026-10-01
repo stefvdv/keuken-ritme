@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01q"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01r"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3607,21 +3607,28 @@ function App() {
   // heeft niets met MICE te maken. Alleen de boekingen zelf en de handmatige
   // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
   // ── De boekingpagina schrijft in de kern ──────────────────────────────────
-  const kernBewaren = (b, bk) => koppelingBijwerken(kernSleutel("bk|", b.id, b.datum), kernIn(bk));
-  const kernOpslaanBoeking = (b, regels, velden) =>
-    kernBewaren(b, kernOpslaan(kernLagen(koppelingNu.current, b.id, b.datum), b, regels, velden, new Date().toISOString()));
-  // Terugzetten naar wat MICE zegt: de eigen laag van die dag leeg.
-  const kernWissen = (b) => kernBewaren(b, {});
-  // De invulling van een of meer producten, op de dag waar je staat.
-  const kernInvullen = (b, lijst) => {
+  const kernBewaren = (b, laag, bk) => koppelingBijwerken(kernSleutel(laag + "|", b.id, b.datum), kernIn(bk));
+  const kernOpslaanIn = (laag) => (b, regels, velden) =>
+    kernBewaren(b, laag, kernOpslaan(kernLagen(koppelingNu.current, b.id, b.datum), b, regels, velden, new Date().toISOString(), laag));
+  const kernOpslaanBoeking = kernOpslaanIn("bk");
+  const kernOpslaanMep = kernOpslaanIn("mep");
+  // Terugzetten naar wat eronder ligt: de eigen laag van die dag leeg.
+  const kernWissenIn = (laag) => (b) => kernBewaren(b, laag, {});
+  const kernWissen = kernWissenIn("bk");
+  const kernMepWissen = kernWissenIn("mep");
+  // De invulling van een of meer producten, op de dag waar je staat. Op de mep
+  // is dat een mep-aanpassing: die werkt niet terug naar de boeking.
+  const kernInvullenIn = (laag) => (b, lijst) => {
     const nu = new Date().toISOString();
-    const bk = { ...kernLagen(koppelingNu.current, b.id, b.datum).bk };
+    const eigen = { ...kernLagen(koppelingNu.current, b.id, b.datum)[laag] };
     for (const w of lijst || []) {
       const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
-      bk[kernInvVeld(prodMerk({ miceId: w.miceId }))] = kernVeld(od, nu, "hand");
+      eigen[kernInvVeld(prodMerk({ miceId: w.miceId }))] = kernVeld(od, nu, laag === "mep" ? "mep" : "hand");
     }
-    return kernBewaren(b, bk);
+    return kernBewaren(b, laag, eigen);
   };
+  const kernInvullen = kernInvullenIn("bk");
+  const kernMepInvul = kernInvullenIn("mep");
   // De omzetting proefdraaien: rekent uit wat de nieuwe opslag zou worden en
   // geeft een verslag terug. Er wordt niets weggeschreven — dit is om te kijken
   // of het klopt voordat we het echt doen.
@@ -6299,6 +6306,7 @@ function App() {
               <MepWeek klantInstelVan={klantInstelVan} boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} invulGesch={invulGeschiedenis} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
+                onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
                 notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
@@ -12135,10 +12143,15 @@ const kernExtra = (lagen) => {
 // Wat de boekingpagina opslaat. Alleen wat afwijkt van de laag eronder komt in
 // de eigen laag; wat gelijk is aan MICE verdwijnt eruit, zodat MICE dat veld
 // weer kan sturen. Geeft de nieuwe eigen laag terug.
-const kernOpslaan = (lagen, b, regels, velden, nu) => {
+const kernOpslaan = (lagen, b, regels, velden, nu, laag) => {
   const t = String(nu || new Date().toISOString());
-  const mice = (lagen || {}).mice || {};
-  let bk = { ...((lagen || {}).bk || {}) };
+  const opMep = laag === "mep";
+  // Wat eronder ligt verschilt per laag: de boekingpagina kijkt naar MICE, de
+  // mep naar de boeking zoals die daar uitkomt. Verder is het dezelfde regel —
+  // alleen wat afwijkt van de laag eronder wordt vastgelegd.
+  const mice = opMep ? vouwSamen((lagen || {}).mice, (lagen || {}).bk) : ((lagen || {}).mice || {});
+  const bron = opMep ? "mep" : "hand";
+  let bk = { ...((lagen || {})[opMep ? "mep" : "bk"] || {}) };
 
   // 1. De productregels zoals de kaart ze nu heeft.
   if (Array.isArray(regels)) {
@@ -12155,14 +12168,14 @@ const kernOpslaan = (lagen, b, regels, velden, nu) => {
       const uitMice = mice[sl] && mice[sl].w;
       if (uitMice && String(uitMice.naam || "") !== String(w.naam || "")) {
         const nv = kernNaamVeld(merk);
-        if (!bk[nv] || !kernGelijk(bk[nv].w, w.naam)) bk[nv] = kernVeld(String(w.naam || ""), t, "hand");
+        if (!bk[nv] || !kernGelijk(bk[nv].w, w.naam)) bk[nv] = kernVeld(String(w.naam || ""), t, bron);
         w.naam = String(uitMice.naam || "");
       } else if (uitMice) {
         delete bk[kernNaamVeld(merk)];
       }
       if (mice[sl] && kernGelijk(mice[sl].w, w)) { delete bk[sl]; continue; }
       if (bk[sl] && kernGelijk(bk[sl].w, w)) continue; // ongewijzigd: moment laten staan
-      bk[sl] = kernVeld(w, t, "hand");
+      bk[sl] = kernVeld(w, t, bron);
     }
     // Wat er stond en nu niet meer in de lijst zit, is weggehaald. Stuurt MICE
     // het nog, dan leggen we dat vast; was het alleen van onszelf, dan mag het
@@ -12170,7 +12183,7 @@ const kernOpslaan = (lagen, b, regels, velden, nu) => {
     for (const naam of Object.keys(voor)) {
       if (!kernIsProd(naam) || !voor[naam].w) continue;
       if (staat.has(kernMerkVan(naam))) continue;
-      if (mice[naam] && mice[naam].w) bk[naam] = kernVeld(null, t, "hand");
+      if (mice[naam] && mice[naam].w) bk[naam] = kernVeld(null, t, bron);
       else delete bk[naam];
     }
   }
@@ -12185,12 +12198,12 @@ const kernOpslaan = (lagen, b, regels, velden, nu) => {
       const leeg = String(w).trim() === "";
       if (leeg || kernGelijk((mice[naam] || {}).w, w)) { delete bk[naam]; continue; }
       if (bk[naam] && kernGelijk(bk[naam].w, w)) continue;
-      bk[naam] = kernVeld(w, t, "hand");
+      bk[naam] = kernVeld(w, t, bron);
     }
     const g = velden.gasten == null || String(velden.gasten).trim() === "" ? null : Number(velden.gasten);
     if (g != null && isFinite(g) && g >= 0) {
       const oud = Number(kernWaarde(tussen, "gasten")) || 0;
-      if (oud !== g) bk = zetGasten(bk, tussen, g, t, "hand");
+      if (oud !== g) bk = zetGasten(bk, tussen, g, t, bron);
       if (kernGelijk((mice.gasten || {}).w, g)) delete bk.gasten;
     } else {
       delete bk.gasten;
@@ -15934,7 +15947,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
-function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
+function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, invulGesch, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
@@ -16016,25 +16029,28 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // Volgorde: mep-aanpassing > handmatige invulling > MICE-bestelling.
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
-  const gekozen = (b) => {
-    const over = mepKeuzes(koppeling, boekingSleutel, b);
-    const lijst = over !== undefined ? keuzesOpDag(b, over) : alleKeuzesVan(koppeling, boekingSleutel, b);
-    return volgGasten(b, lijst, gastenVan(b));
-  };
-  // Boeking-aanpassingen (bkx) gelden ook hier; mep-eigen (mepx) gaan voor.
+  // Alles komt uit de kern: de drie lagen van die draaidag, over elkaar
+  // gevouwen. De mep ziet dus wat de boeking zegt, met zijn eigen aanpassingen
+  // daarbovenop — en haalt nergens meer rechtstreeks uit MICE, een sjabloon of
+  // een vaste lijst.
+  const lagenVan = (b) => kernLagen(koppeling, b.id, b.datum);
+  const veldenVan = (b) => mepVelden(lagenVan(b));
+  const gekozen = (b) => kernKeuzes(veldenVan(b));
   const extraVan = (b) => {
-    const bk = (leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0] || {};
-    const mp = (leesLaag(koppeling, boekingSleutel, b, "mepx|") || [])[0] || {};
-    const uit = { ...bk };
-    for (const k of Object.keys(mp)) if (String(mp[k] == null ? "" : mp[k]).trim() !== "") uit[k] = mp[k];
+    const lagen = lagenVan(b);
+    const uit = {};
+    for (const naam of ["gasten", "tijd", "naam", "status", "notitie", "allergie"]) {
+      const v = (lagen.mep || {})[naam] || (lagen.bk || {})[naam];
+      if (v) uit[naam] = v.w;
+    }
     return Object.keys(uit).length ? uit : null;
   };
-  const tijdVan = (b) => { const e = extraVan(b); return (e && e.tijd) || (b.start_tijd ? String(b.start_tijd).slice(11, 16) : ""); };
-  const gastenVan = (b) => gastenUit(extraVan(b), b);
-  const allergieEff = (b) => { const e = extraVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
-  const nootEff = (b) => { const e = extraVan(b); return (e && String(e.notitie || "").trim()) || kaalBericht(b.bericht); };
-  const statusVan = (b) => { const e = extraVan(b); return (e && e.status) || b.status; };
-  const naamVan = (b) => { const e = extraVan(b); return (e && e.naam) || b.naam; };
+  const tijdVan = (b) => String(kernWaarde(veldenVan(b), "tijd") || "") || (b.start_tijd ? String(b.start_tijd).slice(11, 16) : "");
+  const gastenVan = (b) => { const g = kernWaarde(veldenVan(b), "gasten"); return g == null || g === "" ? (b && b.gasten) || 0 : Number(g) || 0; };
+  const allergieEff = (b) => { const t = String(kernWaarde(veldenVan(b), "allergie") || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
+  const nootEff = (b) => String(kernWaarde(veldenVan(b), "notitie") || "").trim() || kaalBericht(b.bericht);
+  const statusVan = (b) => String(kernWaarde(veldenVan(b), "status") || "") || b.status;
+  const naamVan = (b) => String(kernWaarde(veldenVan(b), "naam") || "") || b.naam;
   // Afgezegd/geannuleerd hoort niet in de mep (op de Boekingen-pagina blijven
   // ze wel zichtbaar). Ook een notitie als "afgezegd" telt mee.
   const afgezegd = (b) => /cancel|annul|afgezegd/i.test(String(statusVan(b) || "")) || /\bafgezegd\b/i.test(String(nootEff(b) || ""));
@@ -16061,17 +16077,18 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const partijenOpDag = (d) => partijen.filter((b) => b.datum === d)
     .sort((a, c) => eersteTijd(a).localeCompare(eersteTijd(c)) || String(naamVan(a) || "").localeCompare(String(naamVan(c) || ""), "nl"));
   // Partij-eigen invullaag gaat vóór de (oude) globale productinvulling.
-  const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
+  const invLaag = (b) => {
+    const v = veldenVan(b);
+    return Object.keys(v).filter((n) => n.slice(0, 2) === "i:").map((n) => ({ miceId: n.slice(4), onderdelen: Array.isArray(v[n].w) ? v[n].w : [], naam: "" }));
+  };
   const invVoor = (b, miceId) => {
-    const e = invLaag(b).find((x) => String(x.miceId) === String(miceId));
-    if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" };
-    if (prodKoppeling[miceId]) return prodKoppeling[miceId];
-    // Niets eigens en geen vaste koppeling: dan kijkt hij of deze klant een
-    // sjabloon heeft en rekent de hoeveelheden om naar dit aantal.
+    const v = veldenVan(b);
+    const sl = kernInvVeld(prodMerk({ miceId }));
+    if (kernHeeft(v, sl)) return { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" };
     const k = gekozen(b).find((x) => String(x.miceId) === String(idUitSleutel(miceId)));
     return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
   };
-  const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
+  const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   // Nonfood telt niet mee in de mep-berekening en dus ook niet in "samen
   // maken": servies wordt niet bereid.
   const mepVan = (b, heel) => gekozen(b).filter((k) => isMepRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, { ...b, gasten: gastenVan(b) }, prodKoppVoor(b), producten, calcItems, dishById, recipeById, heel));
@@ -16309,17 +16326,16 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     allergie={allergieEff(b)} noot={nootEff(b)} tijdTekst={tijdVan(b)} gastenTekst={gastenVan(b)}
                     catVan={catVan} stift={stift} markering={markering} zetMark={zetMark}
                     canEdit={true} magExtra={true} extra={extraVan(b)}
-                    aangepast={leesLaag(koppeling, boekingSleutel, b, "mep|") !== undefined || leesLaag(koppeling, boekingSleutel, b, "mepx|") !== undefined}
+                    aangepast={Object.keys(lagenVan(b).mep || {}).length > 0}
                     nootOpenStandaard={false}
                     invulStatus={null} onInvullen={null} recepten={recepten}
                     invullingVan={(miceId) => invVoor(b, miceId)}
-                    onInvulling={(miceId, inv) => onInvulPartij(b, miceId, inv)} onInvullingBatch={(lijst) => onInvulPartijBatch(b, lijst)}
+                    onInvulling={onKernMepInvul ? (miceId, inv) => onKernMepInvul(b, [{ miceId, inv }]) : null} onInvullingBatch={onKernMepInvul ? (lijst) => onKernMepInvul(b, lijst) : null}
                     vorigeInvulling={(miceId, aantal) => vorigeInvulling(b, miceId, aantal)}
                     onOpslaan={(regels, velden) => {
-                      onKoppel(b, keuzesBewaren(koppeling, boekingSleutel, b, regels));
-                      if (velden) onMepExtra(b, eigenVelden(velden, b, (leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]));
+                      if (onKernMep) onKernMep(b, regels, velden);
                     }}
-                    onHerstel={() => onWisMep(b)} herstelLabel="Mep wijzigingen resetten"
+                    onHerstel={() => { if (onKernMepWissen) onKernMepWissen(b); }} herstelLabel="Mep wijzigingen resetten"
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal} adres={adresVan(b)} klant_email={b.klant_email} toonEmail={false}
