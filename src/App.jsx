@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01r"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01s"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -15004,7 +15004,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // Op de mep vervangt de invulling de productnaam: is er een
                 // invulling, dan verdwijnt de productregel en staan de
                 // invullingsregels er direct (zonder inspringing).
-                const zonderKop = !nonfood && invulVervangt && od && od.length > 0;
+                // Op de mep stond de productnaam vroeger niet boven de invulling —
+                // die verving hem. Maar dan weet je in de keuken niet meer waar
+                // die regels bij horen, zeker nu het kopje van het programmadeel
+                // ook weg is. De naam staat er dus altijd.
+                const zonderKop = false;
                 const kop = (g.tijd ? g.tijd + " · " : "") + (k.aantal || b.gasten) + "× " + k.naam + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
@@ -15300,7 +15304,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                           if (e.key === "Enter") { e.preventDefault(); setAlRijen((rs) => [...rs.slice(0, i + 1), { aantal: "", tekst: "" }, ...rs.slice(i + 1)]); focusNa('[data-ala="' + b.id + "-" + (i + 1) + '"]'); }
                           if (e.key === "Backspace" && !String(r.tekst || "") && !String(r.aantal || "")) { e.preventDefault(); setAlRijen((rs) => rs.filter((_, j) => j !== i)); focusNa('[data-alt="' + b.id + "-" + (i - 1) + '"]'); }
                         }} />
-                      <button onClick={() => setAlRijen((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
+                      {/* De laatste rij gaat niet weg maar leeg: anders blijf je
+                          zonder invoervak achter en kun je er geen nieuwe meer
+                          bijmaken. */}
+                      <button onClick={() => setAlRijen((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : [{ aantal: "", tekst: "" }]))} className="ff mute hover:opacity-60"><Trash2 size={14} /></button>
                     </div>
                   ))}
                 </div>
