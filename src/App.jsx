@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01k"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01l"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3596,6 +3596,22 @@ function App() {
   // De culinaire invulling blijft altijd staan: die is met de hand gemaakt en
   // heeft niets met MICE te maken. Alleen de boekingen zelf en de handmatige
   // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
+  // ── De boekingpagina schrijft in de kern ──────────────────────────────────
+  const kernBewaren = (b, bk) => saveKoppelingSleutel(kernSleutel("bk|", b.id, b.datum), kernIn(bk));
+  const kernOpslaanBoeking = (b, regels, velden) =>
+    kernBewaren(b, kernOpslaan(kernLagen(koppeling, b.id, b.datum), regels, velden, new Date().toISOString()));
+  // Terugzetten naar wat MICE zegt: de eigen laag van die dag leeg.
+  const kernWissen = (b) => kernBewaren(b, {});
+  // De invulling van een of meer producten, op de dag waar je staat.
+  const kernInvullen = (b, lijst) => {
+    const nu = new Date().toISOString();
+    const bk = { ...kernLagen(koppeling, b.id, b.datum).bk };
+    for (const w of lijst || []) {
+      const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
+      bk[kernInvVeld(prodMerk({ miceId: w.miceId }))] = kernVeld(od, nu, "hand");
+    }
+    return kernBewaren(b, bk);
+  };
   // De omzetting proefdraaien: rekent uit wat de nieuwe opslag zou worden en
   // geeft een verslag terug. Er wordt niets weggeschreven — dit is om te kijken
   // of het klopt voordat we het echt doen.
