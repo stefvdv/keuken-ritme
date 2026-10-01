@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01x"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01z"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2858,6 +2858,151 @@ function daysBetween(iso) {
 
 
 // ---------- huisstijl (Landgoed de Beug) ----------
+// Een product uit de MICE-koppeling als rij voor onze eigen lijst. De
+// categorie zit wél in die koppeling — als veld "category" met een naam erin.
+// Dat hadden we nooit gezien, en daarom liep de indeling jarenlang via de
+// Excel-export. Hernoem je nu een categorie in MICE, dan staat hij hier bij de
+// eerstvolgende ophaal goed.
+const miceProductRij = (p) => ({
+  id: p.id,
+  naam: p.name || "",
+  omschrijving: String(p.description || "").replace(/<[^>]*>/g, " ").trim(),
+  prijs: Number(p.price) || 0,
+  groep_id: p.group_id || null,
+  categorie: p.category && p.category.name ? String(p.category.name).trim() : "",
+  opgehaald_op: new Date().toISOString(),
+});
+// Noemt MICE geen categorie, dan houden we wat we hadden — en anders
+// "Overige", precies wat hun eigen export in dat geval invult. Zo blijft de
+// indeling in Extras staan, ook als de koppeling een keer niets meegeeft.
+const vulCategorie = (rijen, oud) => {
+  const was = {};
+  for (const p of oud || []) if (p && p.categorie) was[p.id] = p.categorie;
+  for (const r of rijen || []) if (!r.categorie) r.categorie = was[r.id] || "Overige";
+  return rijen;
+};
+
+// ── Een tabel inlezen zonder hulp van buitenaf ────────────────────────────
+// Hier stond een Excel-bibliotheek die bij elk gebruik van een vreemde server
+// gehaald werd. Die kon de productexport van MICE niet lezen: MICE schrijft
+// zijn bestand al verzendend weg, en dan staan in de kopjes binnen de zip nog
+// nullen in plaats van de maten. De bibliotheek gelooft die nullen en vindt
+// een leeg werkblad. De maten staan verderop in de zip, in de centrale lijst,
+// en dáár leest onderstaande lezer ze. Het bestand was dus goed; de lezer niet.
+// Scheelt meteen een bibliotheek van een halve megabyte en werkt zonder net.
+const XML_UIT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const ontEscape = (s) => String(s == null ? "" : s).replace(/&(#x?[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g, (h, n) =>
+  n[0] === "#" ? String.fromCodePoint(n[1] === "x" || n[1] === "X" ? parseInt(n.slice(2), 16) : parseInt(n.slice(1), 10)) : (XML_UIT[n] || h));
+const kolIndex = (ref) => {
+  const m = String(ref || "").match(/^([A-Z]+)/);
+  if (!m) return -1;
+  let n = 0;
+  for (const c of m[1]) n = n * 26 + (c.charCodeAt(0) - 64);
+  return n - 1;
+};
+const pakT = (xml) => { let u = ""; const re = /<t\b[^>]*>([\s\S]*?)<\/t>/g; let m; while ((m = re.exec(xml))) u += m[1]; return ontEscape(u); };
+
+const zipDelen = async (bytes) => {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u16 = (o) => dv.getUint16(o, true), u32 = (o) => dv.getUint32(o, true);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= 0 && i > bytes.length - 66000; i--) {
+    if (bytes[i] === 0x50 && bytes[i + 1] === 0x4b && bytes[i + 2] === 0x05 && bytes[i + 3] === 0x06) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("geen zip-afsluiting gevonden");
+  const aantal = u16(eocd + 10);
+  let p = u32(eocd + 16);
+  const delen = new Map();
+  for (let i = 0; i < aantal; i++) {
+    if (u32(p) !== 0x02014b50) break;
+    const methode = u16(p + 10);
+    const csz = u32(p + 20);
+    const nlen = u16(p + 28), elen = u16(p + 30), clen = u16(p + 32);
+    const lokaal = u32(p + 42);
+    const naam = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nlen));
+    const lnlen = u16(lokaal + 26), lelen = u16(lokaal + 28);
+    const start = lokaal + 30 + lnlen + lelen;
+    const ruw = bytes.subarray(start, start + csz);
+    if (methode === 0) delen.set(naam, ruw);
+    else if (methode === 8) {
+      if (typeof DecompressionStream === "undefined") throw new Error("deze browser kan ingepakte bestanden niet uitpakken");
+      delen.set(naam, new Uint8Array(await new Response(new Blob([ruw]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer()));
+    } else throw new Error("onbekende inpakmethode " + methode);
+    p += 46 + nlen + elen + clen;
+  }
+  return delen;
+};
+
+const xlsxRijen = (delen) => {
+  const tekst = (n) => { const b = delen.get(n); return b ? new TextDecoder().decode(b) : ""; };
+  let blad = "";
+  const rid = (tekst("xl/workbook.xml").match(/<sheet\b[^>]*?r:id="([^"]+)"/) || [])[1];
+  if (rid) {
+    const t = (tekst("xl/_rels/workbook.xml.rels").match(new RegExp('<Relationship[^>]*?Id="' + rid + '"[^>]*?Target="([^"]+)"')) || [])[1];
+    if (t) blad = ("xl/" + String(t).replace(/^\.?\/?(xl\/)?/, "")).replace(/\/\//g, "/");
+  }
+  if (!blad || !delen.has(blad)) blad = [...delen.keys()].find((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)) || "";
+  if (!blad) throw new Error("geen werkblad in het bestand");
+  const gedeeld = [];
+  const ss = tekst("xl/sharedStrings.xml");
+  if (ss) { const re = /<si\b[^>]*>([\s\S]*?)<\/si>/g; let m; while ((m = re.exec(ss))) gedeeld.push(pakT(m[1])); }
+  const xml = tekst(blad);
+  const rijen = [];
+  const reRij = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
+  let mr;
+  while ((mr = reRij.exec(xml))) {
+    const rij = [];
+    const binnenRij = mr[2] || "";
+    const reCel = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    let mc, k = 0;
+    while ((mc = reCel.exec(binnenRij))) {
+      const attr = mc[1] || "", binnen = mc[2] || "";
+      const idx = kolIndex((attr.match(/\br="([A-Z]+)\d+"/) || [])[1]);
+      const i = idx >= 0 ? idx : k;
+      while (rij.length < i) rij.push("");
+      const soort = (attr.match(/\bt="([^"]*)"/) || [])[1] || "n";
+      let w = "";
+      if (soort === "inlineStr") w = pakT(binnen);
+      else {
+        const v = (binnen.match(/<v\b[^>]*>([\s\S]*?)<\/v>/) || [])[1];
+        if (soort === "s") w = gedeeld[Number(v)] || "";
+        else w = v == null ? "" : ontEscape(v);
+      }
+      rij[i] = w;
+      k = i + 1;
+    }
+    rijen.push(rij);
+  }
+  return rijen;
+};
+
+const csvRijen = (tekst) => {
+  const t = String(tekst || "").replace(/^﻿/, "");
+  const eerste = (t.split(/\r?\n/)[0] || "");
+  const tel = (c) => (eerste.split(c).length - 1);
+  const sep = tel("\t") >= tel(";") && tel("\t") >= tel(",") ? "\t" : tel(";") >= tel(",") ? ";" : ",";
+  const rijen = []; let rij = []; let veld = ""; let inAanhaling = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inAanhaling) {
+      if (c === '"') { if (t[i + 1] === '"') { veld += '"'; i++; } else inAanhaling = false; }
+      else veld += c;
+    } else if (c === '"') inAanhaling = true;
+    else if (c === sep) { rij.push(veld); veld = ""; }
+    else if (c === "\n") { rij.push(veld); veld = ""; rijen.push(rij); rij = []; }
+    else if (c !== "\r") veld += c;
+  }
+  if (veld !== "" || rij.length) { rij.push(veld); rijen.push(rij); }
+  return rijen;
+};
+
+const leesTabel = async (file) => {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return xlsxRijen(await zipDelen(bytes));
+  if (bytes[0] === 0xd0 && bytes[1] === 0xcf) throw new Error("dit is een oud .xls-bestand; bewaar het als .xlsx of .csv");
+  return csvRijen(new TextDecoder().decode(bytes));
+};
+
 const T = { paper:"#f2f0e8", green:"#3a4b30", ink:"#2b3823", line:"#e3e0d4" };
 // De tabel "samen maken" is een raster met cijfers; daar helpt wat meer
 // contrast. Zijn lijnen zijn donkerder dan die van de rest van de app.
@@ -3088,16 +3233,11 @@ function App() {
       const j = await r.json();
       const lijst = (j && j.data && j.data.data) || [];
       if (!lijst.length) break;
-      for (const p of lijst) rijen.push({
-        id: p.id, naam: p.name || "", omschrijving: String(p.description || "").replace(/<[^>]*>/g, " ").trim(),
-        prijs: Number(p.price) || 0, groep_id: p.group_id || null, opgehaald_op: new Date().toISOString(),
-      });
+      for (const p of lijst) rijen.push(miceProductRij(p));
       if (!(j.data && j.data.page && j.data.page.next_url)) break;
     }
     if (!rijen.length) { if (!stil) flash("Geen producten opgehaald"); return; }
-    // Categorie komt niet uit de API maar uit de Excel-import; niet kwijtraken.
-    const catBij = {}; for (const p of miceProducten) if (p.categorie) catBij[p.id] = p.categorie;
-    for (const r of rijen) if (catBij[r.id]) r.categorie = catBij[r.id];
+    vulCategorie(rijen, miceProducten);
     if (live) {
       const { error } = await supabase.from("mice_producten").upsert(rijen);
       if (error && netwerkFout(error)) { flash("Even geen verbinding — probeer het zo nog eens"); return; }
@@ -3239,20 +3379,9 @@ function App() {
   // groep_id, kolom "Categorie" de naam. Eén keer per seizoen bijwerken volstaat.
   const importMiceCategorieen = async (file) => {
     if (!miceProducten.length) { alert("Haal eerst de productenlijst op (knop Productenlijst verversen), daarna kun je de categorieën uit de export erbij zetten."); return; }
-    const laadXLSX = () => new Promise((res, rej) => {
-      if (window.XLSX) return res(window.XLSX);
-      const sc = document.createElement("script");
-      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-      sc.onload = () => res(window.XLSX); sc.onerror = () => rej(new Error("cdn"));
-      document.head.appendChild(sc);
-    });
-    let XLSX;
-    try { XLSX = await laadXLSX(); } catch (e) { alert("Kon de Excel-bibliotheek niet laden — controleer de internetverbinding."); return; }
     let rows;
-    try {
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
-    } catch (e) { alert("Dit bestand kon niet gelezen worden. Gebruik de productexport uit MICE (Excel)."); return; }
+    try { rows = await leesTabel(file); }
+    catch (e) { alert("Dit bestand kon niet gelezen worden — " + (e && e.message ? e.message : "onbekende reden") + ".\n\nGebruik de productexport uit MICE (.xlsx)."); return; }
     const kop = (rows[0] || []).map((c) => String(c).toLowerCase().trim());
     const kId = kop.findIndex((c) => c.startsWith("identificatienummer product"));
     const kCat = kop.findIndex((c) => c === "categorie");
@@ -3507,35 +3636,10 @@ function App() {
     });
     if (weg.length && !stil) flash(weg.length === 1 ? "1 boeking bestaat niet meer in MICE en is hier weggehaald" : weg.length + " boekingen bestaan niet meer in MICE en zijn hier weggehaald");
     if (!stil) flash(rijen.length + " boekingen opgehaald");
-    // Categorieën zonder Excel: (a) probeer stilletjes het categories-endpoint
-    // (naam per id); (b) leer id→naam uit producten die al een categorie
-    // hebben; (c) geef producten zonder categorie de naam die bij hun catId
-    // hoort zodra die ergens in een boeking voorbijkomt.
-    try {
-      const catNaam = {};
-      try {
-        const rc = await fetch("/api/mice?path=categories");
-        const jc = await rc.json();
-        const lijst = (jc && jc.data && (Array.isArray(jc.data.data) ? jc.data.data : Array.isArray(jc.data) ? jc.data : [])) || [];
-        for (const c of lijst) if (c && c.id != null && (c.name || c.naam)) catNaam[c.id] = c.name || c.naam;
-      } catch (e) {}
-      const catIdPerProduct = {};
-      for (const b of rijen) for (const r of b.regels || []) if (r.catId != null) catIdPerProduct[r.id] = r.catId;
-      for (const p of miceProducten) {
-        const cid = catIdPerProduct[p.id];
-        if (cid != null && p.categorie && !catNaam[cid]) catNaam[cid] = p.categorie;
-      }
-      const bij = [];
-      for (const p of miceProducten) {
-        if (p.categorie) continue;
-        const cid = catIdPerProduct[p.id];
-        if (cid != null && catNaam[cid]) bij.push({ ...p, categorie: catNaam[cid] });
-      }
-      if (bij.length) {
-        setMiceProducten((xs) => xs.map((p) => bij.find((n) => n.id === p.id) || p));
-        if (live) await supabase.from("mice_producten").upsert(bij.map((p) => ({ id: p.id, naam: p.naam, omschrijving: p.omschrijving || "", prijs: p.prijs || 0, groep_id: p.groep_id, categorie: p.categorie, opgehaald_op: p.opgehaald_op || new Date().toISOString() })));
-      }
-    } catch (e) {}
+    // Hier stond een omweg om alsnog aan categorienamen te komen: een
+    // endpoint /categories (dat niet bestaat — elke sync een 404) en wat
+    // raadwerk via de categorie-id's op de boekingsregels. Dat is niet meer
+    // nodig: de productenlijst geeft de naam zelf mee.
     return rijen.length;
   };
   // Achtergrondsync: alles uit MICE, stil. Draait (1) meteen bij het openen
@@ -4289,21 +4393,10 @@ function App() {
   };
   // ---- Artikelen (inkoop) importeren uit een leveranciersbestand ----
   const importBdArtikelen = async (file, leverancierNaam) => {
-    const laadXLSX = () => new Promise((res, rej) => {
-      if (window.XLSX) return res(window.XLSX);
-      const sc = document.createElement("script");
-      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-      sc.onload = () => res(window.XLSX); sc.onerror = () => rej(new Error("cdn"));
-      document.head.appendChild(sc);
-    });
-    let XLSX;
-    try { XLSX = await laadXLSX(); } catch (e) { alert("Kon de Excel-bibliotheek niet laden — controleer de internetverbinding."); return; }
     let rows;
-    try {
-      // XLSX.read leest ook .csv/.txt/.tsv (scheidingsteken wordt herkend)
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
-    } catch (e) { alert("Dit bestand kon niet gelezen worden. Ondersteund: .xlsx, .xls, .csv, .txt (tab- of puntkomma-gescheiden)."); return; }
+    // leesTabel neemt .xlsx én .csv/.txt/.tsv; het scheidingsteken wordt herkend.
+    try { rows = await leesTabel(file); }
+    catch (e) { alert("Dit bestand kon niet gelezen worden — " + (e && e.message ? e.message : "onbekende reden") + ".\n\nOndersteund: .xlsx, .csv, .txt (tab- of puntkomma-gescheiden)."); return; }
     // Kopregel zoeken met soepele kolomnamen, zodat exports van andere
     // leveranciers ook werken zolang er een omschrijving- en prijskolom is.
     const syn = {
@@ -9107,9 +9200,9 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>MICE-productcategorieën</SectionTitle>
           <div className="card p-4">
-            <p className="text-sm mute mb-3">Bepalen wat op de mep- en boekingkaarten (verborgen) hoort. De producten zelf haalt de app elke dag op uit MICE, maar de categorie zit niet in die koppeling: die komt uit de productexport (Excel). Staan er producten zonder categorie, lees de export dan opnieuw in.</p>
+            <p className="text-sm mute mb-3">Bepalen wat op de mep- en boekingkaarten (verborgen) hoort. De categorie komt met de dagelijkse ophaal uit MICE mee: hernoem je er een, dan staat hij hier vanzelf goed — met de knop Productenlijst verversen meteen. Producten zonder categorie in MICE komen onder Overige. Inlezen uit de export hoeft alleen nog als de koppeling iets laat liggen.</p>
             <button onClick={() => { try { catImportRef.current.click(); } catch (e) {} }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Tag size={15} /> Categorieën inlezen uit export</button>
-            <input ref={catImportRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
+            <input ref={catImportRef} type="file" accept=".xlsx,.csv,.txt" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
             {(() => {
               const alle = (miceProducten || []).length;
               if (!alle) return <p className="text-xs mute mt-2">Nog geen producten opgehaald uit MICE.</p>;
