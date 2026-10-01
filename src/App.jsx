@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01n"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3599,7 +3599,7 @@ function App() {
   // ── De boekingpagina schrijft in de kern ──────────────────────────────────
   const kernBewaren = (b, bk) => saveKoppelingSleutel(kernSleutel("bk|", b.id, b.datum), kernIn(bk));
   const kernOpslaanBoeking = (b, regels, velden) =>
-    kernBewaren(b, kernOpslaan(kernLagen(koppeling, b.id, b.datum), regels, velden, new Date().toISOString()));
+    kernBewaren(b, kernOpslaan(kernLagen(koppeling, b.id, b.datum), b, regels, velden, new Date().toISOString()));
   // Terugzetten naar wat MICE zegt: de eigen laag van die dag leeg.
   const kernWissen = (b) => kernBewaren(b, {});
   // De invulling van een of meer producten, op de dag waar je staat.
@@ -11554,6 +11554,13 @@ const keuzeUitSleutel = (sl) => { const d = String(sl || "").split("\u0001"); re
 // dat het nummer; een eigen regel heeft alleen zijn naam om zich mee te
 // onderscheiden.
 const prodMerk = (k) => (k && k.miceId != null && String(k.miceId) !== "" ? "m:" + k.miceId : "n:" + String((k && k.naam) || "").toLowerCase().trim());
+// Hetzelfde merk, maar dan met de boeking erbij. MICE geeft soms twee
+// verschillende producten hetzelfde nummer — "All in prijs" en "Lunch op De
+// Beug" zijn allebei 224617. Zonder onderscheid tellen hun aantallen bij elkaar
+// op (20 + 20 = 40) en krijgt de ene de naam van de andere. Staat er in deze
+// boeking meer dan één naam onder hetzelfde nummer, dan komt de naam in het
+// merk — precies zoals de invulling dat al deed.
+const prodMerkIn = (b, k) => (k && k.miceId != null && String(k.miceId) !== "" ? "m:" + invulSleutel(b, k) : prodMerk(k));
 // Wat er op de mep staat als daar een eigen aanpassing voor is gemaakt.
 // Zo'n aanpassing mag niet betekenen dat een product dat daarna bij de boeking
 // komt hier stilletjes verdwijnt: we vergelijken met de situatie van toen, en
@@ -11809,7 +11816,7 @@ const miceVelden = (b, datum) => {
     // Een regel zonder eigen dag hoort bij de eerste draaidag: zo stuurt MICE
     // het voor een gewone, eendaagse boeking.
     if (String(r.dag || eersteDag) !== dag) continue;
-    const merk = prodMerk({ miceId: r.id, naam: r.naam });
+    const merk = prodMerkIn(b, { miceId: r.id, naam: r.naam });
     const sl = kernProdVeld(merk);
     const staat = uit[sl];
     // Twee keer hetzelfde product op één dag telt op — dat is hoe MICE een
@@ -11993,7 +12000,7 @@ const omzetting = (koppeling, boekingen, boekingSleutel, prodKoppeling) => {
         // gekozen, wat MICE stuurt en er niet in staat is weggehaald.
         const staat = new Set();
         for (const k of keuzesOpDag(b, hand)) {
-          const merk = prodMerk(k);
+          const merk = prodMerkIn(b, k);
           staat.add(merk);
           const uitMice = mice[kernProdVeld(merk)] && mice[kernProdVeld(merk)].w;
           bk[kernProdVeld(merk)] = kernVeld(omzetKeuze(k, uitMice), OMZET_T.hand, "hand");
@@ -12043,9 +12050,9 @@ const omzetting = (koppeling, boekingen, boekingSleutel, prodKoppeling) => {
           : keuzesOpDag(b, mepBasisVan(koppeling, boekingSleutel, b));
         if (!basisRij) waarschuw(b, "mep-aanpassing zonder vastgelegde basis — vergeleken met de boeking zoals die nu is");
         const toen = new Map();
-        for (const k of toenRijen) toen.set(prodMerk(k), k);
+        for (const k of toenRijen) toen.set(prodMerkIn(b, k), k);
         const nu = new Map();
-        for (const k of keuzesOpDag(b, mepLijst)) nu.set(prodMerk(k), k);
+        for (const k of keuzesOpDag(b, mepLijst)) nu.set(prodMerkIn(b, k), k);
         for (const merk of nu.keys()) {
           const k = nu.get(merk), was = toen.get(merk);
           if (was && Number(was.aantal) === Number(k.aantal)) continue; // ongewijzigd: laat de boeking dit sturen
@@ -12104,7 +12111,7 @@ const kernExtra = (lagen) => {
 // Wat de boekingpagina opslaat. Alleen wat afwijkt van de laag eronder komt in
 // de eigen laag; wat gelijk is aan MICE verdwijnt eruit, zodat MICE dat veld
 // weer kan sturen. Geeft de nieuwe eigen laag terug.
-const kernOpslaan = (lagen, regels, velden, nu) => {
+const kernOpslaan = (lagen, b, regels, velden, nu) => {
   const t = String(nu || new Date().toISOString());
   const mice = (lagen || {}).mice || {};
   let bk = { ...((lagen || {}).bk || {}) };
@@ -12113,7 +12120,7 @@ const kernOpslaan = (lagen, regels, velden, nu) => {
   if (Array.isArray(regels)) {
     const voor = vouwSamen(mice, bk);
     const staat = new Map();
-    for (const k of regels) staat.set(prodMerk(k), k);
+    for (const k of regels) staat.set(prodMerkIn(b, k), k);
     for (const merk of staat.keys()) {
       const sl = kernProdVeld(merk);
       const onder = (mice[sl] && mice[sl].w) || (voor[sl] && voor[sl].w) || null;
@@ -12221,21 +12228,34 @@ const catZichtVan = (cat) => {
 // categorie en van de vaste lijsten; zonder keuze geldt de standaard.
 let PROD_ZICHT = {};
 const zetProdZicht = (m) => { PROD_ZICHT = m && typeof m === "object" ? m : {}; };
-const prodZichtVan = (id) => (id == null ? "" : PROD_ZICHT[String(id)] || "");
+// De keuze mag ook op naam staan. Dat is nodig omdat MICE twee verschillende
+// producten soms hetzelfde nummer geeft ("All in prijs" en "Lunch op De Beug"
+// zijn allebei 224617): op nummer verbergen zou de lunch meenemen.
+const naamZichtSleutel = (naam) => "naam:" + zonderAccent(String(naam || "")).toLowerCase().replace(/\s+/g, " ").trim();
+const prodZichtVan = (id, naam) => {
+  const opNaam = naam ? PROD_ZICHT[naamZichtSleutel(naam)] : "";
+  if (opNaam) return opNaam;
+  return id == null ? "" : PROD_ZICHT[String(id)] || "";
+};
+// Regels die nooit in de keuken thuishoren, los van hun nummer of categorie:
+// prijsafspraken en arrangementen die de verkoop op de boeking zet. Je kunt ze
+// in Extras alsnog zichtbaar maken; die keuze gaat hier overheen.
+const NOOIT_KEUKEN_NAAM = /^(all ?-? ?in ?prijs|arrangementsprijs|all ?-? ?in ?arrangement)$/;
 // Nonfood: servies, bestek, glaswerk — spullen die wel klaargezet moeten
 // worden maar geen gerecht zijn. Ze staan gewoon op de mep en de boeking, met
 // hun eigen naam en aantal, en krijgen een opmerkingveld in plaats van een
 // culinaire invulling. In te stellen per categorie en per product in Extras.
 const isNonfoodRegel = (k, catVan) => {
-  if (prodZichtVan(k.miceId) === "nonfood") return true;
-  if (prodZichtVan(k.miceId)) return false; // een andere eigen keuze gaat voor
+  if (prodZichtVan(k.miceId, k.naam) === "nonfood") return true;
+  if (prodZichtVan(k.miceId, k.naam)) return false; // een andere eigen keuze gaat voor
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
   return catZichtVan(cat) === "nonfood";
 };
 const isKeukenRegel = (k, catVan) => {
   const id = Number(k.miceId);
-  const eigen = prodZichtVan(k.miceId);
+  const eigen = prodZichtVan(k.miceId, k.naam);
   if (eigen) return eigen !== "verborgen";
+  if (NOOIT_KEUKEN_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase().replace(/\s+/g, " ").trim())) return false;
   if (TOON_IDS.has(id)) return true;
   if (VERBERG_IDS.has(id)) return false;
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
@@ -12256,7 +12276,7 @@ const MEP_VERBERG_CAT = /(huur|materiaal|techniek|entertain|decorat|bloemen|audi
 const MEP_VERBERG_NAAM = /(podium|partybox|microfoon|geluidsman|geluidstechniek|geluidsset|lichtset|kapstok|kussens|boeket|bloemstuk|beamer|projectiescherm|\bdj\b|harpist|muzikant|statafel)/;
 const isMepRegel = (k, catVan) => {
   if (!isKeukenRegel(k, catVan)) return false;
-  const eigen = prodZichtVan(k.miceId);
+  const eigen = prodZichtVan(k.miceId, k.naam);
   if (eigen) return eigen === "keuken" || eigen === "nonfood";
   if (TOON_IDS.has(Number(k.miceId))) return true;
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
