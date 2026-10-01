@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01p"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01q"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -14400,6 +14400,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     return { titel: k.naam, sub: (k.aantal || b.gasten) + "\u00d7" + (tijdK ? " \u00b7 " + tijdK : "") + (catNaam ? " \u00b7 " + catNaam : ""), teksten };
   };
   const [overigeOpen, setOverigeOpen] = useState(false);
+  // De toelichting bij een product als zwevend venstertje. Op de computer lees
+  // je hem door over de naam te zweven; op een telefoon bestaat zweven niet, dus
+  // daar tik je het i-tje aan. De naam zelf blijft onaangeraakt: klikken daarop
+  // zat het markeren met de stift in de weg.
+  const [infoKeuze, setInfoKeuze] = useState(null);
   // Escape of de terugknop van het toestel sluit de bewerkstand zonder opslaan.
   useEffect(() => {
     if (!bewerk) return;
@@ -14905,6 +14910,26 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           onGekopieerd={(t) => onMenuKopie(t)} onSluit={() => setMenuOpen(false)} />
       )}
 
+      {infoKeuze && (() => {
+        const info = productInfoVoor(infoKeuze);
+        if (!info) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={() => setInfoKeuze(null)}>
+            <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
+              <div className="serif ink font-bold text-lg leading-tight">{info.titel}</div>
+              {info.sub && <div className="mute text-xs mt-0.5">{info.sub}</div>}
+              {info.teksten.map((x, i) => (
+                <div key={i} className="mt-3">
+                  {x.kop && <div className="ink text-xs font-medium mb-0.5">{x.kop}</div>}
+                  <div className="ink text-sm whitespace-pre-wrap leading-relaxed">{x.tekst}</div>
+                </div>
+              ))}
+              <button onClick={() => setInfoKeuze(null)} className="btno ff rounded-lg text-sm font-medium px-4 py-2 mt-4 w-full">Sluiten</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
           statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
@@ -14945,7 +14970,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 groepen.sort((a, c) => (a.tijd || "").localeCompare(c.tijd || ""));
                 return groepen.map((g, gi) => (
                   <div key={g.sl} className={gi > 0 ? "pt-2" : ""}>
-                    {(g.act || g.tijd) && (
+                    {/* Het kopje en de productnaam zeiden vaak twee keer
+                        hetzelfde ("Diner Vegetarisch" boven "Diner: 4 gangen
+                        diner …"). Hangt er een product onder, dan vertelt dat
+                        product het verhaal en gaat de tijd mee naar die regel.
+                        Alleen een programmadeel zonder producten houdt zijn
+                        kopje: anders bleef er niets van over. */}
+                    {(g.act || g.tijd) && !g.items.length && (
                       <div className="font-bold ink underline" style={{ textUnderlineOffset: "3px", textDecorationThickness: "1.5px" }}>
                         <MarkTekst tekst={[g.act, g.tijd].filter(Boolean).join(" ")} basis={"pg:" + b.id + ":" + g.sl} stift={stift} markering={markering} zetMark={zetMark} />
                       </div>
@@ -14961,7 +14992,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // invulling, dan verdwijnt de productregel en staan de
                 // invullingsregels er direct (zonder inspringing).
                 const zonderKop = !nonfood && invulVervangt && od && od.length > 0;
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
+                const kop = (g.tijd ? g.tijd + " · " : "") + (k.aantal || b.gasten) + "× " + k.naam + prijsVan(k.miceId) + (opmerking ? " · " + opmerking : "");
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
@@ -14975,7 +15006,11 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         {/* heel: de hele productregel is één blok, zodat markeren
                             meteen het product én al zijn invulling raakt. */}
                         <MarkTekst tekst={kop} basis={kopBasis} heel stift={stift} markering={markering} zetMark={zetMark} />
-                        {!stift && productInfoVoor(k) && <Info size={13} className="inline ml-1 acc shrink-0" style={{ verticalAlign: "-2px" }} />}
+                        {!stift && productInfoVoor(k) && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); setInfoKeuze(k); }} className="ff inline align-baseline" title="Toelichting lezen" aria-label="Toelichting lezen">
+                            <Info size={13} className="inline ml-1 acc shrink-0" style={{ verticalAlign: "-2px" }} />
+                          </button>
+                        )}
                         {isVers && <NieuwTag titel={isVers.titel} />}
                       </div>
                     )}
