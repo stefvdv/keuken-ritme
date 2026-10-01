@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01k"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -6294,6 +6294,7 @@ function App() {
                 onVerwijder={verwijderBoeking} onHerstel={herstelBoeking}
                 onNieuwGebruikt={() => setNieuwBewerk(null)} onPermanent={permanentVerwijderen} onSync={() => doeSyncRef.current()}
                 onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij} invKlaarVan={invKlaarVan} onInvKlaar={zetInvKlaar} onWisInv={wisInvullingPartij}
+                onKernOpslaan={canEdit ? kernOpslaanBoeking : null} onKernWissen={canEdit ? kernWissen : null} onKernInvul={canEdit ? kernInvullen : null}
                 menuKopieVan={menuKopieVan} onMenuKopie={(b2, tekst) => { if (canEdit) zetMenuKopie(b2, tekst); }}
                 onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
@@ -12066,6 +12067,80 @@ const kernLagen = (koppeling, id, datum) => ({
   mep: kernUit(koppeling, "mep|", id, datum),
 });
 
+// ── De kern terugvertalen naar wat de schermen verwachten ──────────────────
+// Of een veld er staat, los van of het gevuld is: een bewust leeggemaakte
+// invulling moet een terugval maskeren.
+const kernHeeft = (velden, naam) => !!(velden && velden[naam]);
+// De productregels in de vorm waarin de kaarten ze kennen.
+const kernKeuzes = (velden) => kernRegels(velden).map((r) => ({
+  miceId: r.miceId, naam: r.naam, aantal: r.aantal, act: r.act, tijd: r.tijd,
+  ...(r.catId != null ? { catId: r.catId } : {}), ...(r.oms ? { oms: r.oms } : {}),
+}));
+// De eigen velden van een kaart: alleen wat er in de eigen laag staat, zodat
+// "is deze boeking aangepast" hetzelfde blijft betekenen als voorheen.
+const kernExtra = (lagen) => {
+  const bk = (lagen || {}).bk || {};
+  const uit = {};
+  for (const naam of ["gasten", "tijd", "naam", "status", "notitie", "allergie"]) if (bk[naam]) uit[naam] = bk[naam].w;
+  return Object.keys(uit).length ? uit : null;
+};
+
+// Wat de boekingpagina opslaat. Alleen wat afwijkt van de laag eronder komt in
+// de eigen laag; wat gelijk is aan MICE verdwijnt eruit, zodat MICE dat veld
+// weer kan sturen. Geeft de nieuwe eigen laag terug.
+const kernOpslaan = (lagen, regels, velden, nu) => {
+  const t = String(nu || new Date().toISOString());
+  const mice = (lagen || {}).mice || {};
+  let bk = { ...((lagen || {}).bk || {}) };
+
+  // 1. De productregels zoals de kaart ze nu heeft.
+  if (Array.isArray(regels)) {
+    const voor = vouwSamen(mice, bk);
+    const staat = new Map();
+    for (const k of regels) staat.set(prodMerk(k), k);
+    for (const merk of staat.keys()) {
+      const sl = kernProdVeld(merk);
+      const onder = (mice[sl] && mice[sl].w) || (voor[sl] && voor[sl].w) || null;
+      const w = omzetKeuze(staat.get(merk), onder);
+      if (mice[sl] && kernGelijk(mice[sl].w, w)) { delete bk[sl]; continue; }
+      if (bk[sl] && kernGelijk(bk[sl].w, w)) continue; // ongewijzigd: moment laten staan
+      bk[sl] = kernVeld(w, t, "hand");
+    }
+    // Wat er stond en nu niet meer in de lijst zit, is weggehaald. Stuurt MICE
+    // het nog, dan leggen we dat vast; was het alleen van onszelf, dan mag het
+    // veld gewoon weg.
+    for (const naam of Object.keys(voor)) {
+      if (!kernIsProd(naam) || !voor[naam].w) continue;
+      if (staat.has(kernMerkVan(naam))) continue;
+      if (mice[naam] && mice[naam].w) bk[naam] = kernVeld(null, t, "hand");
+      else delete bk[naam];
+    }
+  }
+
+  // 2. De eigen velden. Het aantal gasten als laatste, want daar schuiven de
+  //    aantallen die eraan hingen mee.
+  if (velden) {
+    const tussen = vouwSamen(mice, bk);
+    for (const naam of ["tijd", "naam", "status", "notitie", "allergie"]) {
+      if (!(naam in velden)) continue;
+      const w = velden[naam] == null ? "" : velden[naam];
+      const leeg = String(w).trim() === "";
+      if (leeg || kernGelijk((mice[naam] || {}).w, w)) { delete bk[naam]; continue; }
+      if (bk[naam] && kernGelijk(bk[naam].w, w)) continue;
+      bk[naam] = kernVeld(w, t, "hand");
+    }
+    const g = velden.gasten == null || String(velden.gasten).trim() === "" ? null : Number(velden.gasten);
+    if (g != null && isFinite(g) && g >= 0) {
+      const oud = Number(kernWaarde(tussen, "gasten")) || 0;
+      if (oud !== g) bk = zetGasten(bk, tussen, g, t, "hand");
+      if (kernGelijk((mice.gasten || {}).w, g)) delete bk.gasten;
+    } else {
+      delete bk.gasten;
+    }
+  }
+  return bk;
+};
+
 // Wat er na een sync aan de kern bijgewerkt moet worden. Geeft alleen de lagen
 // terug die echt veranderen, zodat een sync waarin niets gebeurt ook niets
 // wegschrijft — hij draait elke tien minuten.
@@ -16321,7 +16396,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie }) {
+function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const kaartApi = React.useRef(null); // opslaan-bij-sluiten van de detailkaart
@@ -16379,19 +16454,28 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     return () => clearTimeout(t);
   }, [nieuwBewerk]);
 
-  // Volgorde: handmatige invulling > Necker-standaard > MICE-bestelling.
-  const gekozen = (b) => volgGasten(b, boekingKeuzes(koppeling, boekingSleutel, b), gastenVan(b));
-  const invLaag = (b) => leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
+  // Alles van deze pagina komt uit de kern: de drie lagen van die draaidag,
+  // over elkaar gevouwen. Geen sjablonen, geen vaste lijsten, geen globale
+  // tabel meer — wat hier staat is wat er in de boeking staat.
+  const lagenVan = (b) => kernLagen(koppeling, b.id, b.datum);
+  const veldenVan = (b) => boekingVelden(lagenVan(b));
+  const gekozen = (b) => kernKeuzes(veldenVan(b));
+  const invLaag = (b) => {
+    const v = veldenVan(b);
+    return Object.keys(v).filter((n) => n.slice(0, 2) === "i:").map((n) => ({ miceId: n.slice(4), onderdelen: Array.isArray(v[n].w) ? v[n].w : [], naam: "" }));
+  };
   const invVoor = (b, miceId) => {
-    const e = invLaag(b).find((x) => String(x.miceId) === String(miceId));
-    if (e) return { onderdelen: e.onderdelen || [], naam: e.naam || "" };
-    if (prodKoppeling[miceId]) return prodKoppeling[miceId];
-    // Niets eigens en geen vaste koppeling: dan kijkt hij of deze klant een
-    // sjabloon heeft en rekent de hoeveelheden om naar dit aantal.
+    const v = veldenVan(b);
+    const sl = kernInvVeld(prodMerk({ miceId }));
+    // Staat het veld er, dan telt dat — ook als het leeggemaakt is. Zo blijft
+    // een bewust lege invulling leeg.
+    if (kernHeeft(v, sl)) return { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" };
+    // Nog nooit ingevuld: dan kijkt hij of deze klant een sjabloon heeft en
+    // rekent de hoeveelheden om naar dit aantal.
     const k = gekozen(b).find((x) => String(x.miceId) === String(idUitSleutel(miceId)));
     return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || (b && b.gasten) || 0, catVan);
   };
-  const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return prodKoppeling; const m = { ...prodKoppeling }; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
+  const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
   // Invulling van de laatste eerdere partij met hetzelfde product, om over
   // te nemen met het herhaalknopje in de bewerkstand.
@@ -16401,13 +16485,13 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   const catVan = {};
   for (const p of miceProducten || []) if (p.categorie) catVan[p.id] = p.categorie;
   const tijd = (iso) => (iso ? String(iso).slice(11, 16) : "");
-  const bkxVan = (b) => ((leesLaag(koppeling, boekingSleutel, b, "bkx|") || [])[0]) || null;
-  const tijdVan = (b) => { const e = bkxVan(b); return (e && e.tijd) || tijd(b.start_tijd); };
-  const gastenVan = (b) => gastenUit(bkxVan(b), b);
-  const allergieEff = (b) => { const e = bkxVan(b); const t = e && String(e.allergie || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
-  const nootEff = (b) => { const e = bkxVan(b); return (e && String(e.notitie || "").trim()) || kaalBericht(b.bericht); };
-  const statusVan = (b) => { const e = bkxVan(b); return (e && e.status) || b.status; };
-  const naamVan = (b) => { const e = bkxVan(b); return (e && e.naam) || b.naam; };
+  const bkxVan = (b) => kernExtra(lagenVan(b));
+  const tijdVan = (b) => String(kernWaarde(veldenVan(b), "tijd") || "") || tijd(b.start_tijd);
+  const gastenVan = (b) => { const g = kernWaarde(veldenVan(b), "gasten"); return g == null || g === "" ? (b && b.gasten) || 0 : Number(g) || 0; };
+  const allergieEff = (b) => { const t = String(kernWaarde(veldenVan(b), "allergie") || "").trim(); return t ? t.split(/\r?\n+/).map((x) => x.trim()).filter(Boolean) : allergieVanBoeking(b); };
+  const nootEff = (b) => String(kernWaarde(veldenVan(b), "notitie") || "").trim() || kaalBericht(b.bericht);
+  const statusVan = (b) => String(kernWaarde(veldenVan(b), "status") || "") || b.status;
+  const naamVan = (b) => String(kernWaarde(veldenVan(b), "naam") || "") || b.naam;
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
 
   // Optelsom van overlappende producten in de komende zeven dagen.
@@ -16704,23 +16788,20 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
               tijdTekst={tijdVan(detailBoeking)} gastenTekst={gastenVan(detailBoeking)}
               catVan={catVan} stift={null} markering={GEEN_MARKERING} zetMark={() => {}}
               canEdit={canEdit} magExtra={true} extra={bkxVan(detailBoeking)}
-              aangepast={((leesLaag(koppeling, boekingSleutel, detailBoeking, "") || []).length > 0 && (detailBoeking.regels || []).length > 0) || !!bkxVan(detailBoeking)}
+              aangepast={Object.keys(lagenVan(detailBoeking).bk || {}).length > 0}
               nootOpenStandaard={true}
               invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true} toonPrijs={true} toonOverige={true}
               autoBewerk={(nieuwBewerk && nieuwBewerk.id === detailBoeking.id) || String(heropend || "") === String(detailBoeking.id)}
               onMinimaliseren={() => legWeg(detailBoeking)}
               invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
-              onInvulling={canEdit ? (miceId, inv) => onInvulPartij(detailBoeking, miceId, inv) : null} onInvullingBatch={canEdit ? (lijst) => onInvulPartijBatch(detailBoeking, lijst) : null}
+              onInvulling={canEdit && onKernInvul ? (miceId, inv) => onKernInvul(detailBoeking, [{ miceId, inv }]) : null} onInvullingBatch={canEdit && onKernInvul ? (lijst) => onKernInvul(detailBoeking, lijst) : null}
               invKlaar={invKlaarVan ? (invKlaarVan(detailBoeking) || detailBoeking.datum < vandaag) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
               menuKopie={menuKopieVan ? menuKopieVan(detailBoeking) : null}
               onMenuKopie={onMenuKopie ? (tekst) => onMenuKopie(detailBoeking, tekst) : null}
               vorigeInvulling={(miceId, aantal) => vorigeInvulling(detailBoeking, miceId, aantal)}
               onInvullen={null}
-              onOpslaan={(regels, velden) => {
-                onKoppel(detailBoeking, keuzesBewaren(koppeling, boekingSleutel, detailBoeking, regels));
-                if (velden) onBkExtra(detailBoeking, eigenVelden(velden, detailBoeking, null));
-              }}
-              onHerstel={() => { onKoppel(detailBoeking, []); onBkExtra(detailBoeking, null); onWisInv(detailBoeking); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
+              onOpslaan={(regels, velden) => onKernOpslaan && onKernOpslaan(detailBoeking, regels, velden)}
+              onHerstel={() => { if (onKernWissen) onKernWissen(detailBoeking); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
               randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
