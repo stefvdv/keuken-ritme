@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01z"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01aa"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -6426,7 +6426,7 @@ function App() {
                 onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij} invKlaarVan={invKlaarVan} onInvKlaar={zetInvKlaar} onWisInv={wisInvullingPartij}
                 onKernOpslaan={canEdit ? kernOpslaanBoeking : null} onKernWissen={canEdit ? kernWissen : null} onKernInvul={canEdit ? kernInvullen : null}
                 menuKopieVan={menuKopieVan} onMenuKopie={(b2, tekst) => { if (canEdit) zetMenuKopie(b2, tekst); }}
-                onHaalProducten={haalMiceProducten} onProdKoppel={saveProdKoppeling}
+                onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
@@ -6486,7 +6486,7 @@ function App() {
           recipes={recipes} dishes={dishes} recipeById={recipeById} dishById={dishById} onCancel={goBack}
           onSave={(item) => { saveCalcItem(item); goBack(); }} />}
         {current.screen === "settings" && <SettingsScreen onBack={goBack} onResetBoekingen={resetBoekingen} boekingenLaden={boekingenLaden} onOpenGerechten={() => { resetTo({ screen: "list" }); setSection("gerechten"); }} onOpenBezorg={() => push({ screen: "bezorgmateriaal" })}
-          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} onImportCategorieen={canEdit ? importMiceCategorieen : null}
+          allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} onImportCategorieen={canEdit ? importMiceCategorieen : null} onHaalProducten={canEdit ? haalMiceProducten : null}
           briefpapier={briefpapier} onBriefpapier={canEdit ? saveBriefpapier : null}
           teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
@@ -9065,8 +9065,9 @@ function EetvolgordeBeheer({ momenten, onSave }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, onOmzetProef, onOmzetDoen, omzetBezig }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, onOmzetProef, onOmzetDoen, omzetBezig, onHaalProducten }) {
   const catImportRef = React.useRef(null);
+  const [prodBezig, setProdBezig] = useState(false); // productenlijst wordt opgehaald
   const [catZichtOpen, setCatZichtOpen] = useState(false);
   const [omzetUit, setOmzetUit] = useState(null);
   const herstelRef = React.useRef(null);
@@ -9201,7 +9202,18 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
           <SectionTitle>MICE-productcategorieën</SectionTitle>
           <div className="card p-4">
             <p className="text-sm mute mb-3">Bepalen wat op de mep- en boekingkaarten (verborgen) hoort. De categorie komt met de dagelijkse ophaal uit MICE mee: hernoem je er een, dan staat hij hier vanzelf goed — met de knop Productenlijst verversen meteen. Producten zonder categorie in MICE komen onder Overige. Inlezen uit de export hoeft alleen nog als de koppeling iets laat liggen.</p>
-            <button onClick={() => { try { catImportRef.current.click(); } catch (e) {} }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Tag size={15} /> Categorieën inlezen uit export</button>
+            {/* De knop om de lijst nu op te halen stond nergens: het ophalen
+                werd wel doorgegeven aan de boekingpagina, maar daar was nooit
+                een knop van gemaakt. Hij hoort hier, naast de categorieën. */}
+            <div className="flex flex-wrap gap-2">
+              {onHaalProducten && (
+                <button onClick={async () => { if (prodBezig) return; setProdBezig(true); try { await onHaalProducten(); } catch (e) {} setProdBezig(false); }}
+                  disabled={prodBezig} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5" style={prodBezig ? { opacity: 0.6 } : undefined}>
+                  <RotateCcw size={15} /> {prodBezig ? "Bezig…" : "Productenlijst verversen"}
+                </button>
+              )}
+              <button onClick={() => { try { catImportRef.current.click(); } catch (e) {} }} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Tag size={15} /> Categorieën inlezen uit export</button>
+            </div>
             <input ref={catImportRef} type="file" accept=".xlsx,.csv,.txt" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImportCategorieen(f); e.target.value = ""; }} />
             {(() => {
               const alle = (miceProducten || []).length;
@@ -16749,7 +16761,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onHaalProducten, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul }) {
+function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, invulGesch, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const kaartApi = React.useRef(null); // opslaan-bij-sluiten van de detailkaart
