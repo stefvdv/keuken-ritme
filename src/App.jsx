@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01v"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01x"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2859,6 +2859,9 @@ function daysBetween(iso) {
 
 // ---------- huisstijl (Landgoed de Beug) ----------
 const T = { paper:"#f2f0e8", green:"#3a4b30", ink:"#2b3823", line:"#e3e0d4" };
+// De tabel "samen maken" is een raster met cijfers; daar helpt wat meer
+// contrast. Zijn lijnen zijn donkerder dan die van de rest van de app.
+const SOM_LIJN = "#c6c2b0";
 const serif = { fontFamily: "'Cormorant Garamond', Georgia, 'Times New Roman', serif" };
 const inputCls = "input px-3 py-2.5 placeholder:text-neutral-400";
 const seasonStyle = {
@@ -13975,6 +13978,79 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
   );
 }
 
+// Eén vakje in de tabel "samen maken": een dagkop of een aantal. Markeren gaat
+// hier net als in de rest van de mep — met de stift aan kleurt één tik het
+// vakje, en zonder stift doet een dubbelklik hetzelfde. Een enkele tik zonder
+// stift laat zien hoeveel gram dat aantal is. Die twee bijten elkaar niet: de
+// tik wacht eerst even of er een tweede volgt, net als bij de receptlinks.
+function SomCel({ sleutel, tekst, uitleg, onUitleg, stift, markering, zetMark, className, style }) {
+  const klikRef = React.useRef(null);
+  useEffect(() => () => { if (klikRef.current) clearTimeout(klikRef.current); }, []);
+  const kleur = MARKEER_KLEUREN.find((x) => x.naam === (markering || {})[sleutel]);
+  const klik = (e) => {
+    e.stopPropagation();
+    if (stift) { zetMark(sleutel); return; }
+    if (!uitleg || !onUitleg) return;
+    const x = e.clientX, y = e.clientY;
+    if (klikRef.current) clearTimeout(klikRef.current);
+    klikRef.current = setTimeout(() => { klikRef.current = null; onUitleg({ ...uitleg, x, y }); }, 230);
+  };
+  const dubbel = (e) => {
+    e.stopPropagation(); e.preventDefault();
+    if (klikRef.current) { clearTimeout(klikRef.current); klikRef.current = null; }
+    zetMark(sleutel, stift || "groen", "wissel");
+  };
+  return (
+    <span className={className} data-somcel={sleutel} onClick={klik} onDoubleClick={dubbel}
+      style={{ ...(style || {}), background: kleur ? kleur.kleur : undefined, borderRadius: 4, padding: "1px 4px",
+        cursor: stift ? "cell" : uitleg ? "pointer" : undefined }}>{tekst}</span>
+  );
+}
+
+// Het zwevende bolletje dat bij een aangetikt aantal vertelt hoeveel gram dat
+// is. Het verschijnt waar je tikt, blijft binnen het scherm en verdwijnt
+// vanzelf — of zodra je ergens anders tikt of scrolt. Het vangt zelf geen
+// tikken op, zodat je er dwars doorheen op het volgende getal kunt klikken.
+function SomBubbel({ bij, onSluit }) {
+  const sluitRef = React.useRef(onSluit);
+  sluitRef.current = onSluit;
+  useEffect(() => {
+    if (!bij) return;
+    const weg = () => sluitRef.current && sluitRef.current();
+    const t = setTimeout(weg, 4000);
+    window.addEventListener("pointerdown", weg, true);
+    window.addEventListener("scroll", weg, true);
+    window.addEventListener("resize", weg);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("pointerdown", weg, true);
+      window.removeEventListener("scroll", weg, true);
+      window.removeEventListener("resize", weg);
+    };
+  }, [bij]);
+  if (!bij) return null;
+  const breed = 232;
+  const vw = (typeof window !== "undefined" && window.innerWidth) || 360;
+  const links = Math.max(8, Math.min(vw - breed - 8, Number(bij.x || 0) - breed / 2));
+  const boven = Math.max(8, Number(bij.y || 0) - 82);
+  return (
+    <div data-sombubbel="1" style={{ position: "fixed", left: links, top: boven, width: breed, zIndex: 70, pointerEvents: "none",
+      background: "#2b3823", color: "#f2f0e8", borderRadius: 10, padding: "8px 11px",
+      boxShadow: "0 6px 20px rgba(0,0,0,.28)", lineHeight: 1.35 }}>
+      <div style={{ fontWeight: 700, fontSize: 16 }}>{bij.gram}</div>
+      <div style={{ fontSize: 12.5, opacity: 0.85 }}>{bij.sub}</div>
+      {/* Zijn er meer partijen op deze dag, dan staan ze hier los onder
+          elkaar: je maakt ze samen, maar je zet ze apart weg. */}
+      {Array.isArray(bij.rijen) && bij.rijen.length > 1 && (
+        <div style={{ fontSize: 12.5, marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(242,240,232,.25)" }}>
+          {bij.rijen.map((x, i) => <div key={i} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x}</div>)}
+        </div>
+      )}
+      {bij.titel && <div style={{ fontSize: 11.5, opacity: 0.65, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bij.titel}</div>}
+    </div>
+  );
+}
+
 // Wie iets aan het invullen is, zet zichzelf hier even op de lijst. De
 // service worker leest dat uit (window.__ritmeBezig) en wacht met het
 // doorvoeren van een nieuwe versie — die ververst namelijk de bladzijde.
@@ -15981,6 +16057,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   }, [somOpen]);
   const [klaarOpen, setKlaarOpen] = useState(false);
   const [somRij, setSomRij] = useState(null); // uitgeklapte bereiding met partijnamen
+  // Het aangetikte aantal waarvan het gewicht in een zwevend bolletje staat.
+  const [somUitleg, setSomUitleg] = useState(null);
   // Vinkjes en stiftmarkeringen zijn gedeeld met het hele team (via de app).
   const somAf = (mepMark && mepMark.somAf) || {};
   const markering = (mepMark && mepMark.markering) || {};
@@ -16119,11 +16197,23 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     // komijn" is één bereiding, geen drie losse woorden.
     for (const m of mepVan(b, true)) {
       const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + normNaam(m.naam);
-      if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, totaal: 0, gezien: new Set(), partijen: [] };
+      if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, gramPerDag: {}, perDagPartij: {}, totaal: 0, gezien: new Set(), partijen: [] };
       const r = perBereiding[sleutel];
       r.perDag[b.datum] = (r.perDag[b.datum] || 0) + m.porties;
       r.totaal += m.porties;
       r.gram = (r.gram || 0) + (m.gram || 0);
+      // Het gewicht ook per dag, zodat het bolletje bij een aangetikt aantal
+      // het gewicht van díé dag kan noemen en niet dat van de hele week.
+      r.gramPerDag[b.datum] = (r.gramPerDag[b.datum] || 0) + (m.gram || 0);
+      // En binnen die dag nog eens per partij. Staan er twee partijen op
+      // donderdag die allebei dezelfde bereiding hebben, dan maak je die wel
+      // samen, maar je zet ze apart weg: twee keer veertig, geen tachtig in
+      // één bak. Het bolletje noemt ze daarom los.
+      if (!r.perDagPartij[b.datum]) r.perDagPartij[b.datum] = {};
+      const pp = r.perDagPartij[b.datum];
+      if (!pp[b.id]) pp[b.id] = { id: b.id, naam: b.naam || "Zonder naam", porties: 0, gram: 0 };
+      pp[b.id].porties += m.porties;
+      pp[b.id].gram += (m.gram || 0);
       if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum, gasten: gastenVan(b) }); }
     }
   }
@@ -16247,35 +16337,68 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
             Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}
           </button>
           {somOpen && !overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
-          {somOpen && overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[13.5px]" style={{ borderCollapse: "collapse", minWidth: "34rem" }}>
+          {somOpen && overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[15px]" style={{ borderCollapse: "collapse", minWidth: "36rem" }}>
             <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-widest acc">
-                <th className="text-left py-1.5 pr-2">Bereiding</th>
-                {somSet.map((d) => <th key={d} className="text-right py-1.5 px-1">{kolKop(d)}</th>)}
-                <th className="text-right py-1.5 pl-2">Totaal</th>
+              <tr className="text-[12.5px] font-semibold uppercase tracking-widest acc">
+                <th className="text-left py-2 pr-2">Bereiding</th>
+                {/* Ook de dagkoppen zijn te markeren: zet je een hele draaidag af,
+                    dan hoort de kop daar net zo goed bij als de aantallen eronder. */}
+                {somSet.map((d) => <th key={d} className="text-right py-2 px-1">
+                  <SomCel sleutel={"sk:" + d} tekst={kolKop(d)} stift={stift} markering={markering} zetMark={zetMark} />
+                </th>)}
+                <th className="text-right py-2 pl-2">
+                  <SomCel sleutel="sk:totaal" tekst="Totaal" stift={stift} markering={markering} zetMark={zetMark} />
+                </th>
               </tr>
             </thead>
             <tbody>
               {overlapActief.map((r) => (
                 <React.Fragment key={r.sleutel}>
-                  <tr style={{ borderTop: "1px solid " + T.line }}>
-                    <td className="py-2 pr-2 ink">
-                      <input type="checkbox" checked={false} onChange={() => toggleAf(r.sleutel)} className="mr-2 align-middle" style={{ width: 16, height: 16 }} />
-                      <span onClick={() => !stift && setSomRij(somRij === r.sleutel ? null : r.sleutel)} style={{ cursor: stift ? undefined : "pointer" }}>
-                        <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} />
-                      </span>
-                      {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[12px]">open</button>}
-                      <span onClick={() => !stift && setSomRij(somRij === r.sleutel ? null : r.sleutel)} className="mute text-[12px]" style={{ cursor: stift ? undefined : "pointer" }}> · {r.partijen.length} partijen</span>
+                  <tr style={{ borderTop: "1px solid " + SOM_LIJN }}>
+                    <td className="py-2.5 pr-2 ink">
+                      <input type="checkbox" checked={false} onChange={() => toggleAf(r.sleutel)} className="mr-2 align-middle" style={{ width: 17, height: 17 }} />
+                      {/* De invulling zelf is geen knop: daar markeer je op, en een
+                          tik erop klapte de partijen open terwijl je dat niet vroeg.
+                          Alleen "· N partijen" klapt ze uit. */}
+                      <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} />
+                      {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[13px]">open</button>}
+                      <span onClick={() => !stift && setSomRij(somRij === r.sleutel ? null : r.sleutel)} className="mute text-[13px]"
+                        title={stift ? undefined : "Laat zien in welke partijen dit terugkomt"}
+                        style={{ cursor: stift ? undefined : "pointer", textDecoration: stift ? undefined : "underline", textDecorationStyle: "dotted", textUnderlineOffset: "2px" }}> · {r.partijen.length} partijen</span>
                     </td>
-                    {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
-                    <td className="text-right py-2 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}{r.gram ? <span className="block text-[11px] font-semibold mute">{fmtGram(r.gram)}</span> : null}</td>
+                    {/* Elk aantal is zelf een vakje: tik erop en je ziet hoeveel gram
+                        dat op die dag is, dubbelklik en hij staat gemarkeerd. */}
+                    {somSet.map((d) => (
+                      <td key={d} className="text-right py-2.5 px-1 ink font-medium">
+                        {r.perDag[d] ? (
+                          <SomCel sleutel={"sd:" + r.sleutel + ":" + d} tekst={fmtPorties(r.perDag[d])}
+                            uitleg={(() => {
+                              const pp = Object.values((r.perDagPartij && r.perDagPartij[d]) || {});
+                              return {
+                                gram: r.gramPerDag && r.gramPerDag[d] ? fmtGram(r.gramPerDag[d]) : "Geen gewicht bekend",
+                                sub: fmtPorties(r.perDag[d]) + " porties · " + kolKop(d) + (pp.length > 1 ? " · " + pp.length + " partijen" : ""),
+                                rijen: pp.map((x) => x.naam + " · " + fmtPorties(x.porties) + "×" + (x.gram ? " · " + fmtGram(x.gram) : "")),
+                                titel: r.naam,
+                              };
+                            })()}
+                            onUitleg={setSomUitleg} stift={stift} markering={markering} zetMark={zetMark} />
+                        ) : <span className="mute">·</span>}
+                      </td>
+                    ))}
+                    <td className="text-right py-2.5 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + SOM_LIJN }}>
+                      <SomCel sleutel={"st:" + r.sleutel} tekst={fmtPorties(r.totaal)}
+                        uitleg={{ gram: r.gram ? fmtGram(r.gram) : "Geen gewicht bekend",
+                          sub: fmtPorties(r.totaal) + " porties · alle dagen samen", titel: r.naam }}
+                        onUitleg={setSomUitleg} stift={stift} markering={markering} zetMark={zetMark} />
+                      {r.gram ? <span className="block text-[12.5px] font-semibold mute">{fmtGram(r.gram)}</span> : null}
+                    </td>
                   </tr>
                   {somRij === r.sleutel && (
                     <tr>
                       <td colSpan={somSet.length + 2} className="pb-2">
                         <div className="flex flex-wrap gap-1.5 pl-6">
                           {r.partijen.map((p) => (
-                            <button key={p.id} onClick={() => springNaar(p)} className="ff rounded-lg px-2 py-1 text-[12px]" style={{ background: "#f2f0e6", border: "1px solid " + T.line }}>
+                            <button key={p.id} onClick={() => springNaar(p)} className="ff rounded-lg px-2 py-1 text-[13px]" style={{ background: "#f2f0e6", border: "1px solid " + SOM_LIJN }}>
                               {p.naam} <span className="mute">· {kolKop(p.datum)}{p.gasten ? " · " + p.gasten + " pers." : ""}</span>
                             </button>
                           ))}
@@ -16288,23 +16411,23 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
             </tbody>
           </table></div>}
           {overlapKlaar.length > 0 && (
-            <div className="mt-2 pt-2" style={{ borderTop: "1px solid " + T.line }}>
-              <button onClick={() => setKlaarOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-widest mute">
-                {klaarOpen ? <ChevronUp size={13} className="shrink-0" /> : <ChevronDown size={13} className="shrink-0" />}
+            <div className="mt-2 pt-2" style={{ borderTop: "1px solid " + SOM_LIJN }}>
+              <button onClick={() => setKlaarOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest mute">
+                {klaarOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
                 Afgevinkt ({overlapKlaar.length})
               </button>
               {klaarOpen && (
-                <table className="w-full text-[13.5px] mt-1" style={{ borderCollapse: "collapse" }}>
+                <table className="w-full text-[15px] mt-1" style={{ borderCollapse: "collapse" }}>
                   <tbody>
                     {overlapKlaar.map((r) => (
-                      <tr key={r.sleutel} style={{ borderTop: "1px solid " + T.line, opacity: 0.65 }}>
-                        <td className="py-2 pr-2 ink">
-                          <input type="checkbox" checked={true} onChange={() => toggleAf(r.sleutel)} className="mr-2 align-middle" style={{ width: 16, height: 16 }} />
+                      <tr key={r.sleutel} style={{ borderTop: "1px solid " + SOM_LIJN, opacity: 0.65 }}>
+                        <td className="py-2.5 pr-2 ink">
+                          <input type="checkbox" checked={true} onChange={() => toggleAf(r.sleutel)} className="mr-2 align-middle" style={{ width: 17, height: 17 }} />
                           <span style={{ textDecoration: "line-through" }}>{r.naam}</span>
-                          <span className="mute text-[12px]"> · {r.partijen.length} partijen</span>
+                          <span className="mute text-[13px]"> · {r.partijen.length} partijen</span>
                         </td>
-                        {somSet.map((d) => <td key={d} className="text-right py-2 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
-                        <td className="text-right py-2 pl-2 font-bold mute" style={{ borderLeft: "1px solid " + T.line }}>{fmtPorties(r.totaal)}{r.gram ? <span className="block text-[11px]">{fmtGram(r.gram)}</span> : null}</td>
+                        {somSet.map((d) => <td key={d} className="text-right py-2.5 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                        <td className="text-right py-2.5 pl-2 font-bold mute" style={{ borderLeft: "1px solid " + SOM_LIJN }}>{fmtPorties(r.totaal)}{r.gram ? <span className="block text-[12.5px]">{fmtGram(r.gram)}</span> : null}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -16312,6 +16435,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
               )}
             </div>
           )}
+          <SomBubbel bij={somUitleg} onSluit={() => setSomUitleg(null)} />
         </div>
       ) : null;
 
