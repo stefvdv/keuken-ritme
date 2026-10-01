@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01u"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01v"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -14451,7 +14451,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   };
   // De invulling van één productregel, met de hoeveelheden die het aantal van die
   // regel volgen.
-  const odVan = (k) => onderdelenVolgenAantal(k && k.miceId ? onderdelenVan(invulSleutel(b, k)) : null, k, b);
+  // De invulling zoals hij is opgeslagen. Vroeger werd hier bij het tónen nog
+  // omgerekend: elke hoeveelheid die gelijk was aan het aantal gasten werd het
+  // aantal van de regel. Daardoor kon je een hoeveelheid die toevallig op het
+  // aantal gasten uitkwam niet aanpassen — je typte 50, en bij het opnieuw
+  // tekenen stond er weer 100. Het meeschuiven gebeurt nu bij het opslaan.
+  const odVan = (k) => (k && k.miceId ? onderdelenVan(invulSleutel(b, k)) : null);
   // Het menu voor het MICE-document: alleen productregels die voor de keuken
   // tellen (huur, techniek en dranken vallen af), met per regel de ingevulde
   // gerechtnamen. Producten zonder invulling leveren geen kop op — een lege
@@ -14996,11 +15001,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     )}
                     {g.items.map((k, i) => {
                 const od = odVan(k);
-                // Nonfood (servies, bestek, glaswerk) houdt altijd zijn eigen
-                // naam en aantal; wat erbij getypt is, is een opmerking en komt
-                // er achter te staan.
-                const nonfood = isNonfoodRegel(k, catVan);
-                const opmerking = nonfood ? ((od || []).map((o) => String((o && o.naam) || "").trim()).filter(Boolean).join(" · ")) : "";
+                // Nonfood (servies, bestek, glaswerk) telt niet mee in de
+                // mep-berekening, maar staat hier op de kaart als elk ander
+                // product: naam, aantal en zijn regels eronder. Vroeger werden
+                // die regels achter de naam geplakt — bij een product met een
+                // hele invulling werd de naam dan een menukaart, en in de
+                // bewerkstand was er maar één van te zien. Daarom staat er hier
+                // niets meer over nonfood: de kaart kent het onderscheid niet.
                 // Op de mep vervangt de invulling de productnaam: is er een
                 // invulling, dan verdwijnt de productregel en staan de
                 // invullingsregels er direct (zonder inspringing).
@@ -15009,10 +15016,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // die regels bij horen, zeker nu het kopje van het programmadeel
                 // ook weg is. De naam staat er dus altijd.
                 const zonderKop = false;
-                // De opmerking bij nonfood stond vroeger achter de naam geplakt.
-                // Bij servies was dat kort ("wit servies"), maar bij een product
-                // met een hele invulling werd de naam een menukaart. Hij staat nu
-                // op zijn eigen regel eronder, net als bij de andere producten.
                 const kop = (k.aantal || b.gasten) + "× " + k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId);
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
@@ -15035,10 +15038,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         {isVers && <NieuwTag titel={isVers.titel} />}
                       </div>
                     )}
-                    {nonfood && opmerking && (
-                      <div className="ink pl-3"><MarkTekst tekst={opmerking} basis={kopBasis + ":op"} stift={stift} markering={markering} zetMark={zetMark} erf={erfKleur} /></div>
-                    )}
-                    {!nonfood && od && od.map((o, j) => {
+                    {od && od.map((o, j) => {
                       // De gerechten in de regel zijn zelf de link naar hun recept;
                       // alleen een koppeling die nergens op lijkt komt er nog achter
                       // te staan, anders zou dat recept onbereikbaar worden.
@@ -15147,17 +15147,10 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     )}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
                   </div>
-                  {/* Nonfood krijgt geen culinaire invulling maar één
-                      opmerkingveld: het servies zelf staat al met naam en
-                      aantal op de kaart. */}
-                  {isNonfoodRegel(k, catVan) ? (
-                    <div className="flex items-center gap-1.5 pl-3">
-                      <input className="input px-2 py-1.5 text-sm min-w-0 flex-1" data-on={b.id + "-" + i + "-0"}
-                        value={(inv[mid] && inv[mid][0] && inv[mid][0].naam) || ""}
-                        onChange={(e) => zetO(mid, 0, "naam", e.target.value)}
-                        placeholder="opmerking (bijvoorbeeld: wit servies, los bestek erbij)" />
-                    </div>
-                  ) : ((inv[mid] && inv[mid].length ? inv[mid] : [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }])).map((o, j) => {
+                  {/* Ook nonfood bewerk je hier regel voor regel, met een eigen
+                      aantal. Vroeger was het één opmerkingveld; bij een product
+                      met meerdere regels zag je er daarvan maar één. */}
+                  {((inv[mid] && inv[mid].length ? inv[mid] : [{ hoeveelheid: "", portie: "", naam: "", recipeId: null, productId: null }])).map((o, j) => {
                     const sleutel = mid + ":" + j;
                     return (
                       <div key={j}>
