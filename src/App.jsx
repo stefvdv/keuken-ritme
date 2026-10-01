@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01n"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-01p"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3064,6 +3064,16 @@ function App() {
     if (live) { try { await instelUpsert("mep_notitie", obj); } catch (e) {} }
   };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
+  // De laatste stand, ook binnen dezelfde handeling. React werkt zijn state pas
+  // na afloop bij, dus twee schrijfacties achter elkaar (eerst de regels, dan de
+  // invulling) zouden allebei van de oude stand uitgaan en elkaar overschrijven.
+  // Wie in de kern schrijft, leest daarom hier.
+  const koppelingNu = React.useRef({});
+  koppelingNu.current = koppeling;
+  const koppelingBijwerken = (sleutel, waarde) => {
+    koppelingNu.current = { ...koppelingNu.current, [sleutel]: waarde };
+    return saveKoppelingSleutel(sleutel, waarde);
+  };
   const [miceProducten, setMiceProducten] = useState([]); // catalogus uit MICE
   const [prodKoppeling, setProdKoppeling] = useState({}); // MICE-product -> ons product
 
@@ -3597,15 +3607,15 @@ function App() {
   // heeft niets met MICE te maken. Alleen de boekingen zelf en de handmatige
   // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
   // ── De boekingpagina schrijft in de kern ──────────────────────────────────
-  const kernBewaren = (b, bk) => saveKoppelingSleutel(kernSleutel("bk|", b.id, b.datum), kernIn(bk));
+  const kernBewaren = (b, bk) => koppelingBijwerken(kernSleutel("bk|", b.id, b.datum), kernIn(bk));
   const kernOpslaanBoeking = (b, regels, velden) =>
-    kernBewaren(b, kernOpslaan(kernLagen(koppeling, b.id, b.datum), b, regels, velden, new Date().toISOString()));
+    kernBewaren(b, kernOpslaan(kernLagen(koppelingNu.current, b.id, b.datum), b, regels, velden, new Date().toISOString()));
   // Terugzetten naar wat MICE zegt: de eigen laag van die dag leeg.
   const kernWissen = (b) => kernBewaren(b, {});
   // De invulling van een of meer producten, op de dag waar je staat.
   const kernInvullen = (b, lijst) => {
     const nu = new Date().toISOString();
-    const bk = { ...kernLagen(koppeling, b.id, b.datum).bk };
+    const bk = { ...kernLagen(koppelingNu.current, b.id, b.datum).bk };
     for (const w of lijst || []) {
       const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
       bk[kernInvVeld(prodMerk({ miceId: w.miceId }))] = kernVeld(od, nu, "hand");
@@ -11754,6 +11764,11 @@ const KERN_VOOR = "kern:";
 const kernSleutel = (voor, id, datum) => KERN_VOOR + String(voor) + "id|" + String(id) + "@" + String(datum);
 const kernVeld = (w, t, van) => ({ w, t: String(t || new Date().toISOString()), van: String(van || "hand") });
 const kernProdVeld = (merk) => "p:" + merk;
+// De naam die jij aan een product geeft staat apart van de regel zelf. Anders
+// zou een wijziging van het aantal in MICE je hernoeming meeslepen: de regel is
+// één veld, en wie dat veld wint, wint ook de naam. Zo blijft een hernoeming
+// staan tot je hem zelf weer terugzet.
+const kernNaamVeld = (merk) => "nm:" + merk;
 const kernInvVeld = (merk) => "i:" + merk;
 const kernIsProd = (naam) => String(naam || "").slice(0, 2) === "p:";
 const kernMerkVan = (naam) => String(naam || "").slice(2);
@@ -11790,7 +11805,9 @@ const kernRegels = (velden) => {
     if (!kernIsProd(naam)) continue;
     const w = velden[naam].w;
     if (!w) continue;
-    uit.push({ ...w, merk: kernMerkVan(naam) });
+    const merk = kernMerkVan(naam);
+    const eigenNaam = velden[kernNaamVeld(merk)];
+    uit.push({ ...w, ...(eigenNaam && eigenNaam.w ? { naam: String(eigenNaam.w) } : {}), merk });
   }
   return uit.sort((a, b) => String(a.tijd || "").localeCompare(String(b.tijd || "")) || String(a.naam || "").localeCompare(String(b.naam || "")));
 };
@@ -12003,7 +12020,14 @@ const omzetting = (koppeling, boekingen, boekingSleutel, prodKoppeling) => {
           const merk = prodMerkIn(b, k);
           staat.add(merk);
           const uitMice = mice[kernProdVeld(merk)] && mice[kernProdVeld(merk)].w;
-          bk[kernProdVeld(merk)] = kernVeld(omzetKeuze(k, uitMice), OMZET_T.hand, "hand");
+          const w = omzetKeuze(k, uitMice);
+          // Een naam die afwijkt van MICE is een hernoeming van jou: die gaat
+          // apart mee, zodat een latere MICE-wijziging hem niet meesleept.
+          if (uitMice && String(uitMice.naam || "") !== String(w.naam || "")) {
+            bk[kernNaamVeld(merk)] = kernVeld(String(w.naam || ""), OMZET_T.hand, "hand");
+            w.naam = String(uitMice.naam || "");
+          }
+          bk[kernProdVeld(merk)] = kernVeld(w, OMZET_T.hand, "hand");
           verslag.regels++;
         }
         for (const naam of Object.keys(mice)) {
@@ -12124,7 +12148,18 @@ const kernOpslaan = (lagen, b, regels, velden, nu) => {
     for (const merk of staat.keys()) {
       const sl = kernProdVeld(merk);
       const onder = (mice[sl] && mice[sl].w) || (voor[sl] && voor[sl].w) || null;
-      const w = omzetKeuze(staat.get(merk), onder);
+      const k = staat.get(merk);
+      const w = omzetKeuze(k, onder);
+      // Een andere naam dan MICE geeft is een hernoeming: die krijgt zijn eigen
+      // veld, en de regel zelf houdt de naam van MICE.
+      const uitMice = mice[sl] && mice[sl].w;
+      if (uitMice && String(uitMice.naam || "") !== String(w.naam || "")) {
+        const nv = kernNaamVeld(merk);
+        if (!bk[nv] || !kernGelijk(bk[nv].w, w.naam)) bk[nv] = kernVeld(String(w.naam || ""), t, "hand");
+        w.naam = String(uitMice.naam || "");
+      } else if (uitMice) {
+        delete bk[kernNaamVeld(merk)];
+      }
       if (mice[sl] && kernGelijk(mice[sl].w, w)) { delete bk[sl]; continue; }
       if (bk[sl] && kernGelijk(bk[sl].w, w)) continue; // ongewijzigd: moment laten staan
       bk[sl] = kernVeld(w, t, "hand");
