@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-01aa"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-02b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11913,6 +11913,29 @@ const kernWaarde = (velden, naam) => (velden && velden[naam] ? velden[naam].w : 
 const boekingVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk);
 const mepVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk, (lagen || {}).mep);
 
+// Noemt de toelichting bij een product een dessert, dan hoort dat woord in de
+// naam. Anders zie je op de kaart alleen de hoofdgerechten en niet dat er
+// daarna nog een nagerecht komt — precies wat er in de keuken misgaat. Het
+// staat alleen in de toelichting, en die lees je pas als je erop tikt.
+// De app zet het er zelf achter, als laatste stap bij het tonen: in de opslag
+// verandert er niets, en de volgende sync uit MICE raakt er niets van. Haal je
+// het er met de hand af, of hernoem je het product, dan staat die hernoeming
+// erboven en komt het niet vanzelf terug. Geldt op de boekingkaart en op de
+// mep: beide lezen hun regels hier.
+const DESSERT_ACHTER = " (dessert)";
+const heeftWoord = (tekst, woord) => new RegExp("(^|[^a-z0-9])" + woord + "([^a-z0-9]|$)", "i").test(zonderAccent(String(tekst || "")));
+const hoortDessert = (w) => {
+  // Alleen producten uit MICE: daar komt de toelichting vandaan.
+  if (!w || w.miceId == null || String(w.miceId) === "") return false;
+  // Het hele woord. "Dessertwijn" is geen dessert.
+  if (!heeftWoord(String(w.oms || ""), "dessert")) return false;
+  return !heeftWoord(String(w.naam || ""), "dessert"); // staat het er al, dan niet nog eens
+};
+const metDessert = (w) => String((w && w.naam) || "") + (hoortDessert(w) ? DESSERT_ACHTER : "");
+// Bij het opzoeken van een product telt de naam zoals MICE hem geeft, zonder
+// wat de app er zelf achter zette.
+const zonderDessert = (naam) => String(naam || "").replace(/\s*\(dessert\)\s*$/i, "");
+
 // De productregels uit een gevouwen stand, in de volgorde waarin ze op de dag
 // staan. Een regel met waarde null is weggehaald en telt niet mee.
 const kernRegels = (velden) => {
@@ -11923,7 +11946,7 @@ const kernRegels = (velden) => {
     if (!w) continue;
     const merk = kernMerkVan(naam);
     const eigenNaam = velden[kernNaamVeld(merk)];
-    uit.push({ ...w, ...(eigenNaam && eigenNaam.w ? { naam: String(eigenNaam.w) } : {}), merk });
+    uit.push({ ...w, naam: eigenNaam && eigenNaam.w ? String(eigenNaam.w) : metDessert(w), merk });
   }
   return uit.sort((a, b) => String(a.tijd || "").localeCompare(String(b.tijd || "")) || String(a.naam || "").localeCompare(String(b.naam || "")));
 };
@@ -12273,8 +12296,12 @@ const kernOpslaan = (lagen, b, regels, velden, nu, laag) => {
       const w = omzetKeuze(k, onder);
       // Een andere naam dan MICE geeft is een hernoeming: die krijgt zijn eigen
       // veld, en de regel zelf houdt de naam van MICE.
+      // Gemeten wordt tegen de naam zoals de kaart hem toont — mét het
+      // dessert erachter als de app dat erbij zette. Sla je op zonder iets te
+      // veranderen, dan is dat geen hernoeming. Haal je het dessert er juist
+      // af, dan is dat er wel een, en blijft het weg.
       const uitMice = mice[sl] && mice[sl].w;
-      if (uitMice && String(uitMice.naam || "") !== String(w.naam || "")) {
+      if (uitMice && metDessert(uitMice) !== String(w.naam || "")) {
         const nv = kernNaamVeld(merk);
         if (!bk[nv] || !kernGelijk(bk[nv].w, w.naam)) bk[nv] = kernVeld(String(w.naam || ""), t, bron);
         w.naam = String(uitMice.naam || "");
@@ -12387,7 +12414,7 @@ const zetProdZicht = (m) => { PROD_ZICHT = m && typeof m === "object" ? m : {}; 
 // De keuze mag ook op naam staan. Dat is nodig omdat MICE twee verschillende
 // producten soms hetzelfde nummer geeft ("All in prijs" en "Lunch op De Beug"
 // zijn allebei 224617): op nummer verbergen zou de lunch meenemen.
-const naamZichtSleutel = (naam) => "naam:" + zonderAccent(String(naam || "")).toLowerCase().replace(/\s+/g, " ").trim();
+const naamZichtSleutel = (naam) => "naam:" + zonderAccent(zonderDessert(naam)).toLowerCase().replace(/\s+/g, " ").trim();
 const prodZichtVan = (id, naam) => {
   const opNaam = naam ? PROD_ZICHT[naamZichtSleutel(naam)] : "";
   if (opNaam) return opNaam;
@@ -12813,7 +12840,7 @@ const invulSleutel = (b, k) => {
   if (!mid) return mid;
   const namen = new Set();
   for (const r of (b && b.regels) || []) if (String(r.id) === mid && r.naam) namen.add(r.naam);
-  return namen.size > 1 && k.naam ? mid + "\u0001" + normNaam(k.naam) : mid;
+  return namen.size > 1 && k.naam ? mid + "\u0001" + normNaam(zonderDessert(k.naam)) : mid;
 };
 const tijdenVoorKeuze = (b, k) => {
   if (k && k.tijd) return String(k.tijd);
@@ -12821,7 +12848,7 @@ const tijdenVoorKeuze = (b, k) => {
   const uniek = [];
   for (const r of (b && b.regels) || []) {
     if (String(r.id) !== String(k.miceId)) continue;
-    if (k.naam && r.naam && r.naam !== k.naam) continue; // gedeeld id: naam beslist
+    if (k.naam && r.naam && r.naam !== zonderDessert(k.naam)) continue; // gedeeld id: naam beslist
     const t = String(r.tijd || "").trim();
     if (t && !uniek.includes(t)) uniek.push(t);
   }
@@ -14586,7 +14613,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   // meer: dat zat het markeren met een dubbelklik in de weg.
   const productInfoVoor = (k) => {
     if (!k || !k.miceId) return null;
-    const eigen = ((b && b.regels) || []).filter((r) => String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && String(r.oms || "").trim());
+    const eigen = ((b && b.regels) || []).filter((r) => String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === zonderDessert(k.naam)) && String(r.oms || "").trim());
     const teksten = eigen.map((r) => ({ kop: eigen.length > 1 && (r.act || r.tijd) ? [r.act, r.tijd].filter(Boolean).join(" ") : "", tekst: r.oms }));
     if (!teksten.length) return null;
     const tijdK = tijdenVoorKeuze(b, k);
@@ -14804,7 +14831,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const startBewerk = () => {
     const groepTijd = (k) => {
       if (k && k.tijd) return String(k.tijd); // een zelf gezette tijd gaat voor
-      if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === k.naam) && (r.act || r.tijd)) return r.tijd || "";
+      if (k && k.miceId) for (const r of (b && b.regels) || []) if (String(r.id) === String(k.miceId) && (!k.naam || !r.naam || r.naam === zonderDessert(k.naam)) && (r.act || r.tijd)) return r.tijd || "";
       return "";
     };
     const gesorteerd = keuzesS.map((k, i) => ({ k, i, t: groepTijd(k) }))
@@ -15152,7 +15179,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                   const kandidaten = (k && k.miceId) ? ((b && b.regels) || []).filter((r) => String(r.id) === String(k.miceId) && (r.act || r.tijd)) : [];
                   // Een tijd die hier zelf is ingevuld gaat voor op die van MICE:
                   // zo zet je een zelf toegevoegd product op zijn eigen moment.
-                  const uitMice = kandidaten.find((r) => !k.naam || !r.naam || r.naam === k.naam) || kandidaten[0] || null;
+                  const uitMice = kandidaten.find((r) => !k.naam || !r.naam || r.naam === zonderDessert(k.naam)) || kandidaten[0] || null;
                   // Alleen de tijd verzetten laat de naam van het programmadeel staan.
                   if (k && k.tijd) return { act: String(k.act || (uitMice && uitMice.act) || ""), tijd: String(k.tijd) };
                   if (uitMice) return { act: uitMice.act || "", tijd: uitMice.tijd || "" };
