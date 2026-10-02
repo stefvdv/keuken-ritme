@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null };
-const RITME_VERSIE = "2026-10-02b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-02c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11081,6 +11081,49 @@ function printCustomLabel(f) {
     "</body></html>");
 }
 
+// ── De rij eerder geprinte etiketten ──────────────────────────────────────
+// De knop "Vorige" haalde één etiket terug: het laatste. Vaker klikken loopt nu
+// stap voor stap verder terug door de etiketten die echt naar het printscherm
+// zijn gegaan — hele etiketten, geen losse velden.
+const LABEL_GESCH = "ritme:label-geschiedenis";
+const LABEL_LAATSTE = "ritme:last-label"; // de oude plek, met één etiket erin
+const LABEL_MAX = 25;
+// Twee etiketten zijn hetzelfde als het om dezelfde sticker gaat. De
+// productiedatum telt daarbij niet mee: die wordt bij het terughalen toch
+// vandaag, en de houdbaarheid schuift mee. Zo staat eenzelfde sticker niet
+// vijf keer in de rij.
+const etiketVinger = (e) => {
+  const dagen = (van, tot) => {
+    if (!van || !tot) return "";
+    const a = new Date(van + "T12:00:00"), b = new Date(tot + "T12:00:00");
+    return isNaN(a) || isNaN(b) ? "" : String(Math.round((b - a) / 86400000));
+  };
+  return JSON.stringify([
+    String((e && e.name) || "").trim().toLowerCase(),
+    dagen(e && e.prod, e && e.tht), dagen(e && e.prod, e && e.ready),
+    String((e && e.gram) || "").trim(), String((e && e.note) || "").trim(),
+    (Array.isArray(e && e.allergens) ? e.allergens : []).slice().sort().join(","),
+  ]);
+};
+const etiketErbij = (lijst, etiket) => {
+  if (!etiket) return Array.isArray(lijst) ? lijst.slice(0, LABEL_MAX) : [];
+  const v = etiketVinger(etiket);
+  return [etiket, ...(Array.isArray(lijst) ? lijst : []).filter(Boolean).filter((x) => etiketVinger(x) !== v)].slice(0, LABEL_MAX);
+};
+const etiketGeschLees = () => {
+  let lijst = [];
+  try { const r = JSON.parse(localStorage.getItem(LABEL_GESCH) || "null"); if (Array.isArray(r)) lijst = r.filter((x) => x && typeof x === "object"); } catch (e) {}
+  // Nog geen rij, maar wel het losse etiket van vroeger: dat is de eerste.
+  if (!lijst.length) { try { const r = JSON.parse(localStorage.getItem(LABEL_LAATSTE) || "null"); if (r && typeof r === "object") lijst = [r]; } catch (e) {} }
+  return lijst.slice(0, LABEL_MAX);
+};
+const etiketGeschBewaar = (lijst) => {
+  try { localStorage.setItem(LABEL_GESCH, JSON.stringify((lijst || []).slice(0, LABEL_MAX))); } catch (e) {}
+  // De oude plek blijft meelopen, zodat een stap terug naar een vorige versie
+  // van de app niet meteen zonder "Vorige" zit.
+  try { if (lijst && lijst[0]) localStorage.setItem(LABEL_LAATSTE, JSON.stringify(lijst[0])); } catch (e) {}
+};
+
 function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   const mapStore = (t) => { const x = String(t || "").toLowerCase(); if (/ongekoeld/.test(x)) return "ongekoeld"; if (/vrie|bevroren/.test(x)) return "bevroren"; if (/droog/.test(x)) return "droog"; if (/koel/.test(x)) return "gekoeld"; return ""; };
   const thtVan = (p, dgn) => { if (!p || !dgn) return ""; const dt = new Date(p + "T12:00:00"); if (isNaN(dt)) return ""; dt.setDate(dt.getDate() + Number(dgn)); return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0"); };
@@ -11191,11 +11234,18 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     document.addEventListener("keydown", toets, true);
     return () => document.removeEventListener("keydown", toets, true);
   });
+  // Wat er naar het printscherm gaat, gaat ook vooraan in de rij voor de
+  // knop "Vorige". Alleen bij het echt printen: half ingevulde etiketten
+  // horen er niet in.
+  const bewaarInRij = () => {
+    const nu = { name, prod, tht, ready, gram, note, allergens };
+    const nieuweRij = etiketErbij(gesch, nu);
+    setGesch(nieuweRij); setGeschIdx(-1);
+    etiketGeschBewaar(nieuweRij);
+  };
   const doPrint = () => {
     if (!verplichtOk()) return;
-    // Invulling bewaren voor de "Vorige"-knop: extra stickers van dezelfde
-    // soort zijn dan zo teruggehaald, ook na het sluiten van de popup.
-    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, note, allergens })); } catch (e) {}
+    bewaarInRij();
     printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), note, allergens });
     onClose(); // sluit vanzelf zodra de printactie gestart is
   };
@@ -11204,7 +11254,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
   // Het opslaan zelf vraagt zoals altijd wie het doet via de naam-popup.
   const doPrintEnVoorraad = () => {
     if (!verplichtOk()) return;
-    try { localStorage.setItem("ritme:last-label", JSON.stringify({ name, prod, tht, ready, gram, note, allergens })); } catch (e) {}
+    bewaarInRij();
     printCustomLabel({ name: name.trim(), prod, tht, ready, gram: gram.trim(), note, allergens });
     const dgn = (() => { if (!tht || !prod) return null; const a = new Date(prod + "T12:00:00"), b = new Date(tht + "T12:00:00"); return isNaN(a) || isNaN(b) ? null : Math.round((b - a) / 86400000); })();
     const rec = gekozenRecept && String(gekozenRecept.name || "").trim().toLowerCase() === name.trim().toLowerCase() ? gekozenRecept : null;
@@ -11212,16 +11262,25 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
       ingredients: rec && Array.isArray(rec.ingredients) ? rec.ingredients.map((x) => ({ ...x })) : undefined,
       recipeId: rec ? rec.id : undefined });
   };
-  const vorige = (() => { try { return JSON.parse(localStorage.getItem("ritme:last-label") || "null"); } catch (e) { return null; } })();
+  // De rij eerder geprinte etiketten, en hoe ver we erin teruggelopen zijn.
+  // −1 betekent: nog niet teruggelopen; de eerstvolgende klik pakt het nieuwste.
+  const [gesch, setGesch] = useState(() => etiketGeschLees());
+  const [geschIdx, setGeschIdx] = useState(-1);
+  const volgendeVorige = gesch.length ? gesch[(geschIdx + 1) % gesch.length] : null;
   // Alles leegmaken voor een vers etiket; alleen de productiedatum blijft vandaag.
   const maakLeeg = () => {
+    setGeschIdx(-1); // na leegmaken begint "Vorige" weer bij het nieuwste
     setName(""); setPicked(false); setGekozenRecept(null); setSuggIdx(-1);
     setProd(today); setTht(""); setReady("");
     setGram(""); setNote(""); setAllergens([]); setAlgOpen(false);
     setTimeout(() => { try { if (naamRef.current) naamRef.current.focus(); } catch (e) {} }, 30);
   };
   const herstelVorige = () => {
-    if (!vorige) return;
+    if (!gesch.length) return;
+    // Elke klik één stap verder terug; achter de oudste begint hij weer vooraan.
+    const i = (geschIdx + 1) % gesch.length;
+    setGeschIdx(i);
+    const vorige = gesch[i];
     setName(vorige.name || ""); setPicked(true);
     // Productiedatum blijft vandaag: extra stickers worden vandaag gemaakt.
     // De THT/klaar-op schuiven mee met hetzelfde aantal dagen als het origineel.
@@ -11264,7 +11323,16 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
               onBlur={() => setTimeout(() => setPicked(true), 120)}
               placeholder="Zoek een recept of typ een eigen naam" />
             <button type="button" onClick={maakLeeg} className="ff shrink-0 inline-flex items-center justify-center rounded-lg px-2" style={{ border: "1px solid #d9c4bd", color: "#8a4a3a", background: "#fff" }} title="Alles leegmaken (productiedatum blijft vandaag)"><Trash2 size={14} /></button>
-            {vorige && <button type="button" onClick={herstelVorige} className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold" style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }} title={"Vorige etiket terughalen: " + (vorige.name || "")}>↺ Vorige</button>}
+            {gesch.length > 0 && (
+              <button type="button" data-etiketvorige={String(geschIdx)} onClick={herstelVorige}
+                className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold"
+                style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }}
+                title={gesch.length > 1
+                  ? "Nog een keer klikken gaat verder terug — nu: " + (volgendeVorige && volgendeVorige.name ? volgendeVorige.name : "zonder naam")
+                  : "Vorige etiket terughalen: " + ((volgendeVorige && volgendeVorige.name) || "zonder naam")}>
+                ↺ Vorige{gesch.length > 1 && geschIdx >= 0 ? " " + (geschIdx + 1) + "/" + gesch.length : ""}
+              </button>
+            )}
           </div>
           {sugg.length > 0 && (
             <div className="card mt-1 overflow-hidden">
