@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-04b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-04c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3715,31 +3715,34 @@ function App() {
   // aanpassingen daarop (productkeuzes, mep-wijzigingen, markeringen) gaan weg.
   // ── De boekingpagina schrijft in de kern ──────────────────────────────────
   const kernBewaren = (b, laag, bk) => koppelingBijwerken(kernSleutel(laag + "|", b.id, b.datum), kernIn(bk));
-  const kernOpslaanIn = (laag) => (b, regels, velden) =>
-    kernBewaren(b, laag, kernOpslaan(kernLagen(koppelingNu.current, b.id, b.datum), b, regels, velden, new Date().toISOString(), laag));
-  const kernOpslaanBoeking = kernOpslaanIn("bk");
+  // Boeking en mep schrijven allebei in dezelfde laag. Een aanpassing geldt
+  // daarmee aan beide kanten en kan niet meer door de andere kant worden
+  // teruggedraaid. Wie het deed blijft wel staan: dat is de bron van het veld.
+  const kernOpslaanIn = (bron) => (b, regels, velden) =>
+    kernBewaren(b, "bk", kernOpslaan(kernLagen(koppelingNu.current, b.id, b.datum), b, regels, velden, new Date().toISOString(), "bk", bron));
+  const kernOpslaanBoeking = kernOpslaanIn("hand");
   const kernOpslaanMep = kernOpslaanIn("mep");
-  // Terugzetten naar wat eronder ligt: de eigen laag van die dag leeg.
-  const kernWissenIn = (laag) => (b) => kernBewaren(b, laag, {});
-  const kernWissen = kernWissenIn("bk");
-  const kernMepWissen = kernWissenIn("mep");
-  // De invulling van een of meer producten, op de dag waar je staat. Op de mep
-  // is dat een mep-aanpassing: die werkt niet terug naar de boeking.
-  const kernInvullenIn = (laag) => (b, lijst) => {
+  // Terugzetten naar wat MICE geeft: de eigen laag van die dag leeg, en de
+  // oude mep-laag er meteen bij — anders blijft daar iets van vroeger hangen
+  // dat de kaart weer kleurt.
+  const kernWissen = (b) => { kernBewaren(b, "mep", {}); return kernBewaren(b, "bk", {}); };
+  const kernMepWissen = kernWissen;
+  // De invulling van een of meer producten, op de dag waar je staat.
+  const kernInvullenIn = (bron) => (b, lijst) => {
     const nu = new Date().toISOString();
     const lagen = kernLagen(koppelingNu.current, b.id, b.datum);
-    // Waartegen we meten: wat deze kaart zelf te zien kreeg. De boeking ziet de
-    // mep niet, dus een regel die daar is aangepast staat niet in zijn maatstaf
-    // — en wordt dus ook niet als "weggehaald" of "veranderd" gestempeld.
-    const basis = laag === "mep" ? mepVelden(lagen) : boekingVelden(lagen);
-    const eigen = { ...lagen[laag] };
+    // Waartegen we meten: de stand zoals beide kaarten hem tonen. Wat niet
+    // veranderd is houdt zijn moment, zodat een aanpassing die net van de
+    // andere kant kwam gewoon blijft staan.
+    const basis = boekingVelden(lagen);
+    const eigen = { ...lagen.bk };
     for (const w of lijst || []) {
       const merk = prodMerk({ miceId: w.miceId });
       const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
-      eigen[kernInvVeld(merk)] = kernVeld(invulStempel(od, kernInvulling(basis, merk), nu), nu, laag === "mep" ? "mep" : "hand");
+      eigen[kernInvVeld(merk)] = kernVeld(invulStempel(od, kernInvulling(basis, merk), nu), nu, bron);
       schrijfInvulGesch(w.miceId, od);
     }
-    return kernBewaren(b, laag, eigen);
+    return kernBewaren(b, "bk", eigen);
   };
   // De lijst met bewaarde partij-invullingen op de gerechtenpagina. Die werd
   // vroeger bijgeschreven vanuit de globale productkoppeling; sinds de kern
@@ -3763,7 +3766,7 @@ function App() {
       if (live) { try { await supabase.from("mice_invulgeschiedenis").insert(rij); } catch (e) {} }
     } catch (e) {}
   };
-  const kernInvullen = kernInvullenIn("bk");
+  const kernInvullen = kernInvullenIn("hand");
   const kernMepInvul = kernInvullenIn("mep");
   // De omzetting proefdraaien: rekent uit wat de nieuwe opslag zou worden en
   // geeft een verslag terug. Er wordt niets weggeschreven — dit is om te kijken
@@ -12113,8 +12116,13 @@ const vouwSamen = (...lagen) => {
   return uit;
 };
 const kernWaarde = (velden, naam) => (velden && velden[naam] ? velden[naam].w : undefined);
-const boekingVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk);
-const mepVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk, (lagen || {}).mep);
+// Boeking en mep kijken naar dezelfde stand. Vroeger zag de boeking de
+// mep-laag niet: wat je op de mep aanpaste bestond daar niet, en de eerste de
+// beste opslag vanaf de boeking schreef er zijn eigen versie overheen. Een
+// aanpassing hoort beide kanten op te gelden. De mep-laag wordt niet meer
+// beschreven maar wel gelezen — wat er van vroeger in staat blijft staan.
+const boekingVelden = (lagen) => vouwSamen((lagen || {}).mice, (lagen || {}).bk, (lagen || {}).mep);
+const mepVelden = boekingVelden;
 
 // Noemt de toelichting bij een product een dessert, dan hoort dat woord in de
 // naam. Anders zie je op de kaart alleen de hoofdgerechten en niet dat er
@@ -12478,14 +12486,17 @@ const kernExtra = (lagen) => {
 // Wat de boekingpagina opslaat. Alleen wat afwijkt van de laag eronder komt in
 // de eigen laag; wat gelijk is aan MICE verdwijnt eruit, zodat MICE dat veld
 // weer kan sturen. Geeft de nieuwe eigen laag terug.
-const kernOpslaan = (lagen, b, regels, velden, nu, laag) => {
+const kernOpslaan = (lagen, b, regels, velden, nu, laag, bronNaam) => {
   const t = String(nu || new Date().toISOString());
+  // De laag waar het heen gaat en de hand die het deed zijn twee dingen: de
+  // mep schrijft tegenwoordig in dezelfde laag als de boeking, maar blijft wel
+  // herkenbaar als "op de mep" in de geschiedenis.
   const opMep = laag === "mep";
   // Wat eronder ligt verschilt per laag: de boekingpagina kijkt naar MICE, de
   // mep naar de boeking zoals die daar uitkomt. Verder is het dezelfde regel —
   // alleen wat afwijkt van de laag eronder wordt vastgelegd.
   const mice = opMep ? vouwSamen((lagen || {}).mice, (lagen || {}).bk) : ((lagen || {}).mice || {});
-  const bron = opMep ? "mep" : "hand";
+  const bron = bronNaam || (opMep ? "mep" : "hand");
   let bk = { ...((lagen || {})[opMep ? "mep" : "bk"] || {}) };
 
   // 1. De productregels zoals de kaart ze nu heeft.
@@ -17005,8 +17016,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     onOpslaan={(regels, velden) => {
                       if (onKernMep) onKernMep(b, regels, velden);
                     }}
-                    onHerstel={() => { if (onKernMepWissen) onKernMepWissen(b); }} herstelLabel="Mep wijzigingen resetten"
-                    handmatig={kernHandmatig(lagenVan(b).mep, vouwSamen(lagenVan(b).mice, lagenVan(b).bk))}
+                    onHerstel={() => { if (onKernMepWissen) onKernMepWissen(b); }} herstelLabel="Wijzigingen resetten"
+                    handmatig={kernHandmatig(vouwSamen(lagenVan(b).bk, lagenVan(b).mep), lagenVan(b).mice)}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal} adres={adresVan(b)} klant_email={b.klant_email} toonEmail={false}
@@ -17644,8 +17655,8 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
               vorigeInvulling={(miceId, aantal) => vorigeInvulling(detailBoeking, miceId, aantal)}
               onInvullen={null}
               onOpslaan={(regels, velden) => onKernOpslaan && onKernOpslaan(detailBoeking, regels, velden)}
-              onHerstel={() => { if (onKernWissen) onKernWissen(detailBoeking); if (onSync) onSync(); }} herstelLabel="Boeking wijzigingen resetten"
-              handmatig={kernHandmatig(lagenVan(detailBoeking).bk, lagenVan(detailBoeking).mice)}
+              onHerstel={() => { if (onKernWissen) onKernWissen(detailBoeking); if (onSync) onSync(); }} herstelLabel="Wijzigingen resetten"
+              handmatig={kernHandmatig(vouwSamen(lagenVan(detailBoeking).bk, lagenVan(detailBoeking).mep), lagenVan(detailBoeking).mice)}
               magSelecteren={true}
               onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
               onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
