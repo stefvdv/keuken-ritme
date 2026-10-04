@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-04c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-04d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3718,8 +3718,21 @@ function App() {
   // Boeking en mep schrijven allebei in dezelfde laag. Een aanpassing geldt
   // daarmee aan beide kanten en kan niet meer door de andere kant worden
   // teruggedraaid. Wie het deed blijft wel staan: dat is de bron van het veld.
-  const kernOpslaanIn = (bron) => (b, regels, velden) =>
-    kernBewaren(b, "bk", kernOpslaan(kernLagen(koppelingNu.current, b.id, b.datum), b, regels, velden, new Date().toISOString(), "bk", bron));
+  const kernOpslaanIn = (bron) => (b, regels, velden, invWijzigingen) => {
+    const nu = new Date().toISOString();
+    const lagen = kernLagen(koppelingNu.current, b.id, b.datum);
+    // Eerst de regels en velden, dan de invulling erbovenop — maar alles in
+    // dezelfde laag en in één schrijfactie, zodat er niets tussendoor kan.
+    const bk = kernOpslaan(lagen, b, regels, velden, nu, "bk", bron);
+    const basis = boekingVelden(lagen);
+    for (const w of invWijzigingen || []) {
+      const merk = prodMerk({ miceId: w.miceId });
+      const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
+      bk[kernInvVeld(merk)] = kernVeld(invulStempel(od, kernInvulling(basis, merk), nu), nu, bron);
+      schrijfInvulGesch(w.miceId, od);
+    }
+    return kernBewaren(b, "bk", bk);
+  };
   const kernOpslaanBoeking = kernOpslaanIn("hand");
   const kernOpslaanMep = kernOpslaanIn("mep");
   // Terugzetten naar wat MICE geeft: de eigen laag van die dag leeg, en de
@@ -15353,7 +15366,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const opslaan = (sluiten) => {
     laatsteOpslaan.current = Date.now();
     const schoon = regels.map((k) => ({ ...k, aantal: Math.max(0, parseInt(String(k.aantal), 10) || 0) })).filter((k) => String(k.naam || "").trim());
-    onOpslaan(schoon, magExtra ? { ...velden, allergie: alTekst(alRijen), naam: magNaamStatus ? velden.naam : "", status: magNaamStatus ? velden.status : "" } : null);
+    const eigenVelden = magExtra ? { ...velden, allergie: alTekst(alRijen), naam: magNaamStatus ? velden.naam : "", status: magNaamStatus ? velden.status : "" } : null;
+    let wijzigingen = [];
     if (onInvulling || onInvullingBatch) {
       // Het aantal dat de app al bij elke invulregel voorstelde — het grijze
       // getal in het vakje — is bij het opslaan de waarheid. Zo hoef je alleen
@@ -15362,7 +15376,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       // gasten: precies wat er als voorstel stond.
       const voorstelPer = {};
       for (const k of schoon) if (k.miceId) voorstelPer[invulSleutel(b, k)] = Number(k.aantal) || Number(b.gasten) || 0;
-      const wijzigingen = [];
       for (const mid of Object.keys(inv)) {
         const voorstel = voorstelPer[mid] || 0;
         const onderdelen = inv[mid].map((o) => {
@@ -15379,11 +15392,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         if (norm(onderdelen) === norm(was)) continue;
         wijzigingen.push({ miceId: mid, inv: onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null });
       }
-      if (wijzigingen.length) {
-        if (onInvullingBatch) onInvullingBatch(wijzigingen);
-        else for (const w of wijzigingen) onInvulling(w.miceId, w.inv);
-      }
     }
+    // Alles in één keer wegschrijven. Het ging eerst in twee stappen — eerst de
+    // regels en velden, daarna de invulling — en dat waren twee schrijfacties
+    // naar dezelfde rij. De tweede bouwde voort op de eerste, maar bij een
+    // trage verbinding kon de volgorde omdraaien en zag je na het opslaan nog
+    // even de oude tekst staan. Eén keer schrijven kan dat niet.
+    onOpslaan(schoon, eigenVelden, wijzigingen);
     if (sluiten !== false) setBewerk(false);
   };
   opslaanRef.current = opslaan;
@@ -16721,7 +16736,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     const sl = kernInvVeld(prodMerk({ miceId }));
     // Geen stille terugval op een sjabloon: wat hier staat is wat er in de
     // boeking of op de mep is gezet.
-    return kernHeeft(v, sl) ? { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" } : null;
+    return kernHeeft(v, sl) ? { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" } : null;
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   // Nonfood telt niet mee in de mep-berekening en dus ook niet in "samen
@@ -17007,14 +17022,14 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     allergie={allergieEff(b)} noot={nootEff(b)} tijdTekst={tijdVan(b)} gastenTekst={gastenVan(b)}
                     catVan={catVan} stift={stift} markering={markering} zetMark={zetMark}
                     canEdit={true} magExtra={true} extra={extraVan(b)}
-                    aangepast={Object.keys(lagenVan(b).mep || {}).length > 0}
+                    aangepast={Object.keys(lagenVan(b).bk || {}).length + Object.keys(lagenVan(b).mep || {}).length > 0}
                     nootOpenStandaard={false}
                     invulStatus={null} onInvullen={null} recepten={recepten}
                     invullingVan={(miceId) => invVoor(b, miceId)}
                     onInvulling={onKernMepInvul ? (miceId, inv) => onKernMepInvul(b, [{ miceId, inv }]) : null} onInvullingBatch={onKernMepInvul ? (lijst) => onKernMepInvul(b, lijst) : null}
                     vorigeInvulling={(miceId, aantal) => vorigeInvulling(b, miceId, aantal)}
-                    onOpslaan={(regels, velden) => {
-                      if (onKernMep) onKernMep(b, regels, velden);
+                    onOpslaan={(regels, velden, inv) => {
+                      if (onKernMep) onKernMep(b, regels, velden, inv);
                     }}
                     onHerstel={() => { if (onKernMepWissen) onKernMepWissen(b); }} herstelLabel="Wijzigingen resetten"
                     handmatig={kernHandmatig(vouwSamen(lagenVan(b).bk, lagenVan(b).mep), lagenVan(b).mice)}
@@ -17281,7 +17296,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     // stilletjes het sjabloon van deze klant erbij, waardoor er invulling
     // verscheen die je nooit had gezet. Wil je die overnemen, dan is daar het
     // knopje voor in de bewerkstand.
-    return kernHeeft(v, sl) ? { onderdelen: Array.isArray(v[sl].w) ? v[sl].w : [], naam: "" } : null;
+    return kernHeeft(v, sl) ? { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" } : null;
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
@@ -17654,7 +17669,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
               onMenuKopie={onMenuKopie ? (tekst) => onMenuKopie(detailBoeking, tekst) : null}
               vorigeInvulling={(miceId, aantal) => vorigeInvulling(detailBoeking, miceId, aantal)}
               onInvullen={null}
-              onOpslaan={(regels, velden) => onKernOpslaan && onKernOpslaan(detailBoeking, regels, velden)}
+              onOpslaan={(regels, velden, inv) => onKernOpslaan && onKernOpslaan(detailBoeking, regels, velden, inv)}
               onHerstel={() => { if (onKernWissen) onKernWissen(detailBoeking); if (onSync) onSync(); }} herstelLabel="Wijzigingen resetten"
               handmatig={kernHandmatig(vouwSamen(lagenVan(detailBoeking).bk, lagenVan(detailBoeking).mep), lagenVan(detailBoeking).mice)}
               magSelecteren={true}
