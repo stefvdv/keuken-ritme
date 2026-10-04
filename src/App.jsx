@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-02i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-04b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3727,10 +3727,16 @@ function App() {
   // is dat een mep-aanpassing: die werkt niet terug naar de boeking.
   const kernInvullenIn = (laag) => (b, lijst) => {
     const nu = new Date().toISOString();
-    const eigen = { ...kernLagen(koppelingNu.current, b.id, b.datum)[laag] };
+    const lagen = kernLagen(koppelingNu.current, b.id, b.datum);
+    // Waartegen we meten: wat deze kaart zelf te zien kreeg. De boeking ziet de
+    // mep niet, dus een regel die daar is aangepast staat niet in zijn maatstaf
+    // — en wordt dus ook niet als "weggehaald" of "veranderd" gestempeld.
+    const basis = laag === "mep" ? mepVelden(lagen) : boekingVelden(lagen);
+    const eigen = { ...lagen[laag] };
     for (const w of lijst || []) {
+      const merk = prodMerk({ miceId: w.miceId });
       const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
-      eigen[kernInvVeld(prodMerk({ miceId: w.miceId }))] = kernVeld(od, nu, laag === "mep" ? "mep" : "hand");
+      eigen[kernInvVeld(merk)] = kernVeld(invulStempel(od, kernInvulling(basis, merk), nu), nu, laag === "mep" ? "mep" : "hand");
       schrijfInvulGesch(w.miceId, od);
     }
     return kernBewaren(b, laag, eigen);
@@ -12007,15 +12013,102 @@ const kernGelijk = (a, b) => {
 
 // Lagen over elkaar vouwen: per veld wint het nieuwste moment. Staat er twee
 // keer hetzelfde moment, dan wint de bovenste laag — die is later gezet.
+// ── Invulregels leven apart ───────────────────────────────────────────────
+// De invulling van een product is één veld in de kern, maar de regels erin
+// horen ieder hun eigen leven te leiden. Pas je op de mep de derde regel aan en
+// daarna op de boeking de eerste, dan moeten die allebei blijven staan — de
+// boeking ziet de mep immers niet en schreef anders stilletjes zijn eigen
+// versie over die van de mep heen. Daarom draagt elke regel een eigen kenmerk
+// en het moment waarop hij voor het laatst echt veranderde. Bij het vouwen wint
+// per regel de jongste; raken twee aanpassingen dezelfde regel, dan wint de
+// laatste, en anders staan ze gewoon naast elkaar.
+// Regels van vóór deze manier hebben nog geen kenmerk. Die krijgen er een naar
+// hun plek in de rij (p0, p1, …) en het moment van het veld eromheen; zolang er
+// niets ingevoegd is staan de lagen daarmee op dezelfde plekken.
+const nieuwRid = () => "r" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const invulRegels = (veld) => {
+  const t = String((veld && veld.t) || "");
+  const lijst = Array.isArray(veld && veld.w) ? veld.w : [];
+  return lijst.map((o, i) => ({ ...o, rid: (o && o.rid) || "p" + i, t: String((o && o.t) || t) }));
+};
+const invulRegelGelijk = (a, b) => {
+  const kaal = (x) => JSON.stringify([
+    String((x && x.hoeveelheid) || "").trim(), String((x && x.portie) || "").trim(), String((x && x.naam) || "").trim(),
+    (x && x.recipeId) || null, (x && x.productId) || null, String((x && x.receptNaam) || ""),
+    ((x && x.bijlagen) || []).length,
+  ]);
+  return kaal(a) === kaal(b);
+};
+// Alle lagen van één invulling samenvouwen: per regel wint de jongste.
+const vouwInvulling = (velden) => {
+  const stukken = (velden || []).filter(Boolean);
+  if (!stukken.length) return [];
+  const winnaar = new Map();
+  for (const veld of stukken) {
+    for (const r of invulRegels(veld)) {
+      const nu = winnaar.get(r.rid);
+      if (!nu || String(r.t) >= String(nu.t)) winnaar.set(r.rid, r);
+    }
+  }
+  // De volgorde komt van de laag die het laatst geschreven is. Regels die daar
+  // niet in staan komen achter de regel waar ze in hun eigen laag achter stonden.
+  const basis = stukken.reduce((a, b) => (!a || String(b.t || "") >= String(a.t || "") ? b : a), null);
+  const orde = [];
+  const gezien = new Set();
+  for (const r of invulRegels(basis)) if (!gezien.has(r.rid)) { gezien.add(r.rid); orde.push(r.rid); }
+  for (const veld of stukken) {
+    if (veld === basis) continue;
+    const eigen = invulRegels(veld);
+    for (let i = 0; i < eigen.length; i++) {
+      const rid = eigen[i].rid;
+      if (gezien.has(rid)) continue;
+      gezien.add(rid);
+      let na = -1;
+      for (let k = i - 1; k >= 0; k--) { const pos = orde.indexOf(eigen[k].rid); if (pos >= 0) { na = pos; break; } }
+      if (na >= 0) orde.splice(na + 1, 0, rid); else orde.push(rid);
+    }
+  }
+  return orde.map((rid) => winnaar.get(rid)).filter((r) => r && !r.weg);
+};
+// Wat er echt veranderd is krijgt het moment van nu; de rest houdt het moment
+// dat hij al had. Een regel die weggehaald is laat een steentje achter, zodat
+// het weghalen zelf ook een aanpassing met een moment is en de regel niet
+// stilletjes uit een andere laag terugkomt.
+const invulStempel = (nieuw, basis, nu) => {
+  const was = new Map();
+  for (const o of basis || []) if (o && o.rid) was.set(String(o.rid), o);
+  const uit = [];
+  const gebruikt = new Set();
+  for (const o of nieuw || []) {
+    let rid = o && o.rid ? String(o.rid) : "";
+    if (!rid || gebruikt.has(rid)) rid = nieuwRid();
+    gebruikt.add(rid);
+    const oud = was.get(rid);
+    uit.push({ ...o, rid, t: oud && invulRegelGelijk(oud, o) ? String(oud.t || nu) : String(nu) });
+  }
+  for (const [rid, oud] of was) {
+    if (gebruikt.has(rid) || oud.weg) continue;
+    uit.push({ rid, weg: true, t: String(nu) });
+  }
+  return uit;
+};
+
 const vouwSamen = (...lagen) => {
   const uit = {};
+  const invul = {}; // de i:-velden gaan per regel, niet per veld
   for (const laag of lagen) {
     for (const naam of Object.keys(laag || {})) {
       const v = laag[naam];
       if (!v || typeof v !== "object" || !("w" in v)) continue;
+      if (String(naam).slice(0, 2) === "i:") { (invul[naam] = invul[naam] || []).push(v); continue; }
       const nu = uit[naam];
       if (!nu || String(v.t || "") >= String(nu.t || "")) uit[naam] = v;
     }
+  }
+  for (const naam of Object.keys(invul)) {
+    const stukken = invul[naam];
+    const jongste = stukken.reduce((a, b) => (!a || String(b.t || "") >= String(a.t || "") ? b : a), null);
+    uit[naam] = { ...jongste, w: vouwInvulling(stukken) };
   }
   return uit;
 };
@@ -12062,7 +12155,8 @@ const kernRegels = (velden) => {
 };
 const kernInvulling = (velden, merk) => {
   const v = (velden || {})[kernInvVeld(merk)];
-  return Array.isArray(v && v.w) ? v.w : [];
+  // De steentjes van weggehaalde regels horen niet in het resultaat.
+  return (Array.isArray(v && v.w) ? v.w : []).filter((o) => o && !o.weg);
 };
 
 // Wat MICE voor één draaidag stuurt, als kale waarden (nog zonder moment).
@@ -14158,8 +14252,12 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
   // Het aantal vooraan hoort bij de hele regel: tik of dubbelklik je daarop,
   // dan gaat de markering over alles wat erachter staat. Zo streep je een regel
   // in één keer af in plaats van woord voor woord.
+  // Welke stukjes bij deze regel horen. Het aantal vooraan telt alleen mee als
+  // het er ook echt staat — anders zou er altijd één sleutel onbeschreven
+  // blijven en kon de regel nooit in één keer afgehaald worden.
+  const heeftAantal = aantal != null && String(aantal) !== "";
   const rijSleutels = () => {
-    const uit = [basis + ":a"];
+    const uit = heeftAantal ? [basis + ":a"] : [];
     let n = 0;
     for (const w of delen) if (!isScheiding(w)) { uit.push(basis + ":" + n); n++; }
     return uit;
@@ -14167,13 +14265,18 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
   const zetRij = (kleur) => {
     if (!kleur || !zetMark) return;
     const sleutels = rijSleutels();
-    const staatAl = sleutels.every((sl) => markering[sl] === kleur);
+    if (!sleutels.length) return;
+    // Staat de hele regel al vol, dan haalt deze tik hem juist leeg — in welke
+    // kleur dat ook gebeurd is, en of je hem nu in één keer of stukje voor
+    // stukje hebt gemarkeerd. Is er nog iets niet gemarkeerd, dan gaat de hele
+    // regel aan.
+    const staatAl = sleutels.every((sl) => !!markering[sl]);
     for (const sl of sleutels) zetMark(sl, kleur, staatAl ? "uit" : "aan");
   };
   const aantalKleur = MARKEER_KLEUREN.find((x) => x.naam === (markering[basis + ":a"] || erf));
   return (
     <span className={className} style={style}>
-      {aantal != null && String(aantal) !== "" && (
+      {heeftAantal && (
         <span onClick={stift && zetMark ? (e) => { e.stopPropagation(); zetRij(stift); } : undefined}
           onDoubleClick={zetMark ? (e) => { e.stopPropagation(); e.preventDefault(); if (klikRef.current) { clearTimeout(klikRef.current); klikRef.current = null; } zetRij(stift || "groen"); } : undefined}
           style={{ background: aantalKleur ? aantalKleur.kleur : undefined, borderRadius: 3, cursor: stift ? "cell" : undefined }}>{aantal}</span>
@@ -15254,12 +15357,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         const onderdelen = inv[mid].map((o) => {
           const naam = String(o.naam || "").trim();
           const h = String(o.hoeveelheid || "").trim();
-          return { hoeveelheid: h || ((naam || o.recipeId) && voorstel ? String(voorstel) : ""), portie: String(o.portie || "").trim(), naam, recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "", bijlagen: (o.bijlagen || []).length ? o.bijlagen : undefined };
+          // Het kenmerk van de regel gaat mee: daarmee weet de opslag welke
+          // regel dit is, en kan een aanpassing op de mep ernaast blijven staan.
+          return { ...(o.rid ? { rid: o.rid } : {}), hoeveelheid: h || ((naam || o.recipeId) && voorstel ? String(voorstel) : ""), portie: String(o.portie || "").trim(), naam, recipeId: o.recipeId || null, productId: o.productId || null, receptNaam: o.receptNaam || "", bijlagen: (o.bijlagen || []).length ? o.bijlagen : undefined };
         }).filter((o) => o.naam || o.recipeId || o.hoeveelheid || o.portie);
         // Alleen schrijven wat echt gewijzigd is: onaangeraakte producten
         // behouden hun bestaande (partij- of globale) invulling.
         const was = onderdelenVan(mid) || [];
-        const norm = (l) => JSON.stringify(l.map((o) => [String(o.hoeveelheid || ""), String(o.portie || ""), String(o.naam || ""), o.recipeId || null, o.productId || null, (o.bijlagen || []).length]));
+        const norm = (l) => JSON.stringify((l || []).map((o) => [String(o.hoeveelheid || ""), String(o.portie || ""), String(o.naam || ""), o.recipeId || null, o.productId || null, (o.bijlagen || []).length]));
         if (norm(onderdelen) === norm(was)) continue;
         wijzigingen.push({ miceId: mid, inv: onderdelen.length ? { onderdelen, naam: onderdelen.map((o) => (o.hoeveelheid ? o.hoeveelheid + " " : "") + o.naam).join(" + ").slice(0, 160) } : null });
       }
@@ -15611,7 +15716,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                     })()}
                     {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
                     {vorigeInvulling && vorigeInvulling(k.miceId, k.aantal || b.gasten) && (
-                      <button onClick={() => { const vd = vorigeInvulling(k.miceId, k.aantal || b.gasten); if (vd) setInv((m) => ({ ...m, [mid]: vd.map((o) => ({ ...o })) })); }}
+                      <button onClick={() => { const vd = vorigeInvulling(k.miceId, k.aantal || b.gasten); if (vd) setInv((m) => ({ ...m, [mid]: vd.map((o) => { const n = { ...o }; delete n.rid; delete n.t; return n; }) })); }}
                         className="ff mute hover:opacity-60 shrink-0" title="Invulling van de vorige keer overnemen — hetzelfde soort product, hoeveelheden omgerekend naar deze partij"><RotateCcw size={15} /></button>
                     )}
                     <button onClick={() => setRegels((rs) => rs.filter((_, j) => j !== i))} className="ff mute hover:opacity-60" title="Regel verwijderen"><Trash2 size={15} /></button>
@@ -15715,7 +15820,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                             const eerder = vd && vd[j] ? vd[j] : null;
                             return (
                               <button data-oh={b.id + "-" + i + "-" + j} disabled={!eerder}
-                                onClick={() => { if (eerder) setInv((m) => { const rs = (m[mid] || []).slice(); rs[j] = { ...eerder }; return { ...m, [mid]: rs }; }); }}
+                                onClick={() => { if (eerder) setInv((m) => { const rs = (m[mid] || []).slice(); const oud2 = rs[j] || {}; const n = { ...eerder }; delete n.t; if (oud2.rid) n.rid = oud2.rid; else delete n.rid; rs[j] = n; return { ...m, [mid]: rs }; }); }}
                                 className="ff mute hover:opacity-60" style={eerder ? undefined : { opacity: 0.3, cursor: "default" }}
                                 title={eerder ? "Regel " + (j + 1) + " van de vorige keer overnemen: " + ((eerder.hoeveelheid ? eerder.hoeveelheid + " " : "") + (eerder.naam || "")) : "De vorige keer had dit product geen regel " + (j + 1)}>
                                 <History size={15} />
