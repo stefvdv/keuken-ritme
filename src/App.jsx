@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05l"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17427,6 +17427,10 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // weer gewoon Mise en place.
   const [balkDag, setBalkDag] = useState(null);
   useEffect(() => {
+    // Alleen op laptop en tablet. Op telefoon blijft de bovenkant van de mep
+    // zoals hij was: daar staat de titel al in de kopbalk van de app en is het
+    // smalle balkje te vol om er ook nog een dag bij te zetten.
+    if (!balkBreed) { setBalkDag(null); return; }
     let wacht = false;
     const meet = () => {
       wacht = false;
@@ -17442,9 +17446,25 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     const straks = (fn) => { try { if (window.requestAnimationFrame) return window.requestAnimationFrame(fn); } catch (e) {} return setTimeout(fn, 16); };
     const op = () => { if (!wacht) { wacht = true; straks(meet); } };
     meet();
-    window.addEventListener("scroll", op, { passive: true });
+    // De bladzijde scrolt niet op het venster. html en body hebben een globale
+    // overflow-x:hidden, en dan is body zelf het scrollende element — een
+    // scroll-gebeurtenis van body komt nooit bij window aan. Daarom luisteren
+    // we in de vangfase op het document: zo horen we élk element dat scrolt.
+    // En een waarnemer kijkt mee wanneer een dagkop de balk kruist, want die
+    // werkt ongeacht wie er scrolt.
+    document.addEventListener("scroll", op, true);
     window.addEventListener("resize", op);
-    return () => { window.removeEventListener("scroll", op); window.removeEventListener("resize", op); };
+    let waarnemer = null;
+    try {
+      const hoog = balkRef.current ? Math.round(balkRef.current.getBoundingClientRect().height) : 0;
+      waarnemer = new IntersectionObserver(op, { rootMargin: "-" + (hoog + 4) + "px 0px 0px 0px", threshold: 0 });
+      for (const el of document.querySelectorAll("[data-mepdag]")) waarnemer.observe(el);
+    } catch (e) {}
+    return () => {
+      document.removeEventListener("scroll", op, true);
+      window.removeEventListener("resize", op);
+      if (waarnemer) waarnemer.disconnect();
+    };
   }, [weekStart, volgendeOpen, somOpen, balkBreed]);
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
   const somSet = dagen.filter((d) => d >= vandaag).slice(0, somDagen);
@@ -17850,8 +17870,9 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           telefoon staat de titel al in de kopbalk van de app. */}
       <div className="flex items-center gap-1.5 mb-2 pt-1 flex-wrap">
         {/* Bovenaan de titel; zodra er een dagkop voorbij is de dag zelf. Op
-            telefoon staat de titel al in de kopbalk van de app, de dag niet. */}
-        <div className={"serif ink leading-tight shrink-0 mr-1 text-[16px] md:text-xl " + (balkDag ? "" : "hidden md:block")}>
+            telefoon blijft dit vak leeg — daar staat de titel al in de kopbalk
+            van de app en is er geen ruimte voor de dag erbij. */}
+        <div className="serif ink text-xl leading-tight shrink-0 mr-1 hidden md:block">
           {balkDag ? dagKop(balkDag) : "Mise en place"}
         </div>
         <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week terug"><ChevronLeft size={16} /></button>
