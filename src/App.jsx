@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-04d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -12633,6 +12633,10 @@ const zetCatZicht = (m) => { CAT_ZICHT = m && typeof m === "object" ? m : {}; };
 const NONFOOD_CATEGORIEEN = new Set(["servies", "serviesgoed", "bestek", "glaswerk", "glazen", "linnen", "meubilair", "materiaal", "materialen", "materiaalhuur", "buffetmateriaal", "keukenmateriaal", "inventaris", "non-food", "nonfood", "non food"]);
 const catZichtVan = (cat) => {
   const c = String(cat || "").toLowerCase().trim();
+  // Geen categorie is geen keuze. Een oudere versie liet een lege sleutel in
+  // cat_zichtbaarheid toe; stond daar "nonfood", dan werd elk product zonder
+  // categorie stilletjes nonfood.
+  if (!c) return "";
   return CAT_ZICHT[c] || (NONFOOD_CATEGORIEEN.has(c) ? "nonfood" : "");
 };
 // Zichtbaarheid per los product (Extras → Producten tonen). Wint van de
@@ -16836,8 +16840,14 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           // Nonfood (servies, bestek): naam en aantal blijven staan, met de
           // opmerking erachter — geen invulling die de naam vervangt.
           if (isNonfoodRegel(k, catVan)) {
-            const opm = od.map((o) => onderdeelNaam(o)).join(" · ");
-            return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam + (tijdK ? " · " + tijdK : "")) + (opm ? " <span class='mut'>· " + pEsc(opm) + "</span>" : "") + "</div></div>";
+            // De naam en het aantal blijven staan — zonder die kop weet de
+            // keuken niet waar de regels bij horen. Wat erbij is ingevuld komt
+            // eronder, net als op de kaart: per invulregel een eigen regel, met
+            // het aantal dat erbij hoort. Vroeger werd alles achter de naam
+            // geplakt met puntjes ertussen en vielen de aantallen weg; bij een
+            // product met een hele invulling werd dat één lange rits.
+            return "<div class='blok'><div class='pr'>" + pEsc((k.aantal || gastenVan(b)) + "× " + k.naam + (tijdK ? " · " + tijdK : "")) + "</div>"
+              + od.map((o) => "<div class='inv'>" + pEsc(o.hoeveelheid ? o.hoeveelheid + " " : "") + opmaakHtml(onderdeelNaam(o)) + "</div>").join("") + "</div>";
           }
           if (od.length) {
             // Invulling vervangt de productkop (zoals op de mep-kaart), niet vet.
@@ -16854,7 +16864,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         // Ruwe schatting van de hoogte in tekstregels: kopregel (twee als er
         // een adres achter staat), elke invulregel, plus de witruimte.
         dagRegels += 1.7 + (kop.length > 170 ? 2 : 1)
-          + eten.reduce((n, k) => n + Math.max(1, (((k.miceId ? invVoor(b, invulSleutel(b, k)) : null) || {}).onderdelen || []).filter((o) => onderdeelNaam(o)).length), 0)
+          + eten.reduce((n, k) => {
+            const odK = (((k.miceId ? invVoor(b, invulSleutel(b, k)) : null) || {}).onderdelen || []).filter((o) => onderdeelNaam(o));
+            // Nonfood houdt zijn eigen kopregel boven de invulling.
+            return n + (isNonfoodRegel(k, catVan) ? 1 + odK.length : Math.max(1, odK.length));
+          }, 0)
           + (huur.length ? huur.length + 1.5 : 0);
         return "<div class='p'>" + kop + eten.map(blok).join("") + huurHtml + "</div>";
       }).join("");
