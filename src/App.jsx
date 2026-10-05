@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05j"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17436,7 +17436,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       const gevonden = dagOnderBalk(koppen, onder + 4);
       setBalkDag((d) => (d === gevonden ? d : gevonden));
     };
-    const op = () => { if (!wacht) { wacht = true; (window.requestAnimationFrame || setTimeout)(meet); } };
+    // requestAnimationFrame moet op het venster zelf aangeroepen worden. Los
+    // uit window getrokken gooit de browser "Illegal invocation", en dan bleef
+    // "wacht" voor altijd aanstaan en verschoof de titel nooit meer.
+    const straks = (fn) => { try { if (window.requestAnimationFrame) return window.requestAnimationFrame(fn); } catch (e) {} return setTimeout(fn, 16); };
+    const op = () => { if (!wacht) { wacht = true; straks(meet); } };
     meet();
     window.addEventListener("scroll", op, { passive: true });
     window.addEventListener("resize", op);
