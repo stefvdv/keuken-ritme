@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17448,9 +17448,9 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ") + " · wk " + weekNr;
 
   // De mep-lijst gaat in een klapper en de klem bedekt de bovenkant van elke
-  // bladzijde. Daarom begint elke bladzijde zeven regels lager. Dat gaat van de
+  // bladzijde. Daarom begint elke bladzijde vijf regels lager. Dat gaat van de
   // ruimte af die een dag heeft om heel te blijven, dus die telt mee hieronder.
-  const KLEM_REGELS = 7;
+  const KLEM_REGELS = 5;
   const KLEM_MM = Math.round((KLEM_REGELS * 12 * 1.4) / 3.7795); // 12px regel, 1.4 regelafstand
   const printen = () => {
     // Print alleen wat op de mep-kaarten staat: per partij een kopregel
