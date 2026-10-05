@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -16800,6 +16800,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const weekNr = (() => { const x = new Date(dagen[0] + "T12:00:00"); x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7)); const w1 = new Date(x.getFullYear(), 0, 4); return 1 + Math.round(((x - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7); })();
   const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ") + " · wk " + weekNr;
 
+  // De mep-lijst gaat in een klapper en de klem bedekt de bovenkant van elke
+  // bladzijde. Daarom begint elke bladzijde zeven regels lager. Dat gaat van de
+  // ruimte af die een dag heeft om heel te blijven, dus die telt mee hieronder.
+  const KLEM_REGELS = 7;
+  const KLEM_MM = Math.round((KLEM_REGELS * 12 * 1.4) / 3.7795); // 12px regel, 1.4 regelafstand
   const printen = () => {
     // Print alleen wat op de mep-kaarten staat: per partij een kopregel
     // (naam, aantal, tijd, locatie, allergie in rood — komma-gescheiden op
@@ -16874,12 +16879,12 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       }).join("");
       // Een A4 met 14mm marge biedt ruimte aan ongeveer zestig tekstregels.
       // We houden marge aan, zodat een schatting die er iets naast zit niet
-      // meteen een bladzijde verspilt.
-      const heel = dagRegels <= 52;
+      // meteen een bladzijde verspilt — en de klemruimte gaat eraf.
+      const heel = dagRegels <= 52 - KLEM_REGELS;
       return "<div class='" + (heel ? "d" : "dl") + "'><h2>" + pEsc(dagKop(d)) + "</h2>" + stukken + "</div>";
     };
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
-      + "@page{size:A4;margin:14mm}body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
+      + "@page{size:A4;margin:" + (14 + KLEM_MM) + "mm 14mm 14mm}body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:17px;margin:0 0 2mm}h2{font-size:13px;margin:5mm 0 1.5mm;border-bottom:1px solid #ccc;padding-bottom:1mm;break-after:avoid;page-break-after:avoid}"
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
       + "th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:#6a6550;border-bottom:1px solid #999;padding:1.5mm 1mm}"
