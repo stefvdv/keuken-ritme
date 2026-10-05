@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05f"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -16966,6 +16966,54 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     }
     netjes(); checkFmt(); getypt();
   };
+  // Het afvinkvakje van de regel waar de cursor staat — alleen voor losse
+  // regels. In een opsomming zet netjes() het vakje er zelf neer en gaat Enter
+  // zijn eigen weg (zie hieronder).
+  const losVakje = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !vak.current || !vak.current.contains(sel.anchorNode)) return null;
+    const blok = blokVan(sel.anchorNode);
+    if (blok && (blok.tagName === "LI" || (blok.closest && blok.closest("li")))) return null;
+    const wortel = blok || vak.current;
+    // Van de cursor terug naar het begin van de regel: een <br> of de rand van
+    // het blok. Komen we daar een vakje tegen, dan hoort dat bij deze regel.
+    const knopen = [...wortel.childNodes];
+    let i = knopen.findIndex((n) => n === sel.anchorNode || (n.contains && n.contains(sel.anchorNode)));
+    if (i < 0) i = knopen.length - 1;
+    for (let j = i; j >= 0; j--) {
+      const n = knopen[j];
+      if (n.nodeType === 1 && n.tagName === "BR") return null;
+      if (n.nodeType === 1 && n.tagName === "INPUT" && n.classList && n.classList.contains("nt-cb")) return n;
+    }
+    return null;
+  };
+  // Staat er achter het vakje nog iets op die regel? De harde spatie die bij
+  // het vakje hoort telt niet mee.
+  const vakjeHeeftTekst = (cb) => {
+    let t = "";
+    for (let n = cb.nextSibling; n; n = n.nextSibling) {
+      if (n.nodeType === 1 && n.tagName === "BR") break;
+      t += String(n.textContent || "");
+    }
+    return !!t.replace(/\u00a0/g, " ").trim();
+  };
+  // Het vakje van een lege regel eraf halen, met de cursor op die regel.
+  const vakjeEraf = (cb) => {
+    const blok = cb.parentNode;
+    let n = cb.nextSibling;
+    while (n && n.nodeType === 3 && !String(n.textContent || "").replace(/\u00a0/g, " ").trim()) { const v = n.nextSibling; n.remove(); n = v; }
+    cb.remove();
+    if (blok && blok !== vak.current && !blok.firstChild) blok.appendChild(document.createElement("br"));
+    try {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      if (n && n.parentNode) r.setStartBefore(n);
+      else { r.selectNodeContents(blok || vak.current); r.collapse(true); }
+      r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+    } catch (x) {}
+    netjes(); checkFmt(); getypt();
+  };
   const toetsVak = (e) => {
     // Backspace vooraan een regel haalt het afvinkvakje weg en maakt er een
     // gewone regel van — zo kom je van een vakje af dat je daar niet wilde,
@@ -16984,6 +17032,19 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // regel op diezelfde plek — er komt géén regel bij. Pas de Enter dáárna
     // maakt een echte lege regel, want dan is het geen lijstregel meer.
     if (e.key === "Enter" && !e.shiftKey) {
+      // Een losse regel met een afvinkvakje gedraagt zich als een boodschappen-
+      // lijstje: staat er iets achter het vakje, dan krijgt de volgende regel
+      // er meteen weer een. Staat er niets achter, dan bedoelde je te stoppen:
+      // het vakje gaat eraf en er komt géén regel bij.
+      const cb = losVakje();
+      if (cb) {
+        e.preventDefault();
+        if (!vakjeHeeftTekst(cb)) { vakjeEraf(cb); return; }
+        try { document.execCommand("insertParagraph"); } catch (x) {}
+        try { document.execCommand("insertHTML", false, CB_HTML); } catch (x) {}
+        netjes(); checkFmt(); getypt();
+        return;
+      }
       const li = cursorBlok();
       if (!li || li.tagName !== "LI" || !leegBlok(li)) return;
       e.preventDefault();
@@ -17250,6 +17311,32 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
+  // De balk met Bestellijst, Notities en printen blijft in beeld terwijl je
+  // door de week scrolt. Op telefoon plakt "position: sticky" niet altijd
+  // (de globale overflow-x:hidden op html/body zit in de weg), dus daar meten
+  // we met een sentinel zelf wanneer de balk voorbij zijn plek is en zetten we
+  // hem met position:fixed tegen de bovenrand — dezelfde weg als op de
+  // boekingenpagina.
+  const [balkBreed, setBalkBreed] = useState(() => { try { return window.matchMedia("(min-width: 768px)").matches; } catch (e) { return false; } });
+  useEffect(() => {
+    const m = window.matchMedia("(min-width: 768px)");
+    const f = () => setBalkBreed(m.matches);
+    try { m.addEventListener("change", f); } catch (e) { m.addListener(f); }
+    return () => { try { m.removeEventListener("change", f); } catch (e) { m.removeListener(f); } };
+  }, []);
+  const [balkVast, setBalkVast] = useState(false);
+  const [balkHoogte, setBalkHoogte] = useState(0);
+  const balkRef = React.useRef(null);
+  const balkTopRef = React.useRef(null);
+  useEffect(() => {
+    if (balkBreed) { setBalkVast(false); return; }
+    const sentinel = balkTopRef.current;
+    if (!sentinel) return;
+    const obs = new IntersectionObserver(([entry]) => setBalkVast(!entry.isIntersecting), { rootMargin: "-1px 0px 0px 0px", threshold: 0 });
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [balkBreed]);
+  useEffect(() => { if (balkRef.current) setBalkHoogte(balkRef.current.offsetHeight); }, [balkBreed, notitieOpen]);
   const [bestelOpen, setBestelOpen] = useState(false);
   const heeftNotitie = (() => {
     const html = notitie && Array.isArray(notitie.bladen) ? notitie.bladen.map((b) => b.html || "").join(" ") : (notitie && notitie.html) || (typeof notitie === "string" ? notitie : "");
@@ -17714,7 +17801,13 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   };
   return (
     <div>
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div ref={balkTopRef} style={{ height: 1 }} />
+      {balkVast && <div style={{ height: balkHoogte }} />}
+      <div ref={balkRef} className="-mx-4 px-4"
+        style={balkBreed
+          ? { position: "sticky", top: 0, zIndex: 20, background: T.paper }
+          : (balkVast ? { position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, background: T.paper, maxWidth: "42rem", margin: "0 auto", paddingLeft: "1rem", paddingRight: "1rem" } : {})}>
+      <div className="flex items-center justify-between gap-2 mb-2 pt-1">
         <div>
           <div className="serif ink text-xl leading-tight hidden md:block">Mise en place</div>
           <div className="text-[12.5px] mute">{weekLabel}</div>
@@ -17727,6 +17820,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           </button>
           <button onClick={printen} className="btno ff rounded-lg md:rounded-xl px-2.5 py-2 md:px-3 md:py-2.5" title="Printen als A4"><Printer size={16} className="md:hidden" /><Printer size={20} className="hidden md:block" /></button>
         </div>
+      </div>
       </div>
       {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
