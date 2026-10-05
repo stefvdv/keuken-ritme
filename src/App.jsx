@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05h"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17645,17 +17645,14 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       + "</body></html>");
   };
 
-  // De optelsomtabel staat direct boven de eerste dag vanaf vandaag met partijen.
-  const somAnker = dagen.find((d) => d >= vandaag && partijen.some((b) => b.datum === d)) || null;
+  // De optelsomtabel hangt aan de knop "Samen maken" in de balk en klapt daar
+  // vlak onder open. Hij had zijn eigen kopbalk tussen de dagen in; die nam
+  // alleen maar ruimte in, en tussen de partijen was hij makkelijk te missen.
   const somKaart = partijen.length > 0 && somSet.length > 0 ? (
         <div id="som-kaart" className="card p-3 mb-4 geenselectie">
-          <button onClick={() => setSomOpen((o) => !o)} className="ff text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest acc"
-            style={{ margin: -12, marginBottom: somOpen ? 6 : -12, padding: 12, width: "calc(100% + 24px)" }}>
-            {somOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
-            Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}
-          </button>
-          {somOpen && !overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
-          {somOpen && overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[15px]" style={{ borderCollapse: "collapse", minWidth: "36rem" }}>
+          <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
+          {!overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
+          {overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[15px]" style={{ borderCollapse: "collapse", minWidth: "36rem" }}>
             <thead>
               <tr className="text-[12.5px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-2 pr-2">Bereiding</th>
@@ -17763,7 +17760,6 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         if (!items.length) return null;
         return (
           <React.Fragment key={d}>
-            {d === somAnker && somKaart}
             <div className="mb-4">
             <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
@@ -17814,17 +17810,22 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         style={balkBreed
           ? { position: "sticky", top: 0, zIndex: 20, background: T.paper }
           : (balkVast ? { position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, background: T.paper, maxWidth: "42rem", margin: "0 auto", paddingLeft: "1rem", paddingRight: "1rem" } : {})}>
-      {/* Links de dag van vandaag, in het midden de titel, rechts waar je kijkt
-          en wat je ermee kunt. De titel staat los over de balk heen, zodat hij
-          echt midden op de bladzijde staat en niet meeschuift met wat ernaast
-          groeit; op telefoon staat hij al in de kopbalk van de app. */}
-      <div className="relative flex items-center gap-2 mb-2 pt-1">
-        <div className="serif ink text-xl leading-tight hidden md:block absolute left-0 right-0 text-center pointer-events-none">Mise en place</div>
-        <div className="text-[13px] font-semibold ink shrink-0 relative">{dagKop(vandaag)}</div>
-        <div className="flex items-center justify-end gap-1.5 flex-wrap ml-auto relative">
-          <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week terug"><ChevronLeft size={16} /></button>
-          <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold" title="Terug naar deze week">{weekKnopTekst}</button>
-          <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week verder"><ChevronRight size={16} /></button>
+      {/* Alles op één regel: links de titel, daarnaast waar je kijkt en de
+          optelsomtabel, en helemaal rechts wat je met de week kunt doen. Op
+          telefoon staat de titel al in de kopbalk van de app. */}
+      <div className="flex items-center gap-1.5 mb-2 pt-1 flex-wrap">
+        <div className="serif ink text-xl leading-tight hidden md:block shrink-0 mr-1">Mise en place</div>
+        <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week terug"><ChevronLeft size={16} /></button>
+        <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold" title="Terug naar deze week">{weekKnopTekst}</button>
+        <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week verder"><ChevronRight size={16} /></button>
+        {somKaart && (
+          <button onClick={() => setSomOpen((o) => !o)} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold inline-flex items-center gap-1.5"
+            style={somOpen ? { background: T.green, color: T.paper, borderColor: T.green } : {}}
+            title={"Bereidingen die in meerdere partijen terugkomen — " + somSet.length + " dagen vanaf " + (somSet.length ? kolKop(somSet[0]) : "")}>
+            {somOpen ? <ChevronUp size={15} className="shrink-0" /> : <ChevronDown size={15} className="shrink-0" />} Samen maken
+          </button>
+        )}
+        <div className="flex items-center justify-end gap-1.5 flex-wrap ml-auto">
           <button onClick={() => setBestelOpen(true)} className="btno ff inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst</button>
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
@@ -17834,6 +17835,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         </div>
       </div>
       </div>
+      {somOpen && somKaart}
       {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
         recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName}
@@ -17846,8 +17848,6 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
 
 
       {!partijen.some((b) => dagen.includes(b.datum)) && <Empty label="Geen partijen in deze week." />}
-
-      {somAnker == null && somKaart}
 
       {dagen.map((d) => renderDag(d))}
 
