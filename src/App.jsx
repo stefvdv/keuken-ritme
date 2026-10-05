@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17533,6 +17533,13 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
   const weekNr = (() => { const x = new Date(dagen[0] + "T12:00:00"); x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7)); const w1 = new Date(x.getFullYear(), 0, 4); return 1 + Math.round(((x - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7); })();
   const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ") + " · wk " + weekNr;
+  // De knop in de balk zegt zelf waar je kijkt: deze week, de week ervoor of
+  // erna bij naam, en daarbuiten de maandag- en zondagdatum. Het weeknummer
+  // staat er altijd achter. Klikken brengt je altijd terug naar deze week —
+  // ook als er "vorige week" staat.
+  const weekAf = Math.round((new Date(dagen[0] + "T12:00:00") - new Date(maandagVan(vandaag) + "T12:00:00")) / 604800000);
+  const weekKnopTekst = (weekAf === 0 ? "Deze week" : weekAf === 1 ? "Volgende week" : weekAf === -1 ? "Vorige week"
+    : dagLabelKort(dagen[0]) + " – " + dagLabelKort(dagen[6])) + " · wk " + weekNr;
 
   // De mep-lijst gaat in een klapper en de klem bedekt de bovenkant van elke
   // bladzijde. Daarom begint elke bladzijde drie regels lager. Dat gaat van de
@@ -17807,12 +17814,17 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         style={balkBreed
           ? { position: "sticky", top: 0, zIndex: 20, background: T.paper }
           : (balkVast ? { position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, background: T.paper, maxWidth: "42rem", margin: "0 auto", paddingLeft: "1rem", paddingRight: "1rem" } : {})}>
-      <div className="flex items-center justify-between gap-2 mb-2 pt-1">
-        <div>
-          <div className="serif ink text-xl leading-tight hidden md:block">Mise en place</div>
-          <div className="text-[12.5px] mute">{weekLabel}</div>
-        </div>
-        <div className="flex items-center gap-1.5">
+      {/* Links de dag van vandaag, in het midden de titel, rechts waar je kijkt
+          en wat je ermee kunt. De titel staat los over de balk heen, zodat hij
+          echt midden op de bladzijde staat en niet meeschuift met wat ernaast
+          groeit; op telefoon staat hij al in de kopbalk van de app. */}
+      <div className="relative flex items-center gap-2 mb-2 pt-1">
+        <div className="serif ink text-xl leading-tight hidden md:block absolute left-0 right-0 text-center pointer-events-none">Mise en place</div>
+        <div className="text-[13px] font-semibold ink shrink-0 relative">{dagKop(vandaag)}</div>
+        <div className="flex items-center justify-end gap-1.5 flex-wrap ml-auto relative">
+          <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week terug"><ChevronLeft size={16} /></button>
+          <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold" title="Terug naar deze week">{weekKnopTekst}</button>
+          <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week verder"><ChevronRight size={16} /></button>
           <button onClick={() => setBestelOpen(true)} className="btno ff inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst</button>
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
@@ -17832,11 +17844,6 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           setTimeout(() => springNaar(b), 250);
         }} />}
 
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronLeft size={14} /></button>
-        <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">Deze week</button>
-        <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg px-2 py-1.5"><ChevronRight size={14} /></button>
-      </div>
 
       {!partijen.some((b) => dagen.includes(b.datum)) && <Empty label="Geen partijen in deze week." />}
 
