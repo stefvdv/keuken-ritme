@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3141,7 +3141,8 @@ function App() {
   const [catZicht, setCatZicht] = useState({}); // zichtbaarheid per MICE-categorie
   const [prodZicht, setProdZicht] = useState({}); // zichtbaarheid per los MICE-product
   const [eetvolgorde, setEetvolgorde] = useState(EETMOMENTEN_STANDAARD); // volgorde van de eetmomenten
-  const [menuOpmaak, setMenuOpmaak] = useState({ titel: MENU_TITEL_STANDAARD, kleur: BRIEF_GROEN_STANDAARD });
+  const [menuOpmaak, setMenuOpmaak] = useState({ titel: MENU_TITEL_STANDAARD, titelEn: MENU_TITEL_EN_STANDAARD, kleur: BRIEF_GROEN_STANDAARD });
+  const [menuEngels, setMenuEngels] = useState({}); // eigen woorden voor de Engelse menukaart
   const [klantAdres, setKlantAdres] = useState(() => ({ ...KLANT_ADRES_START })); // adressen die MICE niet aanlevert, per klant
   const [paklijsten, setPaklijsten] = useState([]); // [{ id, naam, items: [{ naam, aantal }] }]
   const [boekingen, setBoekingen] = useState([]); // uit MICE, via de tabel mice_events
@@ -3987,6 +3988,7 @@ function App() {
   React.useMemo(() => zetProdZicht(prodZicht), [prodZicht]);
   React.useMemo(() => zetEetvolgorde(eetvolgorde), [eetvolgorde]);
   React.useMemo(() => zetMenuOpmaak(menuOpmaak), [menuOpmaak]);
+  React.useMemo(() => zetMenuEngels(menuEngels), [menuEngels]);
   React.useMemo(() => zetKlantAdres(klantAdres), [klantAdres]);
   const bewaarInstelling = async (sleutel, waarde) => {
     if (live) { try { await instelUpsert(sleutel, waarde); } catch (e) { flash("Alleen op dit apparaat bewaard"); } }
@@ -3998,6 +4000,18 @@ function App() {
     if (!zicht) delete n[sleutel]; else n[sleutel] = zicht;
     setProdZicht(n);
     await bewaarInstelling("prod_zicht", n);
+  };
+  // Eén woord erbij, veranderd of weg. De sleutel is het Nederlandse woord in
+  // kleine letters zonder accenten — zo vindt de vertaler hem terug, hoe het op
+  // de kaart ook geschreven staat.
+  const saveMenuEngels = async (nl, en) => {
+    const sleutel = enSleutel(nl);
+    if (!sleutel) return;
+    const n = { ...menuEngels };
+    const w = String(en || "").trim();
+    if (w) n[sleutel] = w; else delete n[sleutel];
+    setMenuEngels(n);
+    await bewaarInstelling("menu_engels", n);
   };
   const saveEetvolgorde = async (lijst) => {
     const n = schoonEetmomenten(lijst);
@@ -4060,7 +4074,7 @@ function App() {
     };
   };
   const saveMenuOpmaak = async (v) => {
-    const n = { titel: String((v && v.titel) || "").trim() || MENU_TITEL_STANDAARD, kleur: String((v && v.kleur) || "").trim() || BRIEF_GROEN_STANDAARD };
+    const n = { titel: String((v && v.titel) || "").trim() || MENU_TITEL_STANDAARD, titelEn: String((v && v.titelEn) || "").trim() || MENU_TITEL_EN_STANDAARD, kleur: String((v && v.kleur) || "").trim() || BRIEF_GROEN_STANDAARD };
     setMenuOpmaak(n);
     await bewaarInstelling("menu_opmaak", n);
   };
@@ -4781,7 +4795,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "klant_adres"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4855,7 +4869,7 @@ function App() {
     const evRow = instelRij("eetvolgorde");
     if (evRow && evRow.value && Array.isArray(evRow.value.momenten) && evRow.value.momenten.length) setEetvolgorde(schoonEetmomenten(evRow.value.momenten));
     const moRow = instelRij("menu_opmaak");
-    if (moRow && moRow.value && typeof moRow.value === "object") setMenuOpmaak({ titel: moRow.value.titel || MENU_TITEL_STANDAARD, kleur: moRow.value.kleur || BRIEF_GROEN_STANDAARD });
+    if (moRow && moRow.value && typeof moRow.value === "object") setMenuOpmaak({ titel: moRow.value.titel || MENU_TITEL_STANDAARD, titelEn: moRow.value.titelEn || MENU_TITEL_EN_STANDAARD, kleur: moRow.value.kleur || BRIEF_GROEN_STANDAARD });
     const kaRow = instelRij("klant_adres");
     if (kaRow && kaRow.value && typeof kaRow.value === "object") setKlantAdres(kaRow.value);
     const plRow = instelRij("paklijsten");
@@ -4880,6 +4894,8 @@ function App() {
     }
     const gtRow = instelRij("gebruik_telling");
     if (gtRow && gtRow.value && typeof gtRow.value === "object") gebruikSamenvoegen(gtRow.value);
+    const meRow = instelRij("menu_engels");
+    if (meRow && meRow.value && typeof meRow.value === "object") setMenuEngels(meRow.value);
     const mnRow = instelRij("mep_notitie");
     if (mnRow && mnRow.value) {
       const v = mnRow.value;
@@ -6544,7 +6560,7 @@ function App() {
           teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
-          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} onOmzetProef={omzetProef} onOmzetDoen={omzetDoen} omzetBezig={omzetBezig}
+          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} menuEngels={menuEngels} onMenuEngels={canEdit ? saveMenuEngels : null} onOmzetProef={omzetProef} onOmzetDoen={omzetDoen} omzetBezig={omzetBezig}
           catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -8891,8 +8907,9 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
   const kiesRef = React.useRef(null);
   const [vorm, setVorm] = useState(() => ({ ...BRIEF_STANDAARD, ...(waarde || {}) }));
   const [tekst, setTekst] = useState(() => (opmaak && opmaak.titel) || MENU_TITEL_STANDAARD);
+  const [tekstEn, setTekstEn] = useState(() => (opmaak && opmaak.titelEn) || MENU_TITEL_EN_STANDAARD);
   const [kleur, setKleur] = useState(() => (opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD);
-  useEffect(() => { setTekst((opmaak && opmaak.titel) || MENU_TITEL_STANDAARD); setKleur((opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD); }, [opmaak]);
+  useEffect(() => { setTekst((opmaak && opmaak.titel) || MENU_TITEL_STANDAARD); setTekstEn((opmaak && opmaak.titelEn) || MENU_TITEL_EN_STANDAARD); setKleur((opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD); }, [opmaak]);
   const [bezig, setBezig] = useState(false);
   const [melding, setMelding] = useState("");
   useEffect(() => { setVorm({ ...BRIEF_STANDAARD, ...(waarde || {}) }); }, [waarde]);
@@ -8983,6 +9000,9 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
           <div className="text-[11px] font-semibold uppercase tracking-widest acc mb-1.5">Titel en kleur</div>
           <p className="text-sm mute mb-2">De regel onder het logo en de kleur van alle tekst op het menu. Een nieuwe regel in de titel maak je met Enter.</p>
           <textarea className="input px-2 py-1.5 text-sm w-full" rows={2} value={tekst} onChange={(e) => setTekst(e.target.value)} placeholder={MENU_TITEL_STANDAARD} />
+          {/* Een titel laat zich niet woord voor woord vertalen; die staat er los naast. */}
+          <div className="text-[11px] font-semibold uppercase tracking-widest acc mt-2 mb-1">Dezelfde regel in het Engels</div>
+          <textarea className="input px-2 py-1.5 text-sm w-full" rows={2} value={tekstEn} onChange={(e) => setTekstEn(e.target.value)} placeholder={MENU_TITEL_EN_STANDAARD} />
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <input type="color" className="ff rounded-lg" style={{ width: "3rem", height: "2.2rem", border: "1px solid " + T.line, background: "#fff", padding: 2 }}
               value={/^#[0-9a-f]{6}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD} onChange={(e) => setKleur(e.target.value)} />
@@ -8990,8 +9010,8 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
             <span className="serif text-[15px]" style={{ color: /^#[0-9a-f]{3,8}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD }}>Zo komt de tekst eruit te zien</span>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
-            <button onClick={() => { onOpmaak({ titel: tekst, kleur }); setMelding("Titel en kleur opgeslagen."); }} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Titel en kleur opslaan</button>
-            <button onClick={() => { setTekst(MENU_TITEL_STANDAARD); setKleur(BRIEF_GROEN_STANDAARD); onOpmaak({ titel: MENU_TITEL_STANDAARD, kleur: BRIEF_GROEN_STANDAARD }); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
+            <button onClick={() => { onOpmaak({ titel: tekst, titelEn: tekstEn, kleur }); setMelding("Titel en kleur opgeslagen."); }} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Titel en kleur opslaan</button>
+            <button onClick={() => { setTekst(MENU_TITEL_STANDAARD); setTekstEn(MENU_TITEL_EN_STANDAARD); setKleur(BRIEF_GROEN_STANDAARD); onOpmaak({ titel: MENU_TITEL_STANDAARD, titelEn: MENU_TITEL_EN_STANDAARD, kleur: BRIEF_GROEN_STANDAARD }); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
           </div>
         </div>
       )}
@@ -9117,8 +9137,77 @@ function EetvolgordeBeheer({ momenten, onSave }) {
   );
 }
 
+// Het woordenboek voor de Engelse menukaart. De app heeft er zelf al een paar
+// honderd keukenwoorden in zitten; hier zet je de jouwe erbij of overschrijf je
+// een vertaling die niet bevalt. Een eigen woord wint altijd van de ingebouwde.
+function MenuEngelsBeheer({ waarde, onZet }) {
+  const [zoek, setZoek] = useState("");
+  const [alles, setAlles] = useState(false);
+  const [nlNieuw, setNlNieuw] = useState("");
+  const [enNieuw, setEnNieuw] = useState("");
+  const [vies, setVies] = useState({}); // wat er in de vakjes staat, nog niet bewaard
+  const eigen = waarde && typeof waarde === "object" ? waarde : {};
+  const q = enSleutel(zoek);
+  const rijen = (() => {
+    const sleutels = new Set(Object.keys(eigen));
+    if (q) for (const k of Object.keys(MENU_EN_STANDAARD)) if (k.includes(q) || enSleutel(MENU_EN_STANDAARD[k]).includes(q)) sleutels.add(k);
+    const lijst = [...sleutels].filter((k) => !q || k.includes(q) || enSleutel(eigen[k] || MENU_EN_STANDAARD[k] || "").includes(q));
+    return lijst.sort((a, b) => a.localeCompare(b, "nl"));
+  })();
+  const getoond = alles || q ? rijen : rijen.slice(0, 12);
+  const erbij = () => {
+    const nl = nlNieuw.trim(), en = enNieuw.trim();
+    if (!nl || !en) return;
+    onZet(nl, en);
+    setNlNieuw(""); setEnNieuw("");
+  };
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">De knop <span className="ink">English</span> in het afdrukvoorbeeld van het menu vertaalt met deze lijst. De app kent zelf al {Object.keys(MENU_EN_STANDAARD).length} keukenwoorden; wat jij hier zet gaat daaroverheen. Woorden die nergens in staan blijven Nederlands — het afdrukvoorbeeld noemt ze op.</p>
+      <div className="flex flex-wrap items-end gap-2 mb-3">
+        <label className="min-w-0 flex-1" style={{ minWidth: "9rem" }}>
+          <span className="block text-[11px] font-semibold uppercase tracking-widest acc mb-1">Nederlands</span>
+          <input className="input px-2 py-1.5 text-sm w-full" value={nlNieuw} onChange={(e) => setNlNieuw(e.target.value)} placeholder="spitskool" />
+        </label>
+        <label className="min-w-0 flex-1" style={{ minWidth: "9rem" }}>
+          <span className="block text-[11px] font-semibold uppercase tracking-widest acc mb-1">English</span>
+          <input className="input px-2 py-1.5 text-sm w-full" value={enNieuw} onChange={(e) => setEnNieuw(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); erbij(); } }} placeholder="pointed cabbage" />
+        </label>
+        <button onClick={erbij} disabled={!nlNieuw.trim() || !enNieuw.trim()} className="btnp ff rounded-lg px-3 py-2 text-sm font-semibold inline-flex items-center gap-1.5 disabled:opacity-40"><Plus size={14} /> Erbij</button>
+      </div>
+      <input className="input px-2 py-1.5 text-sm w-full" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een woord — ook in de ingebouwde lijst" />
+      {!q && !rijen.length && <p className="text-xs mute mt-2">Nog niets eigens toegevoegd. Zoek hierboven om te zien wat de app al kent.</p>}
+      {!q && rijen.length > 0 && <p className="text-xs mute mt-2">{rijen.length} {rijen.length === 1 ? "eigen woord" : "eigen woorden"}.</p>}
+      {q && !getoond.length && <p className="text-xs mute mt-2">Niets gevonden — zet het hierboven erbij.</p>}
+      <div className="mt-2 space-y-1.5">
+        {getoond.map((k) => {
+          const vast = MENU_EN_STANDAARD[k] || "";
+          const nu = vies[k] !== undefined ? vies[k] : (eigen[k] !== undefined ? eigen[k] : vast);
+          const eigenWoord = eigen[k] !== undefined;
+          return (
+            <div key={k} className="flex items-center gap-2">
+              <span className="text-sm ink min-w-0 flex-1 truncate" title={k}>{k}{!eigenWoord && <span className="mute text-[12px]"> · ingebouwd</span>}</span>
+              <input className="input px-2 py-1 text-[12.5px] shrink-0" style={{ width: "11rem" }} value={nu}
+                onChange={(e) => setVies((v) => ({ ...v, [k]: e.target.value }))}
+                onBlur={() => { if (vies[k] !== undefined && vies[k].trim() !== (eigen[k] || vast)) onZet(k, vies[k]); setVies((v) => { const n = { ...v }; delete n[k]; return n; }); }}
+                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+              {eigenWoord && (
+                <button onClick={() => onZet(k, "")} className="ff mute hover:opacity-60 shrink-0" title={vast ? "Terug naar het ingebouwde woord" : "Weghalen"}><Trash2 size={14} /></button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {!q && rijen.length > 12 && (
+        <button onClick={() => setAlles((v) => !v)} className="ff text-sm font-medium acc hover:opacity-70 mt-2">{alles ? "Minder tonen" : "Alle " + rijen.length + " tonen"}</button>
+      )}
+    </div>
+  );
+}
+
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, onOmzetProef, onOmzetDoen, omzetBezig, onHaalProducten }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, onOmzetProef, onOmzetDoen, omzetBezig, onHaalProducten }) {
   const catImportRef = React.useRef(null);
   const [prodBezig, setProdBezig] = useState(false); // productenlijst wordt opgehaald
   const [catZichtOpen, setCatZichtOpen] = useState(false);
@@ -9338,6 +9427,13 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>Menu op briefpapier</SectionTitle>
           <BriefpapierBeheer waarde={briefpapier} onSave={onBriefpapier} opmaak={menuOpmaak} onOpmaak={onMenuOpmaak} />
+        </>
+      )}
+
+      {onMenuEngels && (
+        <>
+          <SectionTitle>Menu in het Engels</SectionTitle>
+          <MenuEngelsBeheer waarde={menuEngels} onZet={onMenuEngels} />
         </>
       )}
 
@@ -12914,6 +13010,536 @@ const opmaakVan = (w) => {
 };
 const zonderHaakjes = (naam) => String(naam || "").replace(/\s*[(\[\uFF08][^)\]\uFF09]*[)\]\uFF09]\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 const menuKop = (naam) => zonderHaakjes(naam) || String(naam || "").trim();
+// ── De menukaart in het Engels ─────────────────────────────────────────────
+// Vertalen doet de app zelf, met een eigen keukenwoordenboek. Geen dienst van
+// buitenaf: geen sleutel, geen kosten, en het werkt ook als het internet hapert.
+// Wat er niet in staat blijft gewoon Nederlands; het afdrukvoorbeeld noemt die
+// woorden op, en in Extras zet je ze erbij. Een eigen woord wint altijd van
+// deze lijst, dus alles hieronder is bij te sturen zonder nieuwe app-versie.
+const MENU_EN_STANDAARD = {
+  "a": "of",
+  "aardappel": "potato",
+  "aardappelen": "potatoes",
+  "aardbei": "strawberry",
+  "aardbeien": "strawberries",
+  "abrikoos": "apricot",
+  "ahornsiroop": "maple syrup",
+  "aioli": "aioli",
+  "amandel": "almond",
+  "amandelen": "almonds",
+  "amuse": "amuse-bouche",
+  "ananas": "pineapple",
+  "andijvie": "endive",
+  "anijs": "anise",
+  "appel": "apple",
+  "appels": "apples",
+  "artisjok": "artichoke",
+  "asperge": "asparagus",
+  "asperges": "asparagus",
+  "aubergine": "aubergine",
+  "aubergines": "aubergines",
+  "azijn": "vinegar",
+  "bakje": "tub",
+  "bakjes": "tubs",
+  "balsamico": "balsamic vinegar",
+  "banaan": "banana",
+  "basilicum": "basil",
+  "belegen kaas": "matured cheese",
+  "bes": "berry",
+  "bessen": "berries",
+  "bieslook": "chives",
+  "biet": "beetroot",
+  "bieten": "beetroot",
+  "bijgerecht": "side dish",
+  "bladerdeeg": "puff pastry",
+  "blauwe kaas": "blue cheese",
+  "bleekselderij": "celery",
+  "bloem": "flour",
+  "bloemkool": "cauliflower",
+  "boekweit": "buckwheat",
+  "boerenkool": "kale",
+  "bonen": "beans",
+  "borrel": "drinks",
+  "bosbes": "blueberry",
+  "bosbessen": "blueberries",
+  "boter": "butter",
+  "bouillon": "stock",
+  "brie": "brie",
+  "broccoli": "broccoli",
+  "brood": "bread",
+  "broodje": "roll",
+  "broodjes": "rolls",
+  "brunch": "brunch",
+  "bulgur": "bulgur",
+  "burrata": "burrata",
+  "cake": "cake",
+  "camambert": "camembert",
+  "camembert": "camembert",
+  "cashew": "cashew",
+  "cashews": "cashews",
+  "champignon": "mushroom",
+  "champignons": "mushrooms",
+  "chili": "chilli",
+  "chinese kool": "Chinese cabbage",
+  "chocolade": "chocolate",
+  "chutney": "chutney",
+  "citroen": "lemon",
+  "compote": "compote",
+  "confituur": "preserve",
+  "coulis": "coulis",
+  "courgette": "courgette",
+  "courgettes": "courgettes",
+  "couscous": "couscous",
+  "creme fraiche": "crème fraîche",
+  "crouton": "crouton",
+  "croutons": "croutons",
+  "crumble": "crumble",
+  "crème fraîche": "crème fraîche",
+  "curry": "curry",
+  "dadel": "date",
+  "dadels": "dates",
+  "deeg": "dough",
+  "desem": "sourdough",
+  "desembrood": "sourdough bread",
+  "dessert": "dessert",
+  "dille": "dill",
+  "diner": "dinner",
+  "doperwten": "garden peas",
+  "dragon": "tarragon",
+  "dressing": "dressing",
+  "druif": "grape",
+  "druiven": "grapes",
+  "ei": "egg",
+  "eieren": "eggs",
+  "eiersalade": "egg salad",
+  "en": "and",
+  "erwt": "pea",
+  "erwten": "peas",
+  "feta": "feta",
+  "flespompoen": "butternut squash",
+  "focaccia": "focaccia",
+  "fond": "stock",
+  "framboos": "raspberry",
+  "frambozen": "raspberries",
+  "friet": "chips",
+  "fris": "fresh",
+  "frisse": "fresh",
+  "frites": "chips",
+  "fruit": "fruit",
+  "ganache": "ganache",
+  "gebak": "pastry",
+  "gebakken": "fried",
+  "gedroogd": "dried",
+  "gedroogde": "dried",
+  "gefermenteerd": "fermented",
+  "gefermenteerde": "fermented",
+  "gegrild": "grilled",
+  "gegrilde": "grilled",
+  "geitenkaas": "goat's cheese",
+  "gekaramelliseerd": "caramelised",
+  "gekaramelliseerde": "caramelised",
+  "gekonfijt": "confit",
+  "gekonfijte": "confit",
+  "gekookt": "boiled",
+  "gekookte": "boiled",
+  "gelei": "jelly",
+  "gemarineerd": "marinated",
+  "gemarineerde": "marinated",
+  "gember": "ginger",
+  "gepekeld": "pickled",
+  "gepekelde": "pickled",
+  "gepoft": "baked",
+  "gepofte": "puffed",
+  "gerookt": "smoked",
+  "gerookte": "smoked",
+  "geroosterd": "roasted",
+  "geroosterde": "roasted",
+  "gerst": "barley",
+  "gestoofd": "braised",
+  "gestoofde": "braised",
+  "gestoomd": "steamed",
+  "gestoomde": "steamed",
+  "gist": "yeast",
+  "glaze": "glaze",
+  "glutenvrij": "gluten-free",
+  "gram": "gram",
+  "groene kool": "green cabbage",
+  "groente": "vegetable",
+  "groenten": "vegetables",
+  "groot": "large",
+  "grote": "large",
+  "ham": "ham",
+  "haver": "oats",
+  "havermout": "oatmeal",
+  "hazelnoot": "hazelnut",
+  "hazelnoten": "hazelnuts",
+  "hoisin": "hoisin",
+  "hoisin saus": "hoisin sauce",
+  "honing": "honey",
+  "honing mosterd saus": "honey mustard sauce",
+  "hoofdgerecht": "main course",
+  "huisgemaakt": "homemade",
+  "huisgemaakte": "homemade",
+  "huisgemaakte zoete lekkernij": "homemade sweet treat",
+  "hummus": "hummus",
+  "ijs": "ice cream",
+  "ijsbergsla": "iceberg lettuce",
+  "in": "in",
+  "ingelegd": "pickled",
+  "ingelegde": "pickled",
+  "jam": "jam",
+  "jong": "young",
+  "jonge": "young",
+  "jonge kaas": "young cheese",
+  "jus": "gravy",
+  "kaas": "cheese",
+  "kaneel": "cinnamon",
+  "karamel": "caramel",
+  "kardemom": "cardamom",
+  "karnemelk": "buttermilk",
+  "karwij": "caraway",
+  "kastanjechampignon": "chestnut mushroom",
+  "kers": "cherry",
+  "kersen": "cherries",
+  "kervel": "chervil",
+  "kidneybonen": "kidney beans",
+  "kiemen": "sprouts",
+  "kiemgroente": "sprouted greens",
+  "kikkererwt": "chickpea",
+  "kikkererwten": "chickpeas",
+  "kilo": "kilo",
+  "kimchi": "kimchi",
+  "kip": "chicken",
+  "klein": "small",
+  "kleine": "small",
+  "knapperig": "crunchy",
+  "knoflook": "garlic",
+  "knolselderij": "celeriac",
+  "koek": "biscuit",
+  "koekje": "biscuit",
+  "komijn": "cumin",
+  "komkommer": "cucumber",
+  "kool": "cabbage",
+  "koolraap": "swede",
+  "koolraapspread": "swede spread",
+  "koolrabi": "kohlrabi",
+  "koriander": "coriander",
+  "koud": "cold",
+  "koude": "cold",
+  "koude lunch": "cold lunch",
+  "krokant": "crisp",
+  "krokante": "crispy",
+  "kruiden": "herbs",
+  "kruidenboter": "herb butter",
+  "kruidnagel": "clove",
+  "kurkuma": "turmeric",
+  "kwark": "quark",
+  "lactosevrij": "lactose-free",
+  "laurier": "bay leaf",
+  "licht": "light",
+  "lichte": "light",
+  "lijnzaad": "linseed",
+  "limoen": "lime",
+  "linze": "lentil",
+  "linzen": "lentils",
+  "linzen rijst": "lentil rice",
+  "liter": "litre",
+  "lunch": "lunch",
+  "lunch op de beug": "lunch at De Beug",
+  "maanzaad": "poppy seed",
+  "mais": "sweetcorn",
+  "mandarijn": "mandarin",
+  "mango": "mango",
+  "marmelade": "marmalade",
+  "mayo": "mayonnaise",
+  "mayonaise": "mayonnaise",
+  "maïs": "sweetcorn",
+  "meel": "flour",
+  "melange": "medley",
+  "melk": "milk",
+  "merengue": "meringue",
+  "meringue": "meringue",
+  "met": "with",
+  "miso": "miso",
+  "moestuin": "kitchen garden",
+  "mosterd": "mustard",
+  "mosterdzaad": "mustard seed",
+  "mousse": "mousse",
+  "mozzarella": "mozzarella",
+  "munt": "mint",
+  "nagerecht": "dessert",
+  "noedels": "noodles",
+  "noot": "nut",
+  "nootmuskaat": "nutmeg",
+  "noten": "nuts",
+  "notenmix": "nut mix",
+  "notenvrij": "nut-free",
+  "oesterzwam": "oyster mushroom",
+  "oesterzwammen": "oyster mushrooms",
+  "olie": "oil",
+  "olijfolie": "olive oil",
+  "ontbijt": "breakfast",
+  "oost indische kers": "nasturtium",
+  "oost-indische kers": "nasturtium",
+  "op": "on",
+  "oregano": "oregano",
+  "oud": "mature",
+  "oude": "mature",
+  "oude kaas": "mature cheese",
+  "paddenstoel": "mushroom",
+  "paddenstoelen": "mushrooms",
+  "pannenkoek": "pancake",
+  "paprika": "pepper",
+  "paprikapoeder": "paprika",
+  "parelgort": "pearl barley",
+  "parmezaan": "parmesan",
+  "pasta": "pasta",
+  "pastinaak": "parsnip",
+  "pastinaken": "parsnips",
+  "pecan": "pecan",
+  "peer": "pear",
+  "peper": "pepper",
+  "per stuk": "each",
+  "peren": "pears",
+  "perzik": "peach",
+  "pesto": "pesto",
+  "peterselie": "parsley",
+  "peultjes": "mangetout",
+  "pinda": "peanut",
+  "pistache": "pistachio",
+  "pita": "pita",
+  "pittig": "spicy",
+  "pittige": "spicy",
+  "pompoen": "pumpkin",
+  "pompoenpit": "pumpkin seed",
+  "pompoenpitten": "pumpkin seeds",
+  "postelein": "purslane",
+  "potje": "jar",
+  "potjes": "jars",
+  "prei": "leek",
+  "preien": "leeks",
+  "pruim": "plum",
+  "pruimen": "plums",
+  "puree": "purée",
+  "quiche": "quiche",
+  "quinoa": "quinoa",
+  "raap": "turnip",
+  "raapstelen": "turnip tops",
+  "rabarber": "rhubarb",
+  "radijs": "radish",
+  "radijsjes": "radishes",
+  "rapen": "turnips",
+  "rauw": "raw",
+  "rauwe": "raw",
+  "rauwkost": "crudités",
+  "rendang": "rendang",
+  "ricotta": "ricotta",
+  "rijst": "rice",
+  "rijst melange": "rice medley",
+  "risotto": "risotto",
+  "rode biet": "beetroot",
+  "rode kool": "red cabbage",
+  "rode ui": "red onion",
+  "romanesco": "romanesco",
+  "romig": "creamy",
+  "romige": "creamy",
+  "room": "cream",
+  "roomkaas": "cream cheese",
+  "rozemarijn": "rosemary",
+  "rozijn": "raisin",
+  "rozijnen": "raisins",
+  "rucola": "rocket",
+  "rund": "beef",
+  "saffraan": "saffron",
+  "salade": "salad",
+  "salades": "salads",
+  "salie": "sage",
+  "sambal": "sambal",
+  "sandwich": "sandwich",
+  "saus": "sauce",
+  "sauzen": "sauces",
+  "savooie kool": "savoy cabbage",
+  "savooiekool": "savoy cabbage",
+  "schaal": "bowl",
+  "schalen": "bowls",
+  "schapenkaas": "sheep's cheese",
+  "schuim": "foam",
+  "seitan": "seitan",
+  "selderij": "celery",
+  "seroendeng": "seroendeng",
+  "sesam": "sesame",
+  "shiitake": "shiitake",
+  "sinaasappel": "orange",
+  "siroop": "syrup",
+  "sjalot": "shallot",
+  "sjalotten": "shallots",
+  "sla": "lettuce",
+  "slagroom": "whipped cream",
+  "smeersel": "spread",
+  "snijbiet": "chard",
+  "snijbonen": "runner beans",
+  "soep": "soup",
+  "soja": "soy",
+  "sojasaus": "soy sauce",
+  "sorbet": "sorbet",
+  "spek": "bacon",
+  "spelt": "spelt",
+  "sperziebonen": "green beans",
+  "spinazie": "spinach",
+  "spitskool": "pointed cabbage",
+  "spread": "spread",
+  "spruiten": "Brussels sprouts",
+  "spruitjes": "Brussels sprouts",
+  "steranijs": "star anise",
+  "stokbrood": "baguette",
+  "stoof": "stew",
+  "stuk": "piece",
+  "stukken": "pieces",
+  "taart": "tart",
+  "tahin": "tahini",
+  "tempeh": "tempeh",
+  "tijm": "thyme",
+  "toast": "toast",
+  "tofu": "tofu",
+  "tomaat": "tomato",
+  "tomaten": "tomatoes",
+  "tortilla": "tortilla",
+  "tuinbonen": "broad beans",
+  "tussengerecht": "intermediate course",
+  "ui": "onion",
+  "uien": "onions",
+  "uit": "from",
+  "uit de moestuin": "from the kitchen garden",
+  "uit de tuin": "from the garden",
+  "van": "of",
+  "van het seizoen": "of the season",
+  "varken": "pork",
+  "vega": "vegetarian",
+  "vega smeersel": "vegetarian spread",
+  "vegan": "vegan",
+  "vegan smeersel": "vegan spread",
+  "vegetarisch": "vegetarian",
+  "veldsla": "lamb's lettuce",
+  "venkel": "fennel",
+  "venkelzaad": "fennel seed",
+  "vers": "fresh",
+  "verse": "fresh",
+  "vijg": "fig",
+  "vijgen": "figs",
+  "vinaigrette": "vinaigrette",
+  "vis": "fish",
+  "vlees": "meat",
+  "vlierbes": "elderberry",
+  "voorgerecht": "starter",
+  "vullend": "hearty",
+  "vullende": "hearty",
+  "walnoot": "walnut",
+  "walnoten": "walnuts",
+  "warm": "warm",
+  "warme": "warm",
+  "warme maaltijd": "hot meal",
+  "waterkers": "watercress",
+  "witte bonen": "white beans",
+  "witte kool": "white cabbage",
+  "worst": "sausage",
+  "worsten": "sausages",
+  "wortel": "carrot",
+  "wortelen": "carrots",
+  "wortels": "carrots",
+  "wrap": "wrap",
+  "yoghurt": "yoghurt",
+  "yoghurtdressing": "yoghurt dressing",
+  "zaad": "seed",
+  "zaden": "seeds",
+  "zalm": "salmon",
+  "zeezout": "sea salt",
+  "zilvervliesrijst": "brown rice",
+  "zoet": "sweet",
+  "zoete": "sweet",
+  "zoete aardappel": "sweet potato",
+  "zoete lekkernij": "sweet treat",
+  "zonnebloempit": "sunflower seed",
+  "zonnebloempitten": "sunflower seeds",
+  "zout": "salt",
+  "zure": "sour",
+  "zuur": "sour",
+  "zuurkool": "sauerkraut",
+  "zwarte bonen": "black beans",
+  "zwarte peper": "black pepper",
+  "à": "of",
+};
+let MENU_EN_EIGEN = {};
+const zetMenuEngels = (m) => { MENU_EN_EIGEN = m && typeof m === "object" ? m : {}; };
+const enSleutel = (t) => zonderAccent(String(t == null ? "" : t)).toLowerCase().replace(/[.,;:!?]+$/, "").replace(/\s+/g, " ").trim();
+// Het Engels van één woord of woordgroep. Null als het onbekend is.
+const enWoord = (t) => {
+  const k = enSleutel(t);
+  if (!k) return null;
+  const eigen = MENU_EN_EIGEN[k];
+  if (eigen && typeof eigen === "string") return eigen;
+  const vast = MENU_EN_STANDAARD[k];
+  return vast && typeof vast === "string" ? vast : null;
+};
+// De hoofdletters van het origineel overnemen: ALLES GROOT blijft groot, en een
+// zin die met een hoofdletter begint houdt die.
+const alsOrigineel = (bron, uit) => {
+  const b = String(bron || "").trim();
+  const u = String(uit || "");
+  if (!b || !u) return u;
+  if (b === b.toUpperCase() && /[A-Z]/.test(b)) return u.toUpperCase();
+  if (b[0] === b[0].toUpperCase() && b[0] !== b[0].toLowerCase()) return u[0].toUpperCase() + u.slice(1);
+  return u;
+};
+const EN_MAX_WOORDEN = 4; // "oost indische kers dressing" is er vier
+// Eén stuk tekst tussen de scheidingstekens. Eerst het hele stuk opzoeken —
+// "rijst melange" is iets anders dan "rijst" en "melange" los. Lukt dat niet,
+// dan vooraan beginnen met de langste woordgroep die de lijst kent.
+const vertaalStuk = (tekst, onbekend) => {
+  const ruw = String(tekst == null ? "" : tekst);
+  const vooraan = ruw.match(/^\s*/)[0];
+  const achteraan = ruw.match(/\s*$/)[0];
+  let kern = ruw.trim();
+  if (!kern) return ruw;
+  // Vet en schuin zitten om het stuk heen; die gaan er even af en weer om.
+  let wikkel = "";
+  const m = kern.match(/^([*_])(.+)\1$/);
+  if (m) { wikkel = m[1]; kern = m[2]; }
+  const terug = (t) => vooraan + wikkel + t + wikkel + achteraan;
+  const heel = enWoord(kern);
+  if (heel != null) return terug(alsOrigineel(kern, heel));
+  const woorden = kern.split(/\s+/).filter(Boolean);
+  const uit = [];
+  let i = 0;
+  while (i < woorden.length) {
+    let gevonden = null, lengte = 0;
+    for (let n = Math.min(EN_MAX_WOORDEN, woorden.length - i); n >= 1; n--) {
+      const kand = enWoord(woorden.slice(i, i + n).join(" "));
+      if (kand != null) { gevonden = kand; lengte = n; break; }
+    }
+    if (gevonden != null) { uit.push(gevonden); i += lengte; continue; }
+    const w = woorden[i];
+    // Getallen, bedragen en maten hoeven niet vertaald en horen niet in de lijst.
+    if (onbekend && enSleutel(w) && !/^[\d.,%\u20ac+-]+$/.test(w)) onbekend.add(enSleutel(w));
+    uit.push(w); i += 1;
+  }
+  return terug(alsOrigineel(kern, uit.join(" ")));
+};
+// Een hele menuregel: de stukken vertalen, de scheidingstekens laten staan.
+const vertaalRegel = (tekst, onbekend) => String(tekst == null ? "" : tekst)
+  .split(/([|\/\u00b7]|,(?=\s))/)
+  .map((deel) => (/^([|\/\u00b7]|,)$/.test(deel) ? deel : vertaalStuk(deel, onbekend)))
+  .join("");
+// De blokken van een menu, kop en regels. De verzameling onbekende woorden komt
+// er los uit, zodat het afdrukvoorbeeld kan laten zien wat nog Nederlands is.
+const vertaalBlokken = (blokken) => {
+  const onbekend = new Set();
+  const uit = (blokken || []).map((x) => ({
+    ...x,
+    kop: vertaalRegel(x.kop, onbekend),
+    regels: (x.regels || []).map((r) => vertaalRegel(r, onbekend)),
+  }));
+  return { blokken: uit, onbekend: [...onbekend].sort((a, b) => a.localeCompare(b, "nl")) };
+};
 const menuTekstVan = (blokken) => (blokken || []).map((x) => [menuKop(x.kop).toUpperCase(), ...x.regels.map(zonderOpmaak)].join("\n")).join("\n\n");
 // Het briefpapier van Wilde Wortels als printbestanden. Ze staan in public/
 // zodat ze niet in de app-code hoeven en de service worker ze meeneemt; de
@@ -12947,13 +13573,18 @@ const briefAchtergrond = () => briefVorm.img || BRIEF_ACHTERGROND;
 // het gedrukte menu staat in die kleur.
 const BRIEF_GROEN_STANDAARD = "#6E7C4B";
 const MENU_TITEL_STANDAARD = "Proef de smaken\nuit de tuin";
+// Dezelfde regel voor de Engelse kaart. Een titel laat zich niet woord voor
+// woord vertalen, dus die staat er als geheel naast — ook in Extras.
+const MENU_TITEL_EN_STANDAARD = "Taste the flavours\nfrom the garden";
 // Titel en kleur van het menu staan in Extras bij het briefpapier.
-let MENU_OPMAAK = { titel: MENU_TITEL_STANDAARD, kleur: BRIEF_GROEN_STANDAARD };
+let MENU_OPMAAK = { titel: MENU_TITEL_STANDAARD, titelEn: MENU_TITEL_EN_STANDAARD, kleur: BRIEF_GROEN_STANDAARD };
 const zetMenuOpmaak = (v) => {
   const titel = String((v && v.titel) || "").trim();
+  const titelEn = String((v && v.titelEn) || "").trim();
   const kleur = String((v && v.kleur) || "").trim();
   MENU_OPMAAK = {
     titel: titel || MENU_TITEL_STANDAARD,
+    titelEn: titelEn || MENU_TITEL_EN_STANDAARD,
     kleur: /^#[0-9a-f]{3,8}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD,
   };
 };
@@ -12988,13 +13619,13 @@ const briefVoorladen = () => new Promise((klaar) => {
 // 71,1 mm, bovenmarge 57,2 mm, en titel plus ondertitel steken 37,5 mm naar
 // links de kantlijn in. Zo staat de gedrukte bladzijde precies waar hij in
 // Word ook zou staan.
-const menuTitelHtml = () => pEsc(MENU_OPMAAK.titel).replace(/\r?\n/g, "<br>");
+const menuTitelHtml = (en) => pEsc(en ? MENU_OPMAAK.titelEn : MENU_OPMAAK.titel).replace(/\r?\n/g, "<br>");
 // Het product heet in MICE vaak "Diner: Hoofdgerecht vegetarisch". Op een
 // klantmenu hoort daar alleen het eerste deel van te staan.
 const kortProduct = (naam) => menuKop(String(naam || "").split(":")[0]) || menuKop(naam);
-const menuInhoudHtml = ({ blokken }) =>
+const menuInhoudHtml = ({ blokken, en }) =>
   "<p class='menulabel'>Menu</p><div class='lijn'></div>"
-  + "<p class='titel'>" + menuTitelHtml() + "</p>"
+  + "<p class='titel'>" + menuTitelHtml(en) + "</p>"
   + "<div class='inhoud'>"
   + (blokken || []).map((x) =>
       "<div class='blok'><p class='kop'>" + pEsc(kortProduct(x.kop)) + "</p>"
@@ -13008,8 +13639,8 @@ const menuInhoudHtml = ({ blokken }) =>
 // briefpapier — logo, titel, lijn en tekst — krimpt in één keer mee en de
 // verhoudingen blijven kloppen. In het midden een haarlijntje om langs te snijden.
 const TAFEL_KRIMP = 148.5 / 210; // ≈ 0,7071
-const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel }) =>
-  "<!doctype html><html lang='nl'><head><meta charset='utf-8'><title>" + pEsc("Menu " + (naam || "")) + "</title><style>"
+const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel, en }) =>
+  "<!doctype html><html lang='" + (en ? "en" : "nl") + "'><head><meta charset='utf-8'><title>" + pEsc("Menu " + (naam || "")) + "</title><style>"
   + briefFontCss()
   + (tafel ? "@page{size:A4 landscape;margin:0}" : "@page{size:A4;margin:0}")
   + "html,body{margin:0;padding:0;background:#fff}"
@@ -14548,6 +15179,11 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
   const [vakHoog, setVakHoog] = useState(560);
   const [klaar, setKlaar] = useState(false);
   const [tafel, setTafel] = useState(false); // twee menu's op één liggend vel
+  const [engels, setEngels] = useState(false); // de kaart in het Engels
+  // Vertalen doet het woordenboek in de app. Wat het niet kent blijft staan;
+  // dat noemen we eronder op, zodat je het of hier in de tekst rechtzet of in
+  // Extras aan de lijst toevoegt en het daarna vanzelf goed gaat.
+  const vertaald = React.useMemo(() => (engels ? vertaalBlokken(blokken) : { blokken, onbekend: [] }), [engels, blokken]);
   const MM = 96 / 25.4; // millimeters naar beeldpunten
   // Staand één menu (210×297 mm), liggend twee naast elkaar (297×210 mm).
   const BLAD_BREED = tafel ? 1123 : 794;
@@ -14593,7 +15229,7 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
   // Meteen op de tekst beginnen.
   useEffect(() => { const el = rolRef.current; if (el) el.scrollTop = tekstTop * schaal; }, [schaal, klaar, tafel]);
   useEffect(() => { briefVoorladen().then(() => setKlaar(true)); }, []);
-  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ blokken }), bewerkbaar: true, tafel });
+  const srcDoc = menuBriefHtml({ naam, tekstHtml: menuInhoudHtml({ blokken: vertaald.blokken, en: engels }), bewerkbaar: true, tafel, en: engels });
   // Op het tafelvel is alleen het linker menu te bewerken; wat je daar typt gaat
   // meteen één op één naar het rechter, zodat de twee kaartjes nooit ongemerkt
   // uit elkaar lopen.
@@ -14627,7 +15263,12 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
       <div className="w-full" style={{ maxWidth: 1040 }} onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-wrap items-center gap-2 mb-1.5">
           <span className="text-[13px]" style={{ color: "#fbf9f2" }}>{tafel ? "Pas het linker menu aan — het rechter gaat vanzelf mee. Snijd langs de middenlijn." : "Klik in de tekst om nog iets aan te passen — scrol voor het hele blad."}</span>
-          <button onClick={() => setTafel((v) => !v)} className="ff rounded-lg px-3 py-2 text-[13px] font-semibold inline-flex items-center gap-1.5 ml-auto"
+          <button onClick={() => setEngels((v) => !v)} className="ff rounded-lg px-3 py-2 text-[13px] font-semibold inline-flex items-center gap-1.5 ml-auto"
+            style={engels ? { background: T.green, color: T.paper, border: "1px solid " + T.green } : { background: T.paper, color: T.green, border: "1px solid " + T.green }}
+            title={engels ? "Terug naar de Nederlandse kaart" : "De kaart in het Engels, met het woordenboek uit Extras"}>
+            <Languages size={15} /> {engels ? "English" : "Nederlands"}
+          </button>
+          <button onClick={() => setTafel((v) => !v)} className="ff rounded-lg px-3 py-2 text-[13px] font-semibold inline-flex items-center gap-1.5"
             style={tafel ? { background: T.green, color: T.paper, border: "1px solid " + T.green } : { background: T.paper, color: T.green, border: "1px solid " + T.green }}
             title={tafel ? "Terug naar \u00e9\u00e9n menu op een staand vel" : "Twee menu's naast elkaar op een liggend vel, om doormidden te snijden voor op tafel"}>
             <Copy size={15} /> Tafelkaarten
@@ -14635,6 +15276,12 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
           <button onClick={printen} disabled={!klaar} className="btnp ff rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"><Printer size={16} /> {klaar ? "Printen" : "Bezig\u2026"}</button>
           <button onClick={() => sluitRef.current()} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium" style={{ background: T.paper }}>Sluiten</button>
         </div>
+        {engels && vertaald.onbekend.length > 0 && (
+          <div className="text-[12.5px] mb-1.5 rounded-lg px-3 py-1.5" style={{ background: "rgba(251,249,242,.92)", color: "#2b2e24" }}>
+            <span className="font-semibold">Nog niet vertaald:</span> {vertaald.onbekend.join(", ")}
+            <span className="mute"> — zet ze in Extras bij “Menu in het Engels”, of pas het hieronder met de hand aan.</span>
+          </div>
+        )}
         <div ref={rolRef} style={{ width: BLAD_BREED * schaal, maxWidth: "100%", height: vakHoog, margin: "0 auto", overflowY: "auto", overflowX: "hidden", background: "#fff", boxShadow: "0 8px 30px rgba(0,0,0,.35)" }}>
           <div style={{ width: BLAD_BREED * schaal, height: BLAD_HOOG * schaal }}>
             <iframe ref={lijstRef} key={tafel ? "tafel" : "enkel"} onLoad={koppelSpiegel} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
