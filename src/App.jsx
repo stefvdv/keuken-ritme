@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-05i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17307,6 +17307,16 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   );
 }
 
+// Welke dagkop is net onder de balk door geschoven? De laatste waarvan de
+// bovenkant boven de onderrand van de balk ligt. Staat er nog geen enkele
+// dagkop boven, dan kijk je nog boven de eerste dag en hoort de titel er te
+// staan. De koppen komen in dagvolgorde binnen, dus zodra er één onder de
+// balk uitkomt zijn we klaar.
+const dagOnderBalk = (koppen, balkOnder) => {
+  let uit = null;
+  for (const k of koppen || []) { if (Number(k.top) < Number(balkOnder)) uit = k.dag; else break; }
+  return uit;
+};
 function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
@@ -17411,6 +17421,27 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   for (let i = 0; i < 7; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); dagen.push(localDate(d)); }
   const dagLabelKort = (d) => { try { const x = new Date(d + "T12:00:00"); return x.getDate() + " " + ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"][x.getMonth()]; } catch (e) { return d || ""; } };
   const schuifWeek = (n) => { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + n * 7); setWeekStart(localDate(d)); };
+  // Tijdens het scrollen neemt de dag de plaats van de titel in: zodra de kop
+  // "maandag 5 okt" onder de balk door schuift staat hij in de balk, en bij
+  // dinsdag schuift die er overheen. Scrol je weer naar boven, dan staat er
+  // weer gewoon Mise en place.
+  const [balkDag, setBalkDag] = useState(null);
+  useEffect(() => {
+    let wacht = false;
+    const meet = () => {
+      wacht = false;
+      const balk = balkRef.current;
+      const onder = balk ? balk.getBoundingClientRect().bottom : 0;
+      const koppen = [...document.querySelectorAll("[data-mepdag]")].map((el) => ({ dag: el.getAttribute("data-mepdag"), top: el.getBoundingClientRect().top }));
+      const gevonden = dagOnderBalk(koppen, onder + 4);
+      setBalkDag((d) => (d === gevonden ? d : gevonden));
+    };
+    const op = () => { if (!wacht) { wacht = true; (window.requestAnimationFrame || setTimeout)(meet); } };
+    meet();
+    window.addEventListener("scroll", op, { passive: true });
+    window.addEventListener("resize", op);
+    return () => { window.removeEventListener("scroll", op); window.removeEventListener("resize", op); };
+  }, [weekStart, volgendeOpen, somOpen, balkBreed]);
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
   const somSet = dagen.filter((d) => d >= vandaag).slice(0, somDagen);
 
@@ -17761,7 +17792,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         return (
           <React.Fragment key={d}>
             <div className="mb-4">
-            <button onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
+            <button data-mepdag={d} onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
               <span className="serif ink font-bold text-xl leading-tight">{dagKop(d)}</span>
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
@@ -17814,7 +17845,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           optelsomtabel, en helemaal rechts wat je met de week kunt doen. Op
           telefoon staat de titel al in de kopbalk van de app. */}
       <div className="flex items-center gap-1.5 mb-2 pt-1 flex-wrap">
-        <div className="serif ink text-xl leading-tight hidden md:block shrink-0 mr-1">Mise en place</div>
+        {/* Bovenaan de titel; zodra er een dagkop voorbij is de dag zelf. Op
+            telefoon staat de titel al in de kopbalk van de app, de dag niet. */}
+        <div className={"serif ink leading-tight shrink-0 mr-1 text-[16px] md:text-xl " + (balkDag ? "" : "hidden md:block")}>
+          {balkDag ? dagKop(balkDag) : "Mise en place"}
+        </div>
         <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week terug"><ChevronLeft size={16} /></button>
         <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold" title="Terug naar deze week">{weekKnopTekst}</button>
         <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week verder"><ChevronRight size={16} /></button>
