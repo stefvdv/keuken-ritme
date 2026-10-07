@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-05l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-07d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -11234,6 +11234,26 @@ function printCustomLabel(f) {
 // De knop "Vorige" haalde één etiket terug: het laatste. Vaker klikken loopt nu
 // stap voor stap verder terug door de etiketten die echt naar het printscherm
 // zijn gegaan — hele etiketten, geen losse velden.
+// De productnamen die eerder boven op een partij-etiket stonden. Alleen die
+// naam: de partijnaam, de dag, het aantal gasten en de locatie horen bij de
+// partij zelf en komen daar vandaan, ook als je een naam terughaalt.
+const PARTIJ_LABEL_GESCH = "ritme:partij-etiket-namen";
+const partijEtiketErbij = (lijst, naam) => {
+  const n = String(naam || "").trim();
+  if (!n) return (Array.isArray(lijst) ? lijst : []).slice(0, LABEL_MAX);
+  const zelfde = (x) => String(x || "").trim().toLowerCase() === n.toLowerCase();
+  return [n, ...(Array.isArray(lijst) ? lijst : []).filter((x) => String(x || "").trim() && !zelfde(x))].slice(0, LABEL_MAX);
+};
+const partijEtiketLees = () => {
+  try {
+    const r = JSON.parse(localStorage.getItem(PARTIJ_LABEL_GESCH) || "null");
+    if (Array.isArray(r)) return r.filter((x) => typeof x === "string" && x.trim()).slice(0, LABEL_MAX);
+  } catch (e) {}
+  return [];
+};
+const partijEtiketBewaar = (lijst) => {
+  try { localStorage.setItem(PARTIJ_LABEL_GESCH, JSON.stringify((lijst || []).slice(0, LABEL_MAX))); } catch (e) {}
+};
 const LABEL_GESCH = "ritme:label-geschiedenis";
 const LABEL_LAATSTE = "ritme:last-label"; // de oude plek, met één etiket erin
 const LABEL_MAX = 25;
@@ -13540,7 +13560,7 @@ const vertaalBlokken = (blokken) => {
   }));
   return { blokken: uit, onbekend: [...onbekend].sort((a, b) => a.localeCompare(b, "nl")) };
 };
-const menuTekstVan = (blokken) => (blokken || []).map((x) => [menuKop(x.kop).toUpperCase(), ...x.regels.map(zonderOpmaak)].join("\n")).join("\n\n");
+const menuTekstVan = (blokken) => (blokken || []).map((x) => [menuKop(x.kop).toUpperCase(), ...x.regels.map(zonderOpmaak)].filter(Boolean).join("\n")).join("\n\n");
 // Het briefpapier van Wilde Wortels als printbestanden. Ze staan in public/
 // zodat ze niet in de app-code hoeven en de service worker ze meeneemt; de
 // achtergrond is de eerste bladzijde van het Word-sjabloon, de letters zijn
@@ -13628,7 +13648,7 @@ const menuInhoudHtml = ({ blokken, en }) =>
   + "<p class='titel'>" + menuTitelHtml(en) + "</p>"
   + "<div class='inhoud'>"
   + (blokken || []).map((x) =>
-      "<div class='blok'><p class='kop'>" + pEsc(kortProduct(x.kop)) + "</p>"
+      "<div class='blok'>" + (String(x.kop || "").trim() ? "<p class='kop'>" + pEsc(kortProduct(x.kop)) + "</p>" : "")
       + x.regels.map((r) => "<p class='regel'>" + opmaakHtml(r) + "</p>").join("")
       + "</div>").join("")
   + "</div>";
@@ -13695,7 +13715,7 @@ const kopieerRijkeTekst = (html) => {
   } catch (e) { return false; }
 };
 const menuHtmlVan = (blokken) => (blokken || []).map((x) =>
-  "<p><strong>" + pEsc(menuKop(x.kop).toUpperCase()) + "</strong></p>" + x.regels.map((r) => "<p>" + opmaakHtml(r) + "</p>").join("")
+  (menuKop(x.kop) ? "<p><strong>" + pEsc(menuKop(x.kop).toUpperCase()) + "</strong></p>" : "") + x.regels.map((r) => "<p>" + opmaakHtml(r) + "</p>").join("")
 ).join("<p><br></p>");
 
 const invulSleutel = (b, k) => {
@@ -13747,6 +13767,7 @@ const losSplits = (naam, porties, item, gram, heel) => {
 const EETMOMENTEN_STANDAARD = [
   { naam: "Aankomst", w: ["aankomst", "ontvangst", "arrival", "welkom"] },
   { naam: "Ontbijt", w: ["ontbijt", "breakfast"] },
+  { naam: "Brunch", w: ["brunch"] },
   { naam: "Lunch", w: ["lunch", "brood", "sandwich", "soep"] },
   { naam: "Snack", w: ["snack", "middag", "taart", "zoet", "koffie", "thee"] },
   { naam: "Amuse", w: ["amuse"] },
@@ -13774,6 +13795,13 @@ const eetRang = (t) => {
   for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].eerst && EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
   for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
   return EETVOLGORDE.length;
+};
+// Bij welk eetmoment hoort dit product? De naam daarvan — Lunch, Diner,
+// Borrel — is wat er op een klantmenu boven de gerechten hoort te staan. De
+// productnaam uit MICE ("MK Lunch arrangement nr.10") zegt de gast niets.
+const eetMoment = (t) => {
+  const r = eetRang(t);
+  return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
 };
 const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRang((a.naam || "") + " " + ((catVan && catVan[a.miceId]) || "")) - eetRang((b.naam || "") + " " + ((catVan && catVan[b.miceId]) || "")));
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
@@ -14901,10 +14929,10 @@ const koppelBijlagen = (tekst, bijlagen) => {
 // Markeren met de stift, en zonder stift het gerecht aanklikken om het recept
 // te openen. Een snelle dubbelklik markeert altijd (groen als er geen stift
 // aanstaat), zodat afvinken geen omweg via de stiftknoppen nodig heeft.
-function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept, heel, aantal }) {
-  // heel=true: niet opknippen in stukjes, maar de hele tekst als één
-  // markeerbaar blok behandelen. Zo kleurt een productregel in één keer.
-  const delen = heel ? [String(tekst || "")] : String(tekst || "").split(MARK_SCHEIDING);
+function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept, aantal }) {
+  // Elke regel wordt op de scheidingstekens opgeknipt: elk stuk is apart te
+  // markeren. De hele regel in één keer gaat via het aantal ervoor.
+  const delen = String(tekst || "").split(MARK_SCHEIDING);
   const klikRef = React.useRef(null);
   useEffect(() => () => { if (klikRef.current) clearTimeout(klikRef.current); }, []);
   let idx = 0;
@@ -15695,8 +15723,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         const n = String(o.naam || "").trim() || String(o.receptNaam || "").trim();
         if (n) regels.push(n);
       }
-      if (regels.length) uit.push({ kop: String(k.naam || "").trim() || "Menu", regels });
-      else leeg++;
+      // Boven de gerechten hoort de gang, niet de productnaam uit MICE: een
+      // gast leest "Lunch", geen "MK Lunch arrangement nr.10". Twee producten
+      // in dezelfde gang komen onder één kopje te staan.
+      if (!regels.length) { leeg++; continue; }
+      const kop = eetMoment(String(k.naam || "") + " " + String((catVan && catVan[k.miceId]) || ""));
+      const bestaand = kop ? uit.find((x) => x.kop === kop) : null;
+      if (bestaand) bestaand.regels = [...bestaand.regels, ...regels];
+      else uit.push({ kop, regels });
     }
     return { blokken: uit, leeg };
   };
@@ -16267,7 +16301,14 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // die regels bij horen, zeker nu het kopje van het programmadeel
                 // ook weg is. De naam staat er dus altijd.
                 const zonderKop = false;
-                const kop = (k.aantal || b.gasten) + "× " + k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId);
+                // Het aantal staat los van de naam, net als bij de invulregels:
+                // daarmee markeer je de hele regel in één keer, terwijl de
+                // woorden erachter los te markeren blijven. Dat is nodig omdat
+                // een productnaam uit MICE zelf scheidingstekens kan bevatten
+                // ("2 grote quiches | wortel | pompoen"); die hoort net zo goed
+                // stuk voor stuk af te strepen als een eigen invulling.
+                const kopAantal = (k.aantal || b.gasten) + "× ";
+                const kop = k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId);
                 const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
@@ -16278,9 +16319,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       <div className={k.miceId || k.productId ? "font-semibold ink" : "ink"}
                         title={!stift ? productInfoHover(k) : undefined}
                         style={!stift && productInfoVoor(k) ? { cursor: "help" } : undefined}>
-                        {/* heel: de hele productregel is één blok, zodat markeren
-                            meteen het product én al zijn invulling raakt. */}
-                        <MarkTekst tekst={kop} basis={kopBasis} heel stift={stift} markering={markering} zetMark={zetMarkK} />
+                        <MarkTekst tekst={kop} aantal={kopAantal} basis={kopBasis} stift={stift} markering={markering} zetMark={zetMarkK} />
                         {!stift && productInfoVoor(k) && (
                           <button type="button" onClick={(e) => { e.stopPropagation(); setInfoKeuze(k); }} className="ff inline align-baseline" title="Toelichting lezen" aria-label="Toelichting lezen">
                             <Info size={13} className="inline ml-1 acc shrink-0" style={{ verticalAlign: "-2px" }} />
@@ -16636,6 +16675,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 // vrij typen met vet/cursief/onderstreept, lijsten, afvinkvakjes, koppen,
 // links naar recepten en partijen, printen en een kleine versiegeschiedenis.
 // Opslaan gebeurt vanzelf; bij sluiten na een wijziging vraagt de app wie.
+// Wat er op een notitieblad staat, los van hoe het eruitziet. Tags eruit,
+// entiteiten terug naar hun teken, witruimte samengevouwen. Twee bladen met
+// dezelfde tekst gelden als onveranderd, ook als er in het ene iets gemarkeerd
+// of afgevinkt is.
+const notitieTekst = (h) => String(h == null ? "" : h)
+  .replace(/<br\s*\/?>/gi, " ")
+  .replace(/<\/(p|div|li|h1|h2|h3|tr|blockquote)>/gi, " ")
+  .replace(/<[^>]*>/g, "")
+  .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&")
+  .replace(/\s+/g, " ").trim();
 function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, onOpenRecipe, onOpenPartij, onAskName }) {
   const nuIso = () => new Date().toISOString();
   const naarBladen = (d) => {
@@ -16668,6 +16717,10 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     setBladen((bs) => { uit = bs.map((b, i) => (i === actief ? { ...b, html } : b)); return uit; });
     return uit;
   };
+  // Alleen de tekst telt mee bij de vraag wie het aangepast heeft. Markeren met
+  // de stift en een vakje afvinken veranderen wél de html — een spannetje met
+  // een achtergrondkleur, een vinkje op het invoervakje — maar niet wat er
+  // staat. Daar hoeft niemand zijn naam voor achter te laten.
   const bewaar = (bs) => {
     const lijst = bs || syncVak();
     const obj = { bladen: lijst, historie: historieRef.current };
@@ -16683,7 +16736,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const sluit = async () => {
     if (timer.current) clearTimeout(timer.current);
     let lijst = syncVak();
-    const kaal = (h) => String(h || "").replace(/\s+/g, " ").trim();
+    const kaal = (h) => notitieTekst(h);
     const gewijzigd = lijst.filter((b) => { const s = openSnap.current.find((x) => x.id === b.id); return !s || kaal(s.html) !== kaal(b.html); });
     const nieuw = lijst.filter((b) => !openSnap.current.some((x) => x.id === b.id));
     if (gewijzigd.length || nieuw.length || lijst.length !== openSnap.current.length) {
@@ -17417,6 +17470,25 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     } });
   };
 
+  // De optelsomtabel hangt als een luik onder de balk, over de bladzijde heen:
+  // zo schuift er niets op als je hem opent. Hij is even breed als de kolom
+  // eronder, dus we meten de balk — ook tijdens het scrollen, want op telefoon
+  // schuift die mee tot hij vastklikt.
+  const [somPlek, setSomPlek] = useState(null);
+  useEffect(() => {
+    if (!somOpen) { setSomPlek(null); return; }
+    const meet = () => {
+      const el = balkRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setSomPlek({ links: Math.round(r.left + 16), top: Math.round(r.bottom + 2), breed: Math.max(220, Math.round(r.width - 32)) });
+    };
+    meet();
+    document.addEventListener("scroll", meet, true);
+    window.addEventListener("resize", meet);
+    return () => { document.removeEventListener("scroll", meet, true); window.removeEventListener("resize", meet); };
+  }, [somOpen]);
+
   const dagen = [];
   for (let i = 0; i < 7; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); dagen.push(localDate(d)); }
   const dagLabelKort = (d) => { try { const x = new Date(d + "T12:00:00"); return x.getDate() + " " + ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"][x.getMonth()]; } catch (e) { return d || ""; } };
@@ -17875,17 +17947,21 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         <div className="serif ink text-xl leading-tight shrink-0 mr-1 hidden md:block">
           {balkDag ? dagKop(balkDag) : "Mise en place"}
         </div>
-        <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week terug"><ChevronLeft size={16} /></button>
-        <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold" title="Terug naar deze week">{weekKnopTekst}</button>
-        <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5" title="Week verder"><ChevronRight size={16} /></button>
-        {somKaart && (
-          <button onClick={() => setSomOpen((o) => !o)} className="btno ff rounded-lg md:rounded-xl px-3 py-2 md:py-2.5 text-[13px] md:text-[15px] font-semibold inline-flex items-center gap-1.5"
-            style={somOpen ? { background: T.green, color: T.paper, borderColor: T.green } : {}}
-            title={"Bereidingen die in meerdere partijen terugkomen — " + somSet.length + " dagen vanaf " + (somSet.length ? kolKop(somSet[0]) : "")}>
-            {somOpen ? <ChevronUp size={15} className="shrink-0" /> : <ChevronDown size={15} className="shrink-0" />} Samen maken
-          </button>
-        )}
-        <div className="flex items-center justify-end gap-1.5 flex-wrap ml-auto">
+        {/* De week en de optelsom horen bij elkaar en blijven op één regel: op
+            telefoon maakt dat twee rijen in plaats van drie. */}
+        <div className="flex items-center gap-1.5 min-w-0 flex-nowrap">
+          <button onClick={() => schuifWeek(-1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5 shrink-0" title="Week terug"><ChevronLeft size={16} /></button>
+          <button onClick={() => setWeekStart(maandagVan(localDate()))} className="btno ff rounded-lg md:rounded-xl px-2.5 md:px-3 py-2 md:py-2.5 text-[12.5px] md:text-[15px] font-semibold min-w-0 truncate" title="Terug naar deze week">{weekKnopTekst}</button>
+          <button onClick={() => schuifWeek(1)} className="btno ff rounded-lg md:rounded-xl px-2 py-2 md:py-2.5 shrink-0" title="Week verder"><ChevronRight size={16} /></button>
+          {somKaart && (
+            <button onClick={() => setSomOpen((o) => !o)} className="btno ff rounded-lg md:rounded-xl px-2.5 md:px-3 py-2 md:py-2.5 text-[12.5px] md:text-[15px] font-semibold inline-flex items-center gap-1 shrink-0 whitespace-nowrap"
+              style={somOpen ? { background: T.green, color: T.paper, borderColor: T.green } : {}}
+              title={"Bereidingen die in meerdere partijen terugkomen — " + somSet.length + " dagen vanaf " + (somSet.length ? kolKop(somSet[0]) : "")}>
+              {somOpen ? <ChevronUp size={15} className="shrink-0" /> : <ChevronDown size={15} className="shrink-0" />} Samen maken
+            </button>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-1.5 flex-wrap w-full md:w-auto md:ml-auto">
           <button onClick={() => setBestelOpen(true)} className="btno ff inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst</button>
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
@@ -17895,7 +17971,16 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         </div>
       </div>
       </div>
-      {somOpen && somKaart}
+      {/* Over de bladzijde heen, niet ertussen: klik ernaast of Escape sluit. */}
+      {somOpen && somKaart && somPlek && (
+        <>
+          <div className="fixed inset-0" style={{ zIndex: 39 }} onClick={() => setSomOpen(false)} />
+          <div data-somluik className="fixed" onClick={(e) => e.stopPropagation()}
+            style={{ left: somPlek.links, top: somPlek.top, width: somPlek.breed, zIndex: 40, maxHeight: "calc(100vh - " + (somPlek.top + 12) + "px)", overflowY: "auto", boxShadow: "0 12px 34px rgba(43,46,36,.28)", borderRadius: 16 }}>
+            {somKaart}
+          </div>
+        </>
+      )}
       {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
         recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName}
@@ -18518,6 +18603,31 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
 function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
   const [f, setF] = useState(voorstel);
   const zet = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  // De rij eerder geprinte productnamen, en hoe ver we erin teruggelopen zijn.
+  // −1 betekent: nog niet teruggelopen; de eerstvolgende klik pakt de nieuwste.
+  // Alleen de productnaam komt terug — de rest van het etiket blijft van deze
+  // partij, want die hoort bij de boeking en niet bij een eerdere sticker.
+  const [gesch, setGesch] = useState(() => partijEtiketLees());
+  const [geschIdx, setGeschIdx] = useState(-1);
+  const volgendeVorige = gesch.length ? gesch[(geschIdx + 1) % gesch.length] : null;
+  const herstelVorige = () => {
+    if (!gesch.length) return;
+    const i = (geschIdx + 1) % gesch.length;
+    setGeschIdx(i);
+    setF((x) => ({ ...x, product: gesch[i] }));
+  };
+  // Wat er naar het printscherm gaat, gaat ook vooraan in de rij. Alleen bij
+  // het echt printen: een naam die je weer weggooit hoort er niet in.
+  const printen = () => {
+    const rij = partijEtiketErbij(gesch, f.product);
+    setGesch(rij); setGeschIdx(-1);
+    partijEtiketBewaar(rij);
+    onPrint(f);
+  };
+  // De sneltoets hieronder blijft één keer hangen; via deze verwijzing komt hij
+  // altijd bij de verse printfunctie uit, met de laatst ingevulde velden.
+  const printRef = React.useRef(printen);
+  printRef.current = printen;
   // Enter in een veld sluit de cursor (ook leeg); Enter daarbuiten print.
   // stopPropagation is nodig: anders vangt de globale sneltoets (Enter opent
   // het vrije etiket) dezelfde toetsaanslag ook nog eens op en verschijnt
@@ -18527,11 +18637,11 @@ function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
       if (e.key !== "Enter") return;
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) { e.preventDefault(); e.stopPropagation(); el.blur(); return; }
-      e.preventDefault(); e.stopPropagation(); onPrint(f);
+      e.preventDefault(); e.stopPropagation(); printRef.current();
     };
     window.addEventListener("keydown", toets, true);
     return () => window.removeEventListener("keydown", toets, true);
-  }, [f, onPrint]);
+  }, []);
   const veld = (label, k, ph, extra) => (
     <label className="block min-w-0">
       <span className="block text-xs font-medium ink mb-1">{label}</span>
@@ -18546,7 +18656,23 @@ function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
           <button onClick={onSluit} className="ff mute hover:opacity-70" title="Sluiten"><X size={16} /></button>
         </div>
         <div className="space-y-2">
-          {veld("Productnaam — bovenaan het etiket", "product", "leeg = niet op het etiket", { autoFocus: true })}
+          <div>
+            <span className="block text-xs font-medium ink mb-1">Productnaam — bovenaan het etiket</span>
+            <div className="flex items-stretch gap-1.5">
+              <input className="input px-2.5 py-1.5 w-full text-sm min-w-0" value={f.product || ""} onChange={zet("product")} placeholder="leeg = niet op het etiket" autoFocus />
+              {gesch.length > 0 && (
+                <button type="button" data-partijetiketvorige={String(geschIdx)} onClick={herstelVorige}
+                  className="ff shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 text-[12px] font-semibold"
+                  style={{ border: "1px solid " + T.line, background: "#fff", color: T.green }}
+                  title={gesch.length > 1
+                    ? "Nog een keer klikken gaat verder terug — nu: " + (volgendeVorige || "zonder naam")
+                    : "Vorige productnaam terughalen: " + (volgendeVorige || "zonder naam")}>
+                  ↺ Vorige{gesch.length > 1 && geschIdx >= 0 ? " " + (geschIdx + 1) + "/" + gesch.length : ""}
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] mute mt-1 mb-0">Alleen deze naam komt terug; de partij, de dag en de locatie blijven van deze boeking.</p>
+          </div>
           {veld("Partijnaam", "naam")}
           <div className="grid grid-cols-2 gap-2">
             {veld("Dag en tijd", "datum")}
@@ -18558,7 +18684,7 @@ function PartijEtiketPopup({ voorstel, onPrint, onSluit }) {
           <span className="text-[11.5px] mute">Enter = veld sluiten, nog een Enter = printen.</span>
           <span className="flex gap-2 shrink-0">
             <button onClick={onSluit} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
-            <button onClick={() => onPrint(f)} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold inline-flex items-center gap-1.5"><Printer size={15} /> Printen</button>
+            <button onClick={printen} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold inline-flex items-center gap-1.5"><Printer size={15} /> Printen</button>
           </span>
         </div>
       </div>
