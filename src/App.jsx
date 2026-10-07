@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-07d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-07f"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3208,6 +3208,36 @@ function App() {
   // Gedeeld notitieblok op de mep-pagina (meerdere bladen + geschiedenis);
   // synchroniseert via app_settings.
   const [mepNotitie, setMepNotitie] = useState(null);
+  const [keukenTik, setKeukenTik] = useState(0); // laat de dagwissel om 02:00 binnenkomen
+  // Om 02:00 begint de keukendag. Dan schrijft de app de schoonmaaktaken die
+  // open staan boven aan het eerste notitieblad — één keer per dag, voor het
+  // hele team tegelijk, want welke dag er bijgeschreven is staat in de notitie
+  // zelf. De app kijkt elke vijf minuten of de dag al om is.
+  useEffect(() => {
+    const t = setInterval(() => setKeukenTik((n) => n + 1), 5 * 60000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    const n = mepNotitie;
+    if (!n || !Array.isArray(n.bladen) || !n.bladen.length) return;
+    const dag = kitchenDate();
+    if (n.schoonDag === dag) return;
+    const open = (cleaningTasks || [])
+      .filter((t) => t && t.id !== DAY_DONE_ID && t.id !== DAY_OFF_ID && taskStatus(t, cleaningLogs).due)
+      .map((t) => ({ id: t.id, naam: t.name }));
+    const eerste = n.bladen[0];
+    const html = notitieMetSchoonmaak(eerste.html, open);
+    bewaarMepNotitie({ ...n, schoonDag: dag, bladen: n.bladen.map((b, i) => (i === 0 ? { ...b, html } : b)) });
+  }, [mepNotitie, cleaningTasks, cleaningLogs, keukenTik]);
+  // Een taak afvinken in de notitie tekent hem ook af op de schoonmaaklijst van
+  // vandaag — en het vinkje weghalen draait dat weer terug.
+  const schoonmaakUitNotitie = (taskId, aan) => {
+    if (!taskId) return;
+    if (aan) { signCleaning(taskId, true); return; }
+    const vandaag = localDate();
+    const l = (cleaningLogs || []).find((x) => x.taskId === taskId && String(x.doneDate).slice(0, 10) === vandaag);
+    if (l) removeCleaningLog(l.id, true);
+  };
   const bewaarMepNotitie = async (obj) => {
     setMepNotitie(obj);
     if (live) { try { await instelUpsert("mep_notitie", obj); } catch (e) {} }
@@ -6473,7 +6503,7 @@ function App() {
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -6721,7 +6751,14 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
     ESC_SLUITERS.rekentabel = tabel ? () => setTabel(null) : null;
     return () => { ESC_SLUITERS.rekentabel = null; };
   }, [tabel]);
-  const keys = [["Wis", "(", ")", "÷"], ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="]];
+  // Haakjes zaten in de weg en werden zelden gebruikt; op hun plek staan nu de
+  // twee knoppen die je in de keuken wél nodig hebt. Wis haalt het laatste
+  // teken weg (de backspace), Verwijder maakt de hele som leeg. De tekens
+  // eronder zijn wat de rekenmachine zelf verwerkt en blijven dus hetzelfde.
+  const keys = [
+    [{ tekst: "Wis", teken: "⌫" }, { tekst: "Verwijder", teken: "Wis", breed: 2 }, "÷"],
+    ["7", "8", "9", "×"], ["4", "5", "6", "−"], ["1", "2", "3", "+"], ["0", ",", "%", "="],
+  ];
   return (
     <>
       {open && <div className="fixed inset-0 z-30" onClick={onClose} />}
@@ -6740,13 +6777,17 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
             <div className="text-sm mute h-4">{result !== "" && expr !== result ? "= " + result : ""}</div>
           </div>
           <div className="grid grid-cols-4 gap-1.5">
-            {keys.flat().map((k) => (
-              <button key={k} onClick={() => tap(k)}
-                className={"ff rounded-lg py-1.5 text-sm font-medium " + (k === "=" ? "btnp" : ["÷", "×", "−", "+"].includes(k) ? "pillon" : "pill")}>
-                {k}
-              </button>
-            ))}
-            <button onClick={() => tap("⌫")} className="ff pill rounded-lg py-1.5 text-sm font-medium col-span-4 mt-0.5 inline-flex items-center justify-center gap-1"><ArrowLeft size={14} /> Wis laatste</button>
+            {keys.flat().map((x) => {
+              const tekst = typeof x === "string" ? x : x.tekst;
+              const teken = typeof x === "string" ? x : x.teken;
+              const breed = typeof x === "string" ? 1 : (x.breed || 1);
+              return (
+                <button key={tekst} onClick={() => tap(teken)}
+                  className={"ff rounded-lg py-1.5 text-sm font-medium " + (breed === 2 ? "col-span-2 " : "") + (teken === "=" ? "btnp" : ["÷", "×", "−", "+"].includes(teken) ? "pillon" : "pill")}>
+                  {tekst === "Wis" ? <span className="inline-flex items-center justify-center gap-1"><ArrowLeft size={14} /> Wis</span> : tekst}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -11396,6 +11437,15 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     const toets = (e) => {
       if (e.key !== "Enter" || e.repeat) return;
       const isVeld = (el) => { const t = el && el.tagName ? el.tagName.toLowerCase() : ""; return t === "input" || t === "textarea" || t === "select" || (el && el.isContentEditable); };
+      // In het aantal en de opmerking doet Enter verder niets; daar sluit hij
+      // het veld, zodat de volgende Enter naar het printscherm gaat. In het
+      // naamveld niet: daar kiest Enter een recept uit de suggesties.
+      const hier = (e.target && e.target.getAttribute) ? e.target : document.activeElement;
+      if (hier && hier.getAttribute && hier.getAttribute("data-etiketveld") != null) {
+        e.preventDefault(); e.stopPropagation();
+        try { hier.blur(); } catch (x) {}
+        return;
+      }
       if (isVeld(e.target) || isVeld(document.activeElement)) return; // dit is de bevestiging van het veld
       e.preventDefault();
       doPrint();
@@ -11537,7 +11587,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
           </div>
           <div>
             <div className="text-xs font-bold ink mb-1">Hoeveelheid</div>
-            <input type="text" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
+            <input type="text" data-etiketveld="aantal" className="input px-2.5 py-2 w-full text-sm" value={gram} onChange={(e) => setGram(e.target.value)} placeholder="500 gr / 1 kg / 250 ml" />
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -11566,7 +11616,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
         </div>
         <div className="mt-1.5">
           <div className="text-xs font-bold ink mb-1">Opmerkingen / handelingen</div>
-          <input className="input px-2.5 py-2 w-full text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. 1× per dag roeren" />
+          <input data-etiketveld="opmerking" className="input px-2.5 py-2 w-full text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. 1× per dag roeren" />
         </div>
         <p className="text-[11px] mute mt-1.5">Lege velden worden niet op het etiket gezet.</p>
         <div className="flex gap-2 mt-2">
@@ -16675,6 +16725,42 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 // vrij typen met vet/cursief/onderstreept, lijsten, afvinkvakjes, koppen,
 // links naar recepten en partijen, printen en een kleine versiegeschiedenis.
 // Opslaan gebeurt vanzelf; bij sluiten na een wijziging vraagt de app wie.
+// ── Het schoonmaakblok boven aan het mep-blad ─────────────────────────────
+// Taken die over tijd zijn schrijft de app zelf bovenaan het eerste
+// notitieblad, met een vet kopje erboven, een lege regel eronder en dan het
+// vette kopje "Mise en place". Alles vanaf dat kopje is van de keuken: daar
+// komt de app niet aan. Het merkje op dat kopje is waar de twee delen uit
+// elkaar gehaald worden — ook als iemand de tekst erin bijschaaft.
+const MEP_KOP_TEKST = "Mise en place";
+const SCHOON_KOP_TEKST = "Schoonmaak";
+const MEP_KOP_HTML = '<div data-mepkop="1"><strong>' + MEP_KOP_TEKST + "</strong></div>";
+// Het handmatige deel: alles áchter het kopje "Mise en place". Staat dat kopje
+// er nog niet, dan is het hele blad handmatig — zo gaat er bij de eerste keer
+// niets verloren.
+const notitieHandmatig = (html) => {
+  const h = String(html == null ? "" : html);
+  let i = h.indexOf("<div data-mepkop");
+  if (i < 0) {
+    // Een blad van vóór het merkje: zoek het vette kopje op naam.
+    const m = h.match(/<div[^>]*>\s*<strong>\s*mise en place\s*<\/strong>\s*<\/div>/i);
+    if (!m) return h;
+    i = m.index;
+  }
+  const eind = h.indexOf("</div>", i);
+  return eind < 0 ? "" : h.slice(eind + 6);
+};
+// Het blad opnieuw opbouwen met de taken die vandaag open staan.
+const notitieMetSchoonmaak = (html, taken) => {
+  const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const lijst = (Array.isArray(taken) ? taken : []).filter((t) => t && t.id && String(t.naam || "").trim());
+  const boven = lijst.length
+    ? "<div><strong>" + SCHOON_KOP_TEKST + "</strong></div>"
+      + lijst.map((t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="' + esc(t.id) + '">&nbsp;' + esc(t.naam) + "</div>").join("")
+      + "<div><br></div>"
+    : "";
+  return boven + MEP_KOP_HTML + notitieHandmatig(html);
+};
+
 // Wat er op een notitieblad staat, los van hoe het eruitziet. Tags eruit,
 // entiteiten terug naar hun teken, witruimte samengevouwen. Twee bladen met
 // dezelfde tekst gelden als onveranderd, ook als er in het ene iets gemarkeerd
@@ -16685,7 +16771,7 @@ const notitieTekst = (h) => String(h == null ? "" : h)
   .replace(/<[^>]*>/g, "")
   .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&")
   .replace(/\s+/g, " ").trim();
-function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, onOpenRecipe, onOpenPartij, onAskName }) {
+function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, onOpenRecipe, onOpenPartij, onAskName, onSchoonmaakAf }) {
   const nuIso = () => new Date().toISOString();
   const naarBladen = (d) => {
     if (d && Array.isArray(d.bladen) && d.bladen.length) return d.bladen.map((b) => ({ ...b }));
@@ -17150,6 +17236,11 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // Afvinkvakje: aangevinkt = regel doorgestreept; de stand gaat mee in de html.
     if (t && t.tagName === "INPUT" && t.classList.contains("nt-cb")) {
       if (t.checked) t.setAttribute("checked", ""); else t.removeAttribute("checked");
+      // Een schoonmaaktaak die de app zelf bijschreef: hem hier afvinken telt
+      // ook op de schoonmaaklijst van vandaag, en het vinkje weghalen draait
+      // die aftekening weer terug.
+      const taak = t.getAttribute && t.getAttribute("data-schoonmaak");
+      if (taak && onSchoonmaakAf) { try { onSchoonmaakAf(taak, !!t.checked); } catch (e) {} }
       const stijl = (el) => { el.style.textDecoration = t.checked ? "line-through" : ""; el.style.opacity = t.checked ? ".55" : ""; };
       const blok = t.closest("li, p, div");
       if (blok && blok !== vak.current) {
@@ -17370,7 +17461,7 @@ const dagOnderBalk = (koppen, balkOnder) => {
   for (const k of koppen || []) { if (Number(k.top) < Number(balkOnder)) uit = k.dag; else break; }
   return uit;
 };
-function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
+function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
@@ -17983,7 +18074,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       )}
       {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
-        recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName}
+        recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName} onSchoonmaakAf={onSchoonmaakAf}
         onOpenPartij={(id) => {
           const b = (boekingen || []).find((x) => String(x.id) === String(id));
           if (!b) return;
