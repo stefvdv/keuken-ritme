@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-08c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-08d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -16879,6 +16879,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // het blad ("Laatst aangepast door …") en de oude versie gaat de geschiedenis in.
   const sluit = async () => {
     if (timer.current) clearTimeout(timer.current);
+    netjes(); // nu pas het hele opruimwerk: er typt niemand meer
     let lijst = syncVak();
     const kaal = (h) => notitieTekst(h);
     const gewijzigd = lijst.filter((b) => { const s = openSnap.current.find((x) => x.id === b.id); return !s || kaal(s.html) !== kaal(b.html); });
@@ -17020,7 +17021,15 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // Elke regel van een opsomming (ook een sub-opsomming) krijgt een afvinkvakje;
   // aangevinkt betekent doorgestreept. Nummeringen houden hun cijfers.
   const DAGKOP = /^\s*(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)\s*:?\s*$/i;
-  const netjes = () => {
+  // Het opruimwerk kent twee standen. Tijdens het typen draait alleen het
+  // lichte deel: de afvinkvakjes van een opsomming bijhouden, want zonder die
+  // vakjes klopt een nieuwe regel niet. Al het andere — losse tekst in een
+  // regel wikkelen, een omhulsel om een lijst weghalen, een dagnaam tot kop
+  // maken — verplaatst stukken tekst, en als de cursor daar net tussen hangt
+  // springt hij naar het begin van het vak. Dat gebeurt nu pas als je het vak
+  // verlaat, van blad wisselt of het venster sluit: dan staat er niemand te
+  // typen en kan er niets wegspringen.
+  const netjes = (licht) => {
     const v = vak.current;
     if (!v) return;
     const anker0 = (() => { const sel = window.getSelection(); return sel && sel.anchorNode; })();
@@ -17046,16 +17055,22 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       li.style.textDecoration = aan ? "line-through" : "";
       li.style.opacity = aan ? ".55" : "";
     }
+    if (licht) return;
     // Losse tekst boven in het vak (de eerste regel zit vaak nog in geen enkel
     // blok) eerst in een div wikkelen, anders valt die overal buiten. De regel
     // waar de cursor in staat laten we met rust.
     const sel = window.getSelection();
     const anker = sel && sel.anchorNode;
+    // Hangt de cursor niet in een stukje tekst maar op het vak zelf — dat
+    // overkomt de browser na een Enter — dan is hij alleen met een plaatsnummer
+    // vastgelegd. Alles wat we hieronder verschuiven laat zo'n nummer naar een
+    // ander stuk tekst wijzen, en dat is precies de sprong naar linksboven.
+    const losseCursor = !!anker && anker === v;
     const raaktCursor = (n) => n === anker || (n.contains && anker && n.contains(anker));
     let groep = [];
     const spoel = () => {
       if (!groep.length) return;
-      if (groep.some(raaktCursor)) { groep = []; return; }
+      if (losseCursor || groep.some(raaktCursor)) { groep = []; return; }
       const d = document.createElement("div");
       groep[0].before(d);
       for (const x of groep) d.appendChild(x);
@@ -17070,7 +17085,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     spoel();
     // Een lijst die in een lege div terecht is gekomen eruit tillen, anders
     // stapelen de omhulsels zich op en klopt de inspringing niet meer.
-    for (const d of [...v.querySelectorAll("div")]) {
+    for (const d of losseCursor ? [] : [...v.querySelectorAll("div")]) {
       const kind = d.firstElementChild;
       if (!kind || !/^(UL|OL)$/.test(kind.tagName) || d.children.length !== 1) continue;
       if (String(d.textContent || "") !== String(kind.textContent || "")) continue;
@@ -17082,7 +17097,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // mee naar de kop en al het volgende belandt daarbinnen. Zodra je verder
     // typt op de volgende regel wordt de dagnaam alsnog een kop.
     const nu = cursorBlok();
-    for (const el of v.querySelectorAll("div, p")) {
+    for (const el of losseCursor ? [] : v.querySelectorAll("div, p")) {
       if (el === nu || raaktCursor(el) || el.closest("li") || el.querySelector("ul, ol, div, p, h1, h2, h3")) continue;
       if (!DAGKOP.test(el.textContent || "")) continue;
       const h = document.createElement("h2");
@@ -17367,7 +17382,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const dubbelMark = () => { if (!stift) markeer("groen"); };
 
   // Bladen (tabjes): toevoegen, hernoemen, weghalen, wissen, printen.
-  const wisselBlad = (i) => { if (i === actief) return; const lijst = syncVak(); setBladen(lijst); setActief(i); };
+  const wisselBlad = (i) => { if (i === actief) return; netjes(); const lijst = syncVak(); setBladen(lijst); setActief(i); };
   const nieuwBlad = () => {
     const lijst = syncVak();
     const nieuw = { id: "n" + Date.now(), naam: "Blad " + (lijst.length + 1), door: "", op: "", html: "" };
@@ -17500,7 +17515,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           + ".mep-notitie ol ol{list-style:lower-alpha}.mep-notitie ol ol ol{list-style:lower-roman}"
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
         <div ref={vak} contentEditable suppressContentEditableWarning
-          onInput={() => { autoLijst(); netjes(); getypt(); }} onBlur={() => bewaar()} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
+          onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie flex-1 overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
