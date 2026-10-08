@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-07f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-08c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3209,6 +3209,8 @@ function App() {
   // synchroniseert via app_settings.
   const [mepNotitie, setMepNotitie] = useState(null);
   const [keukenTik, setKeukenTik] = useState(0); // laat de dagwissel om 02:00 binnenkomen
+  const [notitieOpen, setNotitieOpen] = useState(false); // staat het notitievenster open?
+  const schoonGereed = React.useRef(false); // zijn de schoonmaakgegevens al binnen?
   // Om 02:00 begint de keukendag. Dan schrijft de app de schoonmaaktaken die
   // open staan boven aan het eerste notitieblad — één keer per dag, voor het
   // hele team tegelijk, want welke dag er bijgeschreven is staat in de notitie
@@ -3220,15 +3222,26 @@ function App() {
   useEffect(() => {
     const n = mepNotitie;
     if (!n || !Array.isArray(n.bladen) || !n.bladen.length) return;
+    // Niet terwijl iemand in de notitie staat: dat venster houdt zijn eigen
+    // stand vast en zou het pas bijgeschreven blok meteen weer overschrijven.
+    if (notitieOpen) return;
+    // En niet voordat de schoonmaakgegevens binnen zijn — anders lijkt even
+    // alles open te staan, of juist niets.
+    if (!schoonGereed.current) return;
     const dag = kitchenDate();
     if (n.schoonDag === dag) return;
-    const open = (cleaningTasks || [])
-      .filter((t) => t && t.id !== DAY_DONE_ID && t.id !== DAY_OFF_ID && taskStatus(t, cleaningLogs).due)
-      .map((t) => ({ id: t.id, naam: t.name }));
+    // Ook op het toestel zelf onthouden. Komt de stempel om wat voor reden dan
+    // ook niet in de database terecht, dan blijft dit apparaat er verder van
+    // af in plaats van het blok te blijven bijwerken.
+    let lokaal = null;
+    try { lokaal = localStorage.getItem(SCHOON_DAG_LOKAAL); } catch (e) {}
+    if (lokaal === dag) return;
+    try { localStorage.setItem(SCHOON_DAG_LOKAAL, dag); } catch (e) {}
+    const open = schoonmaakVoorNotitie(cleaningTasks, cleaningLogs);
     const eerste = n.bladen[0];
     const html = notitieMetSchoonmaak(eerste.html, open);
     bewaarMepNotitie({ ...n, schoonDag: dag, bladen: n.bladen.map((b, i) => (i === 0 ? { ...b, html } : b)) });
-  }, [mepNotitie, cleaningTasks, cleaningLogs, keukenTik]);
+  }, [mepNotitie, cleaningTasks, cleaningLogs, keukenTik, notitieOpen]);
   // Een taak afvinken in de notitie tekent hem ook af op de schoonmaaklijst van
   // vandaag — en het vinkje weghalen draait dat weer terug.
   const schoonmaakUitNotitie = (taskId, aan) => {
@@ -4872,6 +4885,7 @@ function App() {
     ];
     setCleaningTasks(merged.filter((t) => t.active !== false));
     setCleaningLogs((cl.data || []).map((r) => ({ id: r.id, taskId: r.task_id, doneDate: String(r.done_date || "").slice(0, 10), doneBy: r.done_by, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
+    schoonGereed.current = true;
     setHaccpLogs((hc.data || []).map((r) => ({ id: r.id, checkDate: String(r.check_date || "").slice(0, 10), doneBy: r.done_by, values: r.values || {}, calibration: r.calibration || {}, note: r.note || "", edits: Array.isArray(r.edits) ? r.edits : [] })));
     setHaccpRecords((hr.data || []).map((r) => ({ id: r.id, kind: r.kind, date: String(r.record_date || "").slice(0, 10), by: r.done_by, note: r.note || "", ...(r.data || {}) })));
     setWerkDocs((wd.data || []).map((r) => ({ id: r.id, title: r.title, intro: r.intro || "", sections: Array.isArray(r.sections) ? r.sections : [], updatedBy: r.updated_by || "" })));
@@ -6503,7 +6517,7 @@ function App() {
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} onNotitieOpen={setNotitieOpen} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -11279,6 +11293,8 @@ function printCustomLabel(f) {
 // naam: de partijnaam, de dag, het aantal gasten en de locatie horen bij de
 // partij zelf en komen daar vandaan, ook als je een naam terughaalt.
 const PARTIJ_LABEL_GESCH = "ritme:partij-etiket-namen";
+// Welke keukendag het schoonmaakblok op dit toestel is bijgewerkt.
+const SCHOON_DAG_LOKAAL = "ritme:schoon-notitie-dag";
 const partijEtiketErbij = (lijst, naam) => {
   const n = String(naam || "").trim();
   if (!n) return (Array.isArray(lijst) ? lijst : []).slice(0, LABEL_MAX);
@@ -13799,6 +13815,38 @@ const autoKeuzesUitBoeking = (b) => {
 // Naam normaliseren zodat kleine typeverschillen ("kip stoof"/"kipstoof")
 // in de optelsom samenvallen.
 const normNaam = (t) => zonderAccent(String(t || "")).toLowerCase().replace(/[^a-z0-9]+/g, "");
+// Eén woord van een bereiding terugbrengen tot zijn kern, zodat "zoete" en
+// "zoeten" op hetzelfde uitkomen. Het meeste werk doet kernWoord hierboven al
+// (tomaat/tomaten, kaas/kazen); die laat alleen korte meervouden met rust,
+// want "kaas" is geen meervoud van "kaa". Vier letters op -en is in de keuken
+// wél bijna altijd een meervoud: ui/uien, ei/eien. Dit is geen woordenboek —
+// het vangt verbuigingen, geen synoniemen.
+const somWoord = (w) => {
+  let t = zonderAccent(String(w == null ? "" : w)).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (t.length === 4 && t.slice(-2) === "en") t = t.slice(0, 2);
+  return kernWoord(t);
+};
+// De sleutel waaronder een bereiding in "samen maken" valt. De volgorde van de
+// stukken tussen de scheidingstekens doet er niet toe — "soep | ui | komijn" en
+// "soep | komijn | ui" zijn hetzelfde gerecht — en elk woord telt op zijn kern
+// mee, zodat een andere verbuiging geen tweede regel oplevert.
+const bereidingSleutel = (naam) => String(naam == null ? "" : naam)
+  .split(/[|,\/\n]+/)
+  .map((deel) => deel.trim().split(/\s+/).map(somWoord).filter(Boolean).join("-"))
+  .filter(Boolean)
+  .sort()
+  .join("|");
+// Van alle schrijfwijzen die onder één sleutel vallen de meest gebruikte; bij
+// gelijkspel die het eerst voorbijkwam. Zo staat er één beschrijving in de
+// tabel, met de rest eronder.
+const vaakstGebruikt = (telling) => {
+  let beste = null, hoogste = -1;
+  for (const naam of Object.keys(telling || {})) {
+    const n = telling[naam];
+    if (n.aantal > hoogste || (n.aantal === hoogste && beste && n.eerst < telling[beste].eerst)) { beste = naam; hoogste = n.aantal; }
+  }
+  return beste || "";
+};
 // Losse tekst splitsen op scheidingstekens: elk onderdeel telt apart mee.
 // Met heel=true blijft de regel in één stuk, scheidingstekens en al: zo staat er
 // in "samen maken" één bereiding per invulregel in plaats van los woord voor
@@ -16734,32 +16782,38 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
 const MEP_KOP_TEKST = "Mise en place";
 const SCHOON_KOP_TEKST = "Schoonmaak";
 const MEP_KOP_HTML = '<div data-mepkop="1"><strong>' + MEP_KOP_TEKST + "</strong></div>";
-// Het handmatige deel: alles áchter het kopje "Mise en place". Staat dat kopje
-// er nog niet, dan is het hele blad handmatig — zo gaat er bij de eerste keer
-// niets verloren.
-const notitieHandmatig = (html) => {
-  const h = String(html == null ? "" : html);
-  let i = h.indexOf("<div data-mepkop");
-  if (i < 0) {
-    // Een blad van vóór het merkje: zoek het vette kopje op naam.
-    const m = h.match(/<div[^>]*>\s*<strong>\s*mise en place\s*<\/strong>\s*<\/div>/i);
-    if (!m) return h;
-    i = m.index;
-  }
-  const eind = h.indexOf("</div>", i);
-  return eind < 0 ? "" : h.slice(eind + 6);
-};
-// Het blad opnieuw opbouwen met de taken die vandaag open staan.
+const SCHOON_KOP_HTML = '<div data-schoonkop="1"><strong>' + SCHOON_KOP_TEKST + "</strong></div>";
+// Alles wat de app zelf heeft neergezet eruit halen: de twee vette kopjes en
+// elke regel met een schoonmaakvakje. We herkennen ze aan hun inhoud, niet aan
+// een merkje in de tekst. Een merkje overleeft het bewerken in de browser niet
+// altijd — en zodra het weg was vond de app zijn eigen blok niet meer terug en
+// zette hij er elke keer een nieuwe bovenop. Wat hier overblijft is het werk
+// van de keuken, precies zoals het stond.
+const APP_KOPPEN = new Set([SCHOON_KOP_TEKST.toLowerCase(), MEP_KOP_TEKST.toLowerCase()]);
+// Eén blokregel: een div, p of kopje zonder nog een blok erin.
+const NOTITIE_BLOK = /<(div|p|h[1-3])\b[^>]*>(?:(?!<\1\b)[\s\S])*?<\/\1>/gi;
+const notitieBlokTekst = (b) => String(b).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const notitieHandmatig = (html) => String(html == null ? "" : html)
+  .replace(NOTITIE_BLOK, (b) => (b.indexOf("data-schoonmaak") >= 0 || APP_KOPPEN.has(notitieBlokTekst(b)) ? "" : b))
+  .replace(/^(?:\s*<div>\s*(?:<br\s*\/?>)?\s*<\/div>)+/i, "")
+  .replace(/(?:<div>\s*(?:<br\s*\/?>)?\s*<\/div>\s*)+$/i, "");
+// Het blad opnieuw opbouwen: het handwerk bovenaan, de schoonmaak eronder.
+// Dit mag zo vaak gebeuren als nodig: er komt altijd hetzelfde uit.
 const notitieMetSchoonmaak = (html, taken) => {
   const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const lijst = (Array.isArray(taken) ? taken : []).filter((t) => t && t.id && String(t.naam || "").trim());
-  const boven = lijst.length
-    ? "<div><strong>" + SCHOON_KOP_TEKST + "</strong></div>"
+  const onder = lijst.length
+    ? "<div><br></div>" + SCHOON_KOP_HTML
       + lijst.map((t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="' + esc(t.id) + '">&nbsp;' + esc(t.naam) + "</div>").join("")
-      + "<div><br></div>"
     : "";
-  return boven + MEP_KOP_HTML + notitieHandmatig(html);
+  return MEP_KOP_HTML + notitieHandmatig(html) + onder;
 };
+// Welke taken er onder de notitie komen: alleen de taken die over hun tijd heen
+// zijn. Wat elke dag moet gebeuren staat al op de schoonmaaklijst zelf en zou
+// deze lijst elke ochtend helemaal volzetten.
+const schoonmaakVoorNotitie = (taken, logs) => (taken || [])
+  .filter((t) => t && t.id !== DAY_DONE_ID && t.id !== DAY_OFF_ID && Number(t.intervalDays) > 1 && taskStatus(t, logs).due)
+  .map((t) => ({ id: t.id, naam: t.name }));
 
 // Wat er op een notitieblad staat, los van hoe het eruitziet. Tags eruit,
 // entiteiten terug naar hun teken, witruimte samengevouwen. Twee bladen met
@@ -16809,7 +16863,11 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // staat. Daar hoeft niemand zijn naam voor achter te laten.
   const bewaar = (bs) => {
     const lijst = bs || syncVak();
-    const obj = { bladen: lijst, historie: historieRef.current };
+    // Wat er verder in de notitie staat blijft staan — de dagstempel van het
+    // schoonmaakblok bijvoorbeeld. Die viel er bij elke bewaring af, waarna de
+    // app dacht dat hij vandaag nog niets bijgeschreven had en het blok steeds
+    // opnieuw bovenaan zette.
+    const obj = { ...(data && typeof data === "object" ? data : {}), bladen: lijst, historie: historieRef.current };
     const ser = JSON.stringify(obj);
     if (ser === laatst.current) return;
     laatst.current = ser;
@@ -17461,9 +17519,11 @@ const dagOnderBalk = (koppen, balkOnder) => {
   for (const k of koppen || []) { if (Number(k.top) < Number(balkOnder)) uit = k.dag; else break; }
   return uit;
 };
-function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
+function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
+  // De app schrijft het schoonmaakblok niet bij terwijl dit venster openstaat.
+  useEffect(() => { if (onNotitieOpen) onNotitieOpen(notitieOpen); }, [notitieOpen]);
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
   // De balk met Bestellijst, Notities en printen blijft in beeld terwijl je
   // door de week scrolt. Op telefoon plakt "position: sticky" niet altijd
@@ -17710,9 +17770,15 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     // Hele invulregels, inclusief de scheidingstekens: "Soep | courgette |
     // komijn" is één bereiding, geen drie losse woorden.
     for (const m of mepVan(b, true)) {
-      const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + normNaam(m.naam);
-      if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, gramPerDag: {}, perDagPartij: {}, totaal: 0, gezien: new Set(), partijen: [] };
+      const sleutel = m.soort === "recept" ? "r:" + m.id : "x:" + bereidingSleutel(m.naam);
+      if (!perBereiding[sleutel]) perBereiding[sleutel] = { sleutel, naam: m.naam, soort: m.soort, id: m.id, perDag: {}, gramPerDag: {}, perDagPartij: {}, totaal: 0, gezien: new Set(), partijen: [], namen: {}, teller: 0 };
       const r = perBereiding[sleutel];
+      // Alle schrijfwijzen bijhouden; straks wint de meest gebruikte.
+      const geschreven = String(m.naam || "").trim();
+      if (geschreven) {
+        if (!r.namen[geschreven]) r.namen[geschreven] = { aantal: 0, eerst: r.teller++ };
+        r.namen[geschreven].aantal++;
+      }
       r.perDag[b.datum] = (r.perDag[b.datum] || 0) + m.porties;
       r.totaal += m.porties;
       r.gram = (r.gram || 0) + (m.gram || 0);
@@ -17731,6 +17797,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       if (!r.gezien.has(b.id)) { r.gezien.add(b.id); r.partijen.push({ id: b.id, naam: b.naam || "Zonder naam", datum: b.datum, gasten: gastenVan(b) }); }
     }
   }
+  for (const r of Object.values(perBereiding)) { const n = vaakstGebruikt(r.namen); if (n) r.naam = n; }
   const overlap = Object.values(perBereiding).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
   const overlapActief = overlap.filter((r) => !somAf[r.sleutel]);
   const overlapKlaar = overlap.filter((r) => somAf[r.sleutel]);
