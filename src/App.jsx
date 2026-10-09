@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-08d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-09b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3954,15 +3954,21 @@ function App() {
   // Zo blijft de zwarte rand weg bij partijen die gewoon af zijn — ook als de
   // vlag er niet (meer) is.
   const catVanAlle = React.useMemo(() => { const m = {}; for (const p of miceProducten || []) if (p.categorie) m[p.id] = p.categorie; return m; }, [miceProducten]);
+  // Dit bepaalt de zwarte rand "nog niet ingevuld" op de boekingkaart. Hij
+  // keek nog naar de oude lagen: de keuzes uit de handmatige laag en de
+  // invulling uit inv|. Daar schrijft sinds de herbouw niemand meer in, dus
+  // was elke toekomstige partij "niet ingevuld" — ook een die helemaal af was.
+  // Nu leest hij de regels en de invulling waar ze staan: in de kern.
   const invCompleetVan = (b) => {
-    const hand = leesLaag(koppeling, boekingSleutel, b, "") || [];
-    const keuzes = keuzesOpDag(b, hand.length ? hand : (neckerKeuzes(b, boekingSleutel) || autoKeuzesUitBoeking(b))).filter((k) => isKeukenRegel(k, catVanAlle));
-    if (!keuzes.length) return false;
-    const laag = leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
-    return keuzes.every((k) => {
-      const eigen = laag.find((x) => String(x.miceId) === String(k.miceId));
-      const bron = eigen || prodKoppeling[k.miceId];
-      return !!(bron && (bron.onderdelen || []).some((o) => String((o && o.naam) || "").trim()));
+    const velden = boekingVelden(kernLagen(koppelingNu.current, b.id, b.datum));
+    const regels = kernRegels(velden).filter((r) => isKeukenRegel(r, catVanAlle) && !isNonfoodRegel(r, catVanAlle));
+    if (!regels.length) return false;
+    return regels.every((r) => {
+      const od = kernInvulling(velden, r.merk);
+      if (od.some((o) => String((o && o.naam) || "").trim())) return true;
+      // De oude globale invulling per product telt nog mee zolang die er is.
+      const oud = r.miceId == null ? null : prodKoppeling[r.miceId];
+      return !!(oud && (oud.onderdelen || []).some((o) => String((o && o.naam) || "").trim()));
     });
   };
   const invKlaarVan = (b) => {
@@ -4081,11 +4087,26 @@ function App() {
     // partij een lege lijst vast en leek het herhalen niet opgeslagen.
     const bron = alleKeuzesVan(koppeling, boekingSleutel, b) || [];
     const keuzes = bron.map((k) => ({ miceId: k.miceId != null ? k.miceId : null, naam: k.naam || "", aantal: k.aantal != null ? k.aantal : null, ...(k.kern ? { kern: k.kern } : {}), ...(k.tijd ? { tijd: k.tijd } : {}) }));
-    const laag = leesLaag(koppeling, boekingSleutel, b, "inv|") || [];
-    const inv = laag.filter((x) => (x.onderdelen || []).some((o) => String((o && o.naam) || "").trim())).map((x) => {
-      const k = keuzes.find((y) => String(y.miceId) === String(idUitSleutel(x.miceId)));
-      return { miceId: x.miceId, cat: catVanAlle[idUitSleutel(x.miceId)] || "", naam: x.naam || "", aantal: (k && k.aantal) || b.gasten || 0, onderdelen: x.onderdelen };
-    });
+    // De invulling komt uit de kern. Hij werd hier nog uit de oude inv|-laag
+    // gehaald, en daar schrijft sinds de herbouw niemand meer in: het sjabloon
+    // werd dus opgeslagen zonder invulling, en dan valt er later niets te
+    // herhalen.
+    // De productregels komen hier uit de kern en niet uit de lijst hierboven.
+    // Dat scheelt twee valkuilen. De lijst hierboven kan een vaste weeklijst
+    // zijn (die van Necker) waarvan de regels geen productnummer hebben,
+    // terwijl de invulling juist onder het MICE-product staat. En de
+    // invulling staat in de kern onder "m:<sleutel>", waar het sjabloon de
+    // kale sleutel bewaart — dat is waar invVoor later op zoekt. Precies de
+    // regels van de kaart, dus, want die leest de kaart ook.
+    const velden = boekingVelden(kernLagen(koppelingNu.current, b.id, b.datum));
+    const inv = [];
+    for (const r of kernRegels(velden)) {
+      if (!r.merk || r.merk.slice(0, 2) !== "m:") continue;
+      const merk = r.merk.slice(2); // de kale invulsleutel
+      const od = kernInvulling(velden, r.merk);
+      if (!od.some((o) => String((o && o.naam) || "").trim())) continue;
+      inv.push({ miceId: merk, cat: catVanAlle[idUitSleutel(merk)] || "", naam: r.naam || "", aantal: r.aantal || b.gasten || 0, onderdelen: od });
+    }
     return { sjabloon: true, dag: dag == null ? null : dag, t: new Date().toISOString(), keuzes, inv };
   };
   const zetHerhaal = async (b, keuze) => {
@@ -13041,12 +13062,12 @@ const herhaalKeuzes = (koppeling, b) => {
 };
 // De invulling uit het sjabloon: eerst hetzelfde product, anders hetzelfde
 // soort product, en de hoeveelheden omgerekend naar dit aantal.
-const herhaalInvulling = (koppeling, b, miceId, aantal, catVan) => {
+const herhaalInvulling = (koppeling, b, miceId, aantal) => {
   const sj = herhaalSjabloon(koppeling, b);
   if (!sj || !(sj.inv || []).length) return null;
-  const cat = String((catVan && catVan[idUitSleutel(miceId)]) || "").toLowerCase().trim();
-  const e = sj.inv.find((x) => String(x.miceId) === String(miceId))
-    || (cat ? sj.inv.find((x) => String(x.cat || "").toLowerCase().trim() === cat) : null);
+  // Alleen precies hetzelfde product. De oude gok op "iets anders uit dezelfde
+  // categorie" zette ooit een hele lunch onder een salade; die is eruit.
+  const e = sj.inv.find((x) => String(x.miceId) === String(miceId));
   if (!e || !(e.onderdelen || []).length) return null;
   const van = Number(e.aantal) || 0;
   const naar = Number(aantal) || 0;
@@ -17765,9 +17786,12 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const invVoor = (b, miceId) => {
     const v = veldenVan(b);
     const sl = kernInvVeld(prodMerk({ miceId }));
-    // Geen stille terugval op een sjabloon: wat hier staat is wat er in de
-    // boeking of op de mep is gezet.
-    return kernHeeft(v, sl) ? { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" } : null;
+    // Staat het veld er, dan telt dat — ook leeggemaakt. Staat het er niet en
+    // heeft deze klant een sjabloon van "herhalen", dan komt die invulling
+    // eruit: dat is iets wat met de hand is aangezet, geen gok van de app.
+    if (kernHeeft(v, sl)) return { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" };
+    const k = gekozen(b).find((x) => invulSleutel(b, x) === String(miceId));
+    return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || gastenVan(b));
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   // Nonfood telt niet mee in de mep-berekening en dus ook niet in "samen
@@ -18377,11 +18401,13 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     const sl = kernInvVeld(prodMerk({ miceId }));
     // Staat het veld er, dan telt dat — ook als het leeggemaakt is. Zo blijft
     // een bewust lege invulling leeg.
-    // Staat het veld er niet, dan is er niets ingevuld. Vroeger pakte hij hier
-    // stilletjes het sjabloon van deze klant erbij, waardoor er invulling
-    // verscheen die je nooit had gezet. Wil je die overnemen, dan is daar het
-    // knopje voor in de bewerkstand.
-    return kernHeeft(v, sl) ? { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" } : null;
+    // Staat het er niet, dan kijkt hij naar het sjabloon van "herhalen". Dat is
+    // iets wat je zelf hebt aangezet voor déze klant, op déze weekdag, en
+    // alleen voor precies hetzelfde product — geen gok van de app, zoals de
+    // oude terugval op "iets uit dezelfde categorie" dat wel was.
+    if (kernHeeft(v, sl)) return { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" };
+    const k = gekozen(b).find((x) => invulSleutel(b, x) === String(miceId));
+    return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || gastenVan(b));
   };
   const prodKoppVoor = (b) => { const l = invLaag(b); if (!l.length) return {}; const m = {}; for (const e of l) m[e.miceId] = { onderdelen: e.onderdelen || [], naam: e.naam || "" }; return m; };
   const mepVan = (b) => mepTellen(gekozen(b).filter((k) => isKeukenRegel(k, catVan) && !isNonfoodRegel(k, catVan)).flatMap((k) => mepVoorKeuze(k, b, prodKoppVoor(b), producten, calcItems, dishById, recipeById)));
