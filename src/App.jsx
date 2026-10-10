@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-09b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-10a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3169,6 +3169,29 @@ function App() {
   };
   // Mag een binnenhaalronde die om "gestart" begon deze instelling zetten?
   const instelVers = (sleutel, gestart) => !instelBezig.current[sleutel] && gestart > (instelSchrijf.current[sleutel] || 0);
+  // De bestellijst naar de winkelwagen van BD-Totaal, via de proxy op Vercel.
+  // De proxy logt daar in met de gegevens die op de server staan; het
+  // wachtwoord komt dus nooit in de browser. En hij verzendt niets: de
+  // bestelling blijft in de wagen staan tot jij hem op hun site afdrukt.
+  const naarBdWagen = async (regels) => {
+    if (!live || !supabase) return { ok: false, fout: "Geen verbinding met de server" };
+    let token = "";
+    try { const { data } = await supabase.auth.getSession(); token = (data && data.session && data.session.access_token) || ""; } catch (e) {}
+    if (!token) return { ok: false, fout: "Je bent niet ingelogd" };
+    let r;
+    try {
+      r = await fetch("/api/bd", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + token },
+        body: JSON.stringify({ regels }),
+      });
+    } catch (e) { return { ok: false, fout: "De server is niet bereikbaar" }; }
+    let uit = null;
+    try { uit = await r.json(); } catch (e) {}
+    if (!uit) return { ok: false, fout: "Onverwacht antwoord van de server (" + r.status + ")" };
+    if (uit.ok) flash(uit.gezet + " regels in de winkelwagen bij BD-Totaal");
+    return uit;
+  };
   const bewaarBestelLijst = async (obj) => {
     bestelLijstRef.current = obj;
     setBestelLijst(obj);
@@ -4540,9 +4563,10 @@ function App() {
     if (kopIdx < 0) { alert("Geen kolomkoppen gevonden. Het bestand heeft minimaal een kolom Omschrijving/Naam en een kolom Prijs of PPE nodig."); return; }
     const iCode = vind(kop, syn.code), iOms = vind(kop, syn.oms), iInh = vind(kop, syn.inhoud), iPrijs = vind(kop, syn.prijs), iPpe = vind(kop, syn.ppe);
     const iCat = vind(kop, syn.cat), iLev = vind(kop, syn.lev);
-    // Herkennen om welke leverancier het gaat: "BD Totaal" en "BD-Totaal" zijn
-    // dezelfde. Dan blijft het één lijst in plaats van twee.
-    const levSleutel = (x) => zonderAccent(x).toLowerCase().replace(/[^a-z0-9]+/g, "");
+    // Herkennen om welke leverancier het gaat gaat via levSleutel hierboven:
+    // "BD Totaal" en "BD-Totaal" zijn dezelfde. Dan blijft het één lijst in
+    // plaats van twee. Hier stond een eigen kopie van die regel; nu is er één,
+    // zodat de import en het bestellen het altijd eens zijn over de naam.
     const getypt = String(leverancierNaam || "").trim() || "Onbekende leverancier";
     const bekend = [...new Set(bdArtikelen.map((a) => a.leverancier).filter(Boolean))];
     const bestondLev = bekend.find((n) => levSleutel(n) === levSleutel(getypt)) || null;
@@ -6538,7 +6562,7 @@ function App() {
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} onNotitieOpen={setNotitieOpen} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} mepMark={mepMark} onMepMark={bewaarMepMark}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} onNotitieOpen={setNotitieOpen} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} onNaarBd={canEdit ? naarBdWagen : null} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -8301,6 +8325,39 @@ const normItem = (x) => (typeof x === "string"
 const DOELEN = ["Catering", "Landgoed", "Metaal Kathedraal"];
 // Leveranciers die er altijd zijn, ook als er nog niets van ingelezen is.
 const VASTE_LEVERANCIERS = ["Eigen bodem"];
+// De naam van een leverancier tot iets vergelijkbaars: "BD Totaal",
+// "BD-Totaal" en "bd totaal" zijn dezelfde lijst.
+const levSleutel = (x) => zonderAccent(String(x || "")).toLowerCase().replace(/[^a-z0-9]+/g, "");
+const isBdLev = (naam) => { const k = levSleutel(naam); return k === "bdtotaal" || k === "bd"; };
+// De artikelcode zoals BD hem kent. De app zet er de leverancier voor, anders
+// botst artikel 10102 van de ene lijst met dat van de andere; achter de "::"
+// staat het nummer dat op hun site hoort.
+const rauweArtikelCode = (code) => String(code == null ? "" : code).split("::").pop();
+// Wat er van de bestellijst naar de winkelwagen van BD kan, en wat niet. De
+// reden staat erbij, want een regel die stilletjes wegvalt is erger dan een
+// regel die je zelf moet intypen.
+const bdBestelRegels = (artikelen, aantallen) => {
+  const opSleutel = new Map();
+  for (const a of artikelen || []) opSleutel.set("a:" + a.code, a);
+  const mee = [], anders = [];
+  for (const sleutel of Object.keys(aantallen || {})) {
+    const tekst = String(aantallen[sleutel] == null ? "" : aantallen[sleutel]).trim();
+    if (!tekst) continue;
+    const art = opSleutel.get(sleutel);
+    const naam = (art && (art.omschrijving || art.code)) || String(sleutel).replace(/^[ae]:/, "");
+    if (!art) { anders.push({ naam, aantal: tekst, reden: "zelf toegevoegd" }); continue; }
+    if (!isBdLev(art.leverancier)) { anders.push({ naam, aantal: tekst, reden: art.leverancier || "andere leverancier" }); continue; }
+    const code = rauweArtikelCode(art.code);
+    if (!/^[0-9]{1,12}$/.test(code)) { anders.push({ naam, aantal: tekst, reden: "geen artikelnummer" }); continue; }
+    // Alleen een rond getal kan de wagen in. "2 kratten" of "een beetje" niet;
+    // daar maakt de app liever geen 2 van dan dat er iets geks wordt besteld.
+    if (!/^[0-9]{1,3}$/.test(tekst)) { anders.push({ naam, aantal: tekst, reden: "aantal niet als getal" }); continue; }
+    mee.push({ code, aantal: Number(tekst), naam });
+  }
+  mee.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
+  anders.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
+  return { mee, anders };
+};
 // Productcategorieen binnen zo'n bestemming; zelf typen kan ook.
 const PRODUCT_CATS = ["Lunch", "Borrel", "Diner", "Buffet", "Extra losse items"];
 
@@ -8695,7 +8752,7 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
 // pagina. Per product een invulvakje voor het aantal; ingevulde regels komen
 // bovenaan onder "Te bestellen". Sortering binnen een lijst: vaakst besteld
 // eerst. Alles (aantallen, telling en de notitie) synchroniseert via Supabase.
-function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
+function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd }) {
   const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [], verborgen: [] };
   const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])], verborgen: [...(d.verborgen || [])] } : { ...leeg });
   const [st, setSt] = useState(() => naarObj(data));
@@ -8813,6 +8870,38 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
     getypt();
   };
 
+  // Naar de winkelwagen van BD-Totaal. Alleen de wagen: verzenden doe je zelf
+  // op hun site, met de bestelling voor je. Zo zie je altijd eerst wat er
+  // staat voordat het weggaat.
+  const [bdBezig, setBdBezig] = useState(false);
+  const bdLijst = React.useMemo(() => bdBestelRegels(bdArtikelen, st.aantallen), [bdArtikelen, st.aantallen]);
+  const naarBd = async () => {
+    if (!onNaarBd || bdBezig) return;
+    const { mee, anders } = bdLijst;
+    if (!mee.length) { alert("Er staat niets op de lijst dat naar BD-Totaal kan."); return; }
+    const regels = mee.slice(0, 12).map((r) => "  " + r.aantal + "\u00d7 " + r.naam).join("\n")
+      + (mee.length > 12 ? "\n  \u2026 en nog " + (mee.length - 12) : "");
+    const rest = anders.length
+      ? "\n\nGaat NIET mee (" + anders.length + "):\n" + anders.slice(0, 8).map((r) => "  " + r.naam + " \u2014 " + r.reden).join("\n")
+        + (anders.length > 8 ? "\n  \u2026 en nog " + (anders.length - 8) : "")
+      : "";
+    if (!window.confirm("Deze " + mee.length + " regels in de winkelwagen van BD-Totaal zetten?\n\n" + regels + rest
+      + "\n\nDe bestelling wordt NIET verzonden \u2014 dat doe je zelf op bd-totaal.nl.")) return;
+    setBdBezig(true);
+    try {
+      const uit = await onNaarBd(mee);
+      if (!uit || !uit.ok) {
+        alert("Het is niet gelukt: " + ((uit && uit.fout) || "onbekende fout")
+          + (uit && uit.mislukt ? "\n\n" + uit.gezet + " van de " + (uit.gezet + uit.mislukt) + " regels staan er wel in." : ""));
+      } else {
+        alert(uit.gezet + " regels staan in je winkelwagen bij BD-Totaal.\n\nControleer ze daar en verzend de bestelling zelf.");
+      }
+    } catch (e) {
+      alert("Het is niet gelukt: " + String((e && e.message) || e));
+    }
+    setBdBezig(false);
+  };
+
   const q = zoek.trim().toLowerCase();
   const past = (r) => !q || r.naam.toLowerCase().includes(q) || (r.sub || "").toLowerCase().includes(q);
   const sorteer = (items) => [...items].sort((a, b) => ((st.telling[b.sleutel] || 0) - (st.telling[a.sleutel] || 0)) || a.naam.localeCompare(b.naam, "nl"));
@@ -8845,6 +8934,12 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose }) {
       <div className="flex items-center justify-between gap-2">
         <h1 className="serif ink text-xl leading-tight">Bestellijst</h1>
         <div className="flex items-center gap-1.5">
+          {onNaarBd && bdLijst.mee.length > 0 && (
+            <button onClick={naarBd} disabled={bdBezig} className="btnp ff shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-medium"
+              title="Zet deze aantallen in je winkelwagen bij BD-Totaal. Verzenden doe je daar zelf.">
+              {bdBezig ? "Bezig\u2026" : "Naar BD-wagen \u00b7 " + bdLijst.mee.length}
+            </button>
+          )}
           {gevuld.length > 0 && <button onClick={leegmaken} className="btno ff shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-medium">Leegmaken</button>}
           <button onClick={sluit} className="ff mute hover:opacity-70 ml-1" title="Sluiten (wordt bewaard)"><X size={18} /></button>
         </div>
@@ -17555,7 +17650,7 @@ const dagOnderBalk = (koppen, balkOnder) => {
   for (const k of koppen || []) { if (Number(k.top) < Number(balkOnder)) uit = k.dag; else break; }
   return uit;
 };
-function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, mepMark, onMepMark }) {
+function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   // De app schrijft het schoonmaakblok niet bij terwijl dit venster openstaat.
@@ -18178,7 +18273,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           </div>
         </>
       )}
-      {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onClose={() => setBestelOpen(false)} />}
+      {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onNaarBd={onNaarBd} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
         recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName} onSchoonmaakAf={onSchoonmaakAf}
         onOpenPartij={(id) => {
