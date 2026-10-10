@@ -5,7 +5,7 @@ import {
   ChefHat, Utensils, Layers, Plus, Search, ChevronRight, ArrowLeft, Pencil, X, Check,
   Settings, Download, Share, Smartphone, Info,
   Clock, LogOut, Trash2, Lock, Languages, Loader2, ThumbsUp, Star, GitBranch, Sprout,
-  FlaskConical, Blend, Eye, Calendar, Thermometer, Percent,
+  FlaskConical, Blend, Eye, EyeOff, Calendar, Thermometer, Percent,
   Heart, BookOpen, Bell, LineChart, ChevronDown, ChevronUp, Home, Sparkles, Printer, AlertTriangle, Minus, Tag, RotateCcw, Receipt, ClipboardList, Truck, Link, History, Package, StickyNote, Bold, Underline, Italic, List, ListOrdered, Heading, CheckSquare, Copy, ClipboardPaste, Users
 } from "lucide-react";
 import { supabase } from "./supabase";
@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-10j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-10k"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -2867,7 +2867,14 @@ const miceProductRij = (p) => ({
   id: p.id,
   naam: p.name || "",
   omschrijving: String(p.description || "").replace(/<[^>]*>/g, " ").trim(),
-  prijs: Number(p.price) || 0,
+  // MICE geeft drie prijzen naast elkaar: "price" is inclusief btw,
+  // "price_excl_vat" is wat je in MICE zelf op het scherm ziet staan. We namen
+  // jarenlang de eerste, en dan stond op de partijkaart 20,17 waar MICE 18,50
+  // toonde. Het moet de tweede zijn: de kostprijzen uit de inkoopartikelen
+  // staan ook zonder btw, dus alleen zo klopt de marge ook. Het tarief
+  // verschilt per product (eten 9%, drank en materiaal 21%), dus terugrekenen
+  // met een vaste factor kan niet — het veld zelf is de enige goede bron.
+  prijs: Number(p.price_excl_vat != null ? p.price_excl_vat : p.price) || 0,
   groep_id: p.group_id || null,
   categorie: p.category && p.category.name ? String(p.category.name).trim() : "",
   opgehaald_op: new Date().toISOString(),
@@ -3080,8 +3087,112 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+// ── Meldingen in app-stijl ────────────────────────────────────────────────
+// De vensters van de browser ("ritme-eta.vercel.app vertelt") zien eruit als
+// een storing van het apparaat, zijn op de telefoon onleesbaar breed en tonen
+// een wachtwoord gewoon leesbaar. Hieronder hetzelfde gereedschap, maar dan in
+// de huisstijl. De vensters staan in een rij: vraagt er iets om antwoord
+// terwijl er al iets openstaat, dan komt het erachter in plaats van erbovenop.
+let MELD_ZET = null; // gezet door MeldingHuis zodra die in beeld staat
+let MELD_NR = 0;
+const MELD_RIJ = [];
+const meldTeken = () => { if (MELD_ZET) MELD_ZET(MELD_RIJ.slice()); };
+const meldErbij = (v) => { MELD_RIJ.push(v); meldTeken(); return v; };
+const meldWeg = (v, uit) => {
+  const i = MELD_RIJ.indexOf(v);
+  if (i < 0) return; // al afgehandeld
+  MELD_RIJ.splice(i, 1);
+  meldTeken();
+  v.klaar(uit);
+};
+// Staat er geen venster klaar — in een test, of voordat de app in beeld is —
+// dan valt alles terug op de browser. Dan is er tenminste nog iets te zien.
+const meldKan = () => !!MELD_ZET && typeof document !== "undefined";
+// De terugval zoekt het venster van de browser waar het ook staat; in een test
+// draait de app zonder browser en dan is er eenvoudig niets.
+const meldTerugval = (naam, a, b) => {
+  try {
+    const g = typeof window !== "undefined" && window ? window : (typeof globalThis !== "undefined" ? globalThis : null);
+    if (g && typeof g[naam] === "function") return g[naam](a, b);
+  } catch (e) {}
+  return naam === "confirm" ? false : naam === "prompt" ? null : undefined;
+};
+// Valt het terug op de browser, dan gaat de kop mee de tekst in — anders zou
+// juist het belangrijkste woord wegvallen.
+const meldPlat = (tekst, o) => ((o && o.titel) ? o.titel + (tekst ? "\n\n" + tekst : "") : tekst);
+const melding = (tekst, opties) => {
+  if (!meldKan()) { meldTerugval("alert", meldPlat(tekst, opties)); return Promise.resolve(); }
+  return new Promise((klaar) => meldErbij({ ...(opties || {}), soort: "melding", tekst: String(tekst == null ? "" : tekst), klaar, id: ++MELD_NR }));
+};
+const bevestig = (tekst, opties) => {
+  if (!meldKan()) return Promise.resolve(!!meldTerugval("confirm", meldPlat(tekst, opties)));
+  return new Promise((klaar) => meldErbij({ ...(opties || {}), soort: "bevestig", tekst: String(tekst == null ? "" : tekst), klaar, id: ++MELD_NR }));
+};
+const vraagInvoer = (tekst, opties) => {
+  const o = opties || {};
+  if (!meldKan()) return Promise.resolve(meldTerugval("prompt", meldPlat(tekst, o), o.waarde || ""));
+  return new Promise((klaar) => meldErbij({ ...o, soort: "invoer", tekst: String(tekst == null ? "" : tekst), klaar, id: ++MELD_NR }));
+};
+
+// Eén venster. De tekst komt uit meldingen die met regeleinden geschreven zijn,
+// dus die blijven staan zoals ze bedoeld waren.
+function MeldVenster({ v, onKlaar }) {
+  const invoer = v.soort === "invoer";
+  const [tekst, setTekst] = useState(v.waarde == null ? "" : String(v.waarde));
+  const [open, setOpen] = useState(false); // het oog bij een wachtwoord
+  const ref = React.useRef(null);
+  useEffect(() => { const t = setTimeout(() => { if (ref.current) ref.current.focus(); }, 80); return () => clearTimeout(t); }, []);
+  const ja = () => onKlaar(invoer ? tekst : true);
+  const nee = () => onKlaar(invoer ? null : false);
+  const sluitbaar = v.soort !== "melding" || !v.moetLezen;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }}
+      onClick={() => { if (sluitbaar) nee(); }}>
+      <div className="w-full max-w-md rounded-2xl p-5 shadow-xl" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); nee(); } }}>
+        {v.titel && <div className="serif ink text-xl leading-tight mb-2">{v.titel}</div>}
+        {v.tekst && <div className="ink text-[14px] leading-relaxed" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "52vh", overflowY: "auto" }}>{v.tekst}</div>}
+        {invoer && (
+          <div className="mt-3 relative">
+            <input ref={ref} type={v.wachtwoord && !open ? "password" : "text"} name={v.wachtwoord ? "chefcode" : "invoer"}
+              autoComplete={v.wachtwoord ? "new-password" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              className={"input px-3 py-2.5 w-full text-[15px] " + (v.wachtwoord ? "pr-11" : "")} value={tekst} placeholder={v.placeholder || ""}
+              onChange={(e) => setTekst(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); ja(); } }} />
+            {v.wachtwoord && (
+              <button type="button" onClick={() => setOpen((x) => !x)} tabIndex={-1}
+                title={open ? "Verbergen" : "Laten zien"} aria-label={open ? "Verbergen" : "Laten zien"}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-2 mute hover:opacity-70">
+                {open ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            )}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 mt-4">
+          {v.soort !== "melding" && (
+            <button onClick={nee} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>{v.afLabel || "Annuleren"}</button>
+          )}
+          <button ref={invoer ? null : ref} onClick={ja} className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold">
+            <Check size={15} /> {v.okLabel || (v.soort === "melding" ? "Oké" : "Ja")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Het huis waar de vensters in staan. Eén per app, buiten het vangnet, zodat
+// een melding ook te zien is als de app zelf is vastgelopen.
+function MeldingHuis() {
+  const [rij, setRij] = useState([]);
+  useEffect(() => { MELD_ZET = setRij; setRij(MELD_RIJ.slice()); return () => { MELD_ZET = null; }; }, []);
+  const v = rij[0];
+  if (!v) return null;
+  return <MeldVenster key={v.id} v={v} onKlaar={(uit) => meldWeg(v, uit)} />;
+}
+
 export default function AppRoot() {
-  return <AppErrorBoundary><App /></AppErrorBoundary>;
+  return (<><AppErrorBoundary><App /></AppErrorBoundary><MeldingHuis /></>);
 }
 
 if (typeof console !== "undefined") console.log("Ritme " + RITME_VERSIE);
@@ -3331,7 +3442,7 @@ function App() {
     if (live) {
       const { error } = await supabase.from("mice_producten").upsert(rijen);
       if (error && netwerkFout(error)) { flash("Even geen verbinding — probeer het zo nog eens"); return; }
-      if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_producten.sql in Supabase."); return; }
+      if (error) { melding("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_producten.sql in Supabase."); return; }
     }
     setMiceProducten(rijen.sort((a, b) => a.naam.localeCompare(b.naam, "nl")));
     flash(rijen.length + " MICE-producten opgehaald");
@@ -3468,14 +3579,14 @@ function App() {
   // categorie mee, de export wel: kolom "Identificatienummer product" is onze
   // groep_id, kolom "Categorie" de naam. Eén keer per seizoen bijwerken volstaat.
   const importMiceCategorieen = async (file) => {
-    if (!miceProducten.length) { alert("Haal eerst de productenlijst op (knop Productenlijst verversen), daarna kun je de categorieën uit de export erbij zetten."); return; }
+    if (!miceProducten.length) { melding("Haal eerst de productenlijst op (knop Productenlijst verversen), daarna kun je de categorieën uit de export erbij zetten."); return; }
     let rows;
     try { rows = await leesTabel(file); }
-    catch (e) { alert("Dit bestand kon niet gelezen worden — " + (e && e.message ? e.message : "onbekende reden") + ".\n\nGebruik de productexport uit MICE (.xlsx)."); return; }
+    catch (e) { melding("Dit bestand kon niet gelezen worden — " + (e && e.message ? e.message : "onbekende reden") + ".\n\nGebruik de productexport uit MICE (.xlsx)."); return; }
     const kop = (rows[0] || []).map((c) => String(c).toLowerCase().trim());
     const kId = kop.findIndex((c) => c.startsWith("identificatienummer product"));
     const kCat = kop.findIndex((c) => c === "categorie");
-    if (kId < 0 || kCat < 0) { alert("Dit lijkt geen MICE-productexport: kolommen \"Identificatienummer product\" en \"Categorie\" niet gevonden."); return; }
+    if (kId < 0 || kCat < 0) { melding("Dit lijkt geen MICE-productexport: kolommen \"Identificatienummer product\" en \"Categorie\" niet gevonden."); return; }
     const catVan = {};
     for (const r of rows.slice(1)) {
       const id = String(r[kId] || "").trim(); const cat = String(r[kCat] || "").trim();
@@ -3483,11 +3594,11 @@ function App() {
     }
     const bijgewerkt = miceProducten.map((p) => catVan[String(p.groep_id)] ? { ...p, categorie: catVan[String(p.groep_id)] } : p);
     const geraakt = bijgewerkt.filter((p, i) => p !== miceProducten[i]).length;
-    if (!geraakt) { alert("Geen overeenkomsten gevonden tussen de export en de opgehaalde productenlijst."); return; }
+    if (!geraakt) { melding("Geen overeenkomsten gevonden tussen de export en de opgehaalde productenlijst."); return; }
     if (live) {
       const { error } = await supabase.from("mice_producten").upsert(bijgewerkt.filter((p) => p.categorie).map((p) => ({ id: p.id, naam: p.naam, omschrijving: p.omschrijving || "", prijs: p.prijs || 0, groep_id: p.groep_id, categorie: p.categorie, opgehaald_op: p.opgehaald_op || new Date().toISOString() })));
       if (error && netwerkFout(error)) { flash("Even geen verbinding — probeer het zo nog eens"); return; }
-      if (error) { alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst het regeltje uit mice_categorie.sql in Supabase."); return; }
+      if (error) { melding("Opslaan mislukt: " + error.message + "\n\nDraai eerst het regeltje uit mice_categorie.sql in Supabase."); return; }
     }
     setMiceProducten(bijgewerkt);
     flash(geraakt + " producten van een categorie voorzien");
@@ -3682,7 +3793,7 @@ function App() {
             continue;
           }
           if (netwerkFout(error)) { flash("Even geen verbinding — de boekingen worden zo vanzelf opnieuw opgehaald"); return 0; }
-          alert("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase.");
+          melding("Opslaan mislukt: " + error.message + "\n\nDraai eerst mice_tabellen.sql in Supabase.");
           return 0;
         }
       }
@@ -3910,7 +4021,7 @@ function App() {
     const uit = omzetting(koppeling, boekingen, boekingSleutel, prodKoppeling);
     const sleutels = Object.keys(uit.lagen);
     if (!sleutels.length) { flash("Er is niets om om te zetten"); return null; }
-    if (!window.confirm("De omzetting nu echt wegschrijven?\n\n" + sleutels.length + " rijen erbij in mice_koppeling. Je bestaande gegevens blijven staan en de app blijft zich hetzelfde gedragen — die nieuwe rijen worden nog door niemand gelezen.\n\nMaak eerst een backup als je dat nog niet hebt gedaan.")) return null;
+    if (!await bevestig("De omzetting nu echt wegschrijven?\n\n" + sleutels.length + " rijen erbij in mice_koppeling. Je bestaande gegevens blijven staan en de app blijft zich hetzelfde gedragen — die nieuwe rijen worden nog door niemand gelezen.\n\nMaak eerst een backup als je dat nog niet hebt gedaan.")) return null;
     setOmzetBezig(true);
     const nu = new Date().toISOString();
     let gelukt = 0;
@@ -3939,7 +4050,7 @@ function App() {
     return { tekst, waarschuwingen: uit.verslag.waarschuwingen, voorbeeld: "" };
   };
   const resetBoekingen = async () => {
-    if (!window.confirm("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling, de vlag \"invulling afgerond\" en het menustempel naar MICE blijven staan.")) return;
+    if (!await bevestig("Alle handmatige aanpassingen aan boekingen en mep-kaarten wissen en alles opnieuw uit MICE laden?\n\nDe invulling, de vlag \"invulling afgerond\" en het menustempel naar MICE blijven staan.")) return;
     setBoekingenLaden(true);
     if (live) {
       try {
@@ -3957,7 +4068,7 @@ function App() {
       const n = await haalBoekingen(localDate(van), "9999-12-31");
       flash((n || 0) + " boekingen opnieuw geladen uit MICE");
     } catch (e) {
-      alert("Opnieuw laden mislukt: " + (e && e.message ? e.message : e) + "\n\nProbeer het nog eens via deze knop.");
+      melding("Opnieuw laden mislukt: " + (e && e.message ? e.message : e) + "\n\nProbeer het nog eens via deze knop.");
     } finally {
       setBoekingenLaden(false);
     }
@@ -4483,10 +4594,10 @@ function App() {
       if (t2.error) problemen.push("kolommen portions/voorbeeld ontbreken bij dishes — draai gerechten_porties.sql");
       const t3 = await supabase.from("recipes_custom").select("id").limit(1);
       if (t3.error) problemen.push("tabel recipes_custom is niet bereikbaar");
-      if (problemen.length) { alert("Inlezen kan nog niet:\n\n· " + problemen.join("\n· ")); return; }
-    } else if (!window.confirm("Je bent niet ingelogd op de database. Het voorbeeld komt dan alleen op dit apparaat en verdwijnt bij verversen. Toch doorgaan?")) return;
+      if (problemen.length) { melding("Inlezen kan nog niet:\n\n· " + problemen.join("\n· ")); return; }
+    } else if (!await bevestig("Je bent niet ingelogd op de database. Het voorbeeld komt dan alleen op dit apparaat en verdwijnt bij verversen. Toch doorgaan?")) return;
     try { await importBundelDoen(bundel); }
-    catch (e) { alert("Inlezen gestopt: " + (e && e.message ? e.message : String(e))); }
+    catch (e) { melding("Inlezen gestopt: " + (e && e.message ? e.message : String(e))); }
   };
   const importBundelDoen = async (bundel) => {
     const recIds = {}, gerIds = {}, itemIds = {};
@@ -4551,17 +4662,17 @@ function App() {
       });
       if (veranderd) await saveAssortimentItem({ ...p, items: nieuwe });
     }
-    const melding = (bundel.recepten || []).length + " recepten, " + (bundel.gerechten || []).length + " gerechten, " + (bundel.items || []).length + " items · " + gekoppeld + " productregels gekoppeld";
-    if (fouten.length) alert(melding + "\n\nNiet alles kwam in de database:\n" + fouten.slice(0, 5).join("\n") + (fouten.length > 5 ? "\n+" + (fouten.length - 5) + " meer" : ""));
-    else alert("Klaar: " + melding + ".\n\nDe items staan onder Calculaties, de gerechten onder Gerechten.");
+    const samenvatting = (bundel.recepten || []).length + " recepten, " + (bundel.gerechten || []).length + " gerechten, " + (bundel.items || []).length + " items · " + gekoppeld + " productregels gekoppeld";
+    if (fouten.length) melding(samenvatting + "\n\nNiet alles kwam in de database:\n" + fouten.slice(0, 5).join("\n") + (fouten.length > 5 ? "\n+" + (fouten.length - 5) + " meer" : ""));
+    else melding("Klaar: " + samenvatting + ".\n\nDe items staan onder Calculaties, de gerechten onder Gerechten.");
   };
   // Meerdere producten in een keer inlezen (.json) — bestaande namen worden bijgewerkt.
   const importAssortiment = async (file) => {
     let lijst;
-    try { lijst = JSON.parse(await file.text()); } catch (e) { alert("Dit bestand is geen geldige JSON."); return; }
+    try { lijst = JSON.parse(await file.text()); } catch (e) { melding("Dit bestand is geen geldige JSON."); return; }
     if (lijst && !Array.isArray(lijst) && (lijst.recepten || lijst.gerechten || lijst.items)) { await importBundel(lijst); return; }
     if (!Array.isArray(lijst)) lijst = lijst && Array.isArray(lijst.producten) ? lijst.producten : null;
-    if (!lijst || !lijst.length) { alert("Geen producten gevonden in dit bestand."); return; }
+    if (!lijst || !lijst.length) { melding("Geen producten gevonden in dit bestand."); return; }
     let nieuw = 0, bij = 0;
     for (const p of lijst) {
       const naam = String((p && p.name) || "").trim();
@@ -4599,7 +4710,7 @@ function App() {
     let rows;
     // leesTabel neemt .xlsx én .csv/.txt/.tsv; het scheidingsteken wordt herkend.
     try { rows = await leesTabel(file); }
-    catch (e) { alert("Dit bestand kon niet gelezen worden — " + (e && e.message ? e.message : "onbekende reden") + ".\n\nOndersteund: .xlsx, .csv, .txt (tab- of puntkomma-gescheiden)."); return; }
+    catch (e) { melding("Dit bestand kon niet gelezen worden — " + (e && e.message ? e.message : "onbekende reden") + ".\n\nOndersteund: .xlsx, .csv, .txt (tab- of puntkomma-gescheiden)."); return; }
     // Kopregel zoeken met soepele kolomnamen, zodat exports van andere
     // leveranciers ook werken zolang er een omschrijving- en prijskolom is.
     const syn = {
@@ -4617,7 +4728,7 @@ function App() {
       const k = rows[i].map((c) => String(c).trim().toLowerCase());
       if (vind(k, syn.oms) >= 0 && (vind(k, syn.prijs) >= 0 || vind(k, syn.ppe) >= 0)) { kopIdx = i; kop = k; break; }
     }
-    if (kopIdx < 0) { alert("Geen kolomkoppen gevonden. Het bestand heeft minimaal een kolom Omschrijving/Naam en een kolom Prijs of PPE nodig."); return; }
+    if (kopIdx < 0) { melding("Geen kolomkoppen gevonden. Het bestand heeft minimaal een kolom Omschrijving/Naam en een kolom Prijs of PPE nodig."); return; }
     const iCode = vind(kop, syn.code), iOms = vind(kop, syn.oms), iInh = vind(kop, syn.inhoud), iPrijs = vind(kop, syn.prijs), iPpe = vind(kop, syn.ppe);
     const iCat = vind(kop, syn.cat), iLev = vind(kop, syn.lev);
     // Herkennen om welke leverancier het gaat gaat via levSleutel hierboven:
@@ -4662,7 +4773,7 @@ function App() {
         categorie: (iCat >= 0 ? String(r[iCat] || "").trim() : "") || "Overig" };
     }
     const arts = Object.values(perCode);
-    if (!arts.length) { alert("Geen artikelen gevonden in dit bestand."); return; }
+    if (!arts.length) { melding("Geen artikelen gevonden in dit bestand."); return; }
     // Samenvoegen met wat er al is (nieuwe import overschrijft per artikelcode)
     setBdArtikelen((xs) => {
       const map = {};
@@ -4715,7 +4826,7 @@ function App() {
       paren.length ? paren.length + " voorgelegd om zelf te kiezen" : null,
       getypt !== levStandaard ? "herkend als bestaande leverancier \"" + levStandaard + "\" (je typte \"" + getypt + "\")" : null,
     ].filter(Boolean);
-    alert("Ingelezen:\n\n\u00b7 " + regels.join("\n\u00b7 ") + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
+    melding("Ingelezen:\n\n\u00b7 " + regels.join("\n\u00b7 ") + (live ? "" : "\n\nLet op: je bent niet ingelogd, dit staat alleen op dit apparaat."));
     voegBestelEigenSamen(arts); // zelf toegevoegde bestelproducten met dezelfde naam
   };
   // Leverancier of categorie een nettere naam geven — geldt voor het hele team.
@@ -4792,7 +4903,7 @@ function App() {
       document.head.appendChild(sc);
     });
     let JSZip;
-    try { JSZip = await laadJSZip(); } catch (e) { alert("Kon de zip-bibliotheek niet laden — controleer de internetverbinding en probeer opnieuw."); return; }
+    try { JSZip = await laadJSZip(); } catch (e) { melding("Kon de zip-bibliotheek niet laden — controleer de internetverbinding en probeer opnieuw."); return; }
     const doc = (titel, body) => '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>' + esc(titel) + '</title><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt}h1{font-size:18pt;margin-bottom:2pt}h2{font-size:12pt;margin:12pt 0 4pt}p{margin:3pt 0}li{margin:2pt 0}.mut{color:#666}</style></head><body>' + body + "</body></html>";
     const veiligeNaam = (n) => String(n || "naamloos").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim().slice(0, 80);
     const zip = new JSZip();
@@ -4833,10 +4944,10 @@ function App() {
   };
   const herstelBackup = async (file) => {
     let b;
-    try { b = JSON.parse(await file.text()); } catch (e) { alert("Dit bestand is geen geldige Ritme-backup."); return; }
-    if (!b || b.app !== "ritme" || !Array.isArray(b.recepten) || !Array.isArray(b.gerechten) || !Array.isArray(b.voorraad)) { alert("Dit bestand is geen geldige Ritme-backup."); return; }
+    try { b = JSON.parse(await file.text()); } catch (e) { melding("Dit bestand is geen geldige Ritme-backup."); return; }
+    if (!b || b.app !== "ritme" || !Array.isArray(b.recepten) || !Array.isArray(b.gerechten) || !Array.isArray(b.voorraad)) { melding("Dit bestand is geen geldige Ritme-backup."); return; }
     const wanneer = b.datum ? new Date(b.datum).toLocaleString("nl-NL") : "onbekende datum";
-    if (!window.confirm("Backup van " + wanneer + " terugzetten?\n\n" + b.recepten.length + " recepten, " + b.gerechten.length + " gerechten en " + b.voorraad.length + " voorraaditems worden teruggezet. Gelijknamige items worden overschreven; items die ná de backup zijn gemaakt blijven staan.")) return;
+    if (!await bevestig("Backup van " + wanneer + " terugzetten?\n\n" + b.recepten.length + " recepten, " + b.gerechten.length + " gerechten en " + b.voorraad.length + " voorraaditems worden teruggezet. Gelijknamige items worden overschreven; items die ná de backup zijn gemaakt blijven staan.")) return;
     const stempel = { updated_by: "backup-herstel", updated_at: new Date().toISOString() };
     if (live) {
       // Recepten: eigen recepten naar recipes_custom, bewerkte standaardrecepten naar recipe_overrides.
@@ -5593,7 +5704,7 @@ function App() {
   const deleteBatch = async (id) => {
     const b = batches.find((x) => x.id === id);
     if (!b) return;
-    const ok = window.confirm('Batch "' + b.product + '" definitief verwijderen voor het hele team?');
+    const ok = await bevestig('Batch "' + b.product + '" definitief verwijderen voor het hele team?');
     if (!ok) return;
     if (live) {
       const { error } = await supabase.from("ferment_batches").delete().eq("id", id);
@@ -5632,7 +5743,7 @@ function App() {
     const l = cleaningLogs.find((x) => x.id === id);
     if (!l) return;
     const t = cleaningTasks.find((x) => x.id === l.taskId);
-    if (!window.confirm("Aftekening van " + (t ? t.name : "deze taak") + " op " + l.doneDate + " verwijderen?")) return;
+    if (!await bevestig("Aftekening van " + (t ? t.name : "deze taak") + " op " + l.doneDate + " verwijderen?")) return;
     removeCleaningLog(id);
   };
   // Stapel van net-afgetekende taken: na "Ongedaan maken" verschijnt de toast
@@ -5692,7 +5803,7 @@ function App() {
     // Een vrije dag heeft geen aftekeningen: bestaande registraties van deze dag
     // worden verwijderd (verkeerde invulling), inclusief een eerdere dag-afronding.
     const existing = cleaningLogs.filter((l) => l.doneDate === d);
-    if (existing.length && !window.confirm("Vrije dag: " + existing.length + " registratie" + (existing.length === 1 ? "" : "s") + " van deze dag " + (existing.length === 1 ? "wordt" : "worden") + " verwijderd. Doorgaan?")) return;
+    if (existing.length && !await bevestig("Vrije dag: " + existing.length + " registratie" + (existing.length === 1 ? "" : "s") + " van deze dag " + (existing.length === 1 ? "wordt" : "worden") + " verwijderd. Doorgaan?")) return;
     if (live && existing.length) {
       const { error } = await supabase.from("cleaning_logs").delete().eq("done_date", d);
       if (dbFail(error)) return;
@@ -5797,7 +5908,7 @@ function App() {
   const deleteHaccpLog = async (id) => {
     const l = haccpLogs.find((x) => x.id === id);
     if (!l) return;
-    if (!window.confirm("Temperatuurmeting van " + l.checkDate + " verwijderen?")) return;
+    if (!await bevestig("Temperatuurmeting van " + l.checkDate + " verwijderen?")) return;
     removeHaccpLog(id);
   };
   const saveHaccpRecord = async (data, editingId) => {
@@ -5837,7 +5948,7 @@ function App() {
     if (!quiet) flash("Registratie verwijderd");
   };
   const deleteHaccpRecord = async (id) => {
-    if (!window.confirm("Deze registratie verwijderen?")) return;
+    if (!await bevestig("Deze registratie verwijderen?")) return;
     removeHaccpRecord(id);
   };
   // ---- Werkwijze-documenten: standaarden bewerken en nieuwe aanmaken ----
@@ -5963,7 +6074,7 @@ function App() {
   const deleteStock = async (id) => {
     const v = stock.find((x) => x.id === id);
     if (!v) return;
-    if (!window.confirm('"' + v.product + '" uit de voorraad verwijderen?')) return;
+    if (!await bevestig('"' + v.product + '" uit de voorraad verwijderen?')) return;
     if (live) {
       const { error } = await supabase.from("voorraad").delete().eq("id", id);
       if (dbFail(error)) return;
@@ -6070,7 +6181,7 @@ function App() {
     flash(editingId ? "Werkwijze bijgewerkt" : "Werkwijze-document toegevoegd");
   };
   const deleteWerkDoc = async (id) => {
-    if (!window.confirm("Dit werkwijze-document verwijderen?")) return;
+    if (!await bevestig("Dit werkwijze-document verwijderen?")) return;
     if (live) {
       const { error } = await supabase.from("werkwijze_docs").delete().eq("id", id);
       if (dbFail(error)) return;
@@ -6118,7 +6229,7 @@ function App() {
   const deleteCleaningTask = async (id) => {
     const t = cleaningTasks.find((x) => x.id === id);
     if (!t) return;
-    if (!window.confirm('Taak "' + t.name + '" verwijderen uit de schoonmaaklijst?')) return;
+    if (!await bevestig('Taak "' + t.name + '" verwijderen uit de schoonmaaklijst?')) return;
     if (live) {
       const { error } = await supabase.from("cleaning_tasks").upsert({ id, name: t.name, area: t.area, interval_days: t.intervalDays, minutes: t.minutes, active: false, updated_by: "—", updated_at: new Date().toISOString() });
       if (dbFail(error)) return;
@@ -6151,7 +6262,7 @@ function App() {
   };
   const resetPairing = async (name) => {
     const orig = PAIRINGS.find((p) => p.name === name);
-    const ok = window.confirm(orig ? 'Aanpassingen aan "' + name + '" terugdraaien naar het origineel?' : '"' + name + '" verwijderen voor het hele team?');
+    const ok = await bevestig(orig ? 'Aanpassingen aan "' + name + '" terugdraaien naar het origineel?' : '"' + name + '" verwijderen voor het hele team?');
     if (!ok) return;
     if (live) { const { error } = await supabase.from("flavor_pairings").delete().eq("name", name); if (dbFail(error)) return; }
     setPairings((ps) => (orig ? ps.map((p) => (p.name === name ? orig : p)) : ps.filter((p) => p.name !== name)));
@@ -6160,7 +6271,7 @@ function App() {
   const deleteDish = async (id) => {
     const d = dishes.find((x) => x.id === id);
     if (!d) return;
-    const ok = window.confirm('"' + d.name + '" verwijderen voor het hele team?');
+    const ok = await bevestig('"' + d.name + '" verwijderen voor het hele team?');
     if (!ok) return;
     const isSeedDish = seedDishes.some((sd) => sd.id === id);
     if (live) {
@@ -6177,7 +6288,7 @@ function App() {
   const deleteRecipe = async (id) => {
     const r = recipes.find((x) => x.id === id);
     if (!r) return;
-    const ok = window.confirm('"' + r.name + '" verwijderen voor het hele team?');
+    const ok = await bevestig('"' + r.name + '" verwijderen voor het hele team?');
     if (!ok) return;
     if (live) {
       let error = null;
@@ -6591,7 +6702,7 @@ function App() {
             {section === "assortiment" && chefMode && <AssortimentList producten={assortiment} bdArtikelen={bdArtikelen}
               onNew={() => push({ screen: "assortimentForm", editing: null })}
               onEdit={(id) => push({ screen: "assortimentForm", editing: id })}
-              onDelete={(id) => { if (window.confirm("Dit product verwijderen?")) deleteAssortimentItem(id); }}
+              onDelete={async (id) => { if (await bevestig("Dit product verwijderen?")) deleteAssortimentItem(id); }}
               recipeById={recipeById} recipes={recipes}
               onImport={(f) => setImportVraag({ file: f, naam: String(f.name || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() })}
               onUpdateArtikel={updateBdArtikel} onDeleteArtikel={deleteBdArtikel} onDeleteLeverancier={deleteLeverancier} onHernoem={hernoemArtikelGroep}
@@ -6707,7 +6818,7 @@ function App() {
           const levs = Object.keys(dubbel).sort((a, b) => dubbel[b].length - dubbel[a].length);
           const totaal = levs.reduce((n, l) => n + dubbel[l].length, 0);
           if (totaal) {
-            setTimeout(() => alert("Chef-modus aan.\n\nEr staan " + totaal + " artikelen dubbel bij twee leveranciers:\n\n· "
+            setTimeout(() => melding("Chef-modus aan.\n\nEr staan " + totaal + " artikelen dubbel bij twee leveranciers:\n\n· "
               + levs.map((l) => l + ": " + dubbel[l].length).join("\n· ")
               + "\n\nOnder Calculaties staat bij die leveranciers een rode driehoek; daar voeg je ze samen."), 200);
           } else flash("Chef-modus aan — geen dubbele artikelen gevonden");
@@ -7191,9 +7302,10 @@ function BevestigModal({ titel, tekst, knop, onCancel, onOk }) {
 // Klein appvenster voor een enkele invoer — vervangt window.prompt.
 function PromptModal({ titel, label, hint, waarde, placeholder, wachtwoord, okLabel, fout, onCancel, onOk }) {
   const [v, setV] = useState(waarde || "");
+  const [open, setOpen] = useState(false); // het oog bij een wachtwoord
   const ref = React.useRef(null);
   useEffect(() => { const t = setTimeout(() => { if (ref.current) ref.current.focus(); }, 80); return () => clearTimeout(t); }, []);
-  const bevestig = () => { if (v.trim()) onOk(v.trim()); };
+  const bevestigen = () => { if (v.trim()) onOk(v.trim()); };
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onCancel}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
@@ -7201,13 +7313,22 @@ function PromptModal({ titel, label, hint, waarde, placeholder, wachtwoord, okLa
         {hint && <p className="text-xs mute mt-1 leading-relaxed">{hint}</p>}
         <div className="mt-3">
           {label && <div className="text-[11.5px] font-bold ink mb-1">{label}</div>}
-          <input ref={ref} type={wachtwoord ? "password" : "text"} name="invoer" autoComplete={wachtwoord ? "new-password" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false} className="input px-3 py-2.5 w-full text-[15px]" value={v} placeholder={placeholder || ""}
-            onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); bevestig(); } }} />
+          <div className="relative">
+            <input ref={ref} type={wachtwoord && !open ? "password" : "text"} name="invoer" autoComplete={wachtwoord ? "new-password" : "off"} autoCorrect="off" autoCapitalize="off" spellCheck={false} className={"input px-3 py-2.5 w-full text-[15px] " + (wachtwoord ? "pr-11" : "")} value={v} placeholder={placeholder || ""}
+              onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); bevestigen(); } }} />
+            {wachtwoord && (
+              <button type="button" onClick={() => setOpen((x) => !x)} tabIndex={-1}
+                title={open ? "Verbergen" : "Laten zien"} aria-label={open ? "Verbergen" : "Laten zien"}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-2 mute hover:opacity-70">
+                {open ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            )}
+          </div>
         </div>
         {fout && <p className="text-[12px] mt-1.5 font-medium" style={{ color: "#9a4a2f" }}>{fout}</p>}
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onCancel} className="ff rounded-lg px-3 py-2 text-sm font-medium mute hover:opacity-70" style={{ border: "1px solid " + T.line }}>Annuleren</button>
-          <button onClick={bevestig} disabled={!v.trim()} className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40"><Check size={15} /> {okLabel || "Oké"}</button>
+          <button onClick={bevestigen} disabled={!v.trim()} className="btnp ff inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40"><Check size={15} /> {okLabel || "Oké"}</button>
         </div>
       </div>
     </div>
@@ -7965,9 +8086,9 @@ function ArtikelForm({ a, nieuw, leveranciers, catsPerLev, onSave, onSluit }) {
   const zetInhoud = (v) => { setInhoud(v); const m = parseMaat(v), p = eurNum(prijs); setPer(m && m.n > 0 && p !== null ? twee(p / m.n) : ""); };
   const levKeuze = levNieuw.trim() || lev;
   const bewaar = () => {
-    if (!naam.trim()) { alert("Vul een naam in."); return; }
-    if (!maat) { alert("Vul een inkoopeenheid in die de app kan lezen, bijvoorbeeld 1 kg, 5 l of 10 st."); return; }
-    if (eurNum(prijs) === null) { alert("Vul een prijs in."); return; }
+    if (!naam.trim()) { melding("Vul een naam in."); return; }
+    if (!maat) { melding("Vul een inkoopeenheid in die de app kan lezen, bijvoorbeeld 1 kg, 5 l of 10 st."); return; }
+    if (eurNum(prijs) === null) { melding("Vul een prijs in."); return; }
     onSave({
       ...a,
       code: nieuw ? "eigen:" + zonderAccent(naam).toLowerCase().trim() : a.code,
@@ -8493,11 +8614,20 @@ const bdBestelRegels = (artikelen, aantallen) => {
     // Alleen een rond getal kan de wagen in. "2 kratten" of "een beetje" niet;
     // daar maakt de app liever geen 2 van dan dat er iets geks wordt besteld.
     if (!/^[0-9]{1,3}$/.test(tekst)) { anders.push({ naam, aantal: tekst, reden: "aantal niet als getal" }); continue; }
-    mee.push({ code, aantal: Number(tekst), naam });
+    mee.push({ code, aantal: Number(tekst), naam, sleutel });
   }
   mee.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
   anders.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
   return { mee, anders };
+};
+// Wat er na een geslaagde verzending van de bestellijst af mag. De regels die
+// BD niet op de favorietenlijst terugvond blijven staan — die zijn niet
+// besteld en moeten nog ergens vandaan komen. De codes die terugkomen zijn
+// kaal, de onze dragen de leverancier vooraan, dus naast elkaar leggen we ze
+// allebei kaal.
+const bdGelukteSleutels = (mee, onbekend) => {
+  const weg = new Set((onbekend || []).map((c) => rauweArtikelCode(c)));
+  return (mee || []).filter((r) => r && r.sleutel && !weg.has(rauweArtikelCode(r.code))).map((r) => r.sleutel);
 };
 // Productcategorieen binnen zo'n bestemming; zelf typen kan ook.
 const PRODUCT_CATS = ["Lunch", "Borrel", "Diner", "Buffet", "Extra losse items"];
@@ -8660,7 +8790,7 @@ function CalcItemForm({ editing, recipes, dishes, recipeById, dishById, onCancel
   const kAuto = bedragen.some((x) => x !== null) ? bedragen.filter((x) => x !== null).reduce((a, b) => a + b, 0) : null;
   const kHand = eurNum(cost);
   const bewaar = () => {
-    if (!name.trim()) { alert("Geef het item een naam."); return; }
+    if (!name.trim()) { melding("Geef het item een naam."); return; }
     onSave({ id: editing?.id, name: name.trim(), cost: String(cost).trim(), notes: notes.trim(),
       regels: regels.filter((g) => String(g.naam || "").trim()) });
   };
@@ -8774,7 +8904,7 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
     setLaad("");
   };
   const doSave = () => {
-    if (!name.trim()) { alert("Vul een naam in."); return; }
+    if (!name.trim()) { melding("Vul een naam in."); return; }
     onSave({ id: editing?.id, name: name.trim(), doel: (doelVrij.trim() || doel || "").trim(), cat: (catVrij.trim() || cat || "").trim(), fromP: fromP.trim(), toP: toP.trim(), cost: String(cost).trim(), price: String(price).trim(), notes: notes.trim(), items: items.map((x) => ({
       text: x.text.trim(), itemId: x.itemId || null, cost: String(x.cost || "").trim(),
       ings: (x.ings || []).filter((g) => String(g.naam || "").trim()).map((g) => ({ naam: g.naam.trim(), artikelCode: g.artikelCode || null, perPrijs: String(g.perPrijs || "").trim(), perEenheid: g.perEenheid || "kg", hoeveel: String(g.hoeveel || "").trim() })),
@@ -8964,7 +9094,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
   const [vorm, setVorm] = useState(null); // null | { id?, naam, inhoud, prijs, opmerking }
   const bewaarEigen = () => {
     const v = vorm || {};
-    if (!String(v.naam || "").trim()) { alert("Vul een productnaam in."); return; }
+    if (!String(v.naam || "").trim()) { melding("Vul een productnaam in."); return; }
     setSt((s) => {
       const lijst = [...(s.eigenProducten || [])];
       const schoon = { id: v.id || "e" + Date.now(), naam: String(v.naam).trim(), inhoud: String(v.inhoud || "").trim(), prijs: String(v.prijs || "").trim(), opmerking: String(v.opmerking || "").trim() };
@@ -8977,9 +9107,9 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
     setVorm(null);
     getypt();
   };
-  const wegEigen = (id) => {
+  const wegEigen = async (id) => {
     const p = (st.eigenProducten || []).find((x) => x.id === id);
-    if (!window.confirm('"' + ((p && p.naam) || "") + '" van de bestellijst halen?')) return;
+    if (!await bevestig('"' + ((p && p.naam) || "") + '" van de bestellijst halen?')) return;
     setSt((s) => {
       const aantallen = { ...s.aantallen }; delete aantallen["e:" + id];
       const telling = { ...s.telling }; delete telling["e:" + id];
@@ -8997,8 +9127,8 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
     setSt((s) => { const n = { ...s, verborgen: (s.verborgen || []).filter((x) => x !== sleutel) }; stRef.current = n; return n; });
     getypt();
   };
-  const leegmaken = () => {
-    if (!window.confirm("Alle ingevulde aantallen leegmaken? (De notitie en de besteltelling blijven staan.)")) return;
+  const leegmaken = async () => {
+    if (!await bevestig("De notitie en de besteltelling blijven staan.", { titel: "Alle ingevulde aantallen leegmaken?", okLabel: "Leegmaken" })) return;
     setSt((s) => { const n = { ...s, aantallen: {} }; stRef.current = n; return n; });
     getypt();
   };
@@ -9011,21 +9141,23 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
   const naarBd = async () => {
     if (!onNaarBd || bdBezig) return;
     const { mee, anders } = bdLijst;
-    if (!mee.length) { alert("Er staat niets op de lijst dat naar BD-Totaal kan."); return; }
+    if (!mee.length) { melding("Er staat niets op de lijst dat naar BD-Totaal kan.", { titel: "Niets om te versturen" }); return; }
     const regels = mee.slice(0, 12).map((r) => "  " + r.aantal + "\u00d7 " + r.naam).join("\n")
       + (mee.length > 12 ? "\n  \u2026 en nog " + (mee.length - 12) : "");
     const rest = anders.length
       ? "\n\nGaat NIET mee (" + anders.length + "):\n" + anders.slice(0, 8).map((r) => "  " + r.naam + " \u2014 " + r.reden).join("\n")
         + (anders.length > 8 ? "\n  \u2026 en nog " + (anders.length - 8) : "")
       : "";
-    if (!window.confirm("Deze " + mee.length + " regels in de winkelwagen van BD-Totaal zetten?\n\n" + regels + rest
-      + "\n\nDe bestelling wordt NIET verzonden \u2014 dat doe je zelf op bd-totaal.nl.")) return;
+    if (!await bevestig(mee.length + " regels gaan mee:\n\n" + regels + rest
+      + "\n\nDe bestelling wordt NIET verzonden \u2014 dat doe je zelf op bd-totaal.nl.",
+      { titel: "Naar de winkelwagen van BD-Totaal", okLabel: "In de wagen zetten" })) return;
     // De code van de chef erbij. Dit raakt aan geld bij de leverancier, dus
     // hetzelfde slot als op de chef-functie — ook als iemand de app al open
     // vond staan.
-    const code = window.prompt("Code van de chef:");
+    const code = await vraagInvoer("Dit raakt aan geld bij de leverancier, dus hetzelfde slot als op de chef-functie.",
+      { titel: "Code van de chef", wachtwoord: true, placeholder: "Code", okLabel: "Doorgaan" });
     if (code === null) return;
-    if (!chefCodeKlopt(code)) { alert("Die code klopt niet. Er is niets verstuurd."); return; }
+    if (!chefCodeKlopt(code)) { melding("Die code klopt niet. Er is niets verstuurd.", { titel: "Code klopt niet" }); return; }
     setBdBezig(true);
     try {
       const uit = await onNaarBd(mee);
@@ -9038,16 +9170,34 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
         ? "\n\nNiet gevonden op je favorietenlijst bij BD (" + uit.onbekend.length + "): " + uit.onbekend.slice(0, 10).join(", ")
           + "\nZet die er eerst bij op bd-totaal.nl, dan kunnen ze de volgende keer wel mee." : "";
       if (!uit || (!uit.gezet && !uit.ok)) {
-        alert("Er is niets in je winkelwagen gezet.\n\n" + ((uit && uit.fout) || "Onbekende fout") + kwijt);
+        melding(((uit && uit.fout) || "Onbekende fout") + kwijt, { titel: "Er is niets in je winkelwagen gezet" });
       } else if (uit.veranderd === false) {
-        alert(uit.gezet + " regels zijn doorgegeven, maar het bedrag in je winkelwagen is niet veranderd."
-          + bedragen + "\n\nStonden die aantallen er al in, dan klopt dat. Zo niet, laat het me weten." + kwijt);
+        melding(uit.gezet + " regels zijn doorgegeven, maar het bedrag in je winkelwagen is niet veranderd."
+          + bedragen + "\n\nStonden die aantallen er al in, dan klopt dat. Zo niet, laat het me weten." + kwijt,
+          { titel: "Niets veranderd" });
       } else {
-        alert(uit.gezet + " regels staan in je winkelwagen bij BD-Totaal." + bedragen
-          + "\n\nControleer ze daar en verzend de bestelling zelf." + kwijt);
+        // Wat in de wagen staat hoeft niet nog een keer besteld te worden, dus
+        // die regels gaan van de lijst. Alleen deze tak: als het bedrag niet
+        // veranderd is weten we niet of het gelukt is, en dan blijft alles
+        // staan. Wat BD niet terugvond blijft ook staan.
+        const weg = bdGelukteSleutels(mee, uit.onbekend);
+        if (weg.length) {
+          setSt((s) => {
+            const aantallen = { ...s.aantallen };
+            for (const k of weg) delete aantallen[k];
+            const n = { ...s, aantallen };
+            stRef.current = n;
+            return n;
+          });
+          getypt();
+        }
+        melding(uit.gezet + " regels staan in je winkelwagen bij BD-Totaal." + bedragen
+          + "\n\nControleer ze daar en verzend de bestelling zelf."
+          + (weg.length ? "\n\nDie " + weg.length + " regels zijn van de bestellijst gehaald." : "") + kwijt,
+          { titel: "In de wagen gezet" });
       }
     } catch (e) {
-      alert("Het is niet gelukt: " + String((e && e.message) || e));
+      melding(String((e && e.message) || e), { titel: "Het is niet gelukt" });
     }
     setBdBezig(false);
   };
@@ -9058,12 +9208,12 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
   const uitzoeken = async () => {
     if (!onBdUitzoeken || bdBezig) return;
     const eerste = bdLijst.mee[0];
-    if (!eerste) { alert("Vul eerst een aantal in bij een artikel van BD-Totaal."); return; }
+    if (!eerste) { melding("Vul eerst een aantal in bij een artikel van BD-Totaal."); return; }
     setBdBezig(true);
     const u = await onBdUitzoeken(eerste.code, eerste.aantal);
     setBdBezig(false);
-    if (!u || !u.ok) { alert("Niet gelukt: " + ((u && u.fout) || "onbekende fout")); return; }
-    alert("Geprobeerd: " + eerste.aantal + "\u00d7 " + eerste.naam + " (artikel " + eerste.code + ")\n\n"
+    if (!u || !u.ok) { melding("Niet gelukt: " + ((u && u.fout) || "onbekende fout")); return; }
+    melding("Geprobeerd: " + eerste.aantal + "\u00d7 " + eerste.naam + " (artikel " + eerste.code + ")\n\n"
       + "Ingelogd als: " + (u.ingelogdAls || "\u2014 niet herkend \u2014") + "\n"
       + "Bestelling: " + (u.bestelling || "\u2014 geen \u2014") + (u.opDeLijst ? " \u00b7 " + u.opDeLijst + " artikelen op de lijst" : "") + "\n"
       + "Winkelwagen ervoor: " + (u.wagenVoor == null ? "niet gelezen" : "\u20ac " + u.wagenVoor) + "\n"
@@ -9204,7 +9354,7 @@ function AllergenenBeheer({ rijen, onSave }) {
   const wissel = (l) => setVorm((v) => ({ ...v, labels: v.labels.includes(l) ? v.labels.filter((x) => x !== l) : [...v.labels, l] }));
   const bewaar = () => {
     const naam = String((vorm && vorm.naam) || "").trim();
-    if (!naam) { alert("Vul een ingrediënt in."); return; }
+    if (!naam) { melding("Vul een ingrediënt in."); return; }
     onSave(naam, vorm.labels);
     setVorm(null);
   };
@@ -9220,7 +9370,7 @@ function AllergenenBeheer({ rijen, onSave }) {
                 <div className="text-[11.5px] mute">{(r.allergens || []).length ? r.allergens.join(", ") : "geen allergenen (uitzondering)"}</div>
               </div>
               <button onClick={() => setVorm({ naam: r.name, labels: [...(r.allergens || [])], bestaand: true })} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={14} /></button>
-              <button onClick={() => { if (window.confirm('Koppeling voor "' + r.name + '" weghalen? De automatische herkenning geldt dan weer.')) onSave(r.name, null); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
+              <button onClick={async () => { if (await bevestig('Koppeling voor "' + r.name + '" weghalen? De automatische herkenning geldt dan weer.')) onSave(r.name, null); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Trash2 size={14} /></button>
             </div>
           ))}
         </div>
@@ -9259,7 +9409,7 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
   const [kleur, setKleur] = useState(() => (opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD);
   useEffect(() => { setTekst((opmaak && opmaak.titel) || MENU_TITEL_STANDAARD); setTekstEn((opmaak && opmaak.titelEn) || MENU_TITEL_EN_STANDAARD); setKleur((opmaak && opmaak.kleur) || BRIEF_GROEN_STANDAARD); }, [opmaak]);
   const [bezig, setBezig] = useState(false);
-  const [melding, setMelding] = useState("");
+  const [briefMelding, setBriefMelding] = useState("");
   useEffect(() => { setVorm({ ...BRIEF_STANDAARD, ...(waarde || {}) }); }, [waarde]);
   const getal = (sleutel, label, uitleg) => (
     <label key={sleutel} className="flex items-center justify-between gap-2 text-sm ink">
@@ -9273,7 +9423,7 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
   );
   const inlezen = (bestand) => {
     if (!bestand) return;
-    setBezig(true); setMelding("");
+    setBezig(true); setBriefMelding("");
     const lezer = new FileReader();
     lezer.onload = () => {
       const img = new Image();
@@ -9288,14 +9438,14 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
           const jpg = c.toDataURL("image/jpeg", 0.85);
           const beste = jpg.length < png.length ? jpg : png;
           setVorm((v) => ({ ...v, img: beste }));
-          setMelding("Ingelezen (" + Math.round(beste.length / 1400) + " kB). Controleer hieronder waar de tekst komt en sla op.");
-        } catch (e) { setMelding("Deze afbeelding lukte niet: " + String((e && e.message) || e)); }
+          setBriefMelding("Ingelezen (" + Math.round(beste.length / 1400) + " kB). Controleer hieronder waar de tekst komt en sla op.");
+        } catch (e) { setBriefMelding("Deze afbeelding lukte niet: " + String((e && e.message) || e)); }
         setBezig(false);
       };
-      img.onerror = () => { setMelding("Dit bestand is geen afbeelding die de browser kan openen."); setBezig(false); };
+      img.onerror = () => { setBriefMelding("Dit bestand is geen afbeelding die de browser kan openen."); setBezig(false); };
       img.src = String(lezer.result || "");
     };
-    lezer.onerror = () => { setMelding("Inlezen mislukt."); setBezig(false); };
+    lezer.onerror = () => { setBriefMelding("Inlezen mislukt."); setBezig(false); };
     lezer.readAsDataURL(bestand);
   };
   const achtergrond = vorm.img || BRIEF_ACHTERGROND;
@@ -9305,7 +9455,7 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
     const n = { ...vorm };
     for (const sl of ["top", "links", "breedte", "inspring"]) n[sl] = Number(n[sl]) || BRIEF_STANDAARD[sl];
     onSave(n);
-    setMelding("Opgeslagen — geldt meteen op alle apparaten.");
+    setBriefMelding("Opgeslagen — geldt meteen op alle apparaten.");
   };
   return (
     <div className="card p-4">
@@ -9317,7 +9467,7 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
         <input ref={kiesRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) inlezen(f); e.target.value = ""; }} />
         {vorm.img && <button onClick={() => setVorm((v) => ({ ...v, img: "" }))} className="btno ff rounded-lg text-sm font-medium px-4 py-2.5">Eigen afbeelding weghalen</button>}
       </div>
-      {melding && <p className="text-[12.5px] mt-2 mb-0" style={{ color: "#44502f" }}>{melding}</p>}
+      {briefMelding && <p className="text-[12.5px] mt-2 mb-0" style={{ color: "#44502f" }}>{briefMelding}</p>}
 
       <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: "1px solid " + T.line }}>
         {getal("top", "Tekst begint van boven", "Afstand van de bovenrand tot de eerste regel")}
@@ -9340,7 +9490,7 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
 
       <div className="flex flex-wrap gap-2 mt-3">
         <button onClick={bewaren} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Opslaan</button>
-        <button onClick={() => { setVorm({ ...BRIEF_STANDAARD }); onSave({ ...BRIEF_STANDAARD }); setMelding("Terug op het standaard briefpapier."); }} className="btno ff rounded-lg text-sm font-medium px-4 py-2.5">Terug naar standaard</button>
+        <button onClick={() => { setVorm({ ...BRIEF_STANDAARD }); onSave({ ...BRIEF_STANDAARD }); setBriefMelding("Terug op het standaard briefpapier."); }} className="btno ff rounded-lg text-sm font-medium px-4 py-2.5">Terug naar standaard</button>
       </div>
 
       {onOpmaak && (
@@ -9358,7 +9508,7 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
             <span className="serif text-[15px]" style={{ color: /^#[0-9a-f]{3,8}$/i.test(kleur) ? kleur : BRIEF_GROEN_STANDAARD }}>Zo komt de tekst eruit te zien</span>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
-            <button onClick={() => { onOpmaak({ titel: tekst, titelEn: tekstEn, kleur }); setMelding("Titel en kleur opgeslagen."); }} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Titel en kleur opslaan</button>
+            <button onClick={() => { onOpmaak({ titel: tekst, titelEn: tekstEn, kleur }); setBriefMelding("Titel en kleur opgeslagen."); }} className="btnp ff rounded-lg text-sm font-semibold px-4 py-2.5">Titel en kleur opslaan</button>
             <button onClick={() => { setTekst(MENU_TITEL_STANDAARD); setTekstEn(MENU_TITEL_EN_STANDAARD); setKleur(BRIEF_GROEN_STANDAARD); onOpmaak({ titel: MENU_TITEL_STANDAARD, titelEn: MENU_TITEL_EN_STANDAARD, kleur: BRIEF_GROEN_STANDAARD }); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
           </div>
         </div>
@@ -9380,7 +9530,7 @@ function TeamBeheer({ namen, onSave }) {
         {(namen || []).map((n) => (
           <div key={n} className="flex items-center justify-between gap-2">
             <span className="text-sm ink min-w-0 flex-1 truncate">{n}</span>
-            <button onClick={() => { if (window.confirm('"' + n + '" uit de lijst halen?')) onSave((namen || []).filter((x) => x !== n)); }}
+            <button onClick={async () => { if (await bevestig('"' + n + '" uit de lijst halen?')) onSave((namen || []).filter((x) => x !== n)); }}
               className="ff mute hover:opacity-60 shrink-0" title="Uit de lijst halen"><Trash2 size={15} /></button>
           </div>
         ))}
@@ -9479,7 +9629,7 @@ function EetvolgordeBeheer({ momenten, onSave }) {
       <div className="flex flex-wrap gap-2 mt-3">
         <button onClick={() => { setRijen((rs) => [...rs, { naam: "", woorden: "", eerst: false }]); setVies(true); }} className="btno ff rounded-lg px-3 py-1.5 text-sm font-medium inline-flex items-center gap-1.5"><Plus size={14} /> Moment erbij</button>
         <button onClick={() => { onSave(rijen); setVies(false); }} disabled={!vies} className="btnp ff rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-50">Opslaan</button>
-        <button onClick={() => { if (window.confirm("Terug naar de standaardvolgorde?")) onSave(EETMOMENTEN_STANDAARD); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
+        <button onClick={async () => { if (await bevestig("Terug naar de standaardvolgorde?")) onSave(EETMOMENTEN_STANDAARD); }} className="ff text-sm font-medium mute hover:opacity-70 px-2">Standaard</button>
       </div>
     </div>
   );
@@ -9787,7 +9937,7 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
             try { const ta = document.createElement("textarea"); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); ok = true; } catch (e2) {}
           }
           const knop = e.currentTarget; if (ok && knop) { const w = knop.textContent; knop.textContent = "Link gekopieerd ✓"; setTimeout(() => { try { knop.textContent = w; } catch (e3) {} }, 1800); }
-          if (!ok) window.prompt("Kopieer de link:", url);
+          if (!ok) vraagInvoer("Kopiëren lukte niet. Neem de link hieronder zelf over.", { titel: "Deellink", waarde: url, okLabel: "Klaar" });
         }} className="btnp ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5"><Link size={15} /> Deellink kopiëren</button>
       </div>
 
@@ -11846,7 +11996,7 @@ function UniversalLabelModal({ recipes, prefillRecipe, onClose, onAddStock }) {
     // Naam is niet verplicht: een etiket met alleen een datum is prima.
     // Alleen een volledig leeg etiket houden we tegen.
     if (!name.trim() && !prod && !tht && !ready && !gram.trim() && !note.trim() && !allergens.length) {
-      alert("Vul iets in voor het etiket."); return false;
+      melding("Vul iets in voor het etiket."); return false;
     }
     return true;
   };
@@ -13313,6 +13463,15 @@ const statusRand = (st) => {
   if (isAanvraagStatus(s)) return "#8d8d84";
   return "#3b6ea5";
 };
+// De dag van een partij, om te lezen. Staat in de bewerkbalk op de plek waar
+// eerst de status stond, zodat je bij het bewerken altijd ziet welke dag je
+// onder handen hebt — op de mise-en-place staan er immers acht onder elkaar.
+const partijDagLabel = (d) => {
+  const x = new Date(String(d || "") + "T12:00:00");
+  if (isNaN(x)) return "";
+  return ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"][x.getDay()]
+    + " " + x.getDate() + " " + ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"][x.getMonth()];
+};
 const STATUS_OPTIES = [["confirmed", "bevestigd"], ["option", "in optie"], ["option_expired", "optie verlopen"], ["cancelled", "geannuleerd"], ["request", "aanvraag"]];
 // Gegevens-snapshot voor offline starten: elke geslaagde lading wordt (per
 // tabel) lokaal bewaard. Mislukt een query bij het opstarten (geen internet),
@@ -14635,7 +14794,7 @@ function InHuisBlok({ artikelen, koppel, inhuis, onZet, canEdit, user }) {
     onZet(volgende);
   };
   // Het rondje: deze stand klopt nog, zet de datum van vandaag erop.
-  const bevestig = (r) => {
+  const bevestigStand = (r) => {
     if (r.aantal === null) return;
     const volgende = { ...(inhuis || {}) };
     volgende[r.code] = { aantal: r.aantal, gezien: vandaag, door: (user && user.name) || "" };
@@ -14679,7 +14838,7 @@ function InHuisBlok({ artikelen, koppel, inhuis, onZet, canEdit, user }) {
                       </div>
                     </div>
                     {canEdit && r.aantal !== null && (
-                      <button onClick={() => bevestig(r)} className="ff shrink-0 rounded-full flex items-center justify-center"
+                      <button onClick={() => bevestigStand(r)} className="ff shrink-0 rounded-full flex items-center justify-center"
                         style={{ width: 26, height: 26, border: "1.5px solid " + (r.dagen === 0 ? "#44502f" : T.line), background: r.dagen === 0 ? "#44502f" : "transparent" }}
                         title={r.dagen === 0 ? "Vandaag nagekeken" : "Dit klopt nog — datum van vandaag erop"}>
                         {r.dagen === 0 ? <Check size={14} style={{ color: "#fbf9f2" }} /> : null}
@@ -15002,7 +15161,7 @@ function VoorraadForm({ editing, prefill, allRecipes, eigenVormen, onEigenVormen
     if (!unitVorm.trim()) ontbreekt.push("verpakkingsvorm");
     if (!productionDate) ontbreekt.push("productiedatum");
     if (editing ? !expiryDate : !(Number(days) > 0)) ontbreekt.push(editing ? "houdbaar tot" : "dagen houdbaar");
-    if (ontbreekt.length) { alert("Nog invullen voordat dit opgeslagen kan worden:\n\n· " + ontbreekt.join("\n· ")); return; }
+    if (ontbreekt.length) { melding("Nog invullen voordat dit opgeslagen kan worden:\n\n· " + ontbreekt.join("\n· ")); return; }
     const q1 = nm(qty);
     const q0 = editing ? (nm(initialQty) ?? q1) : q1;
     onSave({
@@ -15095,7 +15254,7 @@ function TechTableForm({ config, rows, onCancel, onSave }) {
   const del = (i) => setList((ls) => ls.filter((_, j) => j !== i));
   const submit = () => {
     const clean = list.filter((r) => (r[config.naamVeld] || "").trim());
-    if (!clean.length) { alert("Houd minstens één rij over."); return; }
+    if (!clean.length) { melding("Houd minstens één rij over."); return; }
     onSave(clean);
   };
   return (
@@ -15142,11 +15301,11 @@ function WerkwijzeDocForm({ editing, onCancel, onSave }) {
   const addSec = () => setSecties((ss) => [...ss, { kop: "", tekst: "" }]);
   const delSec = (i) => setSecties((ss) => ss.filter((_, j) => j !== i));
   const submit = () => {
-    if (!title.trim()) { alert("Geef het document een titel."); return; }
+    if (!title.trim()) { melding("Geef het document een titel."); return; }
     const clean = secties
       .map((se) => ({ kop: se.kop.trim(), regels: se.tekst.split("\n").map((r) => r.trim()).filter(Boolean) }))
       .filter((se) => se.kop || se.regels.length);
-    if (!clean.length) { alert("Voeg minstens één kopje met regels toe."); return; }
+    if (!clean.length) { melding("Voeg minstens één kopje met regels toe."); return; }
     onSave({ title: title.trim(), intro: intro.trim(), secties: clean });
   };
   return (
@@ -15179,7 +15338,7 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
   const del = (i) => setList((ls) => ls.filter((_, j) => j !== i));
   const submit = () => {
     const clean = list.filter((r) => (r.methode || "").trim());
-    if (!clean.length) { alert("Houd minstens één methode over."); return; }
+    if (!clean.length) { melding("Houd minstens één methode over."); return; }
     onSave(clean);
   };
   const veld = (i, key, label, ph) => (
@@ -15804,7 +15963,7 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
                   </button>
                 )}
                 {klantInstel.herhaal && (
-                  <button onClick={() => { if (window.confirm("Stoppen met herhalen voor deze klant?")) klantInstel.onHerhaal(""); }}
+                  <button onClick={async () => { if (await bevestig("Stoppen met herhalen voor deze klant?")) klantInstel.onHerhaal(""); }}
                     className="ff text-[12.5px] font-medium mute hover:opacity-70 px-2">Stoppen</button>
                 )}
               </div>
@@ -16205,7 +16364,7 @@ function PartijGeschPopup({ naam, handmatig, log, onReset, resetLabel, onSluit }
           <div className="pt-3 mt-3 shrink-0" style={{ borderTop: "1px solid " + SOM_LIJN }}>
             {/* Het resetten stond hier vroeger los onder de bewerkstand. Het
                 hoort bij de geschiedenis: je ziet eerst wat je weggooit. */}
-            <button onClick={() => { if (window.confirm((resetLabel || "Wijzigingen resetten") + "?\n\nAlle handmatige aanpassingen aan deze partij gaan terug naar de bron.")) { onReset(); sluitRef.current(); } }}
+            <button onClick={async () => { if (await bevestig((resetLabel || "Wijzigingen resetten") + "?\n\nAlle handmatige aanpassingen aan deze partij gaan terug naar de bron.")) { onReset(); sluitRef.current(); } }}
               className="ff text-[12px] underline" style={{ color: "#b3261e" }}>{resetLabel || "wijzigingen resetten"}</button>
           </div>
         )}
@@ -16636,7 +16795,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       }
       return n;
     });
-    if (gemist.length) setTimeout(() => alert("Niet gevonden in deze boeking (overgeslagen):\n\u00b7 " + gemist.join("\n\u00b7 ")), 50);
+    if (gemist.length) setTimeout(() => melding("Niet gevonden in deze boeking (overgeslagen):\n\u00b7 " + gemist.join("\n\u00b7 ")), 50);
   };
   const plakUitTekst = (t) => {
     const i = String(t || "").indexOf(KOPIE_MARKER);
@@ -16733,16 +16892,20 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 <datalist id={"zalen-" + b.id}>
                   <option value="de Deel" /><option value="Groene Schuur" /><option value="Binnentuin" /><option value="Moestuin" /><option value="Boomgaard" />
                 </datalist>
+                <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }} title="Status van de boeking"
+                  value={velden.status} onChange={(e) => setVelden((v) => ({ ...v, status: e.target.value }))}>
+                  {STATUS_OPTIES.map(([w, l]) => <option key={w} value={w}>{l}</option>)}
+                </select>
               </div>
             </div>
           : <span title={naamTekst || b.naam || ""} className="serif ink font-bold text-[19px] leading-tight min-w-0 w-full md:w-auto md:flex-1 truncate">{naamTekst || b.naam || "Zonder naam"}</span>}
 
         {statusTekst && !bewerk && <span className="text-[11.5px] shrink-0" style={{ color: "#a05a00" }}>{statusTekst}</span>}
-        {bewerk && magNaamStatus && (
-          <select className="input px-1.5 py-1 text-[12.5px] shrink-0" style={{ width: "auto", minWidth: 0 }}
-            value={velden.status} onChange={(e) => setVelden((v) => ({ ...v, status: e.target.value }))}>
-            {STATUS_OPTIES.map(([w, l]) => <option key={w} value={w}>{l}</option>)}
-          </select>
+        {bewerk && magNaamStatus && partijDagLabel(b.datum) && (
+          <span className="text-[12.5px] font-semibold shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-1"
+            style={{ border: "1px dashed " + T.line, color: "#6b7360" }} title="De dag van deze partij — hier niet aan te passen">
+            <CalendarDays size={13} className="shrink-0" /> {partijDagLabel(b.datum)}
+          </span>
         )}
         {bewerk && magExtra && (
           <>
@@ -16781,7 +16944,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             <button onClick={kopieerInvulling} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + (kopieOk ? "#4f7a3a" : T.line), color: kopieOk ? "#4f7a3a" : T.ink }} title="Hele invulling kopiëren (ook met Ctrl+C zonder tekstselectie) — plakken kan in een andere boeking">
               {kopieOk ? <Check size={17} /> : <Copy size={17} />}
             </button>
-            <button onClick={async () => { try { const t = await navigator.clipboard.readText(); if (!plakUitTekst(t)) alert("Geen gekopieerde invulling op het klembord gevonden."); } catch (e) { alert("Plakken kan ook met Ctrl+V in dit blok."); } }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Gekopieerde invulling hier plakken (ook met Ctrl+V)">
+            <button onClick={async () => { try { const t = await navigator.clipboard.readText(); if (!plakUitTekst(t)) melding("Geen gekopieerde invulling op het klembord gevonden."); } catch (e) { melding("Plakken kan ook met Ctrl+V in dit blok."); } }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Gekopieerde invulling hier plakken (ook met Ctrl+V)">
               <ClipboardPaste size={17} />
             </button>
             {onInvKlaar && (
@@ -17280,7 +17443,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                   onderin dat venster, zodat je eerst ziet wat je weggooit. */}
               {handmatig && <button onClick={() => setGeschOpen(true)} className="ff text-[12px] mute underline">geschiedenis{handmatig.length ? " (" + handmatig.length + ")" : ""}</button>}
               {onVerwijderPartij && (
-                <button onClick={() => { if (window.confirm('Deze partij verwijderen?\n\nHij verdwijnt van boekingen en mise-en-place, en is terug te zetten via "Verwijderd" naast de Vandaag-knop.')) onVerwijderPartij(); }}
+                <button onClick={async () => { if (await bevestig('Deze partij verwijderen?\n\nHij verdwijnt van boekingen en mise-en-place, en is terug te zetten via "Verwijderd" naast de Vandaag-knop.')) onVerwijderPartij(); }}
                   className="ff text-[12px] underline" style={{ color: "#b3261e" }}>partij verwijderen</button>
               )}
             </div>
@@ -17927,23 +18090,23 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const uit = [...lijst, nieuw];
     setBladen(uit); setActief(uit.length - 1); bewaar(uit);
   };
-  const hernoemBlad = () => {
+  const hernoemBlad = async () => {
     const b = bladen[actief]; if (!b) return;
-    const naam = window.prompt("Naam van dit blad", b.naam || "");
+    const naam = await vraagInvoer("", { titel: "Naam van dit blad", waarde: b.naam || "", placeholder: "Blad", okLabel: "Opslaan" });
     if (naam == null || !naam.trim()) return;
     const uit = syncVak().map((x, i) => (i === actief ? { ...x, naam: naam.trim() } : x));
     setBladen(uit); bewaar(uit);
   };
-  const wegBlad = () => {
+  const wegBlad = async () => {
     if (bladen.length <= 1) return;
     const b = bladen[actief];
-    if (!window.confirm('Blad "' + (b.naam || "") + '" en de tekst erop weghalen?')) return;
+    if (!await bevestig('Blad "' + (b.naam || "") + '" en de tekst erop weghalen?')) return;
     const uit = syncVak().filter((_, i) => i !== actief);
     const ni = Math.max(0, actief - 1);
     setBladen(uit); setActief(ni); zetVak(uit[ni] ? uit[ni].html : ""); bewaar(uit);
   };
-  const wisBlad = () => {
-    if (!window.confirm("Alles op dit blad wissen?")) return;
+  const wisBlad = async () => {
+    if (!await bevestig("Alles op dit blad wissen?")) return;
     zetVak("");
     const uit = syncVak().map((x, i) => (i === actief ? { ...x, html: "" } : x));
     setBladen(uit); bewaar(uit);
@@ -17960,8 +18123,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       + esc2((b.door ? "Laatst aangepast door " + b.door + " · " : "") + new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }))
       + "</div>" + html + "</body></html>");
   };
-  const zetHistorieTerug = (h) => {
-    if (!window.confirm('Versie van ' + new Date(h.t).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " terugzetten op het huidige blad?")) return;
+  const zetHistorieTerug = async (h) => {
+    if (!await bevestig('Versie van ' + new Date(h.t).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " terugzetten op het huidige blad?")) return;
     zetVak(h.html || "");
     setHistOpen(false);
     getypt();
@@ -19240,7 +19403,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
               <div key={b.id} className="flex items-center gap-2 text-[13.5px]">
                 <span className="min-w-0 flex-1 truncate ink">{b.naam || "Zonder naam"} <span className="mute">· {kolKop(b.datum)}</span></span>
                 <button onClick={() => onHerstel(b.id)} className="btno ff rounded-lg px-2.5 py-1 text-[12px] font-medium">Terugzetten</button>
-                <button onClick={() => { if (window.confirm("Deze partij permanent verwijderen? Dit is niet terug te draaien.")) onPermanent(b); }}
+                <button onClick={async () => { if (await bevestig("Deze partij permanent verwijderen? Dit is niet terug te draaien.")) onPermanent(b); }}
                   className="ff rounded-lg px-2.5 py-1 text-[12px] font-medium" style={{ border: "1px solid #b3261e", color: "#b3261e" }}>Permanent</button>
               </div>
             ))}
@@ -20100,7 +20263,7 @@ function HaccpRecordForm({ kind, editing, prefill, onCancel, onSave }) {
   const set = (id, v) => setVals((o) => ({ ...o, [id]: v }));
   const submit = () => {
     const missing = cfg.cols.filter((c) => (c.type === "num" && num(vals[c.id]) === null) || ((c.type === "time" || c.type === "dur") && !(vals[c.id] || "").trim())).map((c) => c.label);
-    if (missing.length) { alert("Vul eerst alle temperaturen en tijden in:\n– " + missing.join("\n– ")); return; }
+    if (missing.length) { melding("Vul eerst alle temperaturen en tijden in:\n– " + missing.join("\n– ")); return; }
     const out = { kind, date, note: note.trim() };
     cfg.cols.forEach((c) => { out[c.id] = c.type === "num" ? num(vals[c.id]) : (vals[c.id] || "").trim(); });
     onSave(out);
@@ -20170,7 +20333,7 @@ function HaccpForm({ editing, onCancel, onSave }) {
       if (num(values[u.id]) === null) missing.push(u.name + " (thermometer)");
     });
     if (calibNum === null) missing.push("IJking (ijswater)");
-    if (missing.length) { alert("Vul eerst alle temperaturen in:\n– " + missing.join("\n– ")); return; }
+    if (missing.length) { melding("Vul eerst alle temperaturen in:\n– " + missing.join("\n– ")); return; }
     const out = {}, outS = {};
     HACCP_UNITS.forEach((u) => { out[u.id] = num(values[u.id]); outS[u.id] = num(screen[u.id]); });
     onSave({ checkDate, values: out, screen: outS, calibration: { measured: calibNum, ok: calibOk === null ? null : calibOk }, note: note.trim() });
@@ -20258,7 +20421,7 @@ function BatchMeasureModal({ batches, onAdd, onFinish, onClose }) {
   const measuredToday = (b) => (b.log || []).some((e) => String(e.date).slice(0, 10) === today) || saved[b.id];
   const check = (b) => {
     const v = vals[b.id] || {};
-    if (!v.ph && !v.brix && !v.tempC && !(v.note || "").trim()) { alert("Vul minstens één waarde in."); return null; }
+    if (!v.ph && !v.brix && !v.tempC && !(v.note || "").trim()) { melding("Vul minstens één waarde in."); return null; }
     return { date: today, ph: v.ph || "", brix: v.brix || "", tempC: v.tempC || "", note: (v.note || "").trim() };
   };
   const save = (b) => {
@@ -20524,7 +20687,7 @@ function RecipeDetail({ recipe, user, canEdit, usageCount, openCount, baseRecipe
                 try { await navigator.clipboard.writeText(url); ok = true; } catch (err) {
                   try { const ta = document.createElement("textarea"); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); ok = true; } catch (e2) {}
                 }
-                if (!ok) window.prompt("Kopieer de link:", url);
+                if (!ok) vraagInvoer("Kopiëren lukte niet. Neem de link hieronder zelf over.", { titel: "Deellink", waarde: url, okLabel: "Klaar" });
                 else { const kn = e.currentTarget; kn.style.background = "#e4ecdc"; setTimeout(() => { try { kn.style.background = ""; } catch (e3) {} }, 1200); }
               }} className="ff inline-flex items-center justify-center w-11 h-11 acc rounded-lg hover:opacity-70" style={{ border: "1px solid #cfe0c4" }} title="Deellink naar dit recept kopiëren (alleen-lezen)"><Link size={22} /></button>
             )}
@@ -20740,10 +20903,10 @@ function useConcept(sleutel, snapshot, zetters) {
   }, [ser, sleutel]);
   const concept = conceptLees(sleutel);
   const herstelbaar = !!(concept && JSON.stringify(concept.d) !== ser);
-  const herstel = () => {
+  const herstel = async () => {
     const c = conceptLees(sleutel);
-    if (!c) { alert("Geen eerder concept gevonden."); return; }
-    if (!window.confirm("Niet-opgeslagen invulling van " + conceptWanneer(c) + " terugzetten? De huidige inhoud van het formulier wordt vervangen.")) return;
+    if (!c) { melding("Geen eerder concept gevonden."); return; }
+    if (!await bevestig("Niet-opgeslagen invulling van " + conceptWanneer(c) + " terugzetten? De huidige inhoud van het formulier wordt vervangen.")) return;
     zetters(c.d);
   };
   const wis = () => { try { localStorage.removeItem(sleutel); } catch (e) {} };
@@ -20938,7 +21101,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
     else setIngredients((xs) => xs.map((x, j) => (j === i ? { ...x, item: item.r.name, recipeRef: item.r.id, artikelCode: null } : x)));
     setIngSug(null); setIngSugIdx(null);
   };
-  const submit = () => { if (!name.trim()) { alert("Geef het recept een naam."); return; } if (!(Number(shelfDays) > 0)) { alert("Vul de houdbaarheid in (dagen)."); return; } if (recipeType === "variatie" && !basePick) { alert("Kies eerst het basisrecept waar dit een variatie op is."); return; } conceptApi.wis(); onSave({
+  const submit = () => { if (!name.trim()) { melding("Geef het recept een naam."); return; } if (!(Number(shelfDays) > 0)) { melding("Vul de houdbaarheid in (dagen)."); return; } if (recipeType === "variatie" && !basePick) { melding("Kies eerst het basisrecept waar dit een variatie op is."); return; } conceptApi.wis(); onSave({
     name: name.trim(), category: normCategory(category.trim()) || "Zonder categorie",
     ingredients: ingredients.filter((x) => x.item.trim()), steps: steps.filter((x) => x.trim()),
     season: seasons.length ? SEASONS.filter((s) => seasons.includes(s)) : ["Hele jaar"],
@@ -21538,7 +21701,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
   const plusBwMat = () => setBw((b) => ({ ...b, materialen: [...b.materialen, { naam: "", aantal: "" }] }));
   const bewaarBewerk = async () => {
     const materialen = bw.materialen.map((m) => ({ naam: String(m.naam || "").trim(), aantal: eurNum(m.aantal) || 0 })).filter((m) => m.naam && m.aantal > 0);
-    if (!materialen.length) { alert("Minstens één materiaal met een aantal is nodig — of gebruik Verwijderen."); return; }
+    if (!materialen.length) { melding("Minstens één materiaal met een aantal is nodig — of gebruik Verwijderen."); return; }
     const naam = onAskName ? await onAskName("bezorging", "Bezorging aanpassen") : "";
     if (onAskName && !naam) return;
     onBewerk(reg.id, { materialen, notitie: bw.notitie, door: naam });
@@ -21711,7 +21874,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
         );
       })()}
       {canEdit && onDelete && (
-        <button onClick={() => { if (window.confirm("Deze registratie verwijderen?")) onDelete(reg.id); }} className="ff mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>
+        <button onClick={async () => { if (await bevestig("Deze registratie verwijderen?")) onDelete(reg.id); }} className="ff mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Verwijderen</button>
       )}
       </>)}
     </div>
@@ -21767,7 +21930,7 @@ function PaklijstKaart({ lijst, canEdit, bewerk, onWijzig, onVerwijder }) {
               ))}
               <AddRow onClick={plusItem} label="Item toevoegen" />
               <div className="flex justify-end pt-1">
-                <button onClick={() => { if (window.confirm('Paklijst "' + lijst.naam + '" verwijderen? Dit kan niet ongedaan gemaakt worden.')) onVerwijder(); }}
+                <button onClick={async () => { if (await bevestig('Paklijst "' + lijst.naam + '" verwijderen? Dit kan niet ongedaan gemaakt worden.')) onVerwijder(); }}
                   className="ff inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:opacity-70" style={{ color: "#8a4a3a" }}><Trash2 size={12} /> Paklijst verwijderen</button>
               </div>
             </div>
@@ -21855,9 +22018,9 @@ function BezorgScreen({ boekingen, keuzeBoekingen, bezorgLijst, materiaalItems, 
   const wegRij = (i) => setRijen((rs) => (rs.length <= 1 ? [{ naam: "", aantal: "" }] : rs.filter((_, j) => j !== i)));
 
   const opslaan = async () => {
-    if (!gekozen) { alert("Kies eerst bij welke partij dit hoort."); return; }
+    if (!gekozen) { melding("Kies eerst bij welke partij dit hoort."); return; }
     const materialen = rijen.map((r) => ({ naam: String(r.naam || "").trim(), aantal: eurNum(r.aantal) || 0 })).filter((r) => r.naam && r.aantal > 0);
-    if (!materialen.length) { alert("Vul minstens één materiaal met een aantal in."); return; }
+    if (!materialen.length) { melding("Vul minstens één materiaal met een aantal in."); return; }
     const naam = onAskName ? await onAskName("bezorging", "Bezorging registreren") : "";
     if (onAskName && !naam) return; // geannuleerd in de naam-popup — niets vastleggen
     onSave({ boekingId: gekozen.id, boekingNaam: gekozen.naam, boekingDatum: gekozen.datum, materialen, notitie, door: naam });
@@ -21898,8 +22061,8 @@ function BezorgScreen({ boekingen, keuzeBoekingen, bezorgLijst, materiaalItems, 
   const stopBezorgModus = () => { setBezorgModus(false); setBezorgAantallen({}); setGekozen(null); setZoek(""); setNotitie(""); setVanafPaklijst(null); setLosNaam(""); setLosAantal(""); };
   const opslaanVanuitLijst = async () => {
     const materialen = Object.entries(bezorgAantallen).map(([naam, aantal]) => ({ naam, aantal: Number(aantal) || 0 })).filter((m) => m.aantal > 0);
-    if (!gekozen) { alert("Kies eerst de partij waar dit materiaal mee gaat."); return; }
-    if (!materialen.length) { alert("Vul bij minstens één materiaal een aantal in."); return; }
+    if (!gekozen) { melding("Kies eerst de partij waar dit materiaal mee gaat."); return; }
+    if (!materialen.length) { melding("Vul bij minstens één materiaal een aantal in."); return; }
     const naam = onAskName ? await onAskName("bezorging", "Bezorging registreren") : "";
     if (onAskName && !naam) return; // geannuleerd in de naam-popup
     onSave({ boekingId: gekozen.id, boekingNaam: gekozen.naam, boekingDatum: gekozen.datum, materialen, notitie, door: naam });
