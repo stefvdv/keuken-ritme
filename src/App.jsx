@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-10g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-10i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17910,12 +17910,20 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   useEffect(() => { if (balkRef.current) setBalkHoogte(balkRef.current.offsetHeight); }, [balkBreed, notitieOpen]);
   const [bestelOpen, setBestelOpen] = useState(false);
   // Hoeveel regels er op de bestellijst staan, voor de stip op de knop. Een
-  // leeg vakje telt niet mee, en een regel die van de lijst is gehaald ook niet.
+  // leeg vakje telt niet mee, een regel die van de lijst is gehaald ook niet,
+  // en — dit is waar de stip eerder ten onrechte van aan ging — een aantal dat
+  // onder een artikel staat dat niet meer bestaat. Toen de artikelcodes de
+  // leverancier ervoor kregen bleven er oude sleutels achter; die tellen hier
+  // niet mee, net zoals ze ook niet in de lijst zelf te zien zijn.
   const bestelTeDoen = React.useMemo(() => {
     const a = (bestelLijst && bestelLijst.aantallen) || {};
     const weg = new Set((bestelLijst && bestelLijst.verborgen) || []);
-    return Object.keys(a).filter((k) => !weg.has(k) && String(a[k] == null ? "" : a[k]).trim()).length;
-  }, [bestelLijst]);
+    const bestaat = new Set([
+      ...(bdArtikelen || []).map((x) => "a:" + x.code),
+      ...(((bestelLijst && bestelLijst.eigenProducten) || []).map((x) => "e:" + x.id)),
+    ]);
+    return Object.keys(a).filter((k) => bestaat.has(k) && !weg.has(k) && String(a[k] == null ? "" : a[k]).trim()).length;
+  }, [bestelLijst, bdArtikelen]);
   const heeftNotitie = (() => {
     const html = notitie && Array.isArray(notitie.bladen) ? notitie.bladen.map((b) => b.html || "").join(" ") : (notitie && notitie.html) || (typeof notitie === "string" ? notitie : "");
     return String(html).replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").trim().length > 0;
@@ -18286,7 +18294,10 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       // We houden marge aan, zodat een schatting die er iets naast zit niet
       // meteen een bladzijde verspilt — en de klemruimte gaat eraf.
       const heel = dagRegels <= 52 - KLEM_REGELS;
-      return "<div class='" + (heel ? "d" : "dl") + "'><h2>" + pEsc(dagKop(d)) + "</h2>" + stukken + "</div>";
+      // Ook op papier erbij: anders staan er twee maandagen in de klapper en
+      // weet je bij de tweede niet welke week je voor je hebt.
+      const kop = dagKop(d) + (d > laatsteVanDeWeek ? " \u2014 volgende week" : "");
+      return "<div class='" + (heel ? "d" : "dl") + "'><h2>" + pEsc(kop) + "</h2>" + stukken + "</div>";
     };
     printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
       + "@page{size:A4;margin:" + (14 + KLEM_MM) + "mm 14mm 14mm}body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
@@ -18428,6 +18439,10 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
             <button data-mepdag={d} onClick={() => setDagDicht((o) => ({ ...o, [d]: !isDicht(d) }))} className="ff w-full text-left flex items-center gap-2 mb-1.5 pb-1" style={{ borderBottom: "3px solid " + T.line }}>
               {isDicht(d) ? <ChevronDown size={15} className="acc shrink-0" /> : <ChevronUp size={15} className="acc shrink-0" />}
               <span className="serif ink font-bold text-xl leading-tight">{dagKop(d)}</span>
+              {/* De achtste dag is de maandag van de week erna. Zonder dat
+                  erbij zie je twee maandagen onder elkaar en weet je niet
+                  welke je voor je hebt. */}
+              {d > laatsteVanDeWeek && <span className="text-[12px] font-semibold uppercase tracking-widest acc">volgende week</span>}
               <span className="text-[12px] mute">{items.length} {items.length === 1 ? "partij" : "partijen"} · {items.reduce((n, b) => n + gastenVan(b), 0)} gasten</span>
             </button>
             {/* Twee kolommen die zichzelf vullen: een korte kaart laat geen gat
@@ -18502,7 +18517,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           <button onClick={() => setBestelOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title={bestelTeDoen ? "Bestellijst — er staat iets op de lijst" : "Bestellijst — gedeelde inkooplijst"}><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst
             {/* Een stip zodra er iets is ingevuld: anders moet je de lijst openen
                 om te zien of er nog wat ligt. */}
-            {bestelTeDoen > 0 && <span className="absolute -top-1 -right-1 rounded-full" style={{ width: 9, height: 9, background: "#b3261e" }} title={bestelTeDoen + " regels ingevuld"} />}
+            {/* Dezelfde stip als bij Notities: zelfde plek, zelfde maat, zelfde kleur. */}
+            {bestelTeDoen > 0 && !bestelOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} title={bestelTeDoen + " regels ingevuld"} />}
           </button>
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
