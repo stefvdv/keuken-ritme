@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-10c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-10g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3128,6 +3128,9 @@ function App() {
   const [negeerIng, setNegeerIng] = useState([]); // ingredienten die niet in de prijslijst horen
   const [spellingUit, setSpellingUit] = useState([]); // namen die bewust afwijken en niet gecorrigeerd worden
   const [naamAlias, setNaamAlias] = useState({}); // zelf samengevoegde namen: variant -> hoofdnaam
+  // Welk inkoopartikel bij welke ingredientnaam hoort. Eén lijst voor alle
+  // recepten samen: "suiker" hoef je maar één keer vast te zetten.
+  const [artikelKoppel, setArtikelKoppel] = useState({});
   const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
   // Het team is een naamlijst: een merkje bij wie wat gedaan heeft, geen
   // account. Hij is te bewerken in Extras; de namen uit de code zijn alleen
@@ -4338,6 +4341,7 @@ function App() {
   };
   // De prijsmotor leest de artikelen uit een module-variabele; hier bijgewerkt.
   React.useMemo(() => zetPrijslijst(bdArtikelen), [bdArtikelen]);
+  React.useMemo(() => zetArtikelKoppel(artikelKoppel), [artikelKoppel]);
   const [catSettings, setCatSettings] = useState(() => {
     // Start met de lokale cache; de gedeelde versie uit Supabase overschrijft dit bij het laden.
     try { return { eigen: JSON.parse(localStorage.getItem("ritme:cats-eigen") || "[]") || [], verborgen: JSON.parse(localStorage.getItem("ritme:cats-verborgen") || "[]") || [] }; } catch (e) { return { eigen: [], verborgen: [] }; }
@@ -4402,6 +4406,23 @@ function App() {
       if (error) flash("Alleen lokaal samengevoegd — draai eerst de app_settings-SQL in Supabase");
       else flash(van + " telt nu mee als " + naar);
     } else flash(van + " telt nu mee als " + naar);
+  };
+  // De vaste koppeling naam -> artikel bewaren. Een lege code betekent
+  // uitdrukkelijk "hier hoort geen artikel bij"; dan houdt de app ook op met
+  // zelf zoeken, want dat leverde juist bij de gewoonste dingen een verkeerd
+  // artikel op.
+  const saveArtikelKoppel = async (volgende) => {
+    const schoon = {};
+    for (const [naam, code] of Object.entries(volgende || {})) {
+      const n = String(naam || "").trim();
+      if (n) schoon[n] = String(code == null ? "" : code).trim() || GEEN_ARTIKEL;
+    }
+    setArtikelKoppel(schoon);
+    if (live) {
+      const { error } = await instelUpsert("calc_artikel", { paren: schoon });
+      if (error) { flash("Alleen lokaal bewaard — draai eerst de app_settings-SQL in Supabase"); return false; }
+    }
+    return true;
   };
   // Een ingredient dat geen inkoopartikel is (kopregel, toelichting) uit de lijst halen.
   const negeerIngredient = async (naam) => {
@@ -4900,7 +4921,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "calc_artikel", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4960,6 +4981,8 @@ function App() {
     if (spRow && spRow.value && Array.isArray(spRow.value.namen)) setSpellingUit(spRow.value.namen);
     const alRow = instelRij("calc_alias");
     if (alRow && alRow.value && alRow.value.paren) setNaamAlias(alRow.value.paren);
+    const akRow = instelRij("calc_artikel");
+    if (akRow && akRow.value && akRow.value.paren) setArtikelKoppel(akRow.value.paren);
     const vmRow = instelRij("verpakkingsvormen");
     if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
     const hiRow = instelRij("haccp_interval");
@@ -6325,26 +6348,14 @@ function App() {
   const showFab = current.screen === "list" && canEdit && section !== "home" && section !== "mep";
 
   // ---------- Meldingencentrum: alle "aandacht nodig"-signalen op één plek ----------
-  // Een melding afronden, alleen op dit apparaat (gebruikt voor Boekingen —
-  // die wijzigingen zijn per apparaat/persoon relevant, niet gedeeld).
-  const rondAfLokaal = (sleutel) => {
-    setAfgerondSet((s) => { const nieuw = new Set([...s, sleutel]); bewaarAfgerondLokaal(nieuw); return nieuw; });
-  };
-  // Een melding afronden én synchroniseren: meteen lokaal bewaren (blijft dus
-  // altijd staan na een refresh), en wegschrijven naar Supabase zodat andere
-  // apparaten hem via het realtime-abonnement ook kwijtraken. Gebruikt voor
-  // alles behalve Boekingen.
-  // Het omgekeerde: een melding weer laten opkomen, ook op de andere apparaten.
+  // Een hele categorie in één klik afronden kan niet meer: dat zette meldingen
+  // weg zonder dat er iets gedaan was, en een meting die niet gedaan is hoort
+  // te blijven staan. Afvinken gebeurt bij het werk zelf; in de balk kun je
+  // alleen nog dempen. Wat eerder is afgerond blijft gewoon afgerond, en het
+  // heropenen hieronder werkt ook nog.
   const heropenMelding = async (sleutel) => {
     setAfgerondSet((s) => { const nieuw = new Set(s); nieuw.delete(sleutel); bewaarAfgerondLokaal(nieuw); return nieuw; });
     if (live) { try { await supabase.from("melding_afgerond").delete().eq("sleutel", sleutel).eq("dag", kitchenDate()); } catch (e) {} }
-  };
-  const rondAf = async (sleutel) => {
-    rondAfLokaal(sleutel);
-    if (live) {
-      const { error } = await supabase.from("melding_afgerond").upsert({ sleutel, dag: kitchenDate(), door: (user && user.name) || "" }, { onConflict: "sleutel,dag" });
-      if (error) { console.error("melding_afgerond opslaan mislukt:", error.message); flash("Niet gesynchroniseerd naar andere apparaten (" + error.message + ")"); }
-    }
   };
   const meldingCategorieen = [];
   if (canEdit && loaded) {
@@ -6393,7 +6404,6 @@ function App() {
           ))}
         </ul>
       ),
-      onAfronden: () => haccpMeldingen.forEach((m) => { m.onDismiss(); rondAf("haccp:" + m.id); }),
     });
 
     // Fermentatie: klaar om af te ronden, of actie/meting nodig.
@@ -6424,14 +6434,12 @@ function App() {
           ))}
         </ul>
       ),
-      onAfronden: () => { setDismissedNotices((d) => ({ ...d, [kitchenDate()]: true })); rondAf("fermentatie:__alles__"); },
     });
 
     // Schoonmaak: tijd om de dag af te tekenen.
     meldingCategorieen.push({
       id: "schoonmaak", label: "Schoonmaak", icon: <Sparkles size={15} />, heeft: !!checkBanner && !afgerondSet.has("schoonmaak:__alles__"),
       content: <p className="text-sm">Het is {String(CHECK_HOUR).padStart(2, "0")}:{String(CHECK_MIN).padStart(2, "0")} geweest — tijd om de schoonmaak van vandaag af te tekenen.<br /><button onClick={() => { setMeldingenOpen(false); setCheckOpen(true); }} className="ff mt-2 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px] font-semibold" style={{ background: "#e6dcc2" }}>Aftekenen</button></p>,
-      onAfronden: () => { dismissCheckBanner(); rondAf("schoonmaak:__alles__"); },
     });
 
     // Boekingen: wat is er de afgelopen dagen aan partijen gewijzigd.
@@ -6465,7 +6473,6 @@ function App() {
           <LaatsteWijzigingenBlok regels={recenteWijz} wijzLabel={wijzLabel} wanneerKort={wanneerKort} bovenrand={wijzItems.length > 0} />
         </div>
       ),
-      onAfronden: () => wijzItems.forEach((it) => rondWijzPartijAf(it.vingerafdruk)), // Boekingen synchroniseert bewust niet tussen apparaten, en blijft permanent afgerond
     });
 
     // Bezorgmateriaal: wat staat er nog open om op te halen — pas als
@@ -6487,7 +6494,6 @@ function App() {
           ))}
         </ul>
       ),
-      onAfronden: () => rondAf("materiaal:__alles__"),
     });
   }
   const sluitMeldingen = () => { balkNetDicht.current = Date.now(); setMeldingenOpen(false); };
@@ -6666,11 +6672,13 @@ function App() {
           teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
-          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} menuEngels={menuEngels} onMenuEngels={canEdit ? saveMenuEngels : null} onOmzetProef={omzetProef} onOmzetDoen={omzetDoen} omzetBezig={omzetBezig}
+          menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} menuEngels={menuEngels} onMenuEngels={canEdit ? saveMenuEngels : null}
+          artikelKoppel={artikelKoppel} onArtikelKoppel={canEdit && chefMode ? saveArtikelKoppel : null} bdArtikelen={bdArtikelen} recepten={recipes}
+          onOmzetProef={omzetProef} onOmzetDoen={omzetDoen} omzetBezig={omzetBezig}
           catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
-          if (String(code || "").trim().toLowerCase() !== "chefmichael") return false;
+          if (!chefCodeKlopt(code)) return false;
           setChefMode(true);
           // Meteen kijken of er nog artikelen dubbel staan bij twee leveranciers.
           const dubbel = dubbeleArtikelen(bdArtikelen);
@@ -7461,6 +7469,44 @@ const artikelScore = (iw, a) => {
   if (!sterk) return 0; // minstens een woord moet echt kloppen ("grove mosterd" ~ "Mosterd grof")
   return punten * 100 - gemist * 40 - Math.abs(aw.length - iw.length); // meeste raak, kortste omschrijving
 };
+// ---------- Vaste koppeling: welk inkoopartikel hoort bij welk ingredient ----------
+// Het zoeken hieronder gaat op woordgelijkenis, en dat gaat juist bij de
+// gewoonste dingen mis: "suiker" vindt vanillesuiker, "bloem" vindt fusilli
+// bloem en "tijm" vindt geitenkaas met tijm. Een verkeerd artikel is erger dan
+// geen: dan boekt de voorraad straks het verkeerde af. Daarom deze lijst, die
+// per ingredientnaam vastlegt welk artikel het is — of dat er geen is.
+// De waarde GEEN_ARTIKEL betekent uitdrukkelijk "hier hoort niets bij, en ga
+// ook niet zoeken"; water en zout uit de kraan hoeven geen artikelnummer.
+const GEEN_ARTIKEL = "-";
+let ARTIKEL_KOPPEL = {};
+const zetArtikelKoppel = (m) => {
+  ARTIKEL_KOPPEL = {};
+  for (const [naam, code] of Object.entries((m && typeof m === "object" ? m : {}))) {
+    const sl = naamSleutel(naam);
+    if (sl) ARTIKEL_KOPPEL[sl] = String(code == null ? "" : code).trim();
+  }
+};
+// Een artikel opzoeken op code. De app zet de leverancier voor de code
+// ("bdtotaal::17125"), maar koppelingen van vroeger bewaren alleen het nummer.
+// Dus vergelijken we op allebei; anders zou een oude koppeling stil wegvallen.
+const artikelOpCode = (code) => {
+  const c = String(code == null ? "" : code).trim();
+  if (!c) return null;
+  const arts = PRIJSLIJST.arts || [];
+  return arts.find((a) => String(a.code) === c)
+    || arts.find((a) => rauweArtikelCode(a.code) === rauweArtikelCode(c))
+    || null;
+};
+// Wat de lijst over deze naam zegt: een artikel, "uitdrukkelijk geen", of niets
+// (dan mag er gezocht worden).
+const artikelUitLijst = (naam) => {
+  const sl = naamSleutel(naam);
+  if (!sl) return null;
+  const code = ARTIKEL_KOPPEL[sl];
+  if (code === undefined) return null;
+  if (!code || code === GEEN_ARTIKEL) return { geen: true, artikel: null };
+  return { geen: false, artikel: artikelOpCode(code) };
+};
 const zoekArtikel = (naam) => {
   const sleutel = zonderAccent(naam).toLowerCase().trim();
   if (!sleutel || !PRIJSLIJST.arts.length) return null;
@@ -7539,9 +7585,14 @@ const ingKost = (ing, diepte) => {
     const bedrag = kostUitBasis({ prijs: batch / opb.n, b: opb.b }, ing.item, ing.amount);
     return bedrag === null ? leeg : { bedrag, auto: true, artikel: null, recept: sub };
   }
-  // Een vastgepind artikel wint; is dat verwijderd, dan zoekt de app weer zelf,
-  // zodat een later ingelezen artikel het ingredient alsnog oppikt.
-  const art = (ing.artikelCode ? PRIJSLIJST.arts.find((a) => a.code === ing.artikelCode) : null) || zoekArtikel(canoniekeNaam(ing.item)) || zoekArtikel(ing.item);
+  // De volgorde: een artikel dat op déze regel is vastgepind wint, want dat is
+  // het meest specifiek. Daarna de vaste lijst per ingredientnaam. Pas als die
+  // niets zegt mag de app zelf zoeken — en zegt de lijst uitdrukkelijk "geen",
+  // dan zoekt hij ook niet, anders komt die verkeerde gok alsnog binnen.
+  const gepind = ing.artikelCode ? artikelOpCode(ing.artikelCode) : null;
+  const uitLijst = gepind ? null : (artikelUitLijst(ing.item) || artikelUitLijst(canoniekeNaam(ing.item)));
+  const art = gepind
+    || (uitLijst ? uitLijst.artikel : (zoekArtikel(canoniekeNaam(ing.item)) || zoekArtikel(ing.item)));
   const pb = artikelPerBasis(art);
   const maat = parseMaat(ing.amount);
   if (!art || !pb) return { bedrag: null, auto: false, artikel: art };
@@ -8054,7 +8105,11 @@ function AssortimentList({ producten, bdArtikelen, recipeById, recipes, dishes, 
     for (const r of recipes || []) {
       const gezien = {};
       for (const ing of r.ingredients || []) {
-        const art = ingKost(ing).artikel || (String(ing.item || "").trim() ? zoekArtikel(ing.item) : null);
+        // Via ingKost, zodat de vaste lijst ook hier geldt; alleen als die
+        // niets zegt mag er nog gezocht worden.
+        const kk = ingKost(ing);
+        const uit = artikelUitLijst(ing.item);
+        const art = kk.artikel || (uit && uit.geen ? null : (String(ing.item || "").trim() ? zoekArtikel(ing.item) : null));
         if (art && !gezien[art.code]) { gezien[art.code] = 1; t[art.code] = (t[art.code] || 0) + 1; }
       }
     }
@@ -8342,6 +8397,11 @@ const normItem = (x) => (typeof x === "string"
 const DOELEN = ["Catering", "Landgoed", "Metaal Kathedraal"];
 // Leveranciers die er altijd zijn, ook als er nog niets van ingelezen is.
 const VASTE_LEVERANCIERS = ["Eigen bodem"];
+// De code van de chef. Stond alleen in de instellingen; nu op één plek, zodat
+// het bestellen bij BD om dezelfde code kan vragen en er niet twee versies
+// ontstaan die uit elkaar lopen.
+const CHEF_CODE = "chefmichael";
+const chefCodeKlopt = (code) => String(code || "").trim().toLowerCase() === CHEF_CODE;
 // De naam van een leverancier tot iets vergelijkbaars: "BD Totaal",
 // "BD-Totaal" en "bd totaal" zijn dezelfde lijst.
 const levSleutel = (x) => zonderAccent(String(x || "")).toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -8865,18 +8925,10 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
     });
     getypt();
   };
-  // Een lijstproduct van de bestellijst halen: alleen hier verborgen, de
-  // calculatielijsten blijven ongemoeid. Terugzetten kan onderaan de pagina.
-  const verbergProduct = (r) => {
-    if (!window.confirm('"' + r.naam + '" van de bestellijst halen? (Blijft gewoon in de calculaties staan; onderaan terug te zetten.)')) return;
-    setSt((s) => {
-      const aantallen = { ...s.aantallen }; delete aantallen[r.sleutel];
-      const n = { ...s, aantallen, verborgen: [...new Set([...(s.verborgen || []), r.sleutel])] };
-      stRef.current = n;
-      return n;
-    });
-    getypt();
-  };
+  // Producten van de lijst halen kan hier niet meer: dat prullenbakje zat
+  // naast het invulvakje en werd te makkelijk misgeklikt. Wat er al verborgen
+  // staat is onderaan nog terug te zetten, en een product echt weghalen hoort
+  // bij de calculaties thuis.
   const zetTerug = (sleutel) => {
     setSt((s) => { const n = { ...s, verborgen: (s.verborgen || []).filter((x) => x !== sleutel) }; stRef.current = n; return n; });
     getypt();
@@ -8904,6 +8956,12 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
       : "";
     if (!window.confirm("Deze " + mee.length + " regels in de winkelwagen van BD-Totaal zetten?\n\n" + regels + rest
       + "\n\nDe bestelling wordt NIET verzonden \u2014 dat doe je zelf op bd-totaal.nl.")) return;
+    // De code van de chef erbij. Dit raakt aan geld bij de leverancier, dus
+    // hetzelfde slot als op de chef-functie — ook als iemand de app al open
+    // vond staan.
+    const code = window.prompt("Code van de chef:");
+    if (code === null) return;
+    if (!chefCodeKlopt(code)) { alert("Die code klopt niet. Er is niets verstuurd."); return; }
     setBdBezig(true);
     try {
       const uit = await onNaarBd(mee);
@@ -8966,12 +9024,13 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
         <div className="text-sm ink truncate">{r.naam}</div>
         {(r.sub || toonLijst) ? <div className="text-[11.5px] mute truncate">{[toonLijst ? r.lijst : "", r.sub].filter(Boolean).join(" \u00b7 ")}</div> : null}
       </div>
+      {/* Alleen het aantal is hier aan te raken. Het prullenbakje haalde
+          producten van de lijst, en dat is te makkelijk misgeklikt naast een
+          invulvakje — een product dat weg moet hoort bij de calculaties thuis.
+          Een zelf toegevoegd product kun je nog wel bewerken. */}
       {r.eigenId
-        ? <>
-            <button onClick={() => { const p = (st.eigenProducten || []).find((x) => x.id === r.eigenId); if (p) setVorm({ ...p }); }} className="ff shrink-0 mute hover:opacity-60 p-1"><Pencil size={14} /></button>
-            <button onClick={() => wegEigen(r.eigenId)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Verwijderen"><Trash2 size={14} /></button>
-          </>
-        : <button onClick={() => verbergProduct(r)} className="ff shrink-0 mute hover:opacity-60 p-1" title="Van de bestellijst halen (blijft in de calculaties)"><Trash2 size={14} /></button>}
+        ? <button onClick={() => { const p = (st.eigenProducten || []).find((x) => x.id === r.eigenId); if (p) setVorm({ ...p }); }} className="ff shrink-0 mute hover:opacity-60 p-1" title="Dit zelf toegevoegde product bewerken"><Pencil size={14} /></button>
+        : null}
       <input className="input px-2.5 py-1.5 text-sm text-right shrink-0" style={{ width: "6.5rem" }} value={st.aantallen[r.sleutel] || ""} onChange={(e) => zetAantal(r.sleutel, e.target.value)} placeholder="aantal" />
     </div>
   );
@@ -9026,6 +9085,8 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
           <div className="flex items-center gap-2 mt-2">
             <button onClick={bewaarEigen} className="btnp ff rounded-lg px-4 py-2 text-sm font-medium">Opslaan</button>
             <button onClick={() => setVorm(null)} className="btno ff rounded-lg px-4 py-2 text-sm font-medium">Annuleren</button>
+            {/* Weghalen kan alleen hier, niet meer naast het invulvakje. */}
+            {vorm.id && <button onClick={() => { wegEigen(vorm.id); setVorm(null); }} className="ff ml-auto mute hover:opacity-60 inline-flex items-center gap-1.5 text-sm" title="Dit product van de lijst halen"><Trash2 size={14} /> Verwijderen</button>}
           </div>
           <div className="text-[11.5px] mute mt-2">Wordt later een leverancierslijst ingeladen met dit product erin, dan voegt de app ze vanzelf samen — de ingeladen informatie wint.</div>
         </div>
@@ -9360,6 +9421,110 @@ function EetvolgordeBeheer({ momenten, onSave }) {
   );
 }
 
+// Welk inkoopartikel hoort bij welke ingredientnaam. De app zoekt dat zelf op
+// woordgelijkenis, en dat gaat juist bij de gewoonste dingen mis: "suiker"
+// vindt vanillesuiker, "bloem" vindt fusilli bloem. Hier zet je het vast — of
+// je zegt uitdrukkelijk dat er geen artikel bij hoort, en dan houdt de app ook
+// op met zoeken.
+function ArtikelKoppelBeheer({ waarde, artikelen, recepten, onSave }) {
+  const [zoek, setZoek] = useState("");
+  const [alles, setAlles] = useState(false);
+  const [vies, setVies] = useState(null); // { naam, code } zolang je typt
+  const lijst = waarde && typeof waarde === "object" ? waarde : {};
+
+  // Hoe vaak elke ingredientnaam in de recepten voorkomt: de meestgebruikte
+  // eerst, want daar zit het meeste aan vast.
+  const namen = React.useMemo(() => {
+    const tel = new Map();
+    for (const r of recepten || []) for (const ing of (r && r.ingredients) || []) {
+      const naam = String((ing && ing.item) || "").trim();
+      if (!naam) continue;
+      const sl = naamSleutel(naam);
+      if (!sl) continue;
+      if (!tel.has(sl)) tel.set(sl, { sleutel: sl, naam, aantal: 0 });
+      tel.get(sl).aantal++;
+    }
+    // Namen die alleen in de lijst staan (en niet meer in een recept) blijven
+    // zichtbaar, anders kun je ze nooit meer weghalen.
+    for (const naam of Object.keys(lijst)) {
+      const sl = naamSleutel(naam);
+      if (sl && !tel.has(sl)) tel.set(sl, { sleutel: sl, naam, aantal: 0 });
+    }
+    return [...tel.values()].sort((a, b) => b.aantal - a.aantal || a.naam.localeCompare(b.naam, "nl"));
+  }, [recepten, waarde]);
+
+  const codeVan = (rij) => {
+    if (vies && vies.sleutel === rij.sleutel) return vies.code;
+    for (const [naam, code] of Object.entries(lijst)) if (naamSleutel(naam) === rij.sleutel) return code;
+    return "";
+  };
+  const artikelVan = (code) => {
+    const c = String(code || "").trim();
+    if (!c || c === GEEN_ARTIKEL) return null;
+    return (artikelen || []).find((a) => String(a.code) === c || rauweArtikelCode(a.code) === rauweArtikelCode(c)) || null;
+  };
+  const zet = async (rij, code) => {
+    const volgende = { ...lijst };
+    for (const naam of Object.keys(volgende)) if (naamSleutel(naam) === rij.sleutel) delete volgende[naam];
+    const c = String(code || "").trim();
+    if (c) volgende[rij.naam] = c;
+    setVies(null);
+    await onSave(volgende);
+  };
+
+  const q = String(zoek || "").toLowerCase().trim();
+  const passend = namen.filter((r) => {
+    if (!q) return true;
+    if (r.naam.toLowerCase().includes(q)) return true;
+    const a = artikelVan(codeVan(r));
+    return !!(a && String(a.omschrijving || "").toLowerCase().includes(q));
+  });
+  const getoond = alles || q ? passend.slice(0, 400) : passend.slice(0, 25);
+  const gezet = namen.filter((r) => codeVan(r)).length;
+  const open = namen.filter((r) => !codeVan(r) && r.aantal > 0).length;
+
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">
+        De app zoekt zelf welk artikel bij een ingredient hoort, en dat gaat bij gewone namen nogal eens mis.
+        Wat hier staat gaat daaroverheen. Laat je het vakje leeg met een streepje <span className="ink">{GEEN_ARTIKEL}</span>, dan hoort er uitdrukkelijk <span className="ink">geen</span> artikel bij —
+        handig voor water en zout — en houdt de app op met zoeken.
+        <span className="ink"> {gezet} vastgezet</span>, {open} nog open.
+      </p>
+      <div className="relative mb-3">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+        <input className="input pl-9 pr-3 py-2 w-full text-sm" value={zoek} onChange={(e) => setZoek(e.target.value)} placeholder="Zoek een ingredient of artikel" />
+      </div>
+      <div className="divide-y" style={{ borderColor: T.line }}>
+        {getoond.map((r) => {
+          const code = codeVan(r);
+          const a = artikelVan(code);
+          return (
+            <div key={r.sleutel} className="flex items-center gap-2 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm ink truncate">{r.naam}{r.aantal ? <span className="mute font-normal"> · {r.aantal}×</span> : null}</div>
+                <div className="text-[11.5px] mute truncate">
+                  {code === GEEN_ARTIKEL ? "geen artikel" : a ? a.omschrijving + (a.inhoud ? " · " + a.inhoud : "") : (code ? "artikel " + code + " niet gevonden" : "de app zoekt zelf")}
+                </div>
+              </div>
+              <input className="input px-2 py-1.5 text-sm text-right shrink-0" style={{ width: "7rem" }}
+                value={code}
+                onChange={(e) => setVies({ sleutel: r.sleutel, code: e.target.value })}
+                onBlur={(e) => { if (vies && vies.sleutel === r.sleutel) zet(r, e.target.value); }}
+                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                placeholder="code" title="Artikelnummer, of een streepje voor geen artikel" />
+            </div>
+          );
+        })}
+        {!getoond.length && <div className="py-3 text-sm mute">Niets gevonden.</div>}
+      </div>
+      {!q && passend.length > getoond.length && (
+        <button onClick={() => setAlles(true)} className="ff mute hover:opacity-70 text-sm mt-2">Alle {passend.length} tonen</button>
+      )}
+    </div>
+  );
+}
+
 // Het woordenboek voor de Engelse menukaart. De app heeft er zelf al een paar
 // honderd keukenwoorden in zitten; hier zet je de jouwe erbij of overschrijf je
 // een vertaling die niet bevalt. Een eigen woord wint altijd van de ingebouwde.
@@ -9430,7 +9595,7 @@ function MenuEngelsBeheer({ waarde, onZet }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, onOmzetProef, onOmzetDoen, omzetBezig, onHaalProducten }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, recepten, onOmzetProef, onOmzetDoen, omzetBezig, onHaalProducten }) {
   const catImportRef = React.useRef(null);
   const [prodBezig, setProdBezig] = useState(false); // productenlijst wordt opgehaald
   const [catZichtOpen, setCatZichtOpen] = useState(false);
@@ -9657,6 +9822,13 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>Menu in het Engels</SectionTitle>
           <MenuEngelsBeheer waarde={menuEngels} onZet={onMenuEngels} />
+        </>
+      )}
+
+      {onArtikelKoppel && (
+        <>
+          <SectionTitle>Ingredienten en inkoopartikelen</SectionTitle>
+          <ArtikelKoppelBeheer waarde={artikelKoppel} artikelen={bdArtikelen} recepten={recepten} onSave={onArtikelKoppel} />
         </>
       )}
 
@@ -14981,10 +15153,12 @@ function MeldingenBalk({ categorieen, onSluiten, isGedempt, onDempen }) {
       {huidige && (
         <div className="p-3.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>
           {huidige.heeft || huidige.toonAltijd ? huidige.content : <div className="text-sm">Niets te melden — alles is afgerond of afgetekend.</div>}
+          {/* Alleen dempen. "Afronden" zette een hele categorie in één klik
+              weg zonder dat er iets gedaan was — een meting die niet gedaan is
+              hoort te blijven staan. Afvinken gebeurt bij het werk zelf. */}
           {huidige.heeft && (
             <div className="flex justify-end gap-2 mt-3 pt-3" style={{ borderTop: "1px solid #e4d6b8" }}>
               <button onClick={() => { if (onDempen) onDempen(huidige.id); setOpen(null); }} className="ff rounded-lg px-3 py-1.5 text-sm font-medium" style={{ border: "1px solid #d8c9a3" }} title="Telt tot morgen 07:00 niet mee in de meldingsstip">Dempen</button>
-              <button onClick={() => { huidige.onAfronden(); setOpen(null); }} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Afronden</button>
             </div>
           )}
         </div>
@@ -17735,6 +17909,13 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   }, [balkBreed]);
   useEffect(() => { if (balkRef.current) setBalkHoogte(balkRef.current.offsetHeight); }, [balkBreed, notitieOpen]);
   const [bestelOpen, setBestelOpen] = useState(false);
+  // Hoeveel regels er op de bestellijst staan, voor de stip op de knop. Een
+  // leeg vakje telt niet mee, en een regel die van de lijst is gehaald ook niet.
+  const bestelTeDoen = React.useMemo(() => {
+    const a = (bestelLijst && bestelLijst.aantallen) || {};
+    const weg = new Set((bestelLijst && bestelLijst.verborgen) || []);
+    return Object.keys(a).filter((k) => !weg.has(k) && String(a[k] == null ? "" : a[k]).trim()).length;
+  }, [bestelLijst]);
   const heeftNotitie = (() => {
     const html = notitie && Array.isArray(notitie.bladen) ? notitie.bladen.map((b) => b.html || "").join(" ") : (notitie && notitie.html) || (typeof notitie === "string" ? notitie : "");
     return String(html).replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").trim().length > 0;
@@ -17823,8 +18004,15 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     return () => { document.removeEventListener("scroll", meet, true); window.removeEventListener("resize", meet); };
   }, [somOpen]);
 
+  // Acht dagen: de week zelf, en de maandag erna erachteraan. In het weekend
+  // wordt er vaak al voor die maandag gewerkt, en dan is het onhandig als je
+  // daarvoor het blok "volgende week" moet openklappen.
+  const DAGEN_IN_BEELD = 8;
   const dagen = [];
-  for (let i = 0; i < 7; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); dagen.push(localDate(d)); }
+  for (let i = 0; i < DAGEN_IN_BEELD; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); dagen.push(localDate(d)); }
+  // De zondag blijft het einde van de wéék — dat is wat het weeknummer en het
+  // label aanduiden, ook nu er een dag achter staat.
+  const laatsteVanDeWeek = dagen[6];
   const dagLabelKort = (d) => { try { const x = new Date(d + "T12:00:00"); return x.getDate() + " " + ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"][x.getMonth()]; } catch (e) { return d || ""; } };
   const schuifWeek = (n) => { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + n * 7); setWeekStart(localDate(d)); };
   // Tijdens het scrollen neemt de dag de plaats van de titel in: zodra de kop
@@ -17903,9 +18091,14 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // Afgezegd/geannuleerd hoort niet in de mep (op de Boekingen-pagina blijven
   // ze wel zichtbaar). Ook een notitie als "afgezegd" telt mee.
   const afgezegd = (b) => /cancel|annul|afgezegd/i.test(String(statusVan(b) || "")) || /\bafgezegd\b/i.test(String(nootEff(b) || ""));
+  // Veertien dagen in totaal: wat er in beeld staat, plus de rest van de week
+  // erna. De tweede lus begint waar de eerste ophoudt — begon hij op een vast
+  // getal, dan stond de maandag erna er twee keer in.
   const alleDagen = [...dagen];
-  for (let i = 7; i < 14; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); alleDagen.push(localDate(d)); }
-  const dagen2 = alleDagen.slice(7); // de week erna, voor het ingeklapte blok onderaan
+  for (let i = DAGEN_IN_BEELD; i < 14; i++) { const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + i); alleDagen.push(localDate(d)); }
+  // De maandag erna staat nu hierboven, dus het ingeklapte blok begint op
+  // dinsdag. Anders zou die dag twee keer op de bladzijde staan.
+  const dagen2 = alleDagen.slice(DAGEN_IN_BEELD);
   const partijen = splitsPerDag(boekingen)
     .filter((b) => alleDagen.includes(b.datum) && !afgezegd(b) && !isAanvraagStatus(statusVan(b)) && !isVerwijderd(koppeling, b))
     .sort((a, b) => String(a.datum + (a.start_tijd || "")).localeCompare(String(b.datum + (b.start_tijd || ""))));
@@ -18003,14 +18196,14 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const dagKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()]; };
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
   const weekNr = (() => { const x = new Date(dagen[0] + "T12:00:00"); x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7)); const w1 = new Date(x.getFullYear(), 0, 4); return 1 + Math.round(((x - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7); })();
-  const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(dagen[6]).split(" ").slice(1).join(" ") + " · wk " + weekNr;
+  const weekLabel = dagKop(dagen[0]).split(" ").slice(1).join(" ") + " – " + dagKop(laatsteVanDeWeek).split(" ").slice(1).join(" ") + " · wk " + weekNr;
   // De knop in de balk zegt zelf waar je kijkt: deze week, de week ervoor of
   // erna bij naam, en daarbuiten de maandag- en zondagdatum. Het weeknummer
   // staat er altijd achter. Klikken brengt je altijd terug naar deze week —
   // ook als er "vorige week" staat.
   const weekAf = Math.round((new Date(dagen[0] + "T12:00:00") - new Date(maandagVan(vandaag) + "T12:00:00")) / 604800000);
   const weekKnopTekst = (weekAf === 0 ? "Deze week" : weekAf === 1 ? "Volgende week" : weekAf === -1 ? "Vorige week"
-    : dagLabelKort(dagen[0]) + " – " + dagLabelKort(dagen[6])) + " · wk " + weekNr;
+    : dagLabelKort(dagen[0]) + " – " + dagLabelKort(laatsteVanDeWeek)) + " · wk " + weekNr;
 
   // De mep-lijst gaat in een klapper en de klem bedekt de bovenkant van elke
   // bladzijde. Daarom begint elke bladzijde drie regels lager. Dat gaat van de
@@ -18306,7 +18499,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           )}
         </div>
         <div className="flex items-center justify-end gap-1.5 flex-wrap w-full md:w-auto md:ml-auto">
-          <button onClick={() => setBestelOpen(true)} className="btno ff inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Bestellijst — gedeelde inkooplijst"><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst</button>
+          <button onClick={() => setBestelOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title={bestelTeDoen ? "Bestellijst — er staat iets op de lijst" : "Bestellijst — gedeelde inkooplijst"}><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst
+            {/* Een stip zodra er iets is ingevuld: anders moet je de lijst openen
+                om te zien of er nog wat ligt. */}
+            {bestelTeDoen > 0 && <span className="absolute -top-1 -right-1 rounded-full" style={{ width: 9, height: 9, background: "#b3261e" }} title={bestelTeDoen + " regels ingevuld"} />}
+          </button>
           <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
             <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
             {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
@@ -18343,7 +18540,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       <div className="mt-6 mb-3">
         <button onClick={() => setVolgendeOpen((v) => !v)} className="ff w-full card px-3.5 py-3 flex items-center gap-2">
           {volgendeOpen ? <ChevronUp size={15} className="acc shrink-0" /> : <ChevronDown size={15} className="acc shrink-0" />}
-          <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Volgende week — {dagLabelKort(dagen2[0])} t/m {dagLabelKort(dagen2[6])}</span>
+          <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Volgende week — {dagLabelKort(dagen2[0])} t/m {dagLabelKort(dagen2[dagen2.length - 1])}</span>
           <span className="text-[12px] mute">· {partijen.filter((b) => dagen2.includes(b.datum)).length} partijen</span>
         </button>
       </div>
