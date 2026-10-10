@@ -95,6 +95,27 @@ const inloggen = async (pot, basis, klant, wachtwoord) => {
   return { ok: true, html };
 };
 
+// ── Wat de pagina over je zegt ───────────────────────────────────────────
+// Twee dingen die we uit elke ingelogde pagina kunnen plukken: onder welke
+// naam je binnen bent, en wat er op dat moment in de winkelwagen zit. Dat
+// tweede is de enige echte maatstaf — een 200 van hun server zegt nog niet
+// dat er iets veranderd is.
+const wieBenIk = (html) => {
+  const m = String(html || "").match(/fa-user[^>]*><\/span>\s*([^<]{2,80})</);
+  return m ? m[1].trim() : "";
+};
+const wagenBedrag = (html) => {
+  const m = String(html || "").match(/class="badge cart-amount"[^>]*data-value="([0-9.]+)"/)
+    || String(html || "").match(/data-value="([0-9.]+)"[^>]*class="badge cart-amount"/);
+  return m ? Number(m[1]) : null;
+};
+const haalHome = async (pot, basis) => {
+  const r = await fetch(basis + "/user/home", { headers: { "user-agent": BROWSER, accept: "text/html", cookie: pot.kop() }, redirect: "manual" });
+  pot.slik(r);
+  const html = r.status === 200 ? await r.text() : "";
+  return { status: r.status, wie: wieBenIk(html), wagen: wagenBedrag(html) };
+};
+
 // ── Eén artikel in de wagen ──────────────────────────────────────────────
 const zetAantal = async (pot, basis, lijst, code, aantal) => {
   const url = basis + "/api/v1/user/favourite/update/" + encodeURIComponent(code) + "/" + encodeURIComponent(lijst);
@@ -196,7 +217,33 @@ export default async function handler(req, res) {
   // Alleen kijken of we binnenkomen, zonder iets aan de wagen te doen.
   if (body.alleenTest === true) {
     const in1 = await inloggen(pot, basis, klant, wachtwoord);
-    return klaar(in1.ok ? 200 : 502, { ok: in1.ok, ingelogd: in1.ok, fout: in1.ok ? undefined : in1.waarom });
+    if (!in1.ok) return klaar(502, { ok: false, ingelogd: false, fout: in1.waarom });
+    const home = await haalHome(pot, basis);
+    return klaar(200, { ok: true, ingelogd: true, ingelogdAls: home.wie, wagen: home.wagen });
+  }
+
+  // Uitzoekstand: één artikel zetten en precies verslag doen van wat er
+  // gebeurt. Het bedrag in de wagen vóór en ná is de enige maatstaf die telt;
+  // een 200 van hun server betekent niet dat er iets veranderd is.
+  if (body.kijk === true) {
+    const code = String(body.code || "").trim();
+    const aantal = Number(body.aantal);
+    if (!/^[0-9]{1,12}$/.test(code) || !Number.isFinite(aantal)) return klaar(400, { ok: false, fout: "geef een code en een aantal" });
+    const in3 = await inloggen(pot, basis, klant, wachtwoord);
+    if (!in3.ok) return klaar(502, { ok: false, ingelogd: false, fout: in3.waarom });
+    const voor = await haalHome(pot, basis);
+    const zet = await zetAantal(pot, basis, lijst, code, aantal);
+    const na = await haalHome(pot, basis);
+    return klaar(200, {
+      ok: true,
+      ingelogdAls: voor.wie,
+      wagenVoor: voor.wagen,
+      wagenNa: na.wagen,
+      veranderd: voor.wagen !== na.wagen,
+      zetStatus: zet.status,
+      zetAntwoord: zet.antwoord,
+      koekjes: pot.aantal(),
+    });
   }
 
   // De regels nalopen vóór we ook maar inloggen: een onzinnige lijst hoort
