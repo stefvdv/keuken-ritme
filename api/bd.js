@@ -29,7 +29,7 @@ const BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (K
 // bestelling van driehonderd regels in één klap.
 const MAX_REGELS = 100;
 const MAX_AANTAL = 99;
-const TEGELIJK = 4; // hoeveel artikelen tegelijk; beleefd tegen hun server
+const BLOK = 25; // hoeveel artikelen in één verzoek; hun endpoint neemt er meer tegelijk
 
 // ── Koekjes bijhouden ────────────────────────────────────────────────────
 // fetch in Node onthoudt zelf geen cookies, en de sessie van Laravel loopt er
@@ -116,10 +116,47 @@ const haalHome = async (pot, basis) => {
   return { status: r.status, wie: wieBenIk(html), wagen: wagenBedrag(html) };
 };
 
-// ── Eén artikel in de wagen ──────────────────────────────────────────────
-const zetAantal = async (pot, basis, lijst, code, aantal) => {
-  const url = basis + "/api/v1/user/favourite/update/" + encodeURIComponent(code) + "/" + encodeURIComponent(lijst);
-  const r = await fetch(url, {
+// ── De artikelregels van een pagina lezen ────────────────────────────────
+// Hun eigen javascript werkt zo: elke regel in de tabel draagt alles wat de
+// server over dat artikel weet in data-attributen, en bij een wijziging gaat
+// die hele set terug met een nieuw aantal. Wij doen precies hetzelfde — dan
+// hoeven we niets te raden over prijzen, voorraad of leverdagen.
+const CAMEL = (naam) => String(naam).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+const rijenUit = (html) => {
+  const uit = new Map();
+  const re = /<tr\s([^>]*data-context="row"[^>]*)>/g;
+  let m;
+  while ((m = re.exec(String(html || "")))) {
+    const velden = {};
+    const ar = /data-([a-z-]+)="([^"]*)"/g;
+    let a;
+    while ((a = ar.exec(m[1]))) velden[CAMEL(a[1])] = a[2];
+    if (velden.code) uit.set(String(velden.code), velden);
+  }
+  return uit;
+};
+// Precies de velden die hun pagina meestuurt, in dezelfde volgorde. Niet alles
+// wat op de regel staat gaat mee (favouritelists bijvoorbeeld niet), dus we
+// houden ons aan deze lijst in plaats van alles blind door te geven.
+const ITEM_VELDEN = ["score", "deliveredAt", "inStock", "stockAmount", "stock", "hasContent", "productContent",
+  "sti", "factor", "priceVat", "price", "code", "content", "discount", "sales", "quantityBackup", "quantity",
+  "orderId", "reference", "id", "model", "context", "amount", "amountVat", "valid"];
+
+const itemBody = (regels, pad) => {
+  const p = new URLSearchParams();
+  regels.forEach((r, i) => {
+    const rij = r.rij, nu = String(r.aantal);
+    const waarden = { ...rij, quantity: nu, quantityBackup: rij.quantity == null ? "0" : String(rij.quantity),
+      amount: "0", amountVat: "0", valid: "true", context: pad + "#" + (rij.context || "row") };
+    for (const v of ITEM_VELDEN) p.append("items[" + i + "][" + v + "]", waarden[v] == null ? "" : String(waarden[v]));
+  });
+  return p.toString();
+};
+
+// ── De aantallen doorgeven ───────────────────────────────────────────────
+// Alles in één verzoek: hun endpoint neemt items[0], items[1], … tegelijk aan.
+const zetAantallen = async (pot, basis, pad, regels) => {
+  const r = await fetch(basis + "/api/v1/order/items/update", {
     method: "POST",
     headers: {
       "user-agent": BROWSER,
@@ -127,24 +164,24 @@ const zetAantal = async (pot, basis, lijst, code, aantal) => {
       "x-requested-with": "XMLHttpRequest",
       accept: "*/*",
       cookie: pot.kop(),
-      referer: basis + "/self/favourites/" + lijst,
+      referer: basis + pad,
       origin: basis,
     },
-    body: "quantity=" + encodeURIComponent(String(aantal)),
+    body: itemBody(regels, pad.replace(/^\//, "")),
   });
   pot.slik(r);
   let tekst = "";
-  try { tekst = (await r.text()).slice(0, 300); } catch (e) {}
-  return { code: String(code), aantal: Number(aantal), gelukt: r.status >= 200 && r.status < 300, status: r.status, antwoord: tekst };
+  try { tekst = (await r.text()).slice(0, 400); } catch (e) {}
+  return { gelukt: r.status >= 200 && r.status < 300, status: r.status, antwoord: tekst };
 };
 
-// Een paar tegelijk, de rest wacht netjes.
-const inGroepjes = async (lijst, perKeer, doe) => {
-  const uit = [];
-  for (let i = 0; i < lijst.length; i += perKeer) {
-    uit.push(...await Promise.all(lijst.slice(i, i + perKeer).map(doe)));
-  }
-  return uit;
+// De lijst waar de artikelen op staan, met hun gegevens en het nummer van de
+// lopende bestelling. Zonder die bestelling heeft een aantal nergens houvast.
+const haalLijst = async (pot, basis, pad) => {
+  const r = await fetch(basis + pad, { headers: { "user-agent": BROWSER, accept: "text/html", cookie: pot.kop() }, redirect: "manual" });
+  pot.slik(r);
+  if (r.status !== 200) return { ok: false, status: r.status, rijen: new Map() };
+  return { ok: true, status: 200, rijen: rijenUit(await r.text()) };
 };
 
 // ── Mag deze aanroeper dit? ──────────────────────────────────────────────
@@ -211,7 +248,11 @@ export default async function handler(req, res) {
   if (!body || typeof body !== "object") return klaar(400, { ok: false, fout: "geen geldige inhoud" });
 
   const basis = String(process.env.BD_BASIS || BASIS).replace(/\/+$/, "");
-  const lijst = String(body.lijst == null ? 0 : body.lijst);
+  // De pagina waar de artikelen op staan. Standaard je favorietenlijst: daar
+  // staat alles wat je regelmatig bestelt, mét het nummer van de lopende
+  // bestelling waar de aantallen bij horen.
+  const lijst = String(body.lijst == null ? 0 : body.lijst).replace(/[^0-9]/g, "") || "0";
+  const pad = "/self/favourites/" + lijst;
   const pot = maakPot();
 
   // Alleen kijken of we binnenkomen, zonder iets aan de wagen te doen.
@@ -232,17 +273,24 @@ export default async function handler(req, res) {
     const in3 = await inloggen(pot, basis, klant, wachtwoord);
     if (!in3.ok) return klaar(502, { ok: false, ingelogd: false, fout: in3.waarom });
     const voor = await haalHome(pot, basis);
-    const zet = await zetAantal(pot, basis, lijst, code, aantal);
+    const lst = await haalLijst(pot, basis, pad);
+    const rij = lst.rijen.get(code);
+    if (!rij) {
+      return klaar(200, { ok: true, ingelogdAls: voor.wie, wagenVoor: voor.wagen, wagenNa: voor.wagen, veranderd: false,
+        zetStatus: 0, zetAntwoord: "Dit artikel staat niet op " + pad + " (" + lst.rijen.size + " artikelen gelezen, status " + lst.status + ")" });
+    }
+    const zet = await zetAantallen(pot, basis, pad, [{ rij, aantal }]);
     const na = await haalHome(pot, basis);
     return klaar(200, {
       ok: true,
       ingelogdAls: voor.wie,
+      bestelling: rij.orderId || "",
       wagenVoor: voor.wagen,
       wagenNa: na.wagen,
       veranderd: voor.wagen !== na.wagen,
       zetStatus: zet.status,
       zetAntwoord: zet.antwoord,
-      koekjes: pot.aantal(),
+      opDeLijst: lst.rijen.size,
     });
   }
 
@@ -266,19 +314,48 @@ export default async function handler(req, res) {
   const in2 = await inloggen(pot, basis, klant, wachtwoord);
   if (!in2.ok) return klaar(502, { ok: false, ingelogd: false, fout: in2.waarom });
 
-  let uit;
-  try {
-    uit = await inGroepjes(regels, TEGELIJK, (r) => zetAantal(pot, basis, lijst, r.code, r.aantal));
-  } catch (e) {
-    return klaar(502, { ok: false, ingelogd: true, fout: "het zetten liep vast: " + String((e && e.message) || e) });
+  const voor = await haalHome(pot, basis);
+  const lst = await haalLijst(pot, basis, pad);
+  if (!lst.ok) return klaar(502, { ok: false, ingelogd: true, fout: "de lijst op " + pad + " is niet op te halen (" + lst.status + ")" });
+  if (!lst.rijen.size) return klaar(502, { ok: false, ingelogd: true, fout: "op " + pad + " staan geen artikelen" });
+
+  // Alleen artikelen die op die lijst staan kunnen mee: van de rest kennen we
+  // de gegevens niet die hun bestelling nodig heeft.
+  const klaarVoor = [], onbekend = [];
+  for (const r of regels) {
+    const rij = lst.rijen.get(r.code);
+    if (rij) klaarVoor.push({ rij, aantal: r.aantal }); else onbekend.push(r.code);
   }
-  const mis = uit.filter((x) => !x.gelukt);
+  if (!klaarVoor.length) {
+    return klaar(200, { ok: false, ingelogd: true, gezet: 0, mislukt: regels.length, onbekend,
+      fout: "geen van deze artikelen staat op " + pad, verzonden: false });
+  }
+
+  // In blokken, zodat één verzoek niet eindeloos lang wordt.
+  let fout = null, gezet = 0;
+  const verslag = [];
+  for (let i = 0; i < klaarVoor.length; i += BLOK) {
+    const deel = klaarVoor.slice(i, i + BLOK);
+    let zet;
+    try { zet = await zetAantallen(pot, basis, pad, deel); }
+    catch (e) { fout = "het zetten liep vast: " + String((e && e.message) || e); break; }
+    verslag.push({ status: zet.status, antwoord: zet.antwoord });
+    if (!zet.gelukt) { fout = "BD gaf " + zet.status + " terug"; break; }
+    gezet += deel.length;
+  }
+  const na = await haalHome(pot, basis);
   return klaar(200, {
-    ok: mis.length === 0,
+    ok: !fout && !onbekend.length,
     ingelogd: true,
-    gezet: uit.length - mis.length,
-    mislukt: mis.length,
-    regels: uit.map((x) => ({ code: x.code, aantal: x.aantal, gelukt: x.gelukt, status: x.status })),
+    bestelling: (klaarVoor[0] && klaarVoor[0].rij.orderId) || "",
+    gezet,
+    mislukt: regels.length - gezet,
+    onbekend,
+    wagenVoor: voor.wagen,
+    wagenNa: na.wagen,
+    veranderd: voor.wagen !== na.wagen,
+    fout: fout || undefined,
+    verslag,
     // Niet verzonden, en dat doet deze proxy ook nooit.
     verzonden: false,
   });
