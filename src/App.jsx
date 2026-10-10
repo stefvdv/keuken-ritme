@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-10i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-10j"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3131,6 +3131,9 @@ function App() {
   // Welk inkoopartikel bij welke ingredientnaam hoort. Eén lijst voor alle
   // recepten samen: "suiker" hoef je maar één keer vast te zetten.
   const [artikelKoppel, setArtikelKoppel] = useState({});
+  // Wat er van de inkoop in huis is: per artikel hoeveel er ligt, wanneer dat
+  // is nagekeken en door wie.
+  const [inhuis, setInhuis] = useState({});
   const [eigenVormen, setEigenVormen] = useState([]); // zelf toegevoegde verpakkingsvormen
   // Het team is een naamlijst: een merkje bij wie wat gedaan heeft, geen
   // account. Hij is te bewerken in Extras; de namen uit de code zijn alleen
@@ -4424,6 +4427,22 @@ function App() {
     }
     return true;
   };
+  // Wat er in huis is bewaren. Gedeeld met het team, net als de bestellijst.
+  const saveInhuis = async (standen) => {
+    const schoon = {};
+    for (const [code, r] of Object.entries(standen || {})) {
+      const c = String(code || "").trim();
+      const n = Number(r && r.aantal);
+      if (!c || !Number.isFinite(n) || n < 0) continue;
+      schoon[c] = { aantal: n, gezien: String((r && r.gezien) || localDate()).slice(0, 10), door: String((r && r.door) || "") };
+    }
+    setInhuis(schoon);
+    if (live) {
+      const { error } = await instelUpsert("inkoop_inhuis", { standen: schoon });
+      if (error) { flash("Alleen lokaal bewaard — draai eerst de app_settings-SQL in Supabase"); return false; }
+    }
+    return true;
+  };
   // Een ingredient dat geen inkoopartikel is (kopregel, toelichting) uit de lijst halen.
   const negeerIngredient = async (naam) => {
     const volgende = [...new Set([...negeerIng, String(naam).toLowerCase()])];
@@ -4921,7 +4940,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "calc_artikel", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "calc_artikel", "inkoop_inhuis", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -4983,6 +5002,8 @@ function App() {
     if (alRow && alRow.value && alRow.value.paren) setNaamAlias(alRow.value.paren);
     const akRow = instelRij("calc_artikel");
     if (akRow && akRow.value && akRow.value.paren) setArtikelKoppel(akRow.value.paren);
+    const ihRow = instelRij("inkoop_inhuis");
+    if (ihRow && ihRow.value && ihRow.value.standen) setInhuis(ihRow.value.standen);
     const vmRow = instelRij("verpakkingsvormen");
     if (vmRow && vmRow.value && Array.isArray(vmRow.value.namen)) setEigenVormen(vmRow.value.namen);
     const hiRow = instelRij("haccp_interval");
@@ -6565,7 +6586,8 @@ function App() {
             {section === "recepten" && <RecipeList recipes={recipes} openCounts={openCounts} stock={stock} search={search} setSearch={setSearch} onOpen={openRecipe} />}
             {section === "fermentatie" && <FermentList batches={batches} recipes={recipes} stock={stock} openCounts={openCounts} canEdit={canEdit} onExtend={extendBatch} onToggleDone={toggleBatchDone} onDeleteBatch={deleteBatch} onEditBatch={(id) => push({ screen: "batchForm", editing: id })} onOpenLog={(id) => push({ screen: "batchLog", id })} onOpenRecipe={openRecipe} onNewFermentRecipe={() => push({ screen: "recipeForm", editing: null, fermentDefault: true })} onStartBatch={() => push({ screen: "batchForm", prefill: null })} onOpenMeasure={() => setMeasureOpen(true)} onAck={ackAction} />}
             {section === "smaak" && <FlavorList pairings={pairings} canEdit={canEdit} onSave={savePairing} onReset={resetPairing} openNew={newPairing} onOpenedNew={() => setNewPairing(0)} onSearchRecipes={(n) => { setSection("recepten"); setSearch(n); }} />}
-            {section === "voorraad" && <VoorraadList chefMode={chefMode} recipeById={recipeById} stock={stock} canEdit={canEdit} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
+            {section === "voorraad" && <VoorraadList chefMode={chefMode} recipeById={recipeById} stock={stock} canEdit={canEdit}
+              bdArtikelen={bdArtikelen} artikelKoppel={artikelKoppel} inhuis={inhuis} onInhuis={canEdit ? saveInhuis : null} user={user} onDec={decStock} onEdit={(id) => push({ screen: "voorraadForm", editing: id, prefill: null })} onDelete={deleteStock} onExport={exportStockExcel} noticeClosed={stockNoticeClosed === todayKey} onCloseNotice={() => setStockNoticeClosed(todayKey)} />}
             {section === "assortiment" && chefMode && <AssortimentList producten={assortiment} bdArtikelen={bdArtikelen}
               onNew={() => push({ screen: "assortimentForm", editing: null })}
               onEdit={(id) => push({ screen: "assortimentForm", editing: id })}
@@ -7469,6 +7491,43 @@ const artikelScore = (iw, a) => {
   if (!sterk) return 0; // minstens een woord moet echt kloppen ("grove mosterd" ~ "Mosterd grof")
   return punten * 100 - gemist * 40 - Math.abs(aw.length - iw.length); // meeste raak, kortste omschrijving
 };
+// ---------- Wat er van de inkoop in huis is ----------
+// Per inkoopartikel hoeveel er ligt, wanneer dat voor het laatst is nagekeken
+// en door wie. Een telling is een momentopname: wie hem bevestigt zet er zijn
+// naam en de datum bij, zodat je later kunt zien hoe vers het cijfer is.
+const inhuisSleutel = (code) => rauweArtikelCode(code);
+const inhuisVan = (inhuis, code) => {
+  const r = (inhuis || {})[inhuisSleutel(code)];
+  return r && typeof r === "object" ? r : null;
+};
+const inhuisAantal = (inhuis, code) => {
+  const r = inhuisVan(inhuis, code);
+  const n = r ? Number(r.aantal) : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+// Hoeveel dagen geleden deze stand is nagekeken; null als er nooit iets van
+// gezegd is. Een oud cijfer is geen fout, maar je moet het wel kunnen zien.
+const inhuisOuderdom = (inhuis, code, vandaag) => {
+  const r = inhuisVan(inhuis, code);
+  const d = r && r.gezien ? String(r.gezien).slice(0, 10) : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const ms = new Date((vandaag || localDate()) + "T12:00:00") - new Date(d + "T12:00:00");
+  return Math.max(0, Math.round(ms / 86400000));
+};
+// Welke artikelen horen in het overzicht: alles wat via de koppellijst aan een
+// ingredient hangt (dus wat je werkelijk gebruikt), plus alles waar al een
+// stand voor is ingevuld. Zo begin je met wat telt in plaats van met de hele
+// catalogus, en groeit de lijst vanzelf mee.
+const inhuisArtikelen = (artikelen, koppel, inhuis) => {
+  const wil = new Set();
+  for (const code of Object.values(koppel || {})) {
+    const c = String(code || "").trim();
+    if (c && c !== GEEN_ARTIKEL) wil.add(inhuisSleutel(c));
+  }
+  for (const c of Object.keys(inhuis || {})) wil.add(inhuisSleutel(c));
+  return (artikelen || []).filter((a) => wil.has(inhuisSleutel(a.code)));
+};
+
 // ---------- Vaste koppeling: welk inkoopartikel hoort bij welk ingredient ----------
 // Het zoeken hieronder gaat op woordgelijkenis, en dat gaat juist bij de
 // gewoonste dingen mis: "suiker" vindt vanillesuiker, "bloem" vindt fusilli
@@ -8405,7 +8464,12 @@ const chefCodeKlopt = (code) => String(code || "").trim().toLowerCase() === CHEF
 // De naam van een leverancier tot iets vergelijkbaars: "BD Totaal",
 // "BD-Totaal" en "bd totaal" zijn dezelfde lijst.
 const levSleutel = (x) => zonderAccent(String(x || "")).toLowerCase().replace(/[^a-z0-9]+/g, "");
-const isBdLev = (naam) => { const k = levSleutel(naam); return k === "bdtotaal" || k === "bd"; };
+// Een lijst van BD herkennen. De naam waaronder hij is ingeladen varieert:
+// "BD-Totaal", "BD Totaal", en ook "BD-Totaal Favorieten" als je hun
+// favorietenlijst hebt geëxporteerd. Alles wat met bdtotaal begint telt dus
+// mee — maar niet zomaar alles met "bd" erin, want "BD Kaas" van een andere
+// leverancier is geen BD-bestelling.
+const isBdLev = (naam) => { const k = levSleutel(naam); return k === "bd" || k.slice(0, 8) === "bdtotaal"; };
 // De artikelcode zoals BD hem kent. De app zet er de leverancier voor, anders
 // botst artikel 10102 van de ene lijst met dat van de andere; achter de "::"
 // staat het nummer dat op hun site hoort.
@@ -14529,7 +14593,128 @@ const voorraadMist = (v) => {
   return mist;
 };
 
-function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice, chefMode, recipeById }) {
+// Wat er van de inkoop in huis is: bloem, suiker, kaas. Staat boven de
+// zelfgemaakte voorraad en begint ingeklapt — je kijkt er niet elke dag in,
+// maar als je hem nodig hebt wil je hem meteen kunnen bijwerken.
+function InHuisBlok({ artikelen, koppel, inhuis, onZet, canEdit, user }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [bewerk, setBewerk] = useState(null); // { code, tekst } zolang je typt
+  const [erbij, setErbij] = useState("");     // zoekveld om er een toe te voegen
+  const vandaag = localDate();
+
+  const rijen = React.useMemo(() => {
+    const lijst = inhuisArtikelen(artikelen, koppel, inhuis);
+    return lijst.map((a) => ({
+      a, code: inhuisSleutel(a.code),
+      aantal: inhuisAantal(inhuis, a.code),
+      dagen: inhuisOuderdom(inhuis, a.code, vandaag),
+      lev: a.leverancier || "Onbekende leverancier",
+    })).sort((x, y) => x.lev.localeCompare(y.lev, "nl") || String(x.a.omschrijving).localeCompare(String(y.a.omschrijving), "nl"));
+  }, [artikelen, koppel, inhuis]);
+
+  const zoek = String(q || "").toLowerCase().trim();
+  const passend = zoek ? rijen.filter((r) => String(r.a.omschrijving).toLowerCase().includes(zoek) || r.code.includes(zoek)) : rijen;
+  const perLev = [];
+  for (const r of passend) {
+    const laatste = perLev[perLev.length - 1];
+    if (laatste && laatste.naam === r.lev) laatste.items.push(r); else perLev.push({ naam: r.lev, items: [r] });
+  }
+  const geteld = rijen.filter((r) => r.aantal !== null).length;
+  const nogNiet = rijen.length - geteld;
+
+  // Een stand zetten. Leeg laten betekent "weet ik niet", en dat is iets
+  // anders dan nul: nul is op, leeg is nooit geteld.
+  const zet = (code, tekst) => {
+    const t = String(tekst == null ? "" : tekst).replace(",", ".").trim();
+    const n = t === "" ? null : Number(t);
+    const volgende = { ...(inhuis || {}) };
+    if (n === null || !Number.isFinite(n) || n < 0) delete volgende[inhuisSleutel(code)];
+    else volgende[inhuisSleutel(code)] = { aantal: n, gezien: vandaag, door: (user && user.name) || "" };
+    setBewerk(null);
+    onZet(volgende);
+  };
+  // Het rondje: deze stand klopt nog, zet de datum van vandaag erop.
+  const bevestig = (r) => {
+    if (r.aantal === null) return;
+    const volgende = { ...(inhuis || {}) };
+    volgende[r.code] = { aantal: r.aantal, gezien: vandaag, door: (user && user.name) || "" };
+    onZet(volgende);
+  };
+
+  const kandidaten = String(erbij || "").trim().length >= 2
+    ? (artikelen || []).filter((a) => !rijen.some((r) => r.code === inhuisSleutel(a.code)))
+        .filter((a) => String(a.omschrijving || "").toLowerCase().includes(erbij.toLowerCase().trim())).slice(0, 8)
+    : [];
+
+  return (
+    <div className="mb-4">
+      <button onClick={() => setOpen((o) => !o)} className="ff w-full flex items-center gap-1.5 mb-2">
+        {open ? <ChevronUp size={15} className="acc shrink-0" /> : <ChevronDown size={15} className="acc shrink-0" />}
+        <span className="text-sm font-semibold ink">In huis</span>
+        <span className="text-xs mute">({geteld} geteld{nogNiet ? " · " + nogNiet + " nog niet" : ""})</span>
+      </button>
+      {open && (
+        <div className="card p-4">
+          <p className="text-[12.5px] mute mb-3">
+            Wat er van de inkoop ligt. Vul in wat er nu is — dat is het beginpunt.
+            Het rondje zegt &quot;dit klopt nog&quot;, het vakje past het aantal aan. Leeg laten is
+            iets anders dan nul: <span className="ink">nul</span> is op, <span className="ink">leeg</span> is nooit geteld.
+          </p>
+          <div className="relative mb-3">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+            <input className="input pl-9 pr-3 py-2 w-full text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Zoek in wat er in huis is" />
+          </div>
+          {perLev.map((groep) => (
+            <div key={groep.naam} className="mb-3">
+              <div className="text-[12px] font-semibold uppercase tracking-widest acc mb-1">{groep.naam} <span className="mute font-normal">· {groep.items.length}</span></div>
+              <div className="divide-y" style={{ borderColor: T.line }}>
+                {groep.items.map((r) => (
+                  <div key={r.code} className="flex items-center gap-2 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm ink truncate">{r.a.omschrijving}</div>
+                      <div className="text-[11.5px] mute truncate">
+                        {r.a.inhoud ? r.a.inhoud + " · " : ""}
+                        {r.aantal === null ? "nog niet geteld" : r.dagen === null ? "geteld" : r.dagen === 0 ? "vandaag nagekeken" : r.dagen + (r.dagen === 1 ? " dag" : " dagen") + " geleden nagekeken"}
+                      </div>
+                    </div>
+                    {canEdit && r.aantal !== null && (
+                      <button onClick={() => bevestig(r)} className="ff shrink-0 rounded-full flex items-center justify-center"
+                        style={{ width: 26, height: 26, border: "1.5px solid " + (r.dagen === 0 ? "#44502f" : T.line), background: r.dagen === 0 ? "#44502f" : "transparent" }}
+                        title={r.dagen === 0 ? "Vandaag nagekeken" : "Dit klopt nog — datum van vandaag erop"}>
+                        {r.dagen === 0 ? <Check size={14} style={{ color: "#fbf9f2" }} /> : null}
+                      </button>
+                    )}
+                    <input className="input px-2 py-1.5 text-sm text-right shrink-0" style={{ width: "5.5rem" }}
+                      value={bewerk && bewerk.code === r.code ? bewerk.tekst : (r.aantal === null ? "" : String(r.aantal))}
+                      onChange={(e) => setBewerk({ code: r.code, tekst: e.target.value })}
+                      onBlur={(e) => { if (bewerk && bewerk.code === r.code) zet(r.code, e.target.value); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                      disabled={!canEdit} placeholder="—" title="Hoeveel er ligt; leeg laten is nooit geteld" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {!passend.length && <div className="py-2 text-sm mute">{rijen.length ? "Niets gevonden." : "Nog geen artikelen. Koppel eerst ingredienten aan inkoopartikelen in Extras, of zoek er hieronder een op."}</div>}
+          {canEdit && (
+            <div className="mt-3 pt-3" style={{ borderTop: "1px solid " + T.line }}>
+              <div className="text-[12px] font-semibold uppercase tracking-widest acc mb-1.5">Een artikel erbij</div>
+              <input className="input px-3 py-2 w-full text-sm" value={erbij} onChange={(e) => setErbij(e.target.value)} placeholder="Zoek een artikel dat er nog niet bij staat" />
+              {kandidaten.map((a) => (
+                <button key={a.code} onClick={() => { zet(a.code, "0"); setErbij(""); }} className="ff w-full text-left px-1 py-1.5 text-sm hover:opacity-70">
+                  <span className="ink">{a.omschrijving}</span> <span className="mute">· {a.inhoud || ""} · {a.leverancier || ""}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, noticeClosed, onCloseNotice, chefMode, recipeById, bdArtikelen, artikelKoppel, inhuis, onInhuis, user }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
   const [openYear, setOpenYear] = useState(null); // eerdere jaren: standaard dicht
@@ -14663,6 +14848,7 @@ function VoorraadList({ stock, canEdit, onDec, onEdit, onDelete, onExport, notic
   return (
     <div>
       <SearchBar value={q} onChange={setQ} placeholder="Zoek in de voorraad" />
+      {onInhuis && <InHuisBlok artikelen={bdArtikelen} koppel={artikelKoppel} inhuis={inhuis} onZet={onInhuis} canEdit={canEdit} user={user} />}
       {expiring.length > 0 && !noticeClosed && (
         <div className="rounded-xl px-4 py-3 mb-3 flex items-start gap-2.5" style={{ background: "#f3ecd9", border: "1px solid #dccda8" }}>
           <Bell size={16} className="shrink-0 mt-0.5" style={{ color: "#8a6a2a" }} />
@@ -17254,10 +17440,20 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   }, []);
 
   // Wijzigingen van collega's live overnemen zolang hier niets onbewaards staat.
+  // Maar nooit terwijl de cursor in het vak staat: het vak opnieuw vullen zet
+  // de cursor terug naar het begin en slikt het woord op dat je half getypt
+  // had. Dat gebeurde ook bij je eigen bewaring die een tel later terugkomt —
+  // op de telefoon, waar je trager typt, bij zowat elke zin. Wat er binnenkomt
+  // wachten we op; zodra je het vak verlaat halen we het alsnog op.
+  const [blurTik, setBlurTik] = useState(0);
+  const wachtendeData = React.useRef(null);
   useEffect(() => {
     const binnen = JSON.stringify({ bladen: naarBladen(data), historie: (data && data.historie) || [] });
-    if (binnen === laatst.current) return;
+    if (binnen === laatst.current) { wachtendeData.current = null; return; }
+    const inHetVak = typeof document !== "undefined" && vak.current && document.activeElement === vak.current;
+    if (inHetVak) { wachtendeData.current = data; return; }
     if (vak.current && bladen[actief] && vak.current.innerHTML !== bladen[actief].html) return; // eigen typwerk wint
+    wachtendeData.current = null;
     const d = naarBladen(data);
     historieRef.current = (data && Array.isArray(data.historie)) ? data.historie.slice(0, 15) : historieRef.current;
     laatst.current = binnen;
@@ -17265,7 +17461,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const i = Math.min(actief, d.length - 1);
     setActief(i);
     zetVak(d[i] ? d[i].html : "");
-  }, [data]);
+  }, [data, blurTik]);
 
   // Opmaakstatus voor de knopjes.
   const [fmt, setFmt] = useState({ vet: false, onder: false, cursief: false, ul: false, ol: false, kop: false });
@@ -17857,7 +18053,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           + ".mep-notitie ol ol{list-style:lower-alpha}.mep-notitie ol ol ol{list-style:lower-roman}"
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
         <div ref={vak} contentEditable suppressContentEditableWarning
-          onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
+          onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie flex-1 overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
