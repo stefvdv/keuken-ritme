@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-10b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-10c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3189,7 +3189,7 @@ function App() {
     let uit = null;
     try { uit = await r.json(); } catch (e) {}
     if (!uit) return { ok: false, fout: "Onverwacht antwoord van de server (" + r.status + ")" };
-    if (uit.ok) flash(uit.gezet + " regels in de winkelwagen bij BD-Totaal");
+    if (uit.ok && uit.veranderd !== false) flash(uit.gezet + " regels in de winkelwagen bij BD-Totaal");
     return uit;
   };
   // Uitzoeken waarom er niets verandert. Zet één artikel en meet het bedrag
@@ -8907,11 +8907,22 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
     setBdBezig(true);
     try {
       const uit = await onNaarBd(mee);
-      if (!uit || !uit.ok) {
-        alert("Het is niet gelukt: " + ((uit && uit.fout) || "onbekende fout")
-          + (uit && uit.mislukt ? "\n\n" + uit.gezet + " van de " + (uit.gezet + uit.mislukt) + " regels staan er wel in." : ""));
+      // Het bedrag in de winkelwagen is de enige maatstaf die telt: hun server
+      // antwoordt ook vriendelijk als er niets gebeurd is. Dus melden we wat
+      // er werkelijk veranderd is, niet wat de server ervan zei.
+      const bedragen = uit && uit.wagenVoor != null && uit.wagenNa != null
+        ? "\n\nWinkelwagen: \u20ac " + uit.wagenVoor + " \u2192 \u20ac " + uit.wagenNa : "";
+      const kwijt = uit && (uit.onbekend || []).length
+        ? "\n\nNiet gevonden op je favorietenlijst bij BD (" + uit.onbekend.length + "): " + uit.onbekend.slice(0, 10).join(", ")
+          + "\nZet die er eerst bij op bd-totaal.nl, dan kunnen ze de volgende keer wel mee." : "";
+      if (!uit || (!uit.gezet && !uit.ok)) {
+        alert("Er is niets in je winkelwagen gezet.\n\n" + ((uit && uit.fout) || "Onbekende fout") + kwijt);
+      } else if (uit.veranderd === false) {
+        alert(uit.gezet + " regels zijn doorgegeven, maar het bedrag in je winkelwagen is niet veranderd."
+          + bedragen + "\n\nStonden die aantallen er al in, dan klopt dat. Zo niet, laat het me weten." + kwijt);
       } else {
-        alert(uit.gezet + " regels staan in je winkelwagen bij BD-Totaal.\n\nControleer ze daar en verzend de bestelling zelf.");
+        alert(uit.gezet + " regels staan in je winkelwagen bij BD-Totaal." + bedragen
+          + "\n\nControleer ze daar en verzend de bestelling zelf." + kwijt);
       }
     } catch (e) {
       alert("Het is niet gelukt: " + String((e && e.message) || e));
@@ -8932,6 +8943,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onBdUitzoek
     if (!u || !u.ok) { alert("Niet gelukt: " + ((u && u.fout) || "onbekende fout")); return; }
     alert("Geprobeerd: " + eerste.aantal + "\u00d7 " + eerste.naam + " (artikel " + eerste.code + ")\n\n"
       + "Ingelogd als: " + (u.ingelogdAls || "\u2014 niet herkend \u2014") + "\n"
+      + "Bestelling: " + (u.bestelling || "\u2014 geen \u2014") + (u.opDeLijst ? " \u00b7 " + u.opDeLijst + " artikelen op de lijst" : "") + "\n"
       + "Winkelwagen ervoor: " + (u.wagenVoor == null ? "niet gelezen" : "\u20ac " + u.wagenVoor) + "\n"
       + "Winkelwagen erna: " + (u.wagenNa == null ? "niet gelezen" : "\u20ac " + u.wagenNa) + "\n"
       + "Veranderd: " + (u.veranderd ? "ja" : "NEE") + "\n\n"
