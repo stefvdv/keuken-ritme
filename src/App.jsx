@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-10l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-12c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3087,6 +3087,75 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+// ── Het notitieblok veilig samenvoegen ───────────────────────────────────
+// De notitie staat in één rij in de database en werd daar blind overheen
+// geschreven. Een tab die achterliep — een laptop die al een dag openstond —
+// schreef daarmee zijn oude tekst over het werk van een ander heen: op de ene
+// laptop was de notitie geleegd, en even later stond hij daar weer vol. De
+// notitie komt niet vanzelf binnen maar bij een ophaalronde, dus achterlopen
+// is eerder regel dan uitzondering.
+// Elk blad draagt daarom het moment van zijn laatste wijziging, en bij het
+// bewaren leggen we onze stand naast die van de server. Per blad wint de
+// jongste bewerking; de rest blijft staan.
+const notitieBladen = (d) => ((d && Array.isArray(d.bladen)) ? d.bladen : []).filter((b) => b && b.id != null);
+const bladT = (b) => String((b && b.t) || "");
+// Het moment op elk blad zetten, door te vergelijken met wat er stond. Hier,
+// op één plek, zodat geen van de schermen die de notitie bewaren er zelf aan
+// hoeft te denken. Een blad dat niet veranderde houdt het moment dat het al
+// had — en een blad zonder moment, uit de tijd dat we dit nog niet bijhielden,
+// blijft leeg: dan is het zo oud als wat er stond en wint de ander.
+const stempelNotitie = (nieuw, oud, nu) => {
+  const t = String(nu || new Date().toISOString());
+  const was = new Map();
+  for (const b of notitieBladen(oud)) was.set(String(b.id), b);
+  const bladen = notitieBladen(nieuw).map((b) => {
+    const o = was.get(String(b.id));
+    const zelfde = o && String(o.html || "") === String(b.html || "") && String(o.naam || "") === String(b.naam || "");
+    return { ...b, t: zelfde ? bladT(o) : t };
+  });
+  return { ...(nieuw || {}), bladen, t };
+};
+// Mijn stand naast die van de server. "basis" is het moment van de stand waar
+// ik op doorwerkte: daarmee is een blad dat bij de een ontbreekt te duiden —
+// weggehaald door die ander, of juist nieuw bij de ander.
+const voegNotitiesSamen = (mijn, hun, basis) => {
+  const mB = notitieBladen(mijn), hB = notitieBladen(hun);
+  if (!hB.length) return mijn;
+  if (!mB.length && !(mijn && mijn.bladen)) return hun;
+  const b0 = String(basis || "");
+  const hunT = String((hun && hun.t) || "");
+  const hunOp = new Map(), mijnOp = new Map();
+  for (const b of hB) hunOp.set(String(b.id), b);
+  for (const b of mB) mijnOp.set(String(b.id), b);
+  const uit = [];
+  for (const b of mB) {
+    const h = hunOp.get(String(b.id));
+    // Bij hen bestaat dit blad niet (meer). Hebben zij bewaard nadat mijn
+    // stand van de server kwam, en heb ik dit blad sindsdien niet aangeraakt,
+    // dan hebben zij het weggehaald en hoort het weg.
+    if (!h) { if (hunT > b0 && bladT(b) <= b0) continue; uit.push(b); continue; }
+    uit.push(bladT(h) > bladT(b) ? h : b);
+  }
+  for (const h of hB) {
+    if (mijnOp.has(String(h.id))) continue;
+    // Andersom: een blad dat ik niet heb. Bestond het al voordat ik begon,
+    // dan heb ík het weggehaald; is het van later, dan is het nieuw bij hen.
+    if (bladT(h) <= b0) continue;
+    uit.push(h);
+  }
+  const gezien = new Set();
+  const historie = [...((mijn && mijn.historie) || []), ...((hun && hun.historie) || [])]
+    .filter((x) => { const k = JSON.stringify([x && x.t, x && x.bladId, x && x.html]); if (gezien.has(k)) return false; gezien.add(k); return true; })
+    .sort((a, b) => String((b && b.t) || "").localeCompare(String((a && a.t) || "")))
+    .slice(0, 15);
+  // De dagstempel van het schoonmaakblok: de laatste telt, anders schrijft de
+  // app het blok op een van de twee apparaten nog een keer bij.
+  const schoonDag = [String((mijn && mijn.schoonDag) || ""), String((hun && hun.schoonDag) || "")].sort().pop();
+  const uitObj = { ...(mijn || {}), bladen: uit, historie };
+  if (schoonDag) uitObj.schoonDag = schoonDag;
+  return uitObj;
+};
+
 // ── Meldingen in app-stijl ────────────────────────────────────────────────
 // De vensters van de browser ("ritme-eta.vercel.app vertelt") zien eruit als
 // een storing van het apparaat, zijn op de telefoon onleesbaar breed en tonen
@@ -3391,9 +3460,28 @@ function App() {
     const l = (cleaningLogs || []).find((x) => x.taskId === taskId && String(x.doneDate).slice(0, 10) === vandaag);
     if (l) removeCleaningLog(l.id, true);
   };
+  // De laatste stand die van de server kwam of die wij er zelf heen schreven.
+  // Dat moment is de maatstaf bij het samenvoegen: alles wat daarna op de
+  // server gebeurd is, is van iemand anders.
+  const notitieBasis = React.useRef("");
+  const notitieNu = React.useRef(null);
   const bewaarMepNotitie = async (obj) => {
-    setMepNotitie(obj);
-    if (live) { try { await instelUpsert("mep_notitie", obj); } catch (e) {} }
+    const nu = new Date().toISOString();
+    const mijn = stempelNotitie(obj, notitieNu.current, nu);
+    setMepNotitie(mijn);
+    notitieNu.current = mijn;
+    if (!live) { notitieBasis.current = nu; return; }
+    // Eerst kijken wat er inmiddels staat. Iemand anders kan in de tussentijd
+    // iets veranderd hebben, en die mag niet onder onze versie verdwijnen.
+    let hun = null;
+    try {
+      const { data, error } = await supabase.from("app_settings").select("value").eq("key", "mep_notitie").maybeSingle();
+      if (!error && data && data.value && typeof data.value === "object") hun = data.value;
+    } catch (e) {}
+    const samen = hun ? voegNotitiesSamen(mijn, hun, notitieBasis.current) : mijn;
+    if (hun && JSON.stringify(samen) !== JSON.stringify(mijn)) { setMepNotitie(samen); notitieNu.current = samen; }
+    notitieBasis.current = nu;
+    try { await instelUpsert("mep_notitie", samen); } catch (e) {}
   };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
   // De laatste stand, ook binnen dezelfde handeling. React werkt zijn state pas
@@ -5143,8 +5231,16 @@ function App() {
     const mnRow = instelRij("mep_notitie");
     if (mnRow && mnRow.value) {
       const v = mnRow.value;
-      if (Array.isArray(v.bladen)) setMepNotitie(v);
-      else if (typeof v.html === "string") setMepNotitie({ bladen: [{ id: "n1", naam: "Notities", html: v.html, door: "", op: "" }], historie: [] }); // oude vorm
+      const binnen = Array.isArray(v.bladen) ? v
+        : typeof v.html === "string" ? { bladen: [{ id: "n1", naam: "Notities", html: v.html, door: "", op: "" }], historie: [] } // oude vorm
+        : null;
+      if (binnen) {
+        setMepNotitie(binnen);
+        // Dit is vanaf nu waar we op doorwerken; alles wat er later op de
+        // server bij komt is van iemand anders.
+        notitieNu.current = binnen;
+        notitieBasis.current = String(binnen.t || "");
+      }
     }
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
     if (mev && !mev.error) setBoekingen(mev.data || []);
@@ -12657,6 +12753,13 @@ const isStandaardPartij = (koppeling, boekingSleutel, b) =>
 // kan dat niet meer. Boekingen van vóór deze verdeling vallen terug op de
 // gedeelde lijst, totdat je die dag één keer opslaat.
 const DAG_LAGEN = ["", "mep|", "mepb|", "bkx|", "mepx|", "inv|", "invklaar|", "menukop|"];
+// De basis van een markeersleutel. Een meerdaagse boeking staat met hetzelfde
+// nummer op elke draaidag van de mise-en-place, en het lunchproduct heet daar
+// elke dag hetzelfde. Zonder de dag erbij deelden dinsdag en woensdag dus één
+// sleutel: een streep op de ene dag kleurde die op de andere mee. Alleen
+// meerdaagse boekingen krijgen de dag erbij, zodat de markeringen van gewone
+// partijen blijven staan waar ze staan.
+const markBasis = (b) => String((b && b.id) == null ? "" : b.id) + (b && b.meerdaags && b.datum ? "@" + b.datum : "");
 const isDagLaag = (b, voor) => !!(b && b.meerdaags && b.datum && DAG_LAGEN.includes(voor || ""));
 const laagSleutel = (b, voor) => (voor || "") + "id|" + b.id + (isDagLaag(b, voor) ? "@" + b.datum : "");
 const leesLaag = (koppeling, boekingSleutel, b, voor) => {
@@ -12804,6 +12907,9 @@ const invulStempel = (nieuw, basis, nu) => {
   return uit;
 };
 
+// Sinds wanneer een productregel in MICE staat. Voor oude velden, die dat nog
+// niet dragen, is het moment van het veld zelf het beste dat we hebben.
+const prodSinds = (v) => (v && "sinds" in v ? String(v.sinds || "") : String((v && v.t) || ""));
 const vouwSamen = (...lagen) => {
   const uit = {};
   const invul = {}; // de i:-velden gaan per regel, niet per veld
@@ -12814,6 +12920,26 @@ const vouwSamen = (...lagen) => {
       if (String(naam).slice(0, 2) === "i:") { (invul[naam] = invul[naam] || []).push(v); continue; }
       const nu = uit[naam];
       if (!nu || String(v.t || "") >= String(nu.t || "")) uit[naam] = v;
+    }
+  }
+  // Een productregel die met de hand is weggehaald blijft weg, ook als MICE er
+  // daarna nog iets aan verandert. Het weghalen is een besluit over of die
+  // regel er hóórt te zijn; dat het aantal of de tijd in MICE opschuift zegt
+  // daar niets over. Zonder deze regel kwam een weggehaald product bij de
+  // eerstvolgende de beste wijziging weer boven — en dan sta je op de dag zelf
+  // met iets in de keuken dat je er expres uit had gehaald.
+  // Alleen als de regel in MICE écht verdwenen is en daarna opnieuw is
+  // aangemaakt, is dat een nieuw besluit van de planner en hoort hij terug.
+  // Daarvoor draagt de MICE-laag "sinds": het moment waarop de regel daar
+  // verscheen, dat blijft staan zolang hij er onafgebroken staat.
+  for (const naam of Object.keys(uit)) {
+    const win = uit[naam];
+    if (!kernIsProd(naam) || win.w === null || win.van !== "mice") continue;
+    const sinds = prodSinds(win);
+    for (const laag of lagen) {
+      const v = (laag || {})[naam];
+      if (!v || v.w !== null || v.van === "mice") continue;
+      if (String(v.t || "") >= sinds) { uit[naam] = v; break; }
     }
   }
   for (const naam of Object.keys(invul)) {
@@ -12912,7 +13038,17 @@ const verversMice = (oud, waarden, nu) => {
   const uit = {};
   for (const naam of Object.keys(waarden || {})) {
     const o = (oud || {})[naam];
-    uit[naam] = o && kernGelijk(o.w, waarden[naam]) ? o : kernVeld(waarden[naam], t, "mice");
+    if (o && kernGelijk(o.w, waarden[naam])) { uit[naam] = o; continue; }
+    const v = kernVeld(waarden[naam], t, "mice");
+    // Een productregel onthoudt sinds wanneer hij in MICE staat. Stond hij er
+    // de vorige keer ook al, dan verandert dat moment niet — hoeveel er verder
+    // ook aan de regel verschuift. Stond hij er niet (nieuw, of eerder
+    // weggehaald en nu opnieuw aangemaakt), dan begint hij vandaag.
+    // Een regel die al bestond maar nog geen moment droeg, krijgt een leeg
+    // moment: hij stond er al voordat we dit bijhielden, en dan gaat een
+    // weghaling van later dus voor.
+    if (kernIsProd(naam) && waarden[naam] != null) v.sinds = o && o.w != null ? String(o.sinds || "") : t;
+    uit[naam] = v;
   }
   // Wat MICE niet meer stuurt is daar weggehaald. Ook dat is een wijziging en
   // krijgt dus een moment, anders blijft de oude waarde eeuwig winnen.
@@ -13543,6 +13679,27 @@ const adresVan = (b) => String((b && b.adres) || "").trim() || KLANT_ADRES[klant
 // desgewenst alleen voor die weekdag — "Lunch Necker" is op maandag iets
 // anders dan op woensdag.
 const weekdagVan = (b) => { const d = new Date(String((b && b.datum) || "") + "T12:00:00"); return isFinite(d) ? d.getDay() : null; };
+// Wat er precies gaat gebeuren als je op herhalen drukt, in gewone woorden.
+// Het staat er los van de knop zodat het na te rekenen is zonder het scherm.
+const herhaalVraag = (klantInstel, keuze) => {
+  const k = klantInstel || {};
+  const naam = String(k.naam || "").trim() || "deze klant";
+  const wanneer = keuze === "dag" ? "elke " + (k.dagNaam || "week") : "elke volgende boeking";
+  const al = keuze === "dag" ? k.herhaal === "dag" : k.herhaal === "elke";
+  return {
+    titel: al ? "Het voorbeeld vervangen?" : "Deze partij bewaren als voorbeeld?",
+    tekst: (al
+      ? "Het voorbeeld dat er nu staat wordt overschreven door de invulling van deze partij."
+      : "De producten en de invulling van deze partij worden bewaard als voorbeeld.")
+      + "\n\nVanaf nu begint " + wanneer + " van " + naam + " hiermee, omgerekend naar hun aantal gasten."
+      + "\n\nWat er al op de mise-en-place staat verandert hier niet van.",
+    okLabel: al ? "Vervangen" : "Bewaren",
+  };
+};
+const vraagHerhaal = async (klantInstel, keuze) => {
+  const v = herhaalVraag(klantInstel, keuze);
+  return await bevestig(v.tekst, { titel: v.titel, okLabel: v.okLabel });
+};
 const herhaalSleutel = (b, dag) => "herhaal|" + klantSleutel(b) + "|" + (dag == null ? "*" : dag);
 const herhaalSjabloon = (koppeling, b) => {
   if (!koppeling || !b || !klantSleutel(b)) return null;
@@ -15913,16 +16070,19 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
                   : "Deze partij bewaren als voorbeeld: volgende boekingen van deze klant beginnen dan met dezelfde producten en invulling, omgerekend naar hun aantal."}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => klantInstel.onHerhaal("elke")} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
+                {/* Eerst vragen. Deze knoppen leggen de invulling van déze partij
+                    vast als voorbeeld voor alle volgende boekingen van deze klant;
+                    een misklik hier werkt door op partijen die je nog niet ziet. */}
+                <button onClick={async () => { if (await vraagHerhaal(klantInstel, "elke")) klantInstel.onHerhaal("elke"); }} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
                   {klantInstel.herhaal === "elke" ? "Opnieuw opslaan" : "Herhalen — elke keer"}
                 </button>
                 {klantInstel.dagNaam && (
-                  <button onClick={() => klantInstel.onHerhaal("dag")} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
+                  <button onClick={async () => { if (await vraagHerhaal(klantInstel, "dag")) klantInstel.onHerhaal("dag"); }} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
                     {klantInstel.herhaal === "dag" ? "Opnieuw opslaan" : "Alleen op " + klantInstel.dagNaam}
                   </button>
                 )}
                 {klantInstel.herhaal && (
-                  <button onClick={async () => { if (await bevestig("Stoppen met herhalen voor deze klant?")) klantInstel.onHerhaal(""); }}
+                  <button onClick={async () => { if (await bevestig("Het bewaarde voorbeeld wordt weggegooid. Volgende boekingen van " + (String(klantInstel.naam || "").trim() || "deze klant") + " beginnen weer leeg.", { titel: "Stoppen met herhalen?", okLabel: "Stoppen" })) klantInstel.onHerhaal(""); }}
                     className="ff text-[12.5px] font-medium mute hover:opacity-70 px-2">Stoppen</button>
                 )}
               </div>
@@ -17029,7 +17189,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                         kopje: anders bleef er niets van over. */}
                     {(g.act || g.tijd) && !g.items.length && (
                       <div className="font-bold ink underline" style={{ textUnderlineOffset: "3px", textDecorationThickness: "1.5px" }}>
-                        <MarkTekst tekst={[g.act, g.tijd].filter(Boolean).join(" ")} basis={"pg:" + b.id + ":" + g.sl} stift={stift} markering={markering} zetMark={zetMarkK} />
+                        <MarkTekst tekst={[g.act, g.tijd].filter(Boolean).join(" ")} basis={"pg:" + markBasis(b) + ":" + g.sl} stift={stift} markering={markering} zetMark={zetMarkK} />
                       </div>
                     )}
                     {g.items.map((k, i) => {
@@ -17057,7 +17217,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 // stuk voor stuk af te strepen als een eigen invulling.
                 const kopAantal = (k.aantal || b.gasten) + "× ";
                 const kop = k.naam + (g.tijd ? " · " + g.tijd : "") + prijsVan(k.miceId);
-                const kopBasis = "p:" + b.id + ":" + (k.miceId || k.productId || k.naam);
+                const kopBasis = "p:" + markBasis(b) + ":" + (k.miceId || k.productId || k.naam);
                 // Kop gemarkeerd? Dan erven alle invullingsregels die kleur.
                 const erfKleur = (() => { for (const sl of Object.keys(markering || {})) if (sl.startsWith(kopBasis + ":")) return markering[sl]; return null; })();
                 const isVers = vers.producten.get(zonderAccent(String(k.naam || "")).toLowerCase().trim()) || null;
@@ -17088,7 +17248,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       const gekoppeld = koppelBijlagen(regelTekst, (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam || "" }] : [])).filter((bl) => bl.recipeId));
                       return (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
-                        <MarkTekst aantal={aantalTekst} tekst={regelTekst} basis={"po:" + b.id + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMarkK} erf={erfKleur}
+                        <MarkTekst aantal={aantalTekst} tekst={regelTekst} basis={"po:" + markBasis(b) + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMarkK} erf={erfKleur}
                           receptPer={gekoppeld.perIndex} onRecept={onOpenRecipe} />
                         {zonderKop && j === 0 && isVers && <NieuwTag titel={isVers.titel} />}
                         {!stift && gekoppeld.rest.map((bl, bi) => (
@@ -17109,7 +17269,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           )}
           {allergie.length > 0 && (
             <div className="mt-1.5 text-[14.5px] font-bold" style={{ color: "#b3261e" }}>
-              {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + b.id + ":" + i} stift={stift} markering={markering} zetMark={zetMarkK} />{i === 0 && vers.allergie ? <NieuwTag titel={vers.allergie.titel} /> : null}</div>)}
+              {allergie.map((z, i) => <div key={i}><MarkTekst tekst={z} basis={"a:" + markBasis(b) + ":" + i} stift={stift} markering={markering} zetMark={zetMarkK} />{i === 0 && vers.allergie ? <NieuwTag titel={vers.allergie.titel} /> : null}</div>)}
             </div>
           )}
           {overigeKeuzes.length > 0 && (
@@ -17131,7 +17291,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 {vers.notitie && <NieuwTag titel={vers.notitie.titel} />}
                 {nootOpen && (
                   <p className="text-[13px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
-                    <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + b.id} stift={stift} markering={markering} zetMark={zetMarkK} />
+                    <MarkTekst tekst={noot.length > 600 ? noot.slice(0, 600) + "…" : noot} basis={"n:" + markBasis(b)} stift={stift} markering={markering} zetMark={zetMarkK} />
                   </p>
                 )}
               </>
@@ -17569,11 +17729,17 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // wachten we op; zodra je het vak verlaat halen we het alsnog op.
   const [blurTik, setBlurTik] = useState(0);
   const wachtendeData = React.useRef(null);
+  // Staat het linkpaneel open? Als ref, want het effect hieronder draait ook
+  // op momenten dat het niet opnieuw is opgebouwd.
+  const linkOpenRef = React.useRef(false);
   useEffect(() => {
     const binnen = JSON.stringify({ bladen: naarBladen(data), historie: (data && data.historie) || [] });
     if (binnen === laatst.current) { wachtendeData.current = null; return; }
+    // Ook niet terwijl het linkpaneel open staat: het vak opnieuw vullen
+    // gooit de plek weg waar de link heen moest, en dan kwam hij vooraan in
+    // de tekst terecht.
     const inHetVak = typeof document !== "undefined" && vak.current && document.activeElement === vak.current;
-    if (inHetVak) { wachtendeData.current = data; return; }
+    if (inHetVak || linkOpenRef.current) { wachtendeData.current = data; return; }
     if (vak.current && bladen[actief] && vak.current.innerHTML !== bladen[actief].html) return; // eigen typwerk wint
     wachtendeData.current = null;
     const d = naarBladen(data);
@@ -17942,13 +18108,21 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     else if (!e.shiftKey) cmd("insertText", "\u2003");
   };
 
-  // Linkpaneel: zoekt in recepten én partijen; invoegen op de onthouden cursorplek.
+  // Linkpaneel: zoekt in recepten én partijen. Sleep een stuk tekst aan en
+  // druk op de linkknop, dan wordt díe tekst de link. Staat er niets
+  // geselecteerd, dan komt de naam van het recept op de plek van de cursor.
   const [linkZoek, setLinkZoek] = useState(null);
+  const linkOpen = linkZoek != null;
+  // De selectie ben je kwijt zodra het zoekvakje de aandacht pakt, dus wat je
+  // had staan leggen we hier vast: de plek om in te voegen én de tekst die de
+  // link moet worden.
   const linkRange = React.useRef(null);
+  const linkTekst = React.useRef("");
   const openLinkZoek = () => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount && vak.current && vak.current.contains(sel.anchorNode)) linkRange.current = sel.getRangeAt(0).cloneRange();
-    else linkRange.current = null;
+    const sel = typeof window !== "undefined" && window.getSelection ? window.getSelection() : null;
+    const inVak = !!(sel && sel.rangeCount && vak.current && vak.current.contains(sel.anchorNode) && vak.current.contains(sel.focusNode));
+    linkRange.current = inVak ? sel.getRangeAt(0).cloneRange() : null;
+    linkTekst.current = inVak ? String(sel.toString() || "") : "";
     setLinkZoek((v) => (v == null ? "" : null));
   };
   const esc2 = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -17956,14 +18130,44 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     try {
       if (vak.current) vak.current.focus();
       const sel = window.getSelection();
-      if (linkRange.current && sel) { sel.removeAllRanges(); sel.addRange(linkRange.current); }
+      const r = linkRange.current;
+      // Een onthouden plek is alleen bruikbaar zolang hij nog in het vak zit.
+      // Is het vak tussendoor opnieuw gevuld, dan wijst hij nergens meer heen,
+      // en belandde de link vroeger helemaal vooraan in de tekst. Dan liever
+      // achteraan, waar je hem ziet staan, dan midden in andermans zin.
+      const bruikbaar = !!(r && vak.current && vak.current.contains(r.startContainer) && vak.current.contains(r.endContainer));
+      if (sel) {
+        sel.removeAllRanges();
+        if (bruikbaar) sel.addRange(r);
+        else if (vak.current && typeof document !== "undefined" && document.createRange) {
+          const eind = document.createRange();
+          eind.selectNodeContents(vak.current);
+          eind.collapse(false);
+          sel.addRange(eind);
+        }
+      }
+      // insertHTML vervangt wat er geselecteerd staat; dat is precies wat we
+      // willen als je een stuk tekst had aangesleept.
       document.execCommand("insertHTML", false, h);
     } catch (e) {}
-    setLinkZoek(null); linkRange.current = null; getypt();
+    setLinkZoek(null); linkRange.current = null; linkTekst.current = ""; getypt();
   };
-  const plaatsRecept = (r) => plaatsHtml('<a data-recept="' + esc2(r.id) + '" href="#">' + esc2(r.name) + "</a>&nbsp;");
+  // De tekst die de link draagt: wat je had geselecteerd, en anders de naam.
+  // De spatie erachter hoort alleen bij een link die er nieuw bij komt — bij
+  // een vervangen stuk tekst zou hij de zin uit elkaar duwen.
+  const linkHtml = (soort, id, naam) => {
+    const gekozen = String(linkTekst.current || "").trim();
+    return '<a data-' + soort + '="' + esc2(id) + '" href="#">' + esc2(gekozen || naam) + "</a>" + (gekozen ? "" : "&nbsp;");
+  };
+  // Zolang het paneel open staat laat het effect hierboven het vak met rust;
+  // zodra het dicht is mag wat er binnenkwam alsnog opgehaald worden.
+  useEffect(() => {
+    linkOpenRef.current = linkOpen;
+    if (!linkOpen) setBlurTik((n) => n + 1);
+  }, [linkOpen]);
+  const plaatsRecept = (r) => plaatsHtml(linkHtml("recept", r.id, r.name));
   const dKort = (d) => { try { const x = new Date(d + "T12:00:00"); return ["zo", "ma", "di", "wo", "do", "vr", "za"][x.getDay()] + " " + x.getDate() + "/" + (x.getMonth() + 1); } catch (e) { return d || ""; } };
-  const plaatsPartij = (b) => plaatsHtml('<a data-partij="' + esc2(b.id) + '" href="#">' + esc2((b.naam || "Zonder naam") + " · " + dKort(b.datum)) + "</a>&nbsp;");
+  const plaatsPartij = (b) => plaatsHtml(linkHtml("partij", b.id, (b.naam || "Zonder naam") + " \u00b7 " + dKort(b.datum)));
   const klikVak = (e) => {
     const t = e.target;
     // Afvinkvakje: aangevinkt = regel doorgestreept; de stand gaat mee in de html.
