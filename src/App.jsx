@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-12c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-12d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3087,6 +3087,26 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+// ── Is er een nieuwe uitgave van de app? ─────────────────────────────────
+// Een tabblad dat dagen openstaat draait nog de code van toen. De gegevens
+// komen na een verversing wel bij, maar de code niet — en dan werk je met een
+// fout dat al lang verholpen is. De app kijkt daarom zelf: wat voor bestanden
+// laadt de pagina op de server, en zijn dat nog dezelfde als bij het opstarten?
+// Een uitgave schrijft nieuwe bestandsnamen, dus dat is genoeg om het te zien,
+// zonder dat er iets aan de bouw hoeft te veranderen.
+const uitgaveVingerafdruk = (html) => {
+  const t = String(html || "");
+  const uit = [];
+  const re = /(?:src|href)\s*=\s*["']([^"']*\/assets\/[^"']+)["']/gi;
+  let m;
+  while ((m = re.exec(t))) uit.push(m[1]);
+  if (uit.length) return uit.sort().join("|");
+  // Geen bestanden met een naam die per uitgave verandert: dan is de pagina
+  // zelf de maatstaf. Beter een grove vergelijking dan geen.
+  return String(t.length) + ":" + t.slice(0, 2000);
+};
+const nieuweUitgave = (toen, nu) => !!toen && !!nu && toen !== nu;
+
 // ── Het notitieblok veilig samenvoegen ───────────────────────────────────
 // De notitie staat in één rij in de database en werd daar blind overheen
 // geschreven. Een tab die achterliep — een laptop die al een dag openstond —
@@ -5305,6 +5325,69 @@ function App() {
     return () => { if (t) clearTimeout(t); supabase.removeChannel(ch); };
   }, [live, !!user]);
 
+  // Een laptop die een paar dagen aanstaat mist van alles: de verbinding met de
+  // live meeluisteraar valt weg als het apparaat gaat slapen en komt niet altijd
+  // terug. Daarom halen we alles opnieuw op zodra het tabblad weer in beeld
+  // komt, of zodra het net er weer is. Dan hoef je er zelf niet aan te denken.
+  // Ook zonder verversen staat er dan wat er werkelijk is.
+  const laatsteHaal = React.useRef(0);
+  useEffect(() => {
+    if (!live || !user) return;
+    const HAAL_REM = 15000; // niet vaker dan eens per kwartier-minuut
+    const opnieuw = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (Date.now() - laatsteHaal.current < HAAL_REM) return;
+      laatsteHaal.current = Date.now();
+      loadShared();
+    };
+    const bijZicht = () => { if (typeof document === "undefined" || document.visibilityState === "visible") opnieuw(); };
+    // En voor het geval het tabblad dagenlang in beeld blijft staan zonder dat
+    // er iemand iets doet: elk kwartier even kijken.
+    const klok = setInterval(opnieuw, 15 * 60000);
+    try {
+      document.addEventListener("visibilitychange", bijZicht);
+      window.addEventListener("focus", bijZicht);
+      window.addEventListener("online", opnieuw);
+    } catch (e) {}
+    return () => {
+      clearInterval(klok);
+      try {
+        document.removeEventListener("visibilitychange", bijZicht);
+        window.removeEventListener("focus", bijZicht);
+        window.removeEventListener("online", opnieuw);
+      } catch (e) {}
+    };
+  }, [live, !!user]);
+
+  // Draait deze pagina nog de code die er op de server staat? Zo niet, dan
+  // zegt de app het — anders werk je dagen door met een fout die al verholpen
+  // is, en dat is precies hoe de markeringen van twee draaidagen bij elkaar
+  // bleven staan terwijl dat al gerepareerd was.
+  const [uitgaveOud, setUitgaveOud] = useState(false);
+  const uitgaveNu = React.useRef("");
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof fetch !== "function") return;
+    let weg = false;
+    const kijk = async (eerste) => {
+      if (!eerste && (uitgaveOud || (typeof document !== "undefined" && document.visibilityState === "hidden"))) return;
+      try {
+        const r = await fetch(window.location.origin + "/?v=" + Date.now(), { cache: "no-store", credentials: "same-origin" });
+        if (!r || !r.ok || weg) return;
+        const vink = uitgaveVingerafdruk(await r.text());
+        if (!uitgaveNu.current) { uitgaveNu.current = vink; return; }
+        if (nieuweUitgave(uitgaveNu.current, vink)) setUitgaveOud(true);
+      } catch (e) { /* geen net: dan weten we het later wel */ }
+    };
+    kijk(true);
+    const klok = setInterval(() => kijk(false), 10 * 60000);
+    const bijZicht = () => { if (typeof document === "undefined" || document.visibilityState === "visible") kijk(false); };
+    try { document.addEventListener("visibilitychange", bijZicht); window.addEventListener("focus", bijZicht); } catch (e) {}
+    return () => {
+      weg = true; clearInterval(klok);
+      try { document.removeEventListener("visibilitychange", bijZicht); window.removeEventListener("focus", bijZicht); } catch (e) {}
+    };
+  }, [uitgaveOud]);
+
   const current = stack[stack.length - 1];
   // Zelfherstel voor de "invoervelden reageren niet meer"-bug: Chrome kan na het
   // sluiten/herrenderen rond een geopende native dropdown blijven hangen in een
@@ -6973,6 +7056,16 @@ function App() {
           onFillTemp={() => { setCheckOpen(false); setCheckForDate(null); push({ screen: "haccpForm", editing: null }); }}
           onFillRecord={(kind) => { setCheckOpen(false); setCheckForDate(null); push({ screen: "haccpRecordForm", recordKind: kind, editing: null }); }}
           onOpenSection={() => { setCheckOpen(false); resetTo({ screen: "list" }); setSection("schoonmaak"); }} />
+      )}
+      {uitgaveOud && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-3 px-4 py-2 text-sm shadow"
+          style={{ background: T.green, color: T.paper }}>
+          <Sparkles size={15} className="shrink-0" />
+          <span className="min-w-0 truncate">Er staat een nieuwere versie van Ritme klaar.</span>
+          <button onClick={() => { try { window.location.reload(); } catch (e) {} }}
+            className="ff shrink-0 rounded-lg px-3 py-1 text-[12.5px] font-semibold" style={{ background: T.paper, color: T.green }}>Herladen</button>
+          <button onClick={() => setUitgaveOud(false)} className="ff shrink-0 rounded-lg p-1 hover:opacity-70" title="Later"><X size={15} /></button>
+        </div>
       )}
       {toast && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl text-sm px-4 py-2.5 shadow-lg max-w-[92vw] w-max" style={{ background: T.ink, color: T.paper }}>
