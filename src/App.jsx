@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13p"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13q"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -9927,6 +9927,23 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
   }, [q, zichtbareLijsten, st.verborgen, bdZoek.hits, bdZoek.bezig]);
   const alle = React.useMemo(() => { const m = new Map(); for (const l of lijsten) for (const r of l.items) m.set(r.sleutel, { ...r, lijst: l.naam }); return m; }, [lijsten]);
   const bestelDagen = React.useMemo(() => bestelDagenNu(st.besteld), [st.besteld]);
+  // Een bestelde regel terugvinden bij het artikel waar hij van kwam. Eerst op
+  // sleutel, en anders op naam: regels van v\u00f3\u00f3r we die sleutel bewaarden
+  // hebben er geen, en een zelf ingetypte naam kan later alsnog bij een artikel
+  // horen. Het plaatje van nu gaat voor op dat van toen.
+  const opNaam = React.useMemo(() => {
+    const m = new Map();
+    for (const r of alle.values()) {
+      const k = String(r.naam || "").trim().toLowerCase();
+      if (k && !m.has(k)) m.set(k, r);
+    }
+    return m;
+  }, [alle]);
+  const besteldPlaatje = (r) => {
+    const opSleutel = r && r.sleutel ? alle.get(r.sleutel) : null;
+    const opNm = opNaam.get(String((r && r.naam) || "").trim().toLowerCase());
+    return (opSleutel && opSleutel.plaatje) || (opNm && opNm.plaatje) || (r && r.plaatje) || "";
+  };
   const verborgenSet = new Set(st.verborgen || []);
   const gevuld = Object.keys(st.aantallen).map((k) => alle.get(k)).filter((r) => r && !verborgenSet.has(r.sleutel)).sort((a, b) => a.lijst.localeCompare(b.lijst, "nl") || a.naam.localeCompare(b.naam, "nl"));
   const verborgenLijst = (st.verborgen || []).map((k) => alle.get(k)).filter(Boolean);
@@ -10088,9 +10105,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
             <div className="card divide-y" style={{ borderColor: T.line }}>
               {(d.regels || []).map((r, i) => (
                 <div key={i} className="flex items-center gap-2 px-3 py-2">
-                  {/* Het plaatje van nu gaat voor: staat het artikel er nog,
-                      dan is dat het verste bij. Anders dat van toen. */}
-                  <ProductPlaatje src={(alle.get(r.sleutel) || {}).plaatje || r.plaatje || ""} />
+                  <ProductPlaatje src={besteldPlaatje(r)} />
                   <div className="min-w-0 flex-1 text-sm ink truncate">{r.naam}</div>
                   <div className="shrink-0 text-sm mute">{r.aantal}</div>
                 </div>
