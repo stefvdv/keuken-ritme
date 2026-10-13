@@ -432,9 +432,63 @@ const magDit = async (req) => {
 };
 
 // ── De route ─────────────────────────────────────────────────────────────
+// ── Een plaatje doorgeven ────────────────────────────────────────────────
+// De miniaturen staan wel in hun pagina, maar de browser van de keuken krijgt
+// ze niet binnen: hun server geeft ze alleen af aan iemand die van hun eigen
+// site komt (en soms alleen aan wie ingelogd is). Dus halen we ze hier op, met
+// dezelfde kop die hun eigen pagina ook meestuurt, en geven we ze door.
+//
+// Alleen plaatjes, alleen van hun eigen host, en alleen lezen. Daarmee is dit
+// geen open doorgeefluik: er valt niets anders mee op te halen.
+const IS_PLAATJE = /^image\//i;
+const plaatjeDoor = async (req, res, basis) => {
+  let doel;
+  try { doel = new URL(String(req.query.plaatje || "")); } catch (e) { return res.status(400).end("geen geldig adres"); }
+  const thuis = new URL(basis);
+  // Hun eigen host, of een onderdeel daarvan (een mediaserver op een subdomein).
+  // Host én poort moeten kloppen, niet alleen de naam: anders is elke andere
+  // dienst op dezelfde machine ook te bereiken.
+  const eigen = doel.protocol === thuis.protocol
+    && (doel.host === thuis.host || (doel.port === thuis.port && doel.hostname.endsWith("." + thuis.hostname)));
+  if (!eigen) return res.status(400).end("alleen plaatjes van bd-totaal.nl");
+
+  const haal = async (kop) => {
+    // Komt hun server niet opdagen, dan is er geen plaatje — geen reden om de
+    // hele aanroep te laten klappen.
+    try { return await fetch(doel.toString(), { headers: { "user-agent": BROWSER, accept: "image/*,*/*", referer: basis + "/", ...kop }, redirect: "follow" }); }
+    catch (e) { return null; }
+  };
+  let r = await haal({});
+  // Weigeren ze het zonder sessie, dan loggen we in en proberen we het nog een
+  // keer. Dat kost een ronde, dus pas als het echt nodig is.
+  if (!r || !r.ok || !IS_PLAATJE.test(String(r.headers.get("content-type") || ""))) {
+    const klant = process.env.BD_KLANTNUMMER, wachtwoord = process.env.BD_WACHTWOORD;
+    if (klant && wachtwoord) {
+      const pot = maakPot();
+      const in0 = await inloggen(pot, basis, klant, wachtwoord);
+      if (in0.ok) r = await haal({ cookie: pot.kop() });
+    }
+  }
+  const soort = r ? String(r.headers.get("content-type") || "") : "";
+  if (!r || !r.ok || !IS_PLAATJE.test(soort)) return res.status(404).end("geen plaatje");
+  const buf = Buffer.from(await r.arrayBuffer());
+  res.setHeader("content-type", soort);
+  // Een productfoto verandert bijna nooit; een dag in de cache scheelt de
+  // keuken honderd verzoeken per keer dat de bestellijst opengaat.
+  res.setHeader("cache-control", "public, max-age=86400, s-maxage=604800, immutable");
+  return res.status(200).end(buf);
+};
+
 export default async function handler(req, res) {
   res.setHeader("cache-control", "no-store");
   const klaar = (code, obj) => { res.status(code).json(obj); };
+
+  // Een plaatje van hun site doorgeven. Dit is de enige stand die geen
+  // Ritme-token nodig heeft: een <img> kan er geen meesturen, en er valt niets
+  // mee op te halen dan een productfoto van hun eigen host.
+  if (req.method === "GET" && req.query && req.query.plaatje) {
+    return plaatjeDoor(req, res, String(process.env.BD_BASIS || BASIS).replace(/\/+$/, ""));
+  }
 
   // Een blik op de instellingen, om te zien of alles er staat. Geen waarden,
   // alleen of ze gevonden zijn en onder welke naam — zo kun je de Vercel-kant
