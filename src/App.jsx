@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3424,6 +3424,10 @@ function App() {
       } catch (e) { return { ok: false, fout: "De server is niet bereikbaar" }; }
       if (!uit || !uit.ok) return { ok: false, fout: (uit && uit.fout) || "Onbekende fout" };
       const vorige = (bdStandRef.current && bdStandRef.current.codes) || null;
+      // Het aantal met een plaatje tellen we hier zelf uit wat er binnenkwam,
+      // niet uit een getal van de proxy: dan klopt het ook als daar een oudere
+      // versie van draait.
+      const metPlaatje = telMetPlaatje(uit.artikelen);
       const samen = voegBdArtikelenSamen(bdArtikelenRef.current, uit.artikelen, BD_FAVO, vorige);
       if (samen.nieuw || samen.bijgewerkt || samen.verhuisd) {
         // Eerst wegschrijven, dán pas in beeld zetten. Andersom zou de app bij
@@ -3440,8 +3444,15 @@ function App() {
       // De stand bewaren: de codes voor de volgende vergelijking, en het
       // nieuws zodat de meldingsbalk het kan tonen — ook op een ander apparaat.
       const stand = {
+        // De vorm van deze stand. Verandert er iets aan wat we bijhouden, dan
+        // gaat dit nummer omhoog en haalt de app één keer opnieuw op — anders
+        // zou een stand van gisteren met minder gegevens blijven liggen tot de
+        // volgende ochtend.
+        vorm: BD_STAND_VORM,
         dag: kitchenDate(),
         op: new Date().toISOString(),
+        aantal: uit.aantal,
+        metPlaatje,
         codes: samen.codes,
         nieuw: samen.erbij.map((a) => ({ code: a.code, naam: a.omschrijving })),
         prijzen: samen.prijzen,
@@ -3450,7 +3461,10 @@ function App() {
       setBdStand(stand);
       bdStandRef.current = stand;
       if (live) { try { await instelUpsert("bd_lijst_stand", stand); } catch (e) {} }
-      return { ok: true, ...samen, gelezen: uit.aantal, zonderNaam: uit.zonderNaam, ingelogdAls: uit.ingelogdAls };
+      // Het aantal met een plaatje tellen we hier zelf uit wat er binnenkwam,
+      // niet uit een getal van de proxy: dan klopt het ook als daar een oudere
+      // versie van draait.
+      return { ok: true, ...samen, gelezen: uit.aantal, zonderNaam: uit.zonderNaam, metPlaatje, ingelogdAls: uit.ingelogdAls };
     } finally { setBdLijstBezig(false); }
   };
   // Zoeken in het hele assortiment van BD. Alleen lezen; wat eruit komt staat
@@ -5644,7 +5658,8 @@ function App() {
       const nu = new Date();
       if (nu.getHours() < BD_OCHTEND_UUR) return;
       const dag = kitchenDate();
-      if (bdStandRef.current && String(bdStandRef.current.dag) === dag) return;
+      const st = bdStandRef.current;
+      if (st && String(st.dag) === dag && Number(st.vorm || 0) >= BD_STAND_VORM) return;
       bdAutoBezig.current = true;
       try { await haalBdLijst(); } catch (e) {}
       bdAutoBezig.current = false;
@@ -5652,7 +5667,7 @@ function App() {
     const t = setTimeout(kijk, 4000); // even laten landen na het opstarten
     const klok = setInterval(kijk, 30 * 60000);
     return () => { clearTimeout(t); clearInterval(klok); };
-  }, [live, !!user, canEdit, bdStand && bdStand.dag]);
+  }, [live, !!user, canEdit, bdStand && bdStand.dag, bdStand && bdStand.vorm]);
 
   // ---------- Naam-popup: wie doet dit? ----------
   // Vervangt de accounts: elke vastlegging vraagt één tik "wie doet dit".
@@ -6968,7 +6983,7 @@ function App() {
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
                 springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
-                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} onNotitieOpen={setNotitieOpen} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} onNaarBd={canEdit ? naarBdWagen : null} onHaalLijst={canEdit ? haalBdLijst : null} lijstBezig={bdLijstBezig} levFavoriet={levFavoriet} onZoekBd={canEdit ? zoekBijBd : null} onNieuwArtikel={canEdit ? updateBdArtikel : null} mepMark={mepMark} onMepMark={bewaarMepMark}
+                notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} onNotitieOpen={setNotitieOpen} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} onNaarBd={canEdit ? naarBdWagen : null} levFavoriet={levFavoriet} onZoekBd={canEdit ? zoekBijBd : null} onNieuwArtikel={canEdit ? updateBdArtikel : null} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "technieken" && <TechniquesList notes={techNotes} canEdit={canEdit} onSaveNotes={saveTechNotes}
@@ -7056,7 +7071,7 @@ function App() {
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
           menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} menuEngels={menuEngels} onMenuEngels={canEdit ? saveMenuEngels : null}
-          artikelKoppel={artikelKoppel} onArtikelKoppel={canEdit && chefMode ? saveArtikelKoppel : null} bdArtikelen={bdArtikelen} recepten={recipes}
+          artikelKoppel={artikelKoppel} onArtikelKoppel={canEdit && chefMode ? saveArtikelKoppel : null} bdArtikelen={bdArtikelen} bdStand={bdStand} recepten={recipes}
                    catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -8945,6 +8960,26 @@ const favoOfStandaard = (favo, lijstNamen) => {
   return uit;
 };
 const bdCodeVoor = (code) => BD_CODE_VOOR + "::" + rauweArtikelCode(code);
+// Hoeveel van wat er binnenkwam een afbeelding had. Dat getal gaat mee in het
+// verslag na het ophalen: zonder dat is niet te zien of een ontbrekend plaatje
+// bij hun pagina vandaan komt of hier niet laadt.
+const BD_STAND_VORM = 2;
+// Wat er van de laatste ophaal te vertellen valt, in gewone taal. Er is geen
+// knop meer om hem te starten, dus dit is de plek waar je ziet of het goed is
+// gegaan — en of hun pagina afbeeldingen meegaf.
+const bdStandTekst = (stand, nu) => {
+  if (!stand || !stand.op) return "Nog niet opgehaald. Dat gebeurt vanzelf, elke dag vanaf zeven uur \u2019s ochtends.";
+  const op = new Date(stand.op);
+  if (!isFinite(op.getTime())) return "Nog niet opgehaald.";
+  const vandaag = String(stand.dag || "") === kitchenDate(nu);
+  const klok = String(op.getHours()).padStart(2, "0") + ":" + String(op.getMinutes()).padStart(2, "0");
+  const wanneer = vandaag ? "vandaag om " + klok : "op " + op.toLocaleDateString("nl-NL", { day: "numeric", month: "long" }) + " om " + klok;
+  const stukken = ["Laatst opgehaald " + wanneer];
+  if (stand.aantal != null) stukken.push(stand.aantal + (stand.aantal === 1 ? " artikel" : " artikelen"));
+  if (stand.metPlaatje != null) stukken.push(stand.metPlaatje + " met afbeelding");
+  return stukken.join(" \u00b7 ") + ".";
+};
+const telMetPlaatje = (artikelen) => (artikelen || []).filter((a) => a && String(a.plaatje || "").trim()).length;
 // Is de naam die al in de app staat de rommelvorm van BD? Hun artikelregel zet
 // de naam er twee keer in (een brede en een smalle kolom) en plakt daar de
 // inhoud en het hele categoriepad achter; zo kwam "Creme fraiche 30% Creme
@@ -9505,7 +9540,10 @@ function BdVondst({ h, aantal, onAantal }) {
   );
 }
 
-function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onHaalLijst, lijstBezig, levFavoriet, onZoekBd, onNieuwArtikel }) {
+// De favorietenlijst wordt niet meer met een knop opgehaald: dat doet de app
+// zelf, elke werkdag vanaf zeven uur. Wat er die ochtend veranderde staat in de
+// meldingsbalk onder Inkoop, en de stand van de laatste ophaal bij Extra's.
+function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel }) {
   const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [], verborgen: [] };
   const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])], verborgen: [...(d.verborgen || [])] } : { ...leeg });
   const [st, setSt] = useState(() => naarObj(data));
@@ -9617,27 +9655,6 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onHaalLijst
     if (!await bevestig("De notitie en de besteltelling blijven staan.", { titel: "Alle ingevulde aantallen leegmaken?", okLabel: "Leegmaken" })) return;
     setSt((s) => { const n = { ...s, aantallen: {} }; stRef.current = n; return n; });
     getypt();
-  };
-
-  // De favorietenlijst bij BD ophalen. Nieuwe artikelen komen erbij, prijzen en
-  // inhoud worden bijgewerkt. Er verdwijnt niets en er wordt niets besteld.
-  const haalLijst = async () => {
-    if (!onHaalLijst || lijstBezig) return;
-    const u = await onHaalLijst();
-    if (!u || !u.ok) { melding((u && u.fout) || "Onbekende fout", { titel: "De lijst is niet opgehaald" }); return; }
-    if (!u.nieuw && !u.bijgewerkt) {
-      melding(u.gelezen + " artikelen staan op je favorietenlijst bij BD-Totaal; de lijst hier was al bij.",
-        { titel: "Niets veranderd" });
-      return;
-    }
-    const namen = (u.erbij || []).slice(0, 8).map((a) => "  " + a.omschrijving + (a.inhoud ? " \u00b7 " + a.inhoud : "")).join("\n");
-    melding(
-      (u.nieuw ? u.nieuw + (u.nieuw === 1 ? " artikel is erbij gekomen" : " artikelen zijn erbij gekomen") : "Geen nieuwe artikelen")
-      + (u.bijgewerkt ? ", " + u.bijgewerkt + " bijgewerkt" : "") + "."
-      + (namen ? "\n\n" + namen + ((u.erbij || []).length > 8 ? "\n  \u2026 en nog " + ((u.erbij || []).length - 8) : "") : "")
-      + (u.overgeslagen ? "\n\n" + u.overgeslagen + " regels overgeslagen (geen artikelnummer of geen naam)." : "")
-      + (u.zonderNaam ? "\n\nLet op: bij " + u.zonderNaam + " regels kon de naam niet uit hun pagina gelezen worden." : ""),
-      { titel: "Lijst bijgewerkt" });
   };
 
   // Naar de winkelwagen van BD-Totaal. Alleen de wagen: verzenden doe je zelf
@@ -9783,13 +9800,6 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onHaalLijst
               {bdBezig ? "Bezig\u2026" : "Naar BD-wagen \u00b7 " + bdLijst.mee.length}
             </button>
           )}
-          {onHaalLijst && (
-            <button onClick={haalLijst} disabled={lijstBezig} className="btno ff shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-medium inline-flex items-center gap-1.5"
-              title="Haal de favorietenlijst op bij BD-Totaal. Nieuwe artikelen komen erbij en de prijzen worden bijgewerkt.">
-              {lijstBezig ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
-              {lijstBezig ? "Bezig\u2026" : "Lijst bijwerken"}
-            </button>
-          )}
           {gevuld.length > 0 && <button onClick={leegmaken} className="btno ff shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-medium">Leegmaken</button>}
           <button onClick={sluit} className="ff mute hover:opacity-70 ml-1" title="Sluiten (wordt bewaard)"><X size={18} /></button>
         </div>
@@ -9799,8 +9809,16 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onHaalLijst
       <div className="flex items-center gap-2 mb-2">
         <div className="relative flex-1 min-w-0">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
-          <input className="input pl-9 pr-3 py-2.5 w-full text-sm" value={zoek} onChange={(e) => setZoek(e.target.value)}
+          <input className={"input pl-9 py-2.5 w-full text-sm " + (zoek ? "pr-9" : "pr-3")} value={zoek} onChange={(e) => setZoek(e.target.value)}
             placeholder={breed ? "Zoek in alle lijsten" : "Zoek in je favorieten"} />
+          {/* Het kruisje staat er alleen als er iets te wissen valt, anders
+              zit het in de weg bij een leeg vak. */}
+          {zoek ? (
+            <button onClick={() => setZoek("")} title="Zoekterm wissen"
+              className="ff mute hover:opacity-60 absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full">
+              <X size={15} />
+            </button>
+          ) : null}
         </div>
         {buitenFavo > 0 && (
           <button onClick={() => setBreed((b) => !b)}
@@ -10389,7 +10407,7 @@ function MenuEngelsBeheer({ waarde, onZet }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, recepten, onHaalProducten }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, bdStand, recepten, onHaalProducten }) {
   const catImportRef = React.useRef(null);
   const [prodBezig, setProdBezig] = useState(false); // productenlijst wordt opgehaald
   const [catZichtOpen, setCatZichtOpen] = useState(false);
@@ -10583,6 +10601,12 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
           <MenuEngelsBeheer waarde={menuEngels} onZet={onMenuEngels} />
         </>
       )}
+
+      <SectionTitle>BD-Totaal</SectionTitle>
+      <div className="card p-4">
+        <p className="text-sm mute">De favorietenlijst bij BD-Totaal wordt elke dag vanzelf opgehaald, vanaf zeven uur \u2019s ochtends. Nieuwe artikelen komen erbij en de prijzen worden bijgewerkt; er verdwijnt nooit iets en er wordt nooit iets besteld. Wat er die ochtend veranderde staat in de meldingsbalk onder <span className="ink font-medium">Inkoop</span>.</p>
+        <p className="text-sm ink mt-2">{bdStandTekst(bdStand)}</p>
+      </div>
 
       {onArtikelKoppel && (
         <>
@@ -18916,7 +18940,7 @@ const dagOnderBalk = (koppen, balkOnder) => {
   for (const k of koppen || []) { if (Number(k.top) < Number(balkOnder)) uit = k.dag; else break; }
   return uit;
 };
-function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, onHaalLijst, lijstBezig, levFavoriet, onZoekBd, onNieuwArtikel, mepMark, onMepMark }) {
+function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   // De app schrijft het schoonmaakblok niet bij terwijl dit venster openstaat.
@@ -19579,7 +19603,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
         </>
       )}
       {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onNaarBd={onNaarBd}
-        onHaalLijst={onHaalLijst} lijstBezig={lijstBezig} levFavoriet={levFavoriet} onZoekBd={onZoekBd} onNieuwArtikel={onNieuwArtikel} onClose={() => setBestelOpen(false)} />}
+        levFavoriet={levFavoriet} onZoekBd={onZoekBd} onNieuwArtikel={onNieuwArtikel} onClose={() => setBestelOpen(false)} />}
       {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
         recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName} onSchoonmaakAf={onSchoonmaakAf}
         onOpenPartij={(id) => {
