@@ -124,16 +124,108 @@ const haalHome = async (pot, basis) => {
 const CAMEL = (naam) => String(naam).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 const rijenUit = (html) => {
   const uit = new Map();
+  const tekst = String(html || "");
+  // De openingstag zoeken en daarna zelf tot het eind van de regel lopen: een
+  // ontbrekende sluittag (daar is hun html niet vies van) zou anders de hele
+  // rij overslaan.
   const re = /<tr\s([^>]*data-context="row"[^>]*)>/g;
   let m;
-  while ((m = re.exec(String(html || "")))) {
+  while ((m = re.exec(tekst))) {
     const velden = {};
     const ar = /data-([a-z-]+)="([^"]*)"/g;
     let a;
     while ((a = ar.exec(m[1]))) velden[CAMEL(a[1])] = a[2];
-    if (velden.code) uit.set(String(velden.code), velden);
+    if (!velden.code) continue;
+    const vanaf = m.index + m[0].length;
+    const sluit = tekst.indexOf("</tr", vanaf);
+    const volgende = tekst.indexOf("<tr", vanaf);
+    const tot = sluit < 0 ? (volgende < 0 ? tekst.length : volgende)
+      : volgende < 0 ? sluit : Math.min(sluit, volgende);
+    const binnen = tekst.slice(vanaf, tot);
+    // De naam staat niet in de attributen maar in de regel zelf. Hij gaat
+    // apart mee, zodat het zetten van aantallen er niets van merkt.
+    velden.naamUitRij = naamUitRij(binnen);
+    velden.plaatjeUitRij = plaatjeUitRij(binnen);
+    uit.set(String(velden.code), velden);
   }
   return uit;
+};
+// De naam van een artikel staat niet in de data-attributen maar als tekst in
+// de regel zelf. We pakken de cellen van de rij en kiezen de eerste die op een
+// naam lijkt: tekst van enige lengte die geen bedrag, aantal of losse code is.
+// Zo blijft het werken als ze er een kolom bij zetten.
+// De tekens die in een productnaam voorkomen. Cr\u00e8me fra\u00eeche, pur\u00e9e,
+// p\u00e2t\u00e9 \u2014 zonder deze tabel zou daar "Cr&egrave;me" van overblijven.
+// De hoofdletters volgen hetzelfde patroon, één plek hoger in de tabel.
+const ACCENTEN = "agrave:224,aacute:225,acirc:226,atilde:227,auml:228,aring:229,aelig:230,ccedil:231,"
+  + "egrave:232,eacute:233,ecirc:234,euml:235,igrave:236,iacute:237,icirc:238,iuml:239,"
+  + "ntilde:241,ograve:242,oacute:243,ocirc:244,otilde:245,ouml:246,oslash:248,"
+  + "ugrave:249,uacute:250,ucirc:251,uuml:252,yacute:253,yuml:255";
+const HTML_UIT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'",
+  euro: "\u20ac", hellip: "\u2026", ndash: "\u2013", mdash: "\u2014", deg: "\u00b0",
+  middot: "\u00b7", times: "\u00d7", frac12: "\u00bd", frac14: "\u00bc", szlig: "\u00df",
+  rsquo: "\u2019", lsquo: "\u2018", ldquo: "\u201c", rdquo: "\u201d", sbquo: "\u201a", bdquo: "\u201e" };
+for (const stuk of ACCENTEN.split(",")) {
+  const [naam, nr] = stuk.split(":");
+  const code = Number(nr);
+  HTML_UIT[naam] = String.fromCodePoint(code);
+  HTML_UIT[naam[0].toUpperCase() + naam.slice(1)] = String.fromCodePoint(code - 32);
+}
+const kaleTekst = (h) => String(h == null ? "" : h)
+  .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+  .replace(/<[^>]*>/g, " ")
+  .replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z#0-9]+);/g, (hele, n) => {
+    if (n[0] === "#") {
+      const c = n[1] === "x" || n[1] === "X" ? parseInt(n.slice(2), 16) : parseInt(n.slice(1), 10);
+      return Number.isFinite(c) ? String.fromCodePoint(c) : hele;
+    }
+    return HTML_UIT[n] !== undefined ? HTML_UIT[n] : hele;
+  })
+  .replace(/\s+/g, " ").trim();
+// Lijkt dit stuk tekst op de naam van een artikel? Een bedrag, een aantal, een
+// datum of een kaal nummer niet; een los woord van twee letters ook niet.
+const lijktOpNaam = (t) => {
+  const x = String(t || "").trim();
+  if (x.length < 3 || x.length > 160) return false;
+  if (!/[a-zA-Z\u00c0-\u024f]{3}/.test(x)) return false;          // zonder letters is het geen naam
+  if (/^[\s\d.,€%+-]+$/.test(x)) return false;                     // alleen cijfers en tekens
+  if (/^\d{4}-\d{2}-\d{2}/.test(x)) return false;                  // een datum
+  // Een maat is geen naam: "kg", "5 ltr", "1x10 kg", "25 kg".
+  if (/^[\d.,]*\s*(?:[x\u00d7]\s*[\d.,]+\s*)?(stuks?|st|kg|gr?|gram|ml|cl|dl|l|ltr|liter|doos|dozen|krat|colli|bak|zak|pak|rol|bos)\.?$/i.test(x)) return false;
+  return true;
+};
+// Staat er een plaatje bij het artikel? Hun pagina zet er soms een miniatuur
+// naast. Als het er is nemen we het mee; is het er niet, dan merkt de app er
+// niets van. Alleen een echt pad telt \u2014 geen 1x1-pixeltje of een inline svg.
+const PLAATJE_NIET = /(^data:|spacer|blank|pixel|placeholder|geen[-_]?foto|no[-_]?image)/i;
+const plaatjeUitRij = (rijHtml) => {
+  const re = /<img\b[^>]*>/gi;
+  let m;
+  while ((m = re.exec(String(rijHtml || "")))) {
+    const tag = m[0];
+    // Veel pagina's laden hun plaatjes pas bij het scrollen; dan staat het
+    // echte pad in data-src en src op een leeg plaatje.
+    const bron = (tag.match(/\bdata-src\s*=\s*["']([^"']+)["']/i) || tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1];
+    if (!bron) continue;
+    const u = String(bron).trim();
+    if (!u || PLAATJE_NIET.test(u)) continue;
+    if (!/\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(u) && u.indexOf("/") < 0) continue;
+    return u;
+  }
+  return "";
+};
+const naamUitRij = (rijHtml) => {
+  const cellen = String(rijHtml || "").match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
+  for (const c of cellen) {
+    const t = kaleTekst(c);
+    if (lijktOpNaam(t)) return t;
+  }
+  // Staan er wél cellen maar lijkt geen ervan op een naam, dan is er gewoon
+  // geen naam. Liever niets dan de hele regel aan elkaar geplakt: daar zit
+  // zo een knop of een voettekst bij.
+  if (cellen.length) return "";
+  const heel = kaleTekst(rijHtml);
+  return lijktOpNaam(heel) ? heel : "";
 };
 // Precies de velden die hun pagina meestuurt, in dezelfde volgorde. Niet alles
 // wat op de regel staat gaat mee (favouritelists bijvoorbeeld niet), dus we
@@ -182,6 +274,32 @@ const haalLijst = async (pot, basis, pad) => {
   pot.slik(r);
   if (r.status !== 200) return { ok: false, status: r.status, rijen: new Map() };
   return { ok: true, status: 200, rijen: rijenUit(await r.text()) };
+};
+
+// Zoeken in het hele assortiment. Hun zoekpagina is een gewone pagina
+// (/search?q=...), geen aparte koppeling, en de artikelen staan er net zo in
+// als op de favorietenlijst. Dus dezelfde lezer, ander pad.
+const ZOEK_PAD = "/search?q=";
+const zoekPagina = async (pot, basis, term) => {
+  const pad = ZOEK_PAD + encodeURIComponent(String(term || "").trim());
+  const r = await fetch(basis + pad, { headers: { "user-agent": BROWSER, accept: "text/html", cookie: pot.kop() }, redirect: "manual" });
+  pot.slik(r);
+  if (r.status !== 200) return { ok: false, status: r.status, rijen: new Map(), pad, ruw: "" };
+  const html = await r.text();
+  const rijen = rijenUit(html);
+  // Vindt de lezer niets, dan is hun zoekpagina anders opgebouwd dan de
+  // favorietenlijst. Dan gaat er een stukje van de pagina mee terug, zodat
+  // dat te zien is zonder dat er iemand mee hoeft te kijken.
+  return { ok: true, status: 200, rijen, pad, ruw: rijen.size ? "" : eersteArtikelStuk(html) };
+};
+// Een stukje pagina rond het eerste wat op een artikel lijkt, als hulp bij het
+// uitzoeken. Hun plaatjes heten naar de artikelcode ("20540_thumbnail.png"),
+// dus daar is de plek goed aan te wijzen.
+const eersteArtikelStuk = (html) => {
+  const t = String(html || "");
+  const m = t.match(/(\d{3,12})_(?:thumbnail|\d+x\d+)\.(?:png|jpe?g|webp)/i);
+  const i = m ? Math.max(0, m.index - 900) : t.indexOf("<body");
+  return t.slice(i < 0 ? 0 : i, (i < 0 ? 0 : i) + 2200);
 };
 
 // ── Mag deze aanroeper dit? ──────────────────────────────────────────────
@@ -263,6 +381,70 @@ export default async function handler(req, res) {
     return klaar(200, { ok: true, ingelogd: true, ingelogdAls: home.wie, wagen: home.wagen });
   }
 
+  // Ophaalstand: de artikelen van de favorietenlijst teruggeven, zodat de app
+  // zijn bestellijst kan bijwerken zonder dat er een export ingelezen hoeft te
+  // worden. Hier wordt niets geschreven — alleen gelezen.
+  if (body.lees === true) {
+    const in0 = await inloggen(pot, basis, klant, wachtwoord);
+    if (!in0.ok) return klaar(502, { ok: false, ingelogd: false, fout: in0.waarom });
+    const lst = await haalLijst(pot, basis, pad);
+    if (!lst.ok) return klaar(502, { ok: false, ingelogd: true, fout: "de lijst op " + pad + " is niet op te halen (" + lst.status + ")" });
+    const getal = (x) => { const n = Number(String(x == null ? "" : x).replace(",", ".")); return Number.isFinite(n) ? n : null; };
+    const artikelen = [];
+    for (const [code, r] of lst.rijen) {
+      artikelen.push({
+        code,
+        naam: String(r.naamUitRij || ""),
+        // Een pad zonder host maken we compleet, anders is het in de app niet
+        // te laden.
+        plaatje: r.plaatjeUitRij ? (/^https?:/i.test(r.plaatjeUitRij) ? r.plaatjeUitRij : basis + (r.plaatjeUitRij[0] === "/" ? "" : "/") + r.plaatjeUitRij) : "",
+        inhoud: String(r.productContent || ""),
+        prijs: getal(r.price),
+        prijsBtw: getal(r.priceVat),
+        voorraad: getal(r.stockAmount),
+        opVoorraad: String(r.inStock || "") === "1",
+      });
+    }
+    const home = await haalHome(pot, basis);
+    return klaar(200, {
+      ok: true, ingelogd: true, ingelogdAls: home.wie, wagen: home.wagen,
+      pad, aantal: artikelen.length,
+      // Zonder naam valt er in de app niets mee te beginnen; dat melden we
+      // apart in plaats van er een nummer van te maken.
+      zonderNaam: artikelen.filter((a) => !a.naam).length,
+      artikelen,
+    });
+  }
+
+  // Zoekstand: in het hele assortiment van BD zoeken. Lezen alleen.
+  if (typeof body.zoek === "string") {
+    const term = body.zoek.trim();
+    if (term.length < 2) return klaar(400, { ok: false, fout: "zoekterm te kort" });
+    const in3 = await inloggen(pot, basis, klant, wachtwoord);
+    if (!in3.ok) return klaar(502, { ok: false, ingelogd: false, fout: in3.waarom });
+    const z = await zoekPagina(pot, basis, term);
+    if (!z.ok) return klaar(502, { ok: false, ingelogd: true, fout: "zoeken gaf " + z.status + " terug", pad: z.pad });
+    const getal = (x) => { const n = Number(String(x == null ? "" : x).replace(",", ".")); return Number.isFinite(n) ? n : null; };
+    const artikelen = [];
+    for (const [code, r] of z.rijen) {
+      artikelen.push({
+        code,
+        naam: String(r.naamUitRij || ""),
+        inhoud: String(r.productContent || ""),
+        prijs: getal(r.price),
+        prijsBtw: getal(r.priceVat),
+        voorraad: getal(r.stockAmount),
+        opVoorraad: String(r.inStock || "") === "1",
+        plaatje: r.plaatjeUitRij ? (/^https?:/i.test(r.plaatjeUitRij) ? r.plaatjeUitRij : basis + (r.plaatjeUitRij[0] === "/" ? "" : "/") + r.plaatjeUitRij) : "",
+      });
+    }
+    return klaar(200, { ok: true, ingelogd: true, term, pad: z.pad, aantal: artikelen.length,
+      zonderNaam: artikelen.filter((a) => !a.naam).length, artikelen,
+      // Alleen als er niets uitkwam: een stukje van hun pagina, om te zien hoe
+      // die er werkelijk uitziet.
+      ...(artikelen.length ? {} : { ruw: z.ruw }) });
+  }
+
   // Uitzoekstand: één artikel zetten en precies verslag doen van wat er
   // gebeurt. Het bedrag in de wagen vóór en ná is de enige maatstaf die telt;
   // een 200 van hun server betekent niet dat er iets veranderd is.
@@ -322,9 +504,21 @@ export default async function handler(req, res) {
   // Alleen artikelen die op die lijst staan kunnen mee: van de rest kennen we
   // de gegevens niet die hun bestelling nodig heeft.
   const klaarVoor = [], onbekend = [];
+  const nietOpLijst = [];
   for (const r of regels) {
     const rij = lst.rijen.get(r.code);
-    if (rij) klaarVoor.push({ rij, aantal: r.aantal }); else onbekend.push(r.code);
+    if (rij) klaarVoor.push({ rij, aantal: r.aantal }); else nietOpLijst.push(r);
+  }
+  // Wat niet op de favorietenlijst staat zoeken we op in hun assortiment: daar
+  // staat dezelfde regel, met dezelfde gegevens en hetzelfde bestelnummer. Zo
+  // kan er ook iets besteld worden dat niet op de favorietenlijst staat.
+  for (const r of nietOpLijst) {
+    let gevonden = null;
+    try {
+      const z = await zoekPagina(pot, basis, r.code);
+      if (z.ok) gevonden = z.rijen.get(r.code) || null;
+    } catch (e) {}
+    if (gevonden) klaarVoor.push({ rij: gevonden, aantal: r.aantal }); else onbekend.push(r.code);
   }
   if (!klaarVoor.length) {
     return klaar(200, { ok: false, ingelogd: true, gezet: 0, mislukt: regels.length, onbekend,
@@ -360,3 +554,8 @@ export default async function handler(req, res) {
     verzonden: false,
   });
 }
+
+// Alleen om na te rekenen: Vercel kijkt naar de default hierboven en raakt
+// deze niet aan. Zo ligt het lezen van hun pagina vast in een test, en dat is
+// precies het stuk waar we het meest over moeten gokken.
+export { naamUitRij, lijktOpNaam, kaleTekst, rijenUit, plaatjeUitRij };
