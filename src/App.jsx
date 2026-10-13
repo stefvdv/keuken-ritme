@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13k"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3428,6 +3428,7 @@ function App() {
       // niet uit een getal van de proxy: dan klopt het ook als daar een oudere
       // versie van draait.
       const metPlaatje = telMetPlaatje(uit.artikelen);
+      let kaleKolommen = [];
       const samen = voegBdArtikelenSamen(bdArtikelenRef.current, uit.artikelen, BD_FAVO, vorige);
       if (samen.nieuw || samen.bijgewerkt || samen.verhuisd) {
         // Eerst wegschrijven, dán pas in beeld zetten. Andersom zou de app bij
@@ -3435,7 +3436,7 @@ function App() {
         // houdt — en de volgende ronde ziet dan geen verschil meer en schrijft
         // niets, dus dan komt het nooit meer goed.
         const stempel = new Date().toISOString();
-        const res = await upsertArtikelen(samen.veranderd.map((a) => ({ ...a, updated_at: stempel })));
+        const res = await upsertArtikelen(samen.veranderd.map((a) => ({ ...a, updated_at: stempel })), (w) => { kaleKolommen = w; });
         if (res === "fout") return { ok: false, fout: "De artikelen konden niet in de database bewaard worden. Er is niets veranderd; probeer het zo nog eens." };
         setBdArtikelen(samen.artikelen);
         bdArtikelenRef.current = samen.artikelen;
@@ -3453,6 +3454,7 @@ function App() {
         op: new Date().toISOString(),
         aantal: uit.aantal,
         metPlaatje,
+        kaal: kaleKolommen,
         codes: samen.codes,
         nieuw: samen.erbij.map((a) => ({ code: a.code, naam: a.omschrijving })),
         prijzen: samen.prijzen,
@@ -4822,7 +4824,7 @@ function App() {
   // lijst van drie velden, en toen er een vierde bijkwam (het plaatje van een
   // artikel) ging de hele bewaring stuk: alles stond nog wel in beeld, maar
   // niets in de database.
-  const upsertArtikelen = async (rows) => {
+  const upsertArtikelen = async (rows, opVerlies) => {
     const zet = async (rs) => { let f = null; for (let i = 0; i < rs.length && !f; i += 200) f = (await supabase.from("bd_artikelen").upsert(rs.slice(i, i + 200))).error; return f; };
     let rijen = rows;
     let fout = await zet(rijen);
@@ -4835,6 +4837,10 @@ function App() {
       fout = await zet(rijen);
     }
     if (fout) { try { console.error("bd_artikelen bewaren mislukt:", fout.message || fout); } catch (e) {} return "fout"; }
+    // Welke kolommen de database niet kende. Zonder dit zie je alleen dat er
+    // iets weg is: de afbeeldingen stonden even in beeld en waren na een
+    // verversing weer verdwenen, want ze waren nooit bewaard.
+    if (opVerlies) opVerlies(weg);
     return weg.length ? "kaal" : "ok";
   };
   // ---- Artikelen (inkoop) importeren uit een leveranciersbestand ----
@@ -7071,7 +7077,7 @@ function App() {
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
           menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} menuEngels={menuEngels} onMenuEngels={canEdit ? saveMenuEngels : null}
-          artikelKoppel={artikelKoppel} onArtikelKoppel={canEdit && chefMode ? saveArtikelKoppel : null} bdArtikelen={bdArtikelen} bdStand={bdStand} recepten={recipes}
+          artikelKoppel={artikelKoppel} onArtikelKoppel={canEdit && chefMode ? saveArtikelKoppel : null} bdArtikelen={bdArtikelen} bdStand={bdStand} onHaalLijst={canEdit ? haalBdLijst : null} lijstBezig={bdLijstBezig} recepten={recipes}
                    catLijst={[...new Set((miceProducten || []).map((p) => String(p.categorie || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"))}
           catZicht={catZicht} onCatZicht={canEdit ? saveCatZicht : null} installed={installed} canInstall={!!deferredPrompt} onInstall={doInstall} onBackup={maakBackup} onWordBackup={maakWordBackup} onRestore={herstelBackup} chefMode={chefMode} onChef={(aan, code) => {
           if (!aan) { setChefMode(false); if (section === "assortiment") setSection("home"); flash("Chef-modus uit"); return true; }
@@ -8963,7 +8969,7 @@ const bdCodeVoor = (code) => BD_CODE_VOOR + "::" + rauweArtikelCode(code);
 // Hoeveel van wat er binnenkwam een afbeelding had. Dat getal gaat mee in het
 // verslag na het ophalen: zonder dat is niet te zien of een ontbrekend plaatje
 // bij hun pagina vandaan komt of hier niet laadt.
-const BD_STAND_VORM = 2;
+const BD_STAND_VORM = 3;
 // Wat er van de laatste ophaal te vertellen valt, in gewone taal. Er is geen
 // knop meer om hem te starten, dus dit is de plek waar je ziet of het goed is
 // gegaan — en of hun pagina afbeeldingen meegaf.
@@ -8979,6 +8985,12 @@ const bdStandTekst = (stand, nu) => {
   if (stand.metPlaatje != null) stukken.push(stand.metPlaatje + " met afbeelding");
   return stukken.join(" \u00b7 ") + ".";
 };
+// Kolommen die de database niet kende en die daarom niet bewaard zijn. Dat is
+// de stille manier waarop gegevens verdwijnen: in beeld staan ze wel, maar na
+// een verversing zijn ze weg. Dus zeggen we het, met de regel die het oplost.
+const bdKaleKolommen = (stand) => ((stand && Array.isArray(stand.kaal)) ? stand.kaal : []).filter(Boolean);
+const bdKaalSql = (kolommen) => (kolommen || [])
+  .map((k) => "alter table bd_artikelen add column if not exists " + k + " text;").join("\n");
 const telMetPlaatje = (artikelen) => (artikelen || []).filter((a) => a && String(a.plaatje || "").trim()).length;
 // Is de naam die al in de app staat de rommelvorm van BD? Hun artikelregel zet
 // de naam er twee keer in (een brede en een smalle kolom) en plakt daar de
@@ -10407,11 +10419,28 @@ function MenuEngelsBeheer({ waarde, onZet }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, bdStand, recepten, onHaalProducten }) {
+  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, bdStand, onHaalLijst, lijstBezig, recepten, onHaalProducten }) {
   const catImportRef = React.useRef(null);
   const [prodBezig, setProdBezig] = useState(false); // productenlijst wordt opgehaald
   const [catZichtOpen, setCatZichtOpen] = useState(false);
   const herstelRef = React.useRef(null);
+  // Tijdelijk, zolang we aan de BD-koppeling werken: de ophaal met de hand
+  // starten in plaats van tot morgenochtend zeven uur wachten. Het verslag
+  // erachteraan is waar je ziet wat er werkelijk binnenkwam.
+  const haalLijstNu = async () => {
+    if (!onHaalLijst || lijstBezig) return;
+    const u = await onHaalLijst();
+    if (!u || !u.ok) { melding((u && u.fout) || "Onbekende fout", { titel: "De lijst is niet opgehaald" }); return; }
+    const namen = (u.erbij || []).slice(0, 8).map((a) => "  " + a.omschrijving + (a.inhoud ? " \u00b7 " + a.inhoud : "")).join("\n");
+    melding(
+      (u.nieuw ? u.nieuw + (u.nieuw === 1 ? " artikel is erbij gekomen" : " artikelen zijn erbij gekomen") : "Geen nieuwe artikelen")
+      + (u.bijgewerkt ? ", " + u.bijgewerkt + " bijgewerkt" : "") + "."
+      + (namen ? "\n\n" + namen + ((u.erbij || []).length > 8 ? "\n  \u2026 en nog " + ((u.erbij || []).length - 8) : "") : "")
+      + (u.overgeslagen ? "\n\n" + u.overgeslagen + " regels overgeslagen (geen artikelnummer of geen naam)." : "")
+      + (u.zonderNaam ? "\n\nLet op: bij " + u.zonderNaam + " regels kon de naam niet uit hun pagina gelezen worden." : "")
+      + (u.gelezen ? "\n\n" + (u.metPlaatje || 0) + " van de " + u.gelezen + " regels had een afbeelding." : ""),
+      { titel: "Lijst bijgewerkt" });
+  };
   const [chefOpen, setChefOpen] = useState(false);
   const [chefFout, setChefFout] = useState("");
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
@@ -10606,6 +10635,18 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
       <div className="card p-4">
         <p className="text-sm mute">De favorietenlijst bij BD-Totaal wordt elke dag vanzelf opgehaald, vanaf zeven uur \u2019s ochtends. Nieuwe artikelen komen erbij en de prijzen worden bijgewerkt; er verdwijnt nooit iets en er wordt nooit iets besteld. Wat er die ochtend veranderde staat in de meldingsbalk onder <span className="ink font-medium">Inkoop</span>.</p>
         <p className="text-sm ink mt-2">{bdStandTekst(bdStand)}</p>
+        {onHaalLijst && (
+          <button onClick={haalLijstNu} disabled={lijstBezig} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-3">
+            {lijstBezig ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+            {lijstBezig ? "Bezig\u2026" : "Lijst nu ophalen"}
+          </button>
+        )}
+        {bdKaleKolommen(bdStand).length > 0 && (
+          <div className="mt-3 rounded-lg p-3" style={{ background: "#f6e9e2" }}>
+            <p className="text-sm ink">De database kent {bdKaleKolommen(bdStand).length === 1 ? "de kolom" : "de kolommen"} <span className="font-semibold">{bdKaleKolommen(bdStand).join(", ")}</span> niet. Die gegevens worden niet bewaard: je ziet ze even staan en na een verversing zijn ze weg. Draai dit in Supabase, dan is het over:</p>
+            <pre className="text-[12px] ink mt-2 overflow-x-auto" style={{ whiteSpace: "pre-wrap" }}>{bdKaalSql(bdKaleKolommen(bdStand))}</pre>
+          </div>
+        )}
       </div>
 
       {onArtikelKoppel && (
