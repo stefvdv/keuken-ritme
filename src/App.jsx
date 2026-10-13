@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13o"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13p"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8913,8 +8913,15 @@ const telBestelAantal = (a, b) => {
 };
 const bestelRondeErbij = (geschiedenis, regels, nu) => {
   const uit = (geschiedenis || []).filter((d) => d && d.dag).map((d) => ({ ...d, regels: [...(d.regels || [])] }));
+  // De sleutel en het plaatje gaan mee: dan staat er in de terugblik hetzelfde
+  // plaatje als in de lijst, ook als het artikel er later niet meer is.
   const schoon = (regels || [])
-    .map((r) => ({ naam: String((r && r.naam) || "").trim(), aantal: String((r && r.aantal) == null ? "" : r.aantal).trim() }))
+    .map((r) => ({
+      naam: String((r && r.naam) || "").trim(),
+      aantal: String((r && r.aantal) == null ? "" : r.aantal).trim(),
+      sleutel: String((r && r.sleutel) || ""),
+      plaatje: String((r && r.plaatje) || ""),
+    }))
     .filter((r) => r.naam);
   if (!schoon.length) return uit;
   const moment = nu || new Date();
@@ -8924,7 +8931,10 @@ const bestelRondeErbij = (geschiedenis, regels, nu) => {
   else uit[i].op = moment.toISOString();
   for (const r of schoon) {
     const j = uit[i].regels.findIndex((x) => x && x.naam === r.naam);
-    if (j >= 0) uit[i].regels[j] = { naam: r.naam, aantal: telBestelAantal(uit[i].regels[j].aantal, r.aantal) };
+    if (j >= 0) {
+      const oud = uit[i].regels[j];
+      uit[i].regels[j] = { ...oud, ...r, aantal: telBestelAantal(oud.aantal, r.aantal), plaatje: r.plaatje || oud.plaatje || "" };
+    }
     else uit[i].regels.push({ ...r });
   }
   uit[i].regels.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
@@ -9838,7 +9848,10 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
         const weg = bdGelukteSleutels(mee, uit.onbekend);
         if (weg.length) {
           const wegSet = new Set(weg);
-          const gegaan = mee.filter((r) => wegSet.has(r.sleutel)).map((r) => ({ naam: r.naam, aantal: String(r.aantal) }));
+          const gegaan = mee.filter((r) => wegSet.has(r.sleutel)).map((r) => ({
+            naam: r.naam, aantal: String(r.aantal), sleutel: r.sleutel,
+            plaatje: (alle.get(r.sleutel) || {}).plaatje || "",
+          }));
           setSt((s) => {
             const aantallen = { ...s.aantallen };
             for (const k of weg) delete aantallen[k];
@@ -10075,6 +10088,9 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
             <div className="card divide-y" style={{ borderColor: T.line }}>
               {(d.regels || []).map((r, i) => (
                 <div key={i} className="flex items-center gap-2 px-3 py-2">
+                  {/* Het plaatje van nu gaat voor: staat het artikel er nog,
+                      dan is dat het verste bij. Anders dat van toen. */}
+                  <ProductPlaatje src={(alle.get(r.sleutel) || {}).plaatje || r.plaatje || ""} />
                   <div className="min-w-0 flex-1 text-sm ink truncate">{r.naam}</div>
                   <div className="shrink-0 text-sm mute">{r.aantal}</div>
                 </div>
