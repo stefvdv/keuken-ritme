@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8945,6 +8945,28 @@ const favoOfStandaard = (favo, lijstNamen) => {
   return uit;
 };
 const bdCodeVoor = (code) => BD_CODE_VOOR + "::" + rauweArtikelCode(code);
+// Is de naam die al in de app staat de rommelvorm van BD? Hun artikelregel zet
+// de naam er twee keer in (een brede en een smalle kolom) en plakt daar de
+// inhoud en het hele categoriepad achter; zo kwam "Creme fraiche 30% Creme
+// fraiche 30% 1x200 ml zuivel / boter, eieren & room / slagroom" in de app
+// terecht. De proxy levert nu een nette naam, maar de lelijke staat er al, en
+// de regel "een naam die er staat blijft staan" beschermt die nu ook.
+// Daarom deze twee scherpe kentekens, en niets anders:
+//   1. de bestaande naam begint met de nette naam en herhaalt die daarna,
+//   2. of hij begint met de nette naam en de inhoud staat erachter geplakt.
+// Een hernoeming van het team ("Slagroom 5 ltr 35% \u2014 altijd 2 nemen")
+// heeft geen van beide en blijft dus gewoon staan.
+const bdNaamSleutel = (t) => zonderAccent(String(t == null ? "" : t)).toLowerCase().replace(/\s+/g, " ").trim();
+const naamIsRommel = (oud, nieuw, inhoud) => {
+  const o = bdNaamSleutel(oud);
+  const n = bdNaamSleutel(nieuw);
+  if (n.length < 3 || o.length <= n.length) return false;
+  if (o.indexOf(n) !== 0) return false;
+  const rest = o.slice(n.length).replace(/^[\s\/|,;\u00b7-]+/, "");
+  if (rest.indexOf(n) === 0) return true;
+  const i = bdNaamSleutel(inhoud);
+  return i.length >= 3 && rest.indexOf(i) === 0;
+};
 const voegBdArtikelenSamen = (bestaand, binnen, leverancier, vorigeCodes) => {
   const lev = String(leverancier || BD_FAVO);
   const opRauw = new Map();
@@ -8987,9 +9009,10 @@ const voegBdArtikelenSamen = (bestaand, binnen, leverancier, vorigeCodes) => {
     }
     if (inhoud && String(oud.inhoud || "") !== inhoud) n.inhoud = inhoud;
     if (plaatje && String(oud.plaatje || "") !== plaatje) n.plaatje = plaatje;
-    // De naam alleen zetten als er nog geen stond: een hernoeming van het team
-    // mag niet bij elke ophaal weer verdwijnen.
-    if (naam && !String(oud.omschrijving || "").trim()) n.omschrijving = naam;
+    // De naam alleen zetten als er nog geen stond, of als wat er staat de
+    // rommelvorm van BD is: een hernoeming van het team mag niet bij elke
+    // ophaal weer verdwijnen, maar hun dubbele naam moet er juist uit.
+    if (naam && (!String(oud.omschrijving || "").trim() || naamIsRommel(oud.omschrijving, naam, inhoud))) n.omschrijving = naam;
     if (JSON.stringify(n) === JSON.stringify(oud)) continue;
     uit[uit.indexOf(oud)] = n;
     anders.push(n);
@@ -9454,15 +9477,24 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
 // Een vondst uit het assortiment van BD. Zodra je er een aantal bij zet komt
 // het artikel ook echt op de lijst te staan — anders was het de volgende keer
 // weer weg en kon het aantal nergens meer heen.
-function BdVondst({ h, aantal, onAantal }) {
+// Het miniatuur bij een artikel. Eigen component omdat een plaatje dat niet
+// laadt moet terugvallen op het pakjesicoon, en daar hoort een eigen stukje
+// geheugen bij. Zo staat het in de zoekvondsten en in de lijst hetzelfde.
+function ProductPlaatje({ src }) {
   const [mis, setMis] = useState(false);
+  React.useEffect(() => { setMis(false); }, [src]);
+  const maat = { width: 34, height: 34, background: "#eceadf" };
+  if (src && !mis) {
+    return <img src={src} alt="" onError={() => setMis(true)} className="shrink-0 rounded" style={{ ...maat, objectFit: "cover" }} />;
+  }
+  return <span className="shrink-0 rounded inline-flex items-center justify-center mute" style={maat}><Package size={15} /></span>;
+}
+
+function BdVondst({ h, aantal, onAantal }) {
   const prijs = h.prijs != null && isFinite(h.prijs) ? "\u20ac " + Number(h.prijs).toFixed(2).replace(".", ",") : "";
   return (
     <div className="flex items-center gap-2 px-3 py-2">
-      {h.plaatje && !mis
-        ? <img src={h.plaatje} alt="" onError={() => setMis(true)} className="shrink-0 rounded"
-            style={{ width: 34, height: 34, objectFit: "cover", background: "#eceadf" }} />
-        : <span className="shrink-0 rounded inline-flex items-center justify-center mute" style={{ width: 34, height: 34, background: "#eceadf" }}><Package size={15} /></span>}
+      <ProductPlaatje src={h.plaatje} />
       <div className="min-w-0 flex-1">
         <div className="text-sm ink truncate">{h.naam}</div>
         <div className="text-[11.5px] mute truncate">{[h.inhoud, prijs, h.opVoorraad === false ? "niet op voorraad" : ""].filter(Boolean).join(" \u00b7 ")}</div>
@@ -9516,7 +9548,11 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onHaalLijst
     for (const a of bdArtikelen || []) {
       const lev = a.leverancier || "Onbekende leverancier";
       if (!per.has(lev)) per.set(lev, []);
-      per.get(lev).push({ sleutel: "a:" + a.code, naam: a.omschrijving || a.code, sub: [a.inhoud, a.categorie].filter(Boolean).join(" · ") });
+      // "Overig" is geen categorie maar de plek waar alles heen gaat waar we er
+      // geen van weten; op elke BD-regel zegt dat niets en het stond de
+      // zoekfunctie in de weg. Een echte categorie blijft er wel bij staan.
+      const cat = String(a.categorie || "").trim();
+      per.get(lev).push({ sleutel: "a:" + a.code, naam: a.omschrijving || a.code, plaatje: a.plaatje || "", sub: [a.inhoud, cat === "Overig" ? "" : cat].filter(Boolean).join(" · ") });
     }
     const uit = [...per.entries()].sort((x, y) => x[0].localeCompare(y[0], "nl")).map(([naam, items]) => ({ naam, items }));
     if ((st.eigenProducten || []).length) uit.push({ naam: "Zelf toegevoegd", items: st.eigenProducten.map((e) => ({ sleutel: "e:" + e.id, naam: e.naam, sub: [e.inhoud, e.prijs].filter(Boolean).join(" \u00b7 "), eigenId: e.id })) });
@@ -9719,6 +9755,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, onHaalLijst
   // type hermount de input en gooide de focus na elke toetsaanslag weg.
   const rij = (r, toonLijst) => (
     <div key={r.sleutel} className="flex items-center gap-2 px-3 py-2">
+      <ProductPlaatje src={r.plaatje} />
       <div className="min-w-0 flex-1">
         <div className="text-sm ink truncate">{r.naam}</div>
         {(r.sub || toonLijst) ? <div className="text-[11.5px] mute truncate">{[toonLijst ? r.lijst : "", r.sub].filter(Boolean).join(" \u00b7 ")}</div> : null}
