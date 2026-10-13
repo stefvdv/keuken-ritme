@@ -126,14 +126,41 @@ const CAMEL = (naam) => String(naam).replace(/-([a-z])/g, (_, c) => c.toUpperCas
 // artikelnummer ("20540_thumbnail.png", "27001_40x40.jpg"), dus ook als een
 // plaatje buiten de regel staat — in een apart blok, of pas door hun eigen
 // javascript ingeladen — is het aan het juiste artikel te hangen.
+const PLAATJE_EIND = /\.(?:png|jpe?g|webp|gif|avif)(?:\?[^"'()\s>]*)?$/i;
 const plaatjesPerCode = (html) => {
   const uit = new Map();
+  const tekst = String(html || "");
+  const zet = (code, pad) => { if (code && pad && !uit.has(code)) uit.set(code, pad); };
+  // Eerst de vorm die we van hun pagina kennen: "20540_thumbnail.png".
   const re = /["'(]([^"'()\s>]*?(\d{3,12})_(?:thumbnail|\d+x\d+)\.(?:png|jpe?g|webp|gif|avif)(?:\?[^"'()\s>]*)?)["')]/gi;
   let m;
-  while ((m = re.exec(String(html || "")))) {
-    if (!uit.has(m[2])) uit.set(m[2], m[1]);
+  while ((m = re.exec(tekst))) zet(m[2], m[1]);
+  // En breder: elk plaatjespad waar het artikelnummer als heel stuk in zit,
+  // dus "/storage/products/20540/klein.jpg" of ".../20540.jpg". Zo blijft het
+  // werken als ze hun bestandsnamen anders gaan opbouwen. Alleen voor codes
+  // die we nog niet hebben, dus de bekende vorm wint.
+  const breed = /["'(]([^"'()\s>]{4,300}\.(?:png|jpe?g|webp|gif|avif)(?:\?[^"'()\s>]*)?)["')]/gi;
+  while ((m = breed.exec(tekst))) {
+    const pad = m[1];
+    if (PLAATJE_NIET.test(pad)) continue;
+    const delen = pad.split("?")[0].split(/[\/\\]/);
+    for (const deel of delen) {
+      const code = (deel.match(/^(\d{3,12})(?:[_.-]|$)/) || [])[1];
+      if (code) zet(code, pad);
+    }
   }
   return uit;
+};
+// De regel draagt alles wat hun server over het artikel weet in data-attributen.
+// Zit daar een plaatjespad tussen — hoe het veld ook heet — dan pakken we dat.
+const plaatjeUitVelden = (velden) => {
+  for (const sleutel of Object.keys(velden || {})) {
+    const w = String(velden[sleutel] == null ? "" : velden[sleutel]).trim();
+    if (!w || w.length > 300 || !PLAATJE_EIND.test(w)) continue;
+    if (PLAATJE_NIET.test(w)) continue;
+    return w;
+  }
+  return "";
 };
 const rijenUit = (html) => {
   const uit = new Map();
@@ -161,7 +188,7 @@ const rijenUit = (html) => {
     velden.naamUitRij = nettNaam(naamUitRij(binnen), velden.productContent);
     // Eerst in de regel zelf kijken; staat het plaatje daar niet, dan zoeken
     // we het in de rest van de pagina op zijn bestandsnaam.
-    velden.plaatjeUitRij = plaatjeUitRij(binnen) || plaatjes.get(String(velden.code)) || "";
+    velden.plaatjeUitRij = plaatjeUitRij(binnen) || plaatjeUitVelden(velden) || plaatjes.get(String(velden.code)) || "";
     uit.set(String(velden.code), velden);
   }
   return uit;
@@ -214,21 +241,29 @@ const lijktOpNaam = (t) => {
 // naast. Als het er is nemen we het mee; is het er niet, dan merkt de app er
 // niets van. Alleen een echt pad telt \u2014 geen 1x1-pixeltje of een inline svg.
 const PLAATJE_NIET = /(^data:|spacer|blank|pixel|placeholder|geen[-_]?foto|no[-_]?image)/i;
+// De plekken waar een plaatjespad kan staan, op volgorde van betrouwbaarheid.
+// Lui ingeladen plaatjes zetten het echte pad in een data-attribuut en laten
+// src naar een leeg plaatje wijzen, dus die gaan voor.
+const BRON_KOPPEN = [/\bdata-src\s*=\s*["']([^"']+)["']/i, /\bdata-original\s*=\s*["']([^"']+)["']/i,
+  /\bdata-lazy(?:-src)?\s*=\s*["']([^"']+)["']/i, /\bdata-image\s*=\s*["']([^"']+)["']/i,
+  /\bsrc\s*=\s*["']([^"']+)["']/i, /\bsrcset\s*=\s*["']\s*([^"'\s,]+)/i];
+const bruikbaarPad = (u) => {
+  const t = String(u || "").trim();
+  if (!t || PLAATJE_NIET.test(t)) return "";
+  if (!/\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(t) && t.indexOf("/") < 0) return "";
+  return t;
+};
 const plaatjeUitRij = (rijHtml) => {
-  const re = /<img\b[^>]*>/gi;
-  let m;
-  while ((m = re.exec(String(rijHtml || "")))) {
-    const tag = m[0];
-    // Veel pagina's laden hun plaatjes pas bij het scrollen; dan staat het
-    // echte pad in data-src en src op een leeg plaatje.
-    const bron = (tag.match(/\bdata-src\s*=\s*["']([^"']+)["']/i) || tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1];
-    if (!bron) continue;
-    const u = String(bron).trim();
-    if (!u || PLAATJE_NIET.test(u)) continue;
-    if (!/\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(u) && u.indexOf("/") < 0) continue;
-    return u;
+  const tekst = String(rijHtml || "");
+  for (const tag of tekst.match(/<(?:img|source)\b[^>]*>/gi) || []) {
+    for (const re of BRON_KOPPEN) {
+      const u = bruikbaarPad((tag.match(re) || [])[1]);
+      if (u) return u;
+    }
   }
-  return "";
+  // Soms staat het plaatje niet in een img maar als achtergrond op een blokje.
+  const bg = tekst.match(/background(?:-image)?\s*:\s*url\(\s*["']?([^"')]+)/i);
+  return bruikbaarPad(bg && bg[1]);
 };
 // Hun regel zet de naam er twee keer in — één keer voor een breed scherm en
 // één keer voor een smal — en plakt daar de inhoud en het categoriepad achter.
@@ -320,7 +355,22 @@ const haalLijst = async (pot, basis, pad) => {
   const r = await fetch(basis + pad, { headers: { "user-agent": BROWSER, accept: "text/html", cookie: pot.kop() }, redirect: "manual" });
   pot.slik(r);
   if (r.status !== 200) return { ok: false, status: r.status, rijen: new Map() };
-  return { ok: true, status: 200, rijen: rijenUit(await r.text()) };
+  const html = await r.text();
+  const rijen = rijenUit(html);
+  // Kwam er van geen enkele regel een plaatje, dan is er iets aan hun opbouw
+  // dat we niet kennen. Dan gaat er een stukje van de eerste regel mee terug,
+  // zodat er niet opnieuw gegokt hoeft te worden.
+  let metPlaatje = 0;
+  for (const [, v] of rijen) if (v.plaatjeUitRij) metPlaatje++;
+  return { ok: true, status: 200, rijen, metPlaatje, ruw: (rijen.size && !metPlaatje) ? eersteRijStuk(html) : "" };
+};
+// Het eerste artikelblok zoals het er werkelijk staat.
+const eersteRijStuk = (html) => {
+  const t = String(html || "");
+  const m = t.match(/<tr\s[^>]*data-context="row"[^>]*>/);
+  if (!m) return t.slice(0, 1500);
+  const eind = t.indexOf("</tr", m.index);
+  return t.slice(m.index, eind < 0 ? m.index + 2500 : Math.min(eind + 5, m.index + 2500));
 };
 
 // Zoeken in het hele assortiment. Hun zoekpagina is een gewone pagina
@@ -456,6 +506,10 @@ export default async function handler(req, res) {
     return klaar(200, {
       ok: true, ingelogd: true, ingelogdAls: home.wie, wagen: home.wagen,
       pad, aantal: artikelen.length,
+      metPlaatje: artikelen.filter((a) => a.plaatje).length,
+      // Alleen als er van geen enkele regel een plaatje kwam: een stukje van
+      // hun pagina, om te zien hoe die er werkelijk uitziet.
+      ...(lst.ruw ? { ruw: lst.ruw } : {}),
       // Zonder naam valt er in de app niets mee te beginnen; dat melden we
       // apart in plaats van er een nummer van te maken.
       zonderNaam: artikelen.filter((a) => !a.naam).length,
@@ -605,4 +659,4 @@ export default async function handler(req, res) {
 // Alleen om na te rekenen: Vercel kijkt naar de default hierboven en raakt
 // deze niet aan. Zo ligt het lezen van hun pagina vast in een test, en dat is
 // precies het stuk waar we het meest over moeten gokken.
-export { naamUitRij, lijktOpNaam, kaleTekst, rijenUit, plaatjeUitRij, nettNaam, zonderHerhaling, totInhoud, plaatjesPerCode };
+export { naamUitRij, lijktOpNaam, kaleTekst, rijenUit, plaatjeUitRij, plaatjeUitVelden, nettNaam, zonderHerhaling, totInhoud, plaatjesPerCode };
