@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13m"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13n"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8896,6 +8896,58 @@ const rauweArtikelCode = (code) => String(code == null ? "" : code).split("::").
 // Wat er van de bestellijst naar de winkelwagen van BD kan, en wat niet. De
 // reden staat erbij, want een regel die stilletjes wegvalt is erger dan een
 // regel die je zelf moet intypen.
+// ── Al besteld ───────────────────────────────────────────────────────────
+// Wat er werkelijk in de wagen bij BD is gezet, per draaidag bewaard. De
+// bestellijst zelf raakt die regels kwijt — ze zijn immers besteld — en
+// hieraan zie je later nog wat er maandag de deur uit ging.
+const BESTELD_DAGEN = 14; // zoveel dagen houden we vast
+// Twee keer hetzelfde op één dag telt op. Zijn het geen ronde getallen (de
+// bestellijst laat ook "2 kratten" toe), dan zetten we ze naast elkaar in
+// plaats van er een som van te verzinnen.
+const telBestelAantal = (a, b) => {
+  const x = String(a == null ? "" : a).trim(), y = String(b == null ? "" : b).trim();
+  if (!x) return y;
+  if (!y) return x;
+  if (/^[0-9]{1,4}$/.test(x) && /^[0-9]{1,4}$/.test(y)) return String(Number(x) + Number(y));
+  return x + " + " + y;
+};
+const bestelRondeErbij = (geschiedenis, regels, nu) => {
+  const uit = (geschiedenis || []).filter((d) => d && d.dag).map((d) => ({ ...d, regels: [...(d.regels || [])] }));
+  const schoon = (regels || [])
+    .map((r) => ({ naam: String((r && r.naam) || "").trim(), aantal: String((r && r.aantal) == null ? "" : r.aantal).trim() }))
+    .filter((r) => r.naam);
+  if (!schoon.length) return uit;
+  const moment = nu || new Date();
+  const dag = kitchenDate(moment);
+  let i = uit.findIndex((d) => String(d.dag) === dag);
+  if (i < 0) { uit.push({ dag, op: moment.toISOString(), regels: [] }); i = uit.length - 1; }
+  else uit[i].op = moment.toISOString();
+  for (const r of schoon) {
+    const j = uit[i].regels.findIndex((x) => x && x.naam === r.naam);
+    if (j >= 0) uit[i].regels[j] = { naam: r.naam, aantal: telBestelAantal(uit[i].regels[j].aantal, r.aantal) };
+    else uit[i].regels.push({ ...r });
+  }
+  uit[i].regels.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
+  uit.sort((x, y) => String(y.dag).localeCompare(String(x.dag)));
+  return uit.slice(0, BESTELD_DAGEN);
+};
+const WEEKDAGEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+const MAANDEN_KORT = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+// "Vandaag besteld", "Maandag besteld" — en verder terug met de datum erbij,
+// want dan is "maandag" niet meer genoeg om te weten welke maandag.
+const bestelDagLabel = (dag, nu) => {
+  const d = new Date(String(dag || "") + "T12:00:00");
+  if (!isFinite(d.getTime())) return "Eerder besteld";
+  const vandaag = kitchenDate(nu);
+  if (String(dag) === vandaag) return "Vandaag besteld";
+  const gister = new Date(String(vandaag) + "T12:00:00");
+  gister.setDate(gister.getDate() - 1);
+  if (String(dag) === localDate(gister)) return "Gisteren besteld";
+  const naam = WEEKDAGEN[d.getDay()];
+  const kop = naam.charAt(0).toUpperCase() + naam.slice(1);
+  const dagen = Math.round((new Date(vandaag + "T12:00:00") - d) / 86400000);
+  return dagen <= 6 ? kop + " besteld" : kop + " " + d.getDate() + " " + MAANDEN_KORT[d.getMonth()] + " besteld";
+};
 const bdBestelRegels = (artikelen, aantallen) => {
   const opSleutel = new Map();
   for (const a of artikelen || []) opSleutel.set("a:" + a.code, a);
@@ -9589,11 +9641,13 @@ function BdVondst({ h, aantal, onAantal }) {
 // zelf, elke werkdag vanaf zeven uur. Wat er die ochtend veranderde staat in de
 // meldingsbalk onder Inkoop, en de stand van de laatste ophaal bij Extra's.
 function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel }) {
-  const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [], verborgen: [] };
-  const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])], verborgen: [...(d.verborgen || [])] } : { ...leeg });
+  const leeg = { aantallen: {}, telling: {}, notitie: "", eigenProducten: [], verborgen: [], besteld: [] };
+  const naarObj = (d) => (d && typeof d === "object" ? { ...leeg, ...d, aantallen: { ...(d.aantallen || {}) }, telling: { ...(d.telling || {}) }, eigenProducten: [...(d.eigenProducten || [])], verborgen: [...(d.verborgen || [])], besteld: [...(d.besteld || [])] } : { ...leeg });
   const [st, setSt] = useState(() => naarObj(data));
   const [zoek, setZoek] = useState("");
   const [open, setOpen] = useState({}); // per lijst open/dicht
+  const [levOpen, setLevOpen] = useState(false);   // de leveranciers als geheel
+  const [besteldOpen, setBesteldOpen] = useState({}); // per dag onder "Al besteld"
   const timer = React.useRef(null);
   const laatst = React.useRef(JSON.stringify(naarObj(data)));
   const stRef = React.useRef(st); stRef.current = st;
@@ -9657,6 +9711,26 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     getypt();
   };
   const zetNotitie = (t) => { setSt((s) => { const n = { ...s, notitie: t }; stRef.current = n; return n; }); getypt(); };
+  // Een regel die nergens op de lijsten staat. Een kok die "uitgebakken
+  // spekblokjes" zoekt en niets vindt drukt op enter en heeft hem staan, met
+  // de cursor in het aantal. Zonder formulier: alleen een naam is genoeg.
+  const [richtOp, setRichtOp] = useState("");
+  const tekstErbij = () => {
+    const naam = zoek.trim();
+    if (!naam) return;
+    // Staat hij er al onder precies deze naam, dan nemen we die — anders komt
+    // hetzelfde product er twee keer te staan.
+    const bestaand = [...alle.values()].find((r) => String(r.naam || "").trim().toLowerCase() === naam.toLowerCase());
+    if (bestaand) { setRichtOp(bestaand.sleutel); return; }
+    const id = "e" + Date.now();
+    setSt((s) => {
+      const n = { ...s, eigenProducten: [...(s.eigenProducten || []), { id, naam, inhoud: "", prijs: "", opmerking: "" }] };
+      stRef.current = n;
+      return n;
+    });
+    setRichtOp("e:" + id);
+    getypt();
+  };
   // Zelf een product toevoegen (naam, inkoophoeveelheid, prijs, opmerking).
   // Zodra later een leverancierslijst met dezelfde naam wordt ingeladen, voegt
   // de app deze regel daar vanzelf mee samen (de ingeladen informatie wint).
@@ -9751,10 +9825,15 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
         // staan. Wat BD niet terugvond blijft ook staan.
         const weg = bdGelukteSleutels(mee, uit.onbekend);
         if (weg.length) {
+          const wegSet = new Set(weg);
+          const gegaan = mee.filter((r) => wegSet.has(r.sleutel)).map((r) => ({ naam: r.naam, aantal: String(r.aantal) }));
           setSt((s) => {
             const aantallen = { ...s.aantallen };
             for (const k of weg) delete aantallen[k];
-            const n = { ...s, aantallen };
+            // De regels verdwijnen hier van de lijst, dus leggen we ze vast
+            // onder "Al besteld" — anders is morgen niet meer na te gaan wat er
+            // vandaag de deur uit is gegaan.
+            const n = { ...s, aantallen, besteld: bestelRondeErbij(s.besteld, gegaan) };
             stRef.current = n;
             return n;
           });
@@ -9808,7 +9887,25 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     return (!q || breed) ? binnen.concat(buiten) : binnen;
   }, [lijsten, favo, q, breed]);
   const sorteer = (items) => [...items].sort((a, b) => ((st.telling[b.sleutel] || 0) - (st.telling[a.sleutel] || 0)) || a.naam.localeCompare(b.naam, "nl"));
+  // Levert het zoeken érgens iets op? Zo niet, dan bieden we aan om de
+  // getypte tekst zelf op de lijst te zetten.
+  const gevondenIets = React.useMemo(() => {
+    if (!q) return true;
+    const weg = new Set(st.verborgen || []);
+    for (const l of zichtbareLijsten) {
+      for (const r of l.items) {
+        if (weg.has(r.sleutel)) continue;
+        if (r.naam.toLowerCase().includes(q) || String(r.sub || "").toLowerCase().includes(q)) return true;
+      }
+    }
+    return (bdZoek.hits || []).length > 0 || bdZoek.bezig;
+  }, [q, zichtbareLijsten, st.verborgen, bdZoek.hits, bdZoek.bezig]);
   const alle = React.useMemo(() => { const m = new Map(); for (const l of lijsten) for (const r of l.items) m.set(r.sleutel, { ...r, lijst: l.naam }); return m; }, [lijsten]);
+  // Alleen dagen waarop er werkelijk iets is doorgevoerd; lege dagen zeggen
+  // niets en zouden het scherm alleen maar vol zetten.
+  const bestelDagen = React.useMemo(
+    () => (st.besteld || []).filter((d) => d && d.dag && (d.regels || []).length),
+    [st.besteld]);
   const verborgenSet = new Set(st.verborgen || []);
   const gevuld = Object.keys(st.aantallen).map((k) => alle.get(k)).filter((r) => r && !verborgenSet.has(r.sleutel)).sort((a, b) => a.lijst.localeCompare(b.lijst, "nl") || a.naam.localeCompare(b.naam, "nl"));
   const verborgenLijst = (st.verborgen || []).map((k) => alle.get(k)).filter(Boolean);
@@ -9829,7 +9926,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
       {r.eigenId
         ? <button onClick={() => { const p = (st.eigenProducten || []).find((x) => x.id === r.eigenId); if (p) setVorm({ ...p }); }} className="ff shrink-0 mute hover:opacity-60 p-1" title="Dit zelf toegevoegde product bewerken"><Pencil size={14} /></button>
         : null}
-      <input className="input px-2.5 py-1.5 text-sm text-right shrink-0" style={{ width: "6.5rem" }} value={st.aantallen[r.sleutel] || ""} onChange={(e) => zetAantal(r.sleutel, e.target.value)} placeholder="aantal" />
+      <input autoFocus={r.sleutel === richtOp} className="input px-2.5 py-1.5 text-sm text-right shrink-0" style={{ width: "6.5rem" }} value={st.aantallen[r.sleutel] || ""} onChange={(e) => zetAantal(r.sleutel, e.target.value)} placeholder="aantal" />
     </div>
   );
 
@@ -9854,8 +9951,9 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
       <div className="flex items-center gap-2 mb-2">
         <div className="relative flex-1 min-w-0">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
-          <input className={"input pl-9 py-2.5 w-full text-sm " + (zoek ? "pr-9" : "pr-3")} value={zoek} onChange={(e) => setZoek(e.target.value)}
-            placeholder={breed ? "Zoek in alle lijsten" : "Zoek in je favorieten"} />
+          <input className={"input pl-9 py-2.5 w-full text-sm " + (zoek ? "pr-9" : "pr-3")} value={zoek} onChange={(e) => { setZoek(e.target.value); setRichtOp(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); tekstErbij(); } }}
+            placeholder={breed ? "Zoek in alle lijsten of typ er zelf een" : "Zoek in je favorieten of typ er zelf een"} />
           {/* Het kruisje staat er alleen als er iets te wissen valt, anders
               zit het in de weg bij een leeg vak. */}
           {zoek ? (
@@ -9928,6 +10026,13 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
           Niet gevonden? Er staan nog {buitenFavo} {buitenFavo === 1 ? "lijst" : "lijsten"} buiten je favorieten — <span className="acc font-semibold underline">ook daarin zoeken</span>.
         </button>
       )}
+      {/* Zoek je iets dat nergens staat, dan is enter genoeg. Zo kan een kok
+          ook bestellen wat de app niet kent, zonder formulier. */}
+      {q && !gevondenIets && (
+        <button onClick={tekstErbij} className="ff w-full text-left card p-3 text-[12.5px] mute hover:opacity-80 mb-2">
+          Niets gevonden. Druk op <span className="ink font-semibold">enter</span> om “<span className="ink font-semibold">{zoek.trim()}</span>” zelf op de lijst te zetten.
+        </button>
+      )}
       {lijsten.length === 0 && <div className="card p-4 text-sm mute">Nog geen lijsten ingeladen. Laad eerst een leverancierslijst of eigen items in via de chef-functie (Calculaties).</div>}
       {vorm && (
         <div className="card p-3 mb-3">
@@ -9947,13 +10052,48 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
           <div className="text-[11.5px] mute mt-2">Wordt later een leverancierslijst ingeladen met dit product erin, dan voegt de app ze vanzelf samen — de ingeladen informatie wint.</div>
         </div>
       )}
-      {!vorm && <button onClick={() => setVorm({ naam: "", inhoud: "", prijs: "", opmerking: "" })} className="btno ff inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium mb-3"><Plus size={15} /> Product toevoegen</button>}
-      {zichtbareLijsten.map((l) => {
+      {/* Wat er de afgelopen dagen werkelijk naar de wagen bij BD is gegaan.
+          Die regels zijn van de bestellijst af — ze zijn besteld — en hier nog
+          na te kijken. Alleen dagen waarop er iets is doorgevoerd. */}
+      {!q && bestelDagen.map((d) => (
+        <div key={d.dag} className="mb-2">
+          <button onClick={() => setBesteldOpen((o) => ({ ...o, [d.dag]: !o[d.dag] }))} className="ff w-full flex items-center gap-2 px-1 py-1.5">
+            {besteldOpen[d.dag] ? <ChevronDown size={15} className="mute shrink-0" /> : <ChevronRight size={15} className="mute shrink-0" />}
+            <Check size={11} className="acc shrink-0" />
+            <span className="text-[12px] font-semibold uppercase tracking-widest acc">{bestelDagLabel(d.dag)}</span>
+            <span className="text-[12px] mute">· {(d.regels || []).length}</span>
+          </button>
+          {besteldOpen[d.dag] && (
+            <div className="card divide-y" style={{ borderColor: T.line }}>
+              {(d.regels || []).map((r, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-2">
+                  <div className="min-w-0 flex-1 text-sm ink truncate">{r.naam}</div>
+                  <div className="shrink-0 text-sm mute">{r.aantal}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* De leveranciers samen onder één kopje: dicht is dit scherm een korte
+          lijst, open staat de hele catalogus eronder. Tijdens het zoeken gaat
+          hij vanzelf open, anders zou je je eigen zoekresultaat niet zien. */}
+      {zichtbareLijsten.length > 0 && (
+        <div className="mb-2">
+          <button onClick={() => setLevOpen((o) => !o)} className="ff w-full flex items-center gap-2 px-1 py-1.5">
+            {(q || levOpen) ? <ChevronDown size={15} className="mute shrink-0" /> : <ChevronRight size={15} className="mute shrink-0" />}
+            <span className="text-[12px] font-semibold uppercase tracking-widest acc">Leveranciers</span>
+            <span className="text-[12px] mute">· {zichtbareLijsten.length}</span>
+          </button>
+        </div>
+      )}
+      {(q || levOpen) && zichtbareLijsten.map((l) => {
         const items = sorteer(l.items.filter((x) => !verborgenSet.has(x.sleutel)).filter(past));
         if (q && !items.length) return null;
         const isOpen = q ? true : !!open[l.naam];
         return (
-          <div key={l.naam} className="mb-2">
+          <div key={l.naam} className="mb-2 pl-3">
             <button onClick={() => setOpen((o) => ({ ...o, [l.naam]: !o[l.naam] }))} className="ff w-full flex items-center gap-2 px-1 py-1.5">
               {isOpen ? <ChevronDown size={15} className="mute shrink-0" /> : <ChevronRight size={15} className="mute shrink-0" />}
               {isFavo(l.naam) && l.naam !== "Zelf toegevoegd" && <Star size={11} fill="currentColor" className="acc shrink-0" />}
