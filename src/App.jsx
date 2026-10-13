@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13l"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13m"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -5329,12 +5329,7 @@ function App() {
     if (csRow && csRow.value) setCatSettings({ eigen: Array.isArray(csRow.value.eigen) ? csRow.value.eigen : [], verborgen: Array.isArray(csRow.value.verborgen) ? csRow.value.verborgen : [] });
     if (ass && ass.data) setAssortiment(ass.data.map((r) => ({ ...(r.data || {}), id: r.id })));
     if (cit && cit.data) setCalcItems(cit.data.map((r) => ({ ...(r.data || {}), id: r.id })));
-    if (bda && bda.data) setBdArtikelen(pasOverlayToe(bda.data.map((r) => ({
-      code: r.code, omschrijving: r.omschrijving || "", inhoud: r.inhoud || "",
-      prijs: r.prijs === null || r.prijs === undefined ? null : Number(r.prijs),
-      ppe: r.ppe === null || r.ppe === undefined ? null : Number(r.ppe),
-      leverancier: r.leverancier || "", categorie: r.categorie || "", opmerking: r.opmerking || "",
-    }))));
+    if (bda && bda.data) setBdArtikelen(pasOverlayToe(bda.data.map(artikelUitRij)));
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
@@ -7750,6 +7745,19 @@ const bewaarArtikelEigen = (arts) => {
     localStorage.setItem(ARTIKEL_EIGEN, JSON.stringify(o));
   } catch (e) {}
 };
+// Wat een inkoopartikel draagt, op één plek. Dit ging mis: het plaatje werd
+// netjes bewaard, maar bij het inlezen uit de database werd elk artikel
+// opgebouwd uit een vaste lijst velden waar het niet in stond. Dan zie je het
+// één keer staan — de versie die net opgehaald is — en na de eerstvolgende
+// lading nooit meer, en elke ophaal meldt opnieuw dat alles bijgewerkt is.
+const ARTIKEL_TEKST = ["omschrijving", "inhoud", "leverancier", "categorie", "opmerking", "plaatje"];
+const ARTIKEL_GETAL = ["prijs", "ppe"];
+const artikelUitRij = (r) => {
+  const uit = { code: (r || {}).code };
+  for (const k of ARTIKEL_TEKST) uit[k] = ((r || {})[k]) || "";
+  for (const k of ARTIKEL_GETAL) { const w = (r || {})[k]; uit[k] = w === null || w === undefined ? null : Number(w); }
+  return uit;
+};
 const pasOverlayToe = (rows) => {
   const o = leesArtikelEigen();
   return rows.map((a) => {
@@ -9548,12 +9556,16 @@ const bdPlaatjeBron = (url) => {
 // laadt moet terugvallen op het pakjesicoon, en daar hoort een eigen stukje
 // geheugen bij. Zo staat het in de zoekvondsten en in de lijst hetzelfde.
 function ProductPlaatje({ src }) {
-  const [mis, setMis] = useState(false);
-  React.useEffect(() => { setMis(false); }, [src]);
+  // Twee pogingen: eerst rechtstreeks bij hen — dat scheelt de proxy honderd
+  // verzoeken — en lukt dat niet, dan alsnog via de proxy, die van hun site
+  // komt en zo nodig ingelogd is. Daarna het pakjesicoon.
+  const [poging, setPoging] = useState(0);
+  React.useEffect(() => { setPoging(0); }, [src]);
   const maat = { width: 34, height: 34, background: "#eceadf" };
-  const bron = bdPlaatjeBron(src);
-  if (bron && !mis) {
-    return <img src={bron} alt="" onError={() => setMis(true)} className="shrink-0 rounded" style={{ ...maat, objectFit: "cover" }} />;
+  const via = bdPlaatjeBron(src);
+  const bron = poging === 0 ? String(src || "") : poging === 1 && via !== String(src || "") ? via : "";
+  if (bron) {
+    return <img key={poging} src={bron} alt="" onError={() => setPoging((n) => n + 1)} className="shrink-0 rounded" style={{ ...maat, objectFit: "cover" }} />;
   }
   return <span className="shrink-0 rounded inline-flex items-center justify-center mute" style={maat}><Package size={15} /></span>;
 }
