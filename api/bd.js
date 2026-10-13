@@ -122,9 +122,23 @@ const haalHome = async (pot, basis) => {
 // die hele set terug met een nieuw aantal. Wij doen precies hetzelfde — dan
 // hoeven we niets te raden over prijzen, voorraad of leverdagen.
 const CAMEL = (naam) => String(naam).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+// Alle plaatjes van de pagina, op artikelcode. Hun bestandsnamen dragen het
+// artikelnummer ("20540_thumbnail.png", "27001_40x40.jpg"), dus ook als een
+// plaatje buiten de regel staat — in een apart blok, of pas door hun eigen
+// javascript ingeladen — is het aan het juiste artikel te hangen.
+const plaatjesPerCode = (html) => {
+  const uit = new Map();
+  const re = /["'(]([^"'()\s>]*?(\d{3,12})_(?:thumbnail|\d+x\d+)\.(?:png|jpe?g|webp|gif|avif)(?:\?[^"'()\s>]*)?)["')]/gi;
+  let m;
+  while ((m = re.exec(String(html || "")))) {
+    if (!uit.has(m[2])) uit.set(m[2], m[1]);
+  }
+  return uit;
+};
 const rijenUit = (html) => {
   const uit = new Map();
   const tekst = String(html || "");
+  const plaatjes = plaatjesPerCode(tekst);
   // De openingstag zoeken en daarna zelf tot het eind van de regel lopen: een
   // ontbrekende sluittag (daar is hun html niet vies van) zou anders de hele
   // rij overslaan.
@@ -144,8 +158,10 @@ const rijenUit = (html) => {
     const binnen = tekst.slice(vanaf, tot);
     // De naam staat niet in de attributen maar in de regel zelf. Hij gaat
     // apart mee, zodat het zetten van aantallen er niets van merkt.
-    velden.naamUitRij = naamUitRij(binnen);
-    velden.plaatjeUitRij = plaatjeUitRij(binnen);
+    velden.naamUitRij = nettNaam(naamUitRij(binnen), velden.productContent);
+    // Eerst in de regel zelf kijken; staat het plaatje daar niet, dan zoeken
+    // we het in de rest van de pagina op zijn bestandsnaam.
+    velden.plaatjeUitRij = plaatjeUitRij(binnen) || plaatjes.get(String(velden.code)) || "";
     uit.set(String(velden.code), velden);
   }
   return uit;
@@ -213,6 +229,37 @@ const plaatjeUitRij = (rijHtml) => {
     return u;
   }
   return "";
+};
+// Hun regel zet de naam er twee keer in — één keer voor een breed scherm en
+// één keer voor een smal — en plakt daar de inhoud en het categoriepad achter.
+// Zo werd de naam in de app "Creme fraiche 30% Creme fraiche 30% 1x200 ml
+// zuivel / boter, eieren & room / slagroom". Hieronder halen we de naam er
+// weer uit: begint de tekst met hetzelfde stuk twee keer, dan is dat de naam,
+// en anders knippen we af bij de inhoud, die we uit de regel zelf kennen.
+const zonderHerhaling = (tekst) => {
+  const t = String(tekst || "").trim();
+  // De langste kop die er twee keer achter elkaar staat is de naam. Van lang
+  // naar kort gezocht: bij een naam waarvan ook een kortere kop zich herhaalt
+  // is de langste de juiste, want dat is wat hun regel twee keer neerzet.
+  for (let n = Math.floor(t.length / 2); n >= 3; n--) {
+    const kop = t.slice(0, n).trim();
+    if (!kop) continue;
+    if (t.slice(n).trim().indexOf(kop) === 0) return kop;
+  }
+  return t;
+};
+const totInhoud = (tekst, inhoud) => {
+  const t = String(tekst || "").trim();
+  const i = String(inhoud || "").trim();
+  if (!i || i.length < 2) return t;
+  const pos = t.indexOf(i);
+  return pos > 2 ? t.slice(0, pos).trim() : t;
+};
+// De naam zoals hij in de app hoort te staan.
+const nettNaam = (tekst, inhoud) => {
+  const zonder = zonderHerhaling(totInhoud(tekst, inhoud));
+  // Blijft er na het afknippen nog een herhaling staan, dan die er ook af.
+  return zonderHerhaling(zonder).replace(/[\s\/|,;\u00b7-]+$/, "").trim();
 };
 const naamUitRij = (rijHtml) => {
   const cellen = String(rijHtml || "").match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
@@ -558,4 +605,4 @@ export default async function handler(req, res) {
 // Alleen om na te rekenen: Vercel kijkt naar de default hierboven en raakt
 // deze niet aan. Zo ligt het lezen van hun pagina vast in een test, en dat is
 // precies het stuk waar we het meest over moeten gokken.
-export { naamUitRij, lijktOpNaam, kaleTekst, rijenUit, plaatjeUitRij };
+export { naamUitRij, lijktOpNaam, kaleTekst, rijenUit, plaatjeUitRij, nettNaam, zonderHerhaling, totInhoud, plaatjesPerCode };
