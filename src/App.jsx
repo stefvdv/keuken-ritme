@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13n"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13o"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8900,7 +8900,7 @@ const rauweArtikelCode = (code) => String(code == null ? "" : code).split("::").
 // Wat er werkelijk in de wagen bij BD is gezet, per draaidag bewaard. De
 // bestellijst zelf raakt die regels kwijt — ze zijn immers besteld — en
 // hieraan zie je later nog wat er maandag de deur uit ging.
-const BESTELD_DAGEN = 14; // zoveel dagen houden we vast
+const BESTELD_DAGEN = 7; // een week terug; wat ouder is, is geschiedenis
 // Twee keer hetzelfde op één dag telt op. Zijn het geen ronde getallen (de
 // bestellijst laat ook "2 kratten" toe), dan zetten we ze naast elkaar in
 // plaats van er een som van te verzinnen.
@@ -8932,6 +8932,18 @@ const bestelRondeErbij = (geschiedenis, regels, nu) => {
   return uit.slice(0, BESTELD_DAGEN);
 };
 const WEEKDAGEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
+// Welke dagen er in beeld komen: alleen waar werkelijk iets is doorgevoerd, en
+// niet ouder dan een week. Het wegsnoeien gebeurt ook bij het bijschrijven,
+// maar wordt er een tijd niets besteld dan blijft een oude dag anders staan.
+const bestelDagenNu = (besteld, nu) => {
+  const grens = new Date(kitchenDate(nu) + "T12:00:00");
+  grens.setDate(grens.getDate() - (BESTELD_DAGEN - 1));
+  const vanaf = localDate(grens);
+  return (besteld || [])
+    .filter((d) => d && d.dag && (d.regels || []).length && String(d.dag) >= vanaf)
+    .slice()
+    .sort((x, y) => String(y.dag).localeCompare(String(x.dag)));
+};
 const MAANDEN_KORT = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
 // "Vandaag besteld", "Maandag besteld" — en verder terug met de datum erbij,
 // want dan is "maandag" niet meer genoeg om te weten welke maandag.
@@ -8939,14 +8951,14 @@ const bestelDagLabel = (dag, nu) => {
   const d = new Date(String(dag || "") + "T12:00:00");
   if (!isFinite(d.getTime())) return "Eerder besteld";
   const vandaag = kitchenDate(nu);
-  if (String(dag) === vandaag) return "Vandaag besteld";
   const gister = new Date(String(vandaag) + "T12:00:00");
   gister.setDate(gister.getDate() - 1);
-  if (String(dag) === localDate(gister)) return "Gisteren besteld";
-  const naam = WEEKDAGEN[d.getDay()];
-  const kop = naam.charAt(0).toUpperCase() + naam.slice(1);
-  const dagen = Math.round((new Date(vandaag + "T12:00:00") - d) / 86400000);
-  return dagen <= 6 ? kop + " besteld" : kop + " " + d.getDate() + " " + MAANDEN_KORT[d.getMonth()] + " besteld";
+  const naam = String(dag) === vandaag ? "Vandaag"
+    : String(dag) === localDate(gister) ? "Gisteren"
+    : WEEKDAGEN[d.getDay()].charAt(0).toUpperCase() + WEEKDAGEN[d.getDay()].slice(1);
+  // De datum staat er altijd bij: "dinsdag" alleen zegt niet genoeg zodra er
+  // een week tussen zit, en bij een bestelling wil je de dag zeker weten.
+  return naam + " " + d.getDate() + " " + MAANDEN_KORT[d.getMonth()] + " besteld";
 };
 const bdBestelRegels = (artikelen, aantallen) => {
   const opSleutel = new Map();
@@ -9901,11 +9913,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     return (bdZoek.hits || []).length > 0 || bdZoek.bezig;
   }, [q, zichtbareLijsten, st.verborgen, bdZoek.hits, bdZoek.bezig]);
   const alle = React.useMemo(() => { const m = new Map(); for (const l of lijsten) for (const r of l.items) m.set(r.sleutel, { ...r, lijst: l.naam }); return m; }, [lijsten]);
-  // Alleen dagen waarop er werkelijk iets is doorgevoerd; lege dagen zeggen
-  // niets en zouden het scherm alleen maar vol zetten.
-  const bestelDagen = React.useMemo(
-    () => (st.besteld || []).filter((d) => d && d.dag && (d.regels || []).length),
-    [st.besteld]);
+  const bestelDagen = React.useMemo(() => bestelDagenNu(st.besteld), [st.besteld]);
   const verborgenSet = new Set(st.verborgen || []);
   const gevuld = Object.keys(st.aantallen).map((k) => alle.get(k)).filter((r) => r && !verborgenSet.has(r.sleutel)).sort((a, b) => a.lijst.localeCompare(b.lijst, "nl") || a.naam.localeCompare(b.naam, "nl"));
   const verborgenLijst = (st.verborgen || []).map((k) => alle.get(k)).filter(Boolean);
