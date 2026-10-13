@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3425,12 +3425,17 @@ function App() {
       if (!uit || !uit.ok) return { ok: false, fout: (uit && uit.fout) || "Onbekende fout" };
       const vorige = (bdStandRef.current && bdStandRef.current.codes) || null;
       const samen = voegBdArtikelenSamen(bdArtikelenRef.current, uit.artikelen, BD_FAVO, vorige);
-      if (samen.nieuw || samen.bijgewerkt) {
-        setBdArtikelen(samen.artikelen);
-        bdArtikelenRef.current = samen.artikelen;
+      if (samen.nieuw || samen.bijgewerkt || samen.verhuisd) {
+        // Eerst wegschrijven, dán pas in beeld zetten. Andersom zou de app bij
+        // een mislukking de nieuwe stand tonen terwijl de database de oude
+        // houdt — en de volgende ronde ziet dan geen verschil meer en schrijft
+        // niets, dus dan komt het nooit meer goed.
         const stempel = new Date().toISOString();
         const res = await upsertArtikelen(samen.veranderd.map((a) => ({ ...a, updated_at: stempel })));
-        if (res === "fout") return { ok: false, fout: "De artikelen konden niet bewaard worden" };
+        if (res === "fout") return { ok: false, fout: "De artikelen konden niet in de database bewaard worden. Er is niets veranderd; probeer het zo nog eens." };
+        setBdArtikelen(samen.artikelen);
+        bdArtikelenRef.current = samen.artikelen;
+        if (res === "kaal") samen.kaal = true;
       }
       // De stand bewaren: de codes voor de volgende vergelijking, en het
       // nieuws zodat de meldingsbalk het kan tonen — ook op een ander apparaat.
@@ -4796,13 +4801,27 @@ function App() {
   };
   // Wegschrijven van artikelen. Bestaan leverancier/categorie/opmerking nog niet
   // als kolom in Supabase, dan gaat het zonder die velden alsnog door.
+  // Wegschrijven van artikelen. Kent de tabel een veld niet, dan laten we juist
+  // dat veld weg en proberen we het opnieuw — welk veld dat is zegt de
+  // foutmelding zelf. Zo werkt een nieuw veld meteen zodra de kolom er is, en
+  // blijft het werken zolang hij er nog niet is. Vroeger stond hier een vaste
+  // lijst van drie velden, en toen er een vierde bijkwam (het plaatje van een
+  // artikel) ging de hele bewaring stuk: alles stond nog wel in beeld, maar
+  // niets in de database.
   const upsertArtikelen = async (rows) => {
     const zet = async (rs) => { let f = null; for (let i = 0; i < rs.length && !f; i += 200) f = (await supabase.from("bd_artikelen").upsert(rs.slice(i, i + 200))).error; return f; };
-    const fout = await zet(rows);
-    if (!fout) return "ok";
-    if (!/column|kolom|schema/i.test(String(fout.message || ""))) return "fout";
-    const kaal = rows.map((r) => { const c = { ...r }; delete c.leverancier; delete c.categorie; delete c.opmerking; return c; });
-    return (await zet(kaal)) ? "fout" : "kaal";
+    let rijen = rows;
+    let fout = await zet(rijen);
+    const weg = [];
+    for (let n = 0; n < 8 && fout; n++) {
+      const kolom = kolomUitFout(fout);
+      if (!kolom || weg.indexOf(kolom) >= 0) break;
+      weg.push(kolom);
+      rijen = rijen.map((r) => { const c = { ...r }; delete c[kolom]; return c; });
+      fout = await zet(rijen);
+    }
+    if (fout) { try { console.error("bd_artikelen bewaren mislukt:", fout.message || fout); } catch (e) {} return "fout"; }
+    return weg.length ? "kaal" : "ok";
   };
   // ---- Artikelen (inkoop) importeren uit een leveranciersbestand ----
   const importBdArtikelen = async (file, leverancierNaam) => {
@@ -8870,6 +8889,17 @@ const bdBestelRegels = (artikelen, aantallen) => {
   anders.sort((x, y) => x.naam.localeCompare(y.naam, "nl"));
   return { mee, anders };
 };
+// Welke kolom noemt deze foutmelding? Supabase zegt bij een veld dat de tabel
+// niet kent: "Could not find the 'plaatje' column of 'bd_artikelen' in the
+// schema cache", en Postgres zelf: column "plaatje" of relation ... does not
+// exist. Allebei noemen ze hem tussen aanhalingstekens.
+const kolomUitFout = (fout) => {
+  const t = String((fout && fout.message) || fout || "");
+  if (!/column|kolom|schema/i.test(t)) return "";
+  const m = t.match(/['"\u2018\u201c]([A-Za-z_][A-Za-z0-9_]*)['"\u2019\u201d]/);
+  return m ? m[1] : "";
+};
+
 // ── De lijst bij BD ophalen ──────────────────────────────────────────────
 // De bestellijst liep achter op wat er bij BD op de favorietenlijst staat: zet
 // de keuken daar iets bij, dan zag de app dat pas als er weer een export werd
