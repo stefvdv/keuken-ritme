@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13k"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-13l"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8988,6 +8988,15 @@ const bdStandTekst = (stand, nu) => {
 // Kolommen die de database niet kende en die daarom niet bewaard zijn. Dat is
 // de stille manier waarop gegevens verdwijnen: in beeld staan ze wel, maar na
 // een verversing zijn ze weg. Dus zeggen we het, met de regel die het oplost.
+// Het eerste plaatjespad dat we hebben. Alleen om te zien hoe het eruitziet
+// en of het te laden is; zodra de plaatjes gewoon staan mag dit weg.
+const eersteBdPlaatje = (artikelen) => {
+  for (const a of artikelen || []) {
+    const t = String((a && a.plaatje) || "").trim();
+    if (t) return t;
+  }
+  return "";
+};
 const bdKaleKolommen = (stand) => ((stand && Array.isArray(stand.kaal)) ? stand.kaal : []).filter(Boolean);
 const bdKaalSql = (kolommen) => (kolommen || [])
   .map((k) => "alter table bd_artikelen add column if not exists " + k + " text;").join("\n");
@@ -9524,6 +9533,17 @@ function AssortimentForm({ editing, producten, recipes, dishes, recipeById, dish
 // Een vondst uit het assortiment van BD. Zodra je er een aantal bij zet komt
 // het artikel ook echt op de lijst te staan — anders was het de volgende keer
 // weer weg en kon het aantal nergens meer heen.
+// Hun miniaturen zijn niet rechtstreeks op te halen: die server geeft ze
+// alleen af aan iemand die van hun eigen site komt. De proxy haalt ze wel op
+// — met dezelfde kop als hun eigen pagina, en zo nodig ingelogd — en geeft ze
+// door. Alleen voor plaatjes van hun host; de rest blijft zoals hij is.
+const BD_PLAATJE_PAD = "/api/bd?plaatje=";
+const BD_HOST = /^https:\/\/(?:[a-z0-9-]+\.)*bd-totaal\.nl\//i;
+const bdPlaatjeBron = (url) => {
+  const t = String(url == null ? "" : url).trim();
+  if (!t || !BD_HOST.test(t)) return t;
+  return BD_PLAATJE_PAD + encodeURIComponent(t);
+};
 // Het miniatuur bij een artikel. Eigen component omdat een plaatje dat niet
 // laadt moet terugvallen op het pakjesicoon, en daar hoort een eigen stukje
 // geheugen bij. Zo staat het in de zoekvondsten en in de lijst hetzelfde.
@@ -9531,8 +9551,9 @@ function ProductPlaatje({ src }) {
   const [mis, setMis] = useState(false);
   React.useEffect(() => { setMis(false); }, [src]);
   const maat = { width: 34, height: 34, background: "#eceadf" };
-  if (src && !mis) {
-    return <img src={src} alt="" onError={() => setMis(true)} className="shrink-0 rounded" style={{ ...maat, objectFit: "cover" }} />;
+  const bron = bdPlaatjeBron(src);
+  if (bron && !mis) {
+    return <img src={bron} alt="" onError={() => setMis(true)} className="shrink-0 rounded" style={{ ...maat, objectFit: "cover" }} />;
   }
   return <span className="shrink-0 rounded inline-flex items-center justify-center mute" style={maat}><Package size={15} /></span>;
 }
@@ -10633,8 +10654,24 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
 
       <SectionTitle>BD-Totaal</SectionTitle>
       <div className="card p-4">
-        <p className="text-sm mute">De favorietenlijst bij BD-Totaal wordt elke dag vanzelf opgehaald, vanaf zeven uur \u2019s ochtends. Nieuwe artikelen komen erbij en de prijzen worden bijgewerkt; er verdwijnt nooit iets en er wordt nooit iets besteld. Wat er die ochtend veranderde staat in de meldingsbalk onder <span className="ink font-medium">Inkoop</span>.</p>
+        <p className="text-sm mute">De favorietenlijst bij BD-Totaal wordt elke dag vanzelf opgehaald, vanaf zeven uur ’s ochtends. Nieuwe artikelen komen erbij en de prijzen worden bijgewerkt; er verdwijnt nooit iets en er wordt nooit iets besteld. Wat er die ochtend veranderde staat in de meldingsbalk onder <span className="ink font-medium">Inkoop</span>.</p>
         <p className="text-sm ink mt-2">{bdStandTekst(bdStand)}</p>
+        {eersteBdPlaatje(bdArtikelen) && (
+          <div className="mt-3">
+            <div className="text-[12px] mute">Proef met het eerste plaatje — zo zie je welke van de twee wegen werkt:</div>
+            <div className="flex items-center gap-4 mt-1.5">
+              <div className="flex items-center gap-2">
+                <img src={eersteBdPlaatje(bdArtikelen)} alt="" className="rounded" style={{ width: 34, height: 34, objectFit: "cover", background: "#eceadf" }} />
+                <span className="text-[12px] mute">rechtstreeks</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <img src={bdPlaatjeBron(eersteBdPlaatje(bdArtikelen))} alt="" className="rounded" style={{ width: 34, height: 34, objectFit: "cover", background: "#eceadf" }} />
+                <span className="text-[12px] mute">via de proxy</span>
+              </div>
+            </div>
+            <div className="text-[11.5px] mute mt-1 break-all">{eersteBdPlaatje(bdArtikelen)}</div>
+          </div>
+        )}
         {onHaalLijst && (
           <button onClick={haalLijstNu} disabled={lijstBezig} className="btno ff inline-flex items-center gap-2 rounded-lg text-sm font-medium px-4 py-2.5 mt-3">
             {lijstBezig ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
