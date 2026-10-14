@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-13q"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-14b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -9969,8 +9969,10 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
   );
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} {...backdropSluiter(() => sluit())}>
-      <div className="w-full max-w-2xl rounded-2xl p-4 flex flex-col shadow-xl overflow-hidden" style={{ background: T.paper, height: "min(90vh, 760px)" }}>
+    // Hetzelfde luik als "Samen maken": wit, over de bladzijde heen, onder de
+    // balk vandaan. Het schuiven en sluiten doet MepWeek eromheen.
+    <div className="card p-4 geenselectie">
+      <div className="flex flex-col">
       <div className="flex items-center justify-between gap-2">
         <h1 className="serif ink text-xl leading-tight">Bestellijst</h1>
         <div className="flex items-center gap-1.5">
@@ -9985,7 +9987,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
         </div>
       </div>
       <p className="text-[12.5px] mute mt-0.5 mb-2">Vul in wat er besteld moet worden; ingevulde regels komen bovenaan. Gedeeld met het hele team.</p>
-      <div className="flex-1 overflow-y-auto -mx-1 px-1">
+      <div className="-mx-1 px-1">
       <div className="flex items-center gap-2 mb-2">
         <div className="relative flex-1 min-w-0">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
@@ -16573,6 +16575,29 @@ const MARKEER_KLEUREN = [
 const MARK_SCHEIDING = /([,|\/\n]+)/;
 const isScheiding = (w) => !w || /^[,|\/\n\s]+$/.test(w);
 const markSegmenten = (tekst) => String(tekst || "").split(MARK_SCHEIDING).filter((w) => !isScheiding(w));
+// Een stuk van een regel zoals we het vergelijken: zonder opmaaktekens,
+// accenten, hoofdletters of leestekens. "Honing mosterd saus" en "honing-
+// mosterdsaus" zijn hetzelfde stuk.
+const markStukSleutel = (w) => kaalWoord(opmaakVan(String(w || "")).tekst);
+// Welke stukken van een bereiding in álle partijen waar ze voorkomen groen
+// staan. Die mogen in de samen-maken-tabel vanzelf groen: wat overal is
+// afgevinkt, is af. Staat het ergens nog open, dan blijft het hier ook open.
+// `kaarten` is per partij een map van stuk naar kleur.
+const somStukkenGroen = (naam, kaarten) => {
+  const uit = {};
+  markSegmenten(naam).forEach((w, n) => {
+    const sl = markStukSleutel(w);
+    if (!sl) return;
+    let gezien = 0;
+    for (const m of kaarten || []) {
+      if (!m || !m.has(sl)) continue;
+      gezien++;
+      if (m.get(sl) !== "groen") return; // ergens nog open: dan hier ook
+    }
+    if (gezien) uit[n] = "groen";
+  });
+  return uit;
+};
 // Hoeveel lijken twee namen op elkaar? Een recept heet "Puree van zoete
 // aardappel" terwijl er in de regel "zoete aardappel puree" staat, en
 // "Spitskoolrendang" hoort bij "Rode kool rendang". Daarom vergelijken we op
@@ -16617,7 +16642,7 @@ const koppelBijlagen = (tekst, bijlagen) => {
 // Markeren met de stift, en zonder stift het gerecht aanklikken om het recept
 // te openen. Een snelle dubbelklik markeert altijd (groen als er geen stift
 // aanstaat), zodat afvinken geen omweg via de stiftknoppen nodig heeft.
-function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, receptPer, onRecept, aantal }) {
+function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, erf, erfPer, receptPer, onRecept, aantal }) {
   // Elke regel wordt op de scheidingstekens opgeknipt: elk stuk is apart te
   // markeren. De hele regel in één keer gaat via het aantal ervoor.
   const delen = String(tekst || "").split(MARK_SCHEIDING);
@@ -16661,7 +16686,10 @@ function MarkTekst({ tekst, basis, stift, markering, zetMark, className, style, 
         const eigen = idx++;
         const op = opmaakVan(w);
         const sleutel = basis + ":" + eigen;
-        const k = MARKEER_KLEUREN.find((x) => x.naam === (markering[sleutel] || erf));
+        // Een eigen markering gaat voor; daarna wat dit stuk van elders erft
+        // (in de samen-maken-tabel: overal groen afgevinkt), en pas daarna de
+        // kleur van de hele regel.
+        const k = MARKEER_KLEUREN.find((x) => x.naam === (markering[sleutel] || (erfPer && erfPer[eigen]) || erf));
         const bl = !stift && receptPer ? receptPer[eigen] : null;
         const klik = (e) => {
           e.stopPropagation();
@@ -19111,8 +19139,10 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const bladNu = bladen[actief] || { naam: "", door: "", op: "" };
   const opTekst = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString("nl-NL", { day: "numeric", month: "short" }) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); } catch (e) { return ""; } };
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center p-3" style={{ background: "rgba(43,46,36,.45)" }} {...backdropSluiter(() => sluit())}>
-      <div className="w-full max-w-2xl rounded-2xl p-4 flex flex-col shadow-xl" style={{ background: T.paper, height: "min(88vh, 700px)" }}>
+    // Hetzelfde luik als "Samen maken": wit, over de bladzijde heen, onder de
+    // balk vandaan. Het schuiven en sluiten doet MepWeek eromheen.
+    <div className="card p-4 geenselectie">
+      <div className="flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <div className="serif ink text-xl leading-tight">Notities</div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -19191,8 +19221,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
         <div ref={vak} contentEditable suppressContentEditableWarning
           onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
-          className="mep-notitie flex-1 overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
-          style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap" }} />
+          className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
+          style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
       </div>
     </div>
@@ -19331,8 +19361,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // eronder, dus we meten de balk — ook tijdens het scrollen, want op telefoon
   // schuift die mee tot hij vastklikt.
   const [somPlek, setSomPlek] = useState(null);
+  // Bestellijst en notities hangen in hetzelfde luik: zelfde plek, zelfde
+  // breedte, zelfde manier van sluiten. Daarom meet één effect voor alledrie.
+  const luikOpen = somOpen || bestelOpen || notitieOpen;
   useEffect(() => {
-    if (!somOpen) { setSomPlek(null); return; }
+    if (!luikOpen) { setSomPlek(null); return; }
     const meet = () => {
       const el = balkRef.current;
       if (!el) return;
@@ -19343,7 +19376,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
     document.addEventListener("scroll", meet, true);
     window.addEventListener("resize", meet);
     return () => { document.removeEventListener("scroll", meet, true); window.removeEventListener("resize", meet); };
-  }, [somOpen]);
+  }, [luikOpen]);
 
   // Acht dagen: de week zelf, en de maandag erna erachteraan. In het weekend
   // wordt er vaak al voor die maandag gewerkt, en dan is het onhandig als je
@@ -19519,6 +19552,51 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   }
   for (const r of Object.values(perBereiding)) { const n = vaakstGebruikt(r.namen); if (n) r.naam = n; }
   const overlap = Object.values(perBereiding).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
+  // Wat er op de partijkaarten gemarkeerd staat, per stuk tekst. We lopen
+  // dezelfde regels langs als de kaart zelf (dezelfde invulling, dezelfde
+  // volgorde), zodat de sleutels kloppen. Vergelijken doen we daarna op de
+  // tekst: wijkt onze telling ooit af van die van de kaart, dan kleurt er
+  // hooguit niets — nooit het verkeerde stuk.
+  const odVoorMark = (b, miceId) => {
+    const v = miceId ? invVoor(b, miceId) : null;
+    if (!v) return null;
+    if (Array.isArray(v.onderdelen) && v.onderdelen.length) return v.onderdelen;
+    if (v.recipeId || v.productId || v.tekst) return [{ naam: v.naam || v.tekst || "" }];
+    return null;
+  };
+  const markKaartVan = (b) => {
+    const uit = new Map();
+    for (const k of gekozen(b).filter((x) => isMepRegel(x, catVan) && !isNonfoodRegel(x, catVan))) {
+      const miceId = invulSleutel(b, k);
+      // Staat hetzelfde stuk twee keer in één partij, dan telt de regel die nog
+      // openstaat: pas als alles af is, is het af.
+      const zet = (sl, kleur) => { if (sl && (!uit.has(sl) || uit.get(sl) === "groen")) uit.set(sl, kleur || ""); };
+      // De productnaam zelf — zonder invulling staat de hele bereiding daarin,
+      // en dat is precies wat de samen-maken-tabel laat zien.
+      const kopBasis = "p:" + markBasis(b) + ":" + (k.miceId || k.productId || k.naam);
+      markSegmenten(k && k.naam).forEach((w, n) => zet(markStukSleutel(w), markering[kopBasis + ":" + n]));
+      const od = odVoorMark(b, miceId);
+      if (!od) continue;
+      od.forEach((o, j) => {
+        const basis = "po:" + markBasis(b) + ":" + miceId + ":" + j;
+        markSegmenten(o && o.naam).forEach((w, n) => zet(markStukSleutel(w), markering[basis + ":" + n]));
+      });
+    }
+    return uit;
+  };
+  const markKaarten = React.useMemo(() => {
+    const m = new Map();
+    for (const b of partijen) if (somSet.includes(b.datum)) m.set(b.id, markKaartVan(b));
+    return m;
+  }, [partijen, somSet, markering, koppeling, boekingSleutel]);
+  // En dan per bereiding: welke stukken staan overal groen.
+  const somErf = React.useMemo(() => {
+    const uit = {};
+    for (const r of overlap) {
+      uit[r.sleutel] = somStukkenGroen(r.naam, r.partijen.map((p) => markKaarten.get(p.id)).filter(Boolean));
+    }
+    return uit;
+  }, [overlap.map((r) => r.sleutel + "|" + r.naam).join("\u0000"), markKaarten]);
   const overlapActief = overlap.filter((r) => !somAf[r.sleutel]);
   const overlapKlaar = overlap.filter((r) => somAf[r.sleutel]);
   // Naar de kaart van een partij springen: dag openklappen en scrollen.
@@ -19683,7 +19761,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                       {/* De invulling zelf is geen knop: daar markeer je op, en een
                           tik erop klapte de partijen open terwijl je dat niet vroeg.
                           Alleen "· N partijen" klapt ze uit. */}
-                      <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} />
+                      <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} erfPer={somErf[r.sleutel]} />
                       {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[13px]">open</button>}
                       <span onClick={() => !stift && setSomRij(somRij === r.sleutel ? null : r.sleutel)} className="mute text-[13px]"
                         title={stift ? undefined : "Laat zien in welke partijen dit terugkomt"}
@@ -19862,25 +19940,30 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       </div>
       </div>
       {/* Over de bladzijde heen, niet ertussen: klik ernaast of Escape sluit. */}
-      {somOpen && somKaart && somPlek && (
-        <>
-          <div className="fixed inset-0" style={{ zIndex: 39 }} onClick={() => setSomOpen(false)} />
-          <div data-somluik className="fixed" onClick={(e) => e.stopPropagation()}
-            style={{ left: somPlek.links, top: somPlek.top, width: somPlek.breed, zIndex: 40, maxHeight: "calc(100vh - " + (somPlek.top + 12) + "px)", overflowY: "auto", boxShadow: "0 12px 34px rgba(43,46,36,.28)", borderRadius: 16 }}>
-            {somKaart}
-          </div>
-        </>
-      )}
-      {bestelOpen && <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onNaarBd={onNaarBd}
-        levFavoriet={levFavoriet} onZoekBd={onZoekBd} onNieuwArtikel={onNieuwArtikel} onClose={() => setBestelOpen(false)} />}
-      {notitieOpen && <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
-        recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName} onSchoonmaakAf={onSchoonmaakAf}
-        onOpenPartij={(id) => {
-          const b = (boekingen || []).find((x) => String(x.id) === String(id));
-          if (!b) return;
-          setWeekStart(maandagVan(b.datum));
-          setTimeout(() => springNaar(b), 250);
-        }} />}
+      {luikOpen && somPlek && (() => {
+        const inhoud = somOpen ? somKaart
+          : bestelOpen ? <BestelPopup bdArtikelen={bdArtikelen} data={bestelLijst} onSave={onBestelLijst} onNaarBd={onNaarBd}
+              levFavoriet={levFavoriet} onZoekBd={onZoekBd} onNieuwArtikel={onNieuwArtikel} onClose={() => setBestelOpen(false)} />
+          : <MepNotitiePopup data={notitie} onSave={onNotitie} onClose={() => setNotitieOpen(false)} stift={stift}
+              recepten={recepten} boekingen={boekingen} onOpenRecipe={onOpenRecipe} onAskName={onAskName} onSchoonmaakAf={onSchoonmaakAf}
+              onOpenPartij={(id) => {
+                const b = (boekingen || []).find((x) => String(x.id) === String(id));
+                if (!b) return;
+                setWeekStart(maandagVan(b.datum));
+                setTimeout(() => springNaar(b), 250);
+              }} />;
+        if (!inhoud) return null;
+        const sluitLuik = () => { setSomOpen(false); setBestelOpen(false); setNotitieOpen(false); };
+        return (
+          <>
+            <div className="fixed inset-0" style={{ zIndex: 39 }} onClick={sluitLuik} />
+            <div data-somluik className="fixed" onClick={(e) => e.stopPropagation()}
+              style={{ left: somPlek.links, top: somPlek.top, width: somPlek.breed, zIndex: 40, maxHeight: "calc(100vh - " + (somPlek.top + 12) + "px)", overflowY: "auto", boxShadow: "0 12px 34px rgba(43,46,36,.28)", borderRadius: 16 }}>
+              {inhoud}
+            </div>
+          </>
+        );
+      })()}
 
 
       {!partijen.some((b) => dagen.includes(b.datum)) && <Empty label="Geen partijen in deze week." />}
