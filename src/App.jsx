@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-14c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-14f"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17007,6 +17007,22 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
       gelijk();
     } catch (e) {}
   };
+  // Escape sloot dit venster niet zodra je in de tekst had geklikt. Het blad is
+  // een eigen bladzijde in een iframe, en een toets daarbinnen bereikt het
+  // venster eromheen nooit. Dus luisteren we ook daar mee, en halen dat weer
+  // weg als het blad verwisselt (staand ↔ twee op een liggend vel).
+  const escInBlad = React.useRef(null);
+  const koppelEsc = () => {
+    try {
+      if (escInBlad.current) { escInBlad.current(); escInBlad.current = null; }
+      const doc = lijstRef.current && lijstRef.current.contentDocument;
+      if (!doc) return;
+      const toets = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); sluitRef.current(); } };
+      doc.addEventListener("keydown", toets, true);
+      escInBlad.current = () => { try { doc.removeEventListener("keydown", toets, true); } catch (x) {} };
+    } catch (e) {}
+  };
+  useEffect(() => () => { if (escInBlad.current) escInBlad.current(); }, []);
   const printen = () => {
     const fr = lijstRef.current;
     if (!fr) return;
@@ -17045,7 +17061,7 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
         )}
         <div ref={rolRef} style={{ width: BLAD_BREED * schaal, maxWidth: "100%", height: vakHoog, margin: "0 auto", overflowY: "auto", overflowX: "hidden", background: "#fff", boxShadow: "0 8px 30px rgba(0,0,0,.35)" }}>
           <div style={{ width: BLAD_BREED * schaal, height: BLAD_HOOG * schaal }}>
-            <iframe ref={lijstRef} key={tafel ? "tafel" : "enkel"} onLoad={koppelSpiegel} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
+            <iframe ref={lijstRef} key={tafel ? "tafel" : "enkel"} onLoad={() => { koppelSpiegel(); koppelEsc(); }} title="Afdrukvoorbeeld menu" srcDoc={srcDoc}
               style={{ width: BLAD_BREED, height: BLAD_HOOG, border: 0, transform: "scale(" + schaal + ")", transformOrigin: "top left", background: "#fff" }} />
           </div>
         </div>
@@ -18937,6 +18953,18 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
         return;
       }
       const li = cursorBlok();
+      // Een regel mét tekst en mét een vakje, binnen een opsomming: dan krijgt
+      // de volgende regel er meteen weer een. De browser maakte er een regel
+      // zonder vakje van; de opruimronde zette dat er even later alsnog in, en
+      // dán sprong de cursor. Nu zetten we het er zelf bij, op het juiste
+      // moment, met de cursor er netjes achter.
+      if (li && li.tagName === "LI" && !leegBlok(li) && li.querySelector && li.querySelector("input.nt-cb")) {
+        e.preventDefault();
+        try { document.execCommand("insertParagraph"); } catch (x) {}
+        try { document.execCommand("insertHTML", false, CB_HTML); } catch (x) {}
+        netjes(); checkFmt(); getypt();
+        return;
+      }
       if (!li || li.tagName !== "LI" || !leegBlok(li)) return;
       e.preventDefault();
       const lijst = li.parentElement;
@@ -19311,9 +19339,13 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
   const somDagen = 7; // optelsom altijd een hele week
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
-  // Escape klapt "samen maken" eerst in, voordat hij je ergens heen stuurt.
+  const [somZoek, setSomZoek] = useState("");
+  // Escape haalt eerst de zoekterm weg, daarna pas klapt de tabel in.
+  const somTerug = () => { if (somZoek) setSomZoek(""); else setSomOpen(false); };
+  const somTerugRef = React.useRef(somTerug); somTerugRef.current = somTerug;
+  useEffect(() => { if (!somOpen) setSomZoek(""); }, [somOpen]);
   useEffect(() => {
-    ESC_SLUITERS.som = somOpen ? () => setSomOpen(false) : null;
+    ESC_SLUITERS.som = somOpen ? () => somTerugRef.current() : null;
     return () => { ESC_SLUITERS.som = null; };
   }, [somOpen]);
   const [klaarOpen, setKlaarOpen] = useState(false);
@@ -19568,6 +19600,25 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   }
   for (const r of Object.values(perBereiding)) { const n = vaakstGebruikt(r.namen); if (n) r.naam = n; }
   const overlap = Object.values(perBereiding).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
+  // Zoeken gaat door \u00e1lle bereidingen van deze dagen, ook die bij \u00e9\u00e9n partij
+  // staan \u2014 juist die vind je anders nergens terug. Het stuk dat past licht op
+  // in het oude markeerrood, zodat je in een lange regel ziet waarom hij er
+  // staat.
+  const alleBereidingen = Object.values(perBereiding).sort((a, b) => b.totaal - a.totaal);
+  const somTerm = somZoek.trim().toLowerCase();
+  const somVondst = React.useMemo(() => {
+    if (!somTerm) return null;
+    const kaal = zonderAccent(somTerm);
+    const uit = [];
+    for (const r of alleBereidingen) {
+      const raak = {};
+      markSegmenten(r.naam).forEach((w, n) => {
+        if (zonderAccent(String(opmaakVan(String(w || "")).tekst)).toLowerCase().indexOf(kaal) >= 0) raak[n] = "rood";
+      });
+      if (Object.keys(raak).length) uit.push({ r, raak });
+    }
+    return uit;
+  }, [somTerm, alleBereidingen.map((r) => r.sleutel + "|" + r.naam).join("\u0000")]);
   // Wat er op de partijkaarten gemarkeerd staat, per stuk tekst. We lopen
   // dezelfde regels langs als de kaart zelf (dezelfde invulling, dezelfde
   // volgorde), zodat de sleutels kloppen. Vergelijken doen we daarna op de
@@ -19753,8 +19804,22 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const somKaart = partijen.length > 0 && somSet.length > 0 ? (
         <div id="som-kaart" className="card p-3 pb-20 mb-4 geenselectie">
           <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
-          {!overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
-          {overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[15px]" style={{ borderCollapse: "collapse", minWidth: "36rem" }}>
+          {/* Zoeken gaat door alle bereidingen van deze dagen, ook die maar bij
+              één partij staan — juist die vind je anders nergens terug. Escape
+              haalt de zoekterm weg; de tweede klapt de tabel in. */}
+          <div className="relative mb-2">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
+            <input value={somZoek} onChange={(e) => setSomZoek(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (somZoek) { setSomZoek(""); try { e.target.blur(); } catch (x) {} } else setSomOpen(false); } }}
+              className={"input pl-9 py-2 w-full text-sm " + (somZoek ? "pr-9" : "pr-3")} placeholder="Zoek in de invullingen — bv. koolraap" />
+            {somZoek ? (
+              <button onClick={() => setSomZoek("")} title="Zoekterm wissen"
+                className="ff mute hover:opacity-60 absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full"><X size={15} /></button>
+            ) : null}
+          </div>
+          {somVondst && !somVondst.length && <p className="text-[12.5px] mute mb-0">Niets gevonden met “{somZoek.trim()}” in deze dagen.</p>}
+          {!somVondst && !overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
+          {(somVondst ? somVondst.length > 0 : overlap.length > 0) && <div className="overflow-x-auto"><table className="w-full text-[15px]" style={{ borderCollapse: "collapse", minWidth: "36rem" }}>
             <thead>
               <tr className="text-[12.5px] font-semibold uppercase tracking-widest acc">
                 <th className="text-left py-2 pr-2">Bereiding</th>
@@ -19769,7 +19834,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
               </tr>
             </thead>
             <tbody>
-              {overlapActief.map((r) => (
+              {(somVondst ? somVondst.map((v) => v.r) : overlapActief).map((r) => (
                 <React.Fragment key={r.sleutel}>
                   <tr style={{ borderTop: "1px solid " + SOM_LIJN }}>
                     <td className="py-2.5 pr-2 ink">
@@ -19777,7 +19842,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                       {/* De invulling zelf is geen knop: daar markeer je op, en een
                           tik erop klapte de partijen open terwijl je dat niet vroeg.
                           Alleen "· N partijen" klapt ze uit. */}
-                      <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark} erfPer={somErf[r.sleutel]} />
+                      <MarkTekst tekst={r.naam} basis={"t:" + r.sleutel} stift={stift} markering={markering} zetMark={zetMark}
+                        erfPer={somVondst ? { ...(somErf[r.sleutel] || {}), ...((somVondst.find((v) => v.r === r) || {}).raak || {}) } : somErf[r.sleutel]} />
                       {r.soort === "recept" && !stift && <button onClick={() => onOpenRecipe(r.id)} className="ff mute underline ml-1.5 text-[13px]">open</button>}
                       <span onClick={() => !stift && setSomRij(somRij === r.sleutel ? null : r.sleutel)} className="mute text-[13px]"
                         title={stift ? undefined : "Laat zien in welke partijen dit terugkomt"}
@@ -19827,7 +19893,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
               ))}
             </tbody>
           </table></div>}
-          {overlapKlaar.length > 0 && (
+          {!somVondst && overlapKlaar.length > 0 && (
             <div className="mt-2 pt-2" style={{ borderTop: "1px solid " + SOM_LIJN }}>
               <button onClick={() => setKlaarOpen((o) => !o)} className="ff w-full text-left flex items-center gap-1.5 text-[12.5px] font-semibold uppercase tracking-widest mute">
                 {klaarOpen ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
@@ -19941,15 +20007,15 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           )}
         </div>
         <div className="flex items-center justify-end gap-1.5 flex-wrap w-full md:w-auto md:ml-auto">
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
+            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
+            {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
+          </button>
           <button onClick={() => setBestelOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title={bestelTeDoen ? "Bestellijst — er staat iets op de lijst" : "Bestellijst — gedeelde inkooplijst"}><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst
             {/* Een stip zodra er iets is ingevuld: anders moet je de lijst openen
                 om te zien of er nog wat ligt. */}
             {/* Dezelfde stip als bij Notities: zelfde plek, zelfde maat, zelfde kleur. */}
             {bestelTeDoen > 0 && !bestelOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} title={bestelTeDoen + " regels ingevuld"} />}
-          </button>
-          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
-            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
-            {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
           <button onClick={printen} className="btno ff rounded-lg md:rounded-xl px-2.5 py-2 md:px-3 md:py-2.5" title="Printen als A4"><Printer size={16} className="md:hidden" /><Printer size={20} className="hidden md:block" /></button>
         </div>
@@ -20001,7 +20067,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       <div className="fixed z-40 flex flex-col-reverse items-center gap-2" style={{ right: 18, bottom: 24 }}>
         {STIFT_KLEUREN.map((k) => (
           <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)}
-            title={k.melding} className="ff rounded-full w-10 h-10 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
+            title={k.melding} className="ff rounded-full w-10 h-10 md:w-12 md:h-12 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
         ))}
       </div>
       {stift && (
