@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-14f"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-14i"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -7118,8 +7118,8 @@ function App() {
         tabellen={techTableRows} canEdit={canEdit} onEditTable={(t) => push({ screen: "techTableForm", table: t })} />}
       {user && canEdit && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && (section === "boekingen" || section === "assortiment")) && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
-          className="ff fixed right-4 sm:right-6 z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
-          style={{ background: T.paper, color: T.green, border: "1px solid " + T.green, bottom: ZWEEF_TRAP(ZWEEF_BODEM(section, showFab)) }}>
+          className="ff fixed z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+          style={{ background: T.paper, color: T.green, border: "1px solid " + T.green, right: ZWEEF_RECHTS, bottom: ZWEEF_TRAP(ZWEEF_BODEM(section, showFab)) }}>
           <Tag size={19} />
         </button>
       )}
@@ -7186,6 +7186,9 @@ function App() {
 // stonden ze naast elkaar, en dan kwamen de getallen van de samen-maken-tabel
 // eronder te liggen.
 const ZWEEF_HOOG = 56;  // hoogte van een knop plus de ruimte eronder
+// Alle vier op dezelfde afstand van de rand, zodat ze echt op één lijn staan.
+// De stiften zijn op telefoon iets kleiner, dus lijnen we ze rechts uit.
+const ZWEEF_RECHTS = 18;
 const ZWEEF_BODEM = (section, showFab) =>
   section === "mep" ? 24 + 2 * ZWEEF_HOOG // onder de rekenmachine passen twee stiften
   : showFab ? 24 + ZWEEF_HOOG             // de brede "+"-knop staat eronder
@@ -7265,7 +7268,7 @@ function CalcWidget({ open, onOpen, onClose, bodem = 24, tabellen, canEdit, onEd
     <>
       {open && <div className="fixed inset-0 z-30" onClick={onClose} />}
       {open && (
-        <div className="fixed right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line, bottom: bodem + 56 }}>
+        <div className="fixed z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line, right: ZWEEF_RECHTS, bottom: bodem + 56 }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
             <span className="flex items-center gap-1">
@@ -7310,8 +7313,8 @@ function CalcWidget({ open, onOpen, onClose, bodem = 24, tabellen, canEdit, onEd
         </div>
       )}
       <button onClick={open ? onClose : onOpen} title="Rekenmachine"
-        className="ff fixed right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
-        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green, bottom: bodem }}>
+        className="ff fixed z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green, right: ZWEEF_RECHTS, bottom: bodem }}>
         {open ? <X size={20} /> : <Percent size={19} />}
       </button>
     </>
@@ -18832,8 +18835,16 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     if (cb) cb.setAttribute("data-weg", "1");
     uitLijst();
     let waar = null;
+    // De plek van het vakje vasthouden vóórdat het weggaat. Een bereik in het
+    // document schuift mee als er knopen verdwijnen; daarna naar het blok
+    // wijzen ging mis zodra dat blok het blad zélf bleek te zijn — en dan stond
+    // de cursor ineens bovenaan.
+    let plek = null;
     for (const x of [...(vak.current ? vak.current.querySelectorAll("input[data-weg]") : [])]) {
-      waar = waar || x.parentNode;
+      if (!waar) {
+        waar = x.parentNode;
+        try { plek = document.createRange(); plek.setStartBefore(x); plek.collapse(true); } catch (e) { plek = null; }
+      }
       x.remove();
     }
     if (waar) {
@@ -18842,8 +18853,9 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       if (!waar.firstChild) waar.appendChild(document.createElement("br"));
       try {
         const sel = window.getSelection();
-        const r = document.createRange();
-        r.selectNodeContents(waar); r.collapse(true);
+        let r = plek;
+        if (!r) { r = document.createRange(); r.selectNodeContents(waar); }
+        r.collapse(true);
         sel.removeAllRanges(); sel.addRange(r);
       } catch (x) {}
     }
@@ -18953,18 +18965,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
         return;
       }
       const li = cursorBlok();
-      // Een regel mét tekst en mét een vakje, binnen een opsomming: dan krijgt
-      // de volgende regel er meteen weer een. De browser maakte er een regel
-      // zonder vakje van; de opruimronde zette dat er even later alsnog in, en
-      // dán sprong de cursor. Nu zetten we het er zelf bij, op het juiste
-      // moment, met de cursor er netjes achter.
-      if (li && li.tagName === "LI" && !leegBlok(li) && li.querySelector && li.querySelector("input.nt-cb")) {
-        e.preventDefault();
-        try { document.execCommand("insertParagraph"); } catch (x) {}
-        try { document.execCommand("insertHTML", false, CB_HTML); } catch (x) {}
-        netjes(); checkFmt(); getypt();
-        return;
-      }
+      // Binnen een opsomming laten we Enter aan de browser: de opruimronde zet
+      // zelf een vakje in de nieuwe regel. Er hier één bijzetten gaf er twee.
       if (!li || li.tagName !== "LI" || !leegBlok(li)) return;
       e.preventDefault();
       const lijst = li.parentElement;
@@ -20064,7 +20066,10 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
 
       {/* Onder elkaar langs dezelfde rand als het etiket en de rekenmachine.
           Naast elkaar liepen ze dwars onder de getallen van de tabel door. */}
-      <div className="fixed z-40 flex flex-col-reverse items-center gap-2" style={{ right: 18, bottom: 24 }}>
+      {/* Groen bovenaan — dat is de stift die het vaakst gepakt wordt, en hij
+          sluit aan op de rij erboven. Rechts uitgelijnd, want op telefoon zijn
+          ze iets kleiner dan het etiket en de rekenmachine. */}
+      <div className="fixed z-40 flex flex-col items-end gap-2" style={{ right: ZWEEF_RECHTS, bottom: 24 }}>
         {STIFT_KLEUREN.map((k) => (
           <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)}
             title={k.melding} className="ff rounded-full w-10 h-10 md:w-12 md:h-12 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
