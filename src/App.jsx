@@ -572,7 +572,14 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-14o"; // versiestempel — check dit na elke deploy
+// Het luik (Samen maken / Bestellijst / Notities) sluit ook door ernaast te
+// klikken. Dat haalde het venster gewoon weg, en dan slaat het zijn eigen
+// afsluiting over: geen naamvraag, geen regel in de geschiedenis, en de
+// bewaring die nog in de wacht stond raakte zijn vak kwijt. Het venster legt
+// hier daarom zijn eigen sluitknop neer, zodat een klik ernaast precies
+// hetzelfde doet als het kruisje.
+const LUIK_SLUIT = { nu: null };
+const RITME_VERSIE = "2026-10-14x"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3558,7 +3565,7 @@ function App() {
     try { localStorage.setItem(SCHOON_DAG_LOKAAL, dag); } catch (e) {}
     const open = schoonmaakVoorNotitie(cleaningTasks, cleaningLogs);
     const eerste = n.bladen[0];
-    const html = notitieMetSchoonmaak(eerste.html, open);
+    const html = notitieMetSchoonmaak(eerste.html, open, (cleaningTasks || []).map((t) => t && t.name));
     bewaarMepNotitie({ ...n, schoonDag: dag, bladen: n.bladen.map((b, i) => (i === 0 ? { ...b, html } : b)) });
   }, [mepNotitie, cleaningTasks, cleaningLogs, keukenTik, notitieOpen]);
   // Een taak afvinken in de notitie tekent hem ook af op de schoonmaaklijst van
@@ -18482,20 +18489,47 @@ const APP_KOPPEN = new Set([SCHOON_KOP_TEKST.toLowerCase(), MEP_KOP_TEKST.toLowe
 // Eén blokregel: een div, p of kopje zonder nog een blok erin.
 const NOTITIE_BLOK = /<(div|p|h[1-3])\b[^>]*>(?:(?!<\1\b)[\s\S])*?<\/\1>/gi;
 const notitieBlokTekst = (b) => String(b).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-const notitieHandmatig = (html) => String(html == null ? "" : html)
-  .replace(NOTITIE_BLOK, (b) => (b.indexOf("data-schoonmaak") >= 0 || APP_KOPPEN.has(notitieBlokTekst(b)) ? "" : b))
-  .replace(/^(?:\s*<div>\s*(?:<br\s*\/?>)?\s*<\/div>)+/i, "")
-  .replace(/(?:<div>\s*(?:<br\s*\/?>)?\s*<\/div>\s*)+$/i, "");
+// Een schoonmaakregel die de app zelf neerzette mag weg — maar alleen zolang
+// er niets anders op staat. Schrijft de kok er iets achter ("met azijn", "pomp
+// moet vervangen"), dan is die regel van hém geworden: die blijft staan, zonder
+// de merkjes van de app, zodat hij de volgende ochtend niet zonder waarschuwing
+// verdwijnt. Om dat te kunnen zien draagt elke regel de naam waarmee de app hem
+// neerzette. Regels van vóór dat merkje vallen terug op de namenlijst, en
+// zonder die lijst op het oude gedrag.
+const schoonNaamUit = (b) => {
+  const m = String(b).match(/data-schoonnaam="([^"]*)"/i);
+  if (!m) return null;
+  return m[1].replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+};
+const notitieHandmatig = (html, namen) => {
+  const kaal = (t) => String(t == null ? "" : t).replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  const bekend = new Set((Array.isArray(namen) ? namen : []).map(kaal).filter(Boolean));
+  return String(html == null ? "" : html)
+    .replace(NOTITIE_BLOK, (b) => {
+      if (b.indexOf("data-schoonmaak") >= 0) {
+        const naam = schoonNaamUit(b);
+        const puurVanDeApp = naam != null ? kaal(naam) === notitieBlokTekst(b) : (!bekend.size || bekend.has(notitieBlokTekst(b)));
+        if (puurVanDeApp) return "";
+        return b.replace(/\s*data-schoonmaak="[^"]*"/gi, "").replace(/\s*data-schoonnaam="[^"]*"/gi, "");
+      }
+      return APP_KOPPEN.has(notitieBlokTekst(b)) ? "" : b;
+    })
+    .replace(/^(?:\s*<div>\s*(?:<br\s*\/?>)?\s*<\/div>)+/i, "")
+    .replace(/(?:<div>\s*(?:<br\s*\/?>)?\s*<\/div>\s*)+$/i, "");
+};
 // Het blad opnieuw opbouwen: het handwerk bovenaan, de schoonmaak eronder.
 // Dit mag zo vaak gebeuren als nodig: er komt altijd hetzelfde uit.
-const notitieMetSchoonmaak = (html, taken) => {
+const notitieMetSchoonmaak = (html, taken, alleNamen) => {
   const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const lijst = (Array.isArray(taken) ? taken : []).filter((t) => t && t.id && String(t.naam || "").trim());
+  // De namen van álle schoonmaaktaken, niet alleen die van vandaag: een regel
+  // van gisteren hoort ook herkend te worden als "hier staat alleen de naam".
+  const namen = (Array.isArray(alleNamen) && alleNamen.length ? alleNamen : lijst.map((t) => t.naam));
   const onder = lijst.length
     ? "<div><br></div>" + SCHOON_KOP_HTML
-      + lijst.map((t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="' + esc(t.id) + '">&nbsp;' + esc(t.naam) + "</div>").join("")
+      + lijst.map((t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="' + esc(t.id) + '" data-schoonnaam="' + esc(t.naam) + '">&nbsp;' + esc(t.naam) + "</div>").join("")
     : "";
-  return MEP_KOP_HTML + notitieHandmatig(html) + onder;
+  return MEP_KOP_HTML + notitieHandmatig(html, namen) + onder;
 };
 // Welke taken er onder de notitie komen: alleen de taken die over hun tijd heen
 // zijn. Wat elke dag moet gebeuren staat al op de schoonmaaklijst zelf en zou
@@ -18503,6 +18537,71 @@ const notitieMetSchoonmaak = (html, taken) => {
 const schoonmaakVoorNotitie = (taken, logs) => (taken || [])
   .filter((t) => t && t.id !== DAY_DONE_ID && t.id !== DAY_OFF_ID && Number(t.intervalDays) > 1 && taskStatus(t, logs).due)
   .map((t) => ({ id: t.id, naam: t.name }));
+
+// ── Plakken: eerst uitkleden ──────────────────────────────────────────────
+// Wat er uit Word of van een webpagina komt is een berg opmaak die hier niet
+// thuishoort: lettertypes, puntgroottes, kleuren, achtergronden, tabellen,
+// scripts, plaatjes als een halve megabyte aan tekens. Dat ging ongezien de
+// gedeelde notitie in en kwam daarna bij iedereen in beeld. We houden wat een
+// notitieblad kent: regels, kopjes, opsommingen, vet, cursief, onderstreept,
+// links en onze eigen afvinkvakjes. Een tabel wordt platgeslagen tot regels —
+// beter dan hem weggooien, en een notitieblad heeft geen tabellen.
+const PLAK_WEG = new Set(["SCRIPT", "STYLE", "HEAD", "META", "LINK", "TITLE", "IMG", "SVG", "IFRAME", "OBJECT", "EMBED", "VIDEO", "AUDIO", "CANVAS", "NOSCRIPT", "FORM", "BUTTON", "SELECT", "TEXTAREA", "COLGROUP"]);
+const PLAK_INLINE = { B: "b", STRONG: "b", I: "i", EM: "i", U: "u" };
+const aEsc = (x) => pEsc(x).replace(/"/g, "&quot;");
+const plakTabel = (tab) => {
+  let uit = "";
+  for (const tr of tab.querySelectorAll("tr")) {
+    const cellen = [...tr.children].map((c) => String(c.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (cellen.length) uit += "<div>" + pEsc(cellen.join(" \u00b7 ")) + "</div>";
+  }
+  return uit;
+};
+const plakUit = (knoop) => {
+  let uit = "";
+  for (const n of [...(knoop.childNodes || [])]) {
+    if (n.nodeType === 3) { uit += pEsc(n.textContent); continue; }
+    if (n.nodeType !== 1) continue; // commentaar, en wat Word daar verder in stopt
+    const tag = String(n.tagName || "").toUpperCase();
+    if (PLAK_WEG.has(tag)) continue;
+    if (tag === "BR") { uit += "<br>"; continue; }
+    if (tag === "INPUT") {
+      // Ons eigen afvinkvakje overleeft het kopiëren binnen de app.
+      if (String(n.getAttribute("class") || "").indexOf("nt-cb") >= 0) {
+        uit += '<input type="checkbox" class="nt-cb"' + (n.hasAttribute("checked") ? " checked" : "") + ">&nbsp;";
+      }
+      continue;
+    }
+    if (tag === "TABLE") { uit += plakTabel(n); continue; }
+    if (tag === "A") {
+      const h = String(n.getAttribute("href") || "");
+      uit += /^(https?:|mailto:)/i.test(h) ? '<a href="' + aEsc(h) + '">' + plakUit(n) + "</a>" : plakUit(n);
+      continue;
+    }
+    if (PLAK_INLINE[tag]) { const t = PLAK_INLINE[tag]; uit += "<" + t + ">" + plakUit(n) + "</" + t + ">"; continue; }
+    if (tag === "UL" || tag === "OL") { const t = tag.toLowerCase(); uit += "<" + t + ">" + plakUit(n) + "</" + t + ">"; continue; }
+    if (tag === "LI") { uit += "<li>" + plakUit(n) + "</li>"; continue; }
+    if (/^H[1-6]$/.test(tag)) { const b = plakUit(n); uit += b.trim() ? "<h2>" + b + "</h2>" : ""; continue; }
+    if (tag === "P" || tag === "DIV" || tag === "BLOCKQUOTE" || tag === "TR" || tag === "PRE") {
+      const b = plakUit(n);
+      uit += b.trim() ? "<div>" + b + "</div>" : "";
+      continue;
+    }
+    uit += plakUit(n); // al het andere: het omhulsel weg, de inhoud blijft
+  }
+  return uit;
+};
+const schoonPlakHtml = (html) => {
+  try {
+    const doc = new DOMParser().parseFromString(String(html == null ? "" : html), "text/html");
+    return plakUit(doc.body);
+  } catch (e) { return ""; }
+};
+const plakTekstHtml = (tekst) => {
+  const t = String(tekst == null ? "" : tekst).replace(/\r\n?/g, "\n");
+  if (t.indexOf("\n") < 0) return pEsc(t);
+  return t.split("\n").map((r) => (r.trim() ? "<div>" + pEsc(r) + "</div>" : "<div><br></div>")).join("");
+};
 
 // Wat er op een notitieblad staat, los van hoe het eruitziet. Tags eruit,
 // entiteiten terug naar hun teken, witruimte samengevouwen. Twee bladen met
@@ -18530,19 +18629,137 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   if (openSnap.current === null) openSnap.current = naarBladen(data).map((b) => ({ id: b.id, html: b.html }));
   const vak = React.useRef(null);
   const timer = React.useRef(null);
-  // Precies zoals het effect hieronder meet, anders lijkt er altijd nieuws te zijn.
-  const laatst = React.useRef(JSON.stringify({ bladen: naarBladen(data), historie: (data && data.historie) || [] }));
+  // Één maat voor "is er iets veranderd", voor het bewaren én voor de vraag of
+  // er nieuw werk van een collega binnenkwam. Die twee maten liepen uit elkaar
+  // — de ene telde ook het tijdstempel mee — waardoor de gele balk na je eigen
+  // bewaring ging roepen dat er nieuwer werk was.
+  const vinger = (d) => JSON.stringify({ bladen: naarBladen(d), historie: (d && d.historie) || [] });
+  const laatst = React.useRef(vinger(data));
+  // Wat er in het vak stond, ook als het vak er niet meer is: bij het sluiten
+  // door naast het luik te klikken is de verwijzing al leeg.
+  const laatsteHtml = React.useRef(null);
   const [histOpen, setHistOpen] = useState(false);
 
   // Vak vullen bij openen en bij tabwissel.
-  const zetVak = (html) => { if (vak.current) { vak.current.innerHTML = html || ""; try { netjesRef.current(); } catch (e) {} } };
+  const zetVak = (html) => {
+    if (!vak.current) return;
+    vak.current.innerHTML = html || "";
+    laatsteHtml.current = vak.current.innerHTML;
+    try { netjesRef.current(); } catch (e) {}
+  };
   const netjesRef = React.useRef(() => {});
+
+  // ── Ongedaan maken ─────────────────────────────────────────────────────
+  // De browser houdt zelf een stapel bij, maar daar staat alleen in wat via
+  // execCommand of het toetsenbord gebeurde. Alles wat deze notitie zelf aan de
+  // bladzijde verandert — een vakje aanvinken, markeren, een opsomming maken,
+  // een blad wissen — gaat daarbuiten om, en dan haalde Ctrl+Z de tekst wel
+  // terug maar het vakje niet, of sloeg hij een stap over. Daarom houden we het
+  // hier zelf bij: één stapel, met alles erin.
+  const STAP_PAUZE = 700;   // typen binnen deze tijd telt als één stap
+  const STAP_MAX = 60;      // zo ver kun je terug
+  const terugStapel = React.useRef([]);
+  const vooruitStapel = React.useRef([]);
+  const laatsteStap = React.useRef(0);
+  // Waar de cursor staat, in tekens geteld vanaf het begin van het blad: een
+  // bereik overleeft het opnieuw vullen van het vak niet, een getal wel.
+  const cursorTeller = () => {
+    try {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !vak.current) return null;
+      const r = sel.getRangeAt(0);
+      if (!vak.current.contains(r.startContainer)) return null;
+      const meet = document.createRange();
+      meet.selectNodeContents(vak.current);
+      meet.setEnd(r.startContainer, r.startOffset);
+      return meet.toString().length;
+    } catch (e) { return null; }
+  };
+  const zetCursorOp = (n) => {
+    if (!vak.current) return;
+    try {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      if (n != null) {
+        let rest = n;
+        const lopen = document.createTreeWalker(vak.current, NodeFilter.SHOW_TEXT);
+        let node = null;
+        while ((node = lopen.nextNode())) {
+          const len = String(node.textContent || "").length;
+          if (rest <= len) { r.setStart(node, rest); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); return; }
+          rest -= len;
+        }
+      }
+      r.selectNodeContents(vak.current); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    } catch (e) {}
+  };
+  const stapZet = (html, plek) => {
+    if (html == null) return;
+    const top = terugStapel.current[terugStapel.current.length - 1];
+    if (top && top.html === html) { laatsteStap.current = Date.now(); return; }
+    terugStapel.current.push({ html, plek });
+    if (terugStapel.current.length > STAP_MAX) terugStapel.current.shift();
+    vooruitStapel.current = [];
+    laatsteStap.current = Date.now();
+  };
+  // Vóór een handeling die het blad verbouwt: de huidige stand vastleggen als
+  // eigen stap, zodat één keer Ctrl+Z hem precies terugdraait.
+  const stapNu = () => {
+    if (!vak.current) return;
+    stapZet(vak.current.innerHTML, cursorTeller());
+    laatsteStap.current = 0;
+    // Een handeling stuurt vaak ook een gewoon wijzigingsbericht achterna (een
+    // vakje aantikken, plakken). Die ronde hoort bij dézelfde stap en mag er
+    // geen tweede — verouderde — stand bovenop leggen.
+    eigenStap.current = true;
+  };
+  // Tijdens het typen: hooguit één stap per adempauze, zoals in Word.
+  // De stand van vlak vóór de toets die nu bezig is. Een toetsaanslag komt
+  // altijd binnen voordat de browser het blad verandert, dus dit is de plek om
+  // te onthouden waar een stap vandaan moet komen.
+  const voorToets = React.useRef(null);
+  const eigenStap = React.useRef(false);
+  const stapTypen = () => {
+    if (eigenStap.current) { eigenStap.current = false; laatsteStap.current = 0; return; }
+    if (Date.now() - laatsteStap.current < STAP_PAUZE) return;
+    const was = voorToets.current != null ? voorToets.current
+      : (laatsteHtml.current != null ? laatsteHtml.current : (vak.current ? vak.current.innerHTML : null));
+    // Is er niets veranderd sinds die stand, dan valt er ook niets terug te
+    // draaien. Een vakje aantikken stuurt bijvoorbeeld ook een wijzigingsbericht,
+    // en dan stond de stand van nú als stap in de stapel — de eerste Ctrl+Z
+    // leek daardoor niets te doen.
+    if (vak.current && was === vak.current.innerHTML) return;
+    stapZet(was, cursorTeller());
+  };
+  const stapWis = () => { terugStapel.current = []; vooruitStapel.current = []; laatsteStap.current = 0; };
+  const stapHerstel = (stand) => {
+    if (!vak.current || !stand) return;
+    vak.current.innerHTML = stand.html || "";
+    laatsteHtml.current = vak.current.innerHTML;
+    try { netjesRef.current(true); } catch (e) {}
+    zetCursorOp(stand.plek);
+    checkFmt();
+    getypt();
+  };
+  const stapTerug = () => {
+    if (!vak.current || !terugStapel.current.length) return;
+    vooruitStapel.current.push({ html: vak.current.innerHTML, plek: cursorTeller() });
+    laatsteStap.current = 0;
+    stapHerstel(terugStapel.current.pop());
+  };
+  const stapVooruit = () => {
+    if (!vak.current || !vooruitStapel.current.length) return;
+    terugStapel.current.push({ html: vak.current.innerHTML, plek: cursorTeller() });
+    laatsteStap.current = 0;
+    stapHerstel(vooruitStapel.current.pop());
+  };
   useEffect(() => { zetVak(bladen[actief] ? bladen[actief].html : ""); if (vak.current) vak.current.focus(); }, [actief]);
 
   // Huidige vakinhoud terugschrijven in het actieve blad.
   const syncVak = () => {
-    if (!vak.current) return bladen;
-    const html = vak.current.innerHTML;
+    const html = vak.current ? vak.current.innerHTML : laatsteHtml.current;
+    if (html == null) return bladen;
     let uit = bladen;
     setBladen((bs) => { uit = bs.map((b, i) => (i === actief ? { ...b, html } : b)); return uit; });
     return uit;
@@ -18558,18 +18775,31 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // app dacht dat hij vandaag nog niets bijgeschreven had en het blok steeds
     // opnieuw bovenaan zette.
     const obj = { ...(data && typeof data === "object" ? data : {}), bladen: lijst, historie: historieRef.current };
-    const ser = JSON.stringify(obj);
+    const ser = vinger(obj);
     if (ser === laatst.current) return;
     laatst.current = ser;
     onSave(obj);
   };
-  const getypt = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => bewaar(), 800); };
+  const bewaarRef = React.useRef(bewaar); bewaarRef.current = bewaar;
+  const stopTimer = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  const getypt = () => {
+    if (vak.current) laatsteHtml.current = vak.current.innerHTML;
+    stopTimer();
+    timer.current = setTimeout(() => bewaarRef.current(), 800);
+  };
+  // Verdwijnt het venster zonder dat het zelf kon afsluiten — een klik naast het
+  // luik, een scherm dat wegvalt — dan nog wordt wat er staat weggeschreven.
+  // Zonder dit was alles sinds de laatste bewaarronde weg, zonder melding.
+  useEffect(() => () => { stopTimer(); try { bewaarRef.current(); } catch (e) {} }, []);
 
   // Sluiten: bij een echte wijziging eerst vragen wie — die naam komt bovenaan
   // het blad ("Laatst aangepast door …") en de oude versie gaat de geschiedenis in.
   const sluit = async () => {
-    if (timer.current) clearTimeout(timer.current);
-    netjes(); // nu pas het hele opruimwerk: er typt niemand meer
+    stopTimer();
+    // Nu pas het hele opruimwerk: er typt niemand meer. Als dat om wat voor
+    // reden ook struikelt, gaat het sluiten en het bewaren gewoon door —
+    // anders blijft het venster hangen met je werk er nog in.
+    try { netjes(); } catch (e) {}
     let lijst = syncVak();
     const kaal = (h) => notitieTekst(h);
     const gewijzigd = lijst.filter((b) => { const s = openSnap.current.find((x) => x.id === b.id); return !s || kaal(s.html) !== kaal(b.html); });
@@ -18592,6 +18822,10 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     onClose();
   };
   const sluitRef = React.useRef(sluit); sluitRef.current = sluit;
+  useEffect(() => {
+    LUIK_SLUIT.nu = () => sluitRef.current();
+    return () => { if (LUIK_SLUIT.nu) LUIK_SLUIT.nu = null; };
+  }, []);
   useEffect(() => {
     const terug = () => sluitRef.current();
     const toets = (e) => { if (e.key === "Escape") { e.stopPropagation(); sluitRef.current(); } };
@@ -18621,7 +18855,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // op momenten dat het niet opnieuw is opgebouwd.
   const linkOpenRef = React.useRef(false);
   const neemOver = (d) => {
-    const binnen = JSON.stringify({ bladen: naarBladen(d), historie: (d && d.historie) || [] });
+    const binnen = vinger(d);
+    stopTimer(); stapWis();
     wachtendeData.current = null;
     setNieuwer(false);
     const bs = naarBladen(d);
@@ -18630,7 +18865,11 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     setBladen(bs);
     const i = Math.min(actief, bs.length - 1);
     setActief(i);
-    zetVak(bs[i] ? bs[i].html : "");
+    // Het vak alleen opnieuw vullen als er werkelijk iets anders in moet. Het
+    // vak vullen wist de ongedaan-stapel van de browser, en dat gebeurde tot nu
+    // toe elke keer dat je het vak verliet — daarna deed Ctrl+Z niets meer.
+    const nieuw = bs[i] ? bs[i].html : "";
+    if (!vak.current || vak.current.innerHTML !== nieuw) zetVak(nieuw);
     // Dit is vanaf nu waar we op doorwerken. Zonder dit gelden de wijzigingen
     // van je collega bij het sluiten als de jouwe: dan vraagt de app jouw naam
     // en zet zijn versie in jouw geschiedenis.
@@ -18638,7 +18877,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   };
   const neemOverRef = React.useRef(neemOver); neemOverRef.current = neemOver;
   useEffect(() => {
-    const binnen = JSON.stringify({ bladen: naarBladen(data), historie: (data && data.historie) || [] });
+    const binnen = vinger(data);
     if (binnen === laatst.current) { wachtendeData.current = null; setNieuwer(false); return; }
     // Ook niet terwijl het linkpaneel open staat: het vak opnieuw vullen
     // gooit de plek weg waar de link heen moest, en dan kwam hij vooraan in
@@ -18663,7 +18902,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     document.addEventListener("selectionchange", checkFmt);
     return () => document.removeEventListener("selectionchange", checkFmt);
   }, []);
-  const cmd = (naam, waarde) => { try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); checkFmt(); getypt(); };
+  const cmd = (naam, waarde) => { stapNu(); try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); checkFmt(); getypt(); };
   const kopToggle = () => cmd("formatBlock", fmt.kop ? "<div>" : "<h2>");
 
   // Het blok (regel) waar de cursor in staat.
@@ -18702,6 +18941,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // Een opsomming beginnen, of er een van maken. Stond de cursor buiten een
   // lijst, dan wordt het er altijd een op zichzelf.
   const maakLijst = (soort) => {
+    stapNu();
     const blok = cursorBlok();
     const buiten = !blok || blok.tagName !== "LI";
     const boven = blok && blok.previousElementSibling;
@@ -18756,6 +18996,12 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const netjes = (licht) => {
     const v = vak.current;
     if (!v) return;
+    // In welk blok stond de cursor toen we begonnen? Verderop verhuizen er
+    // knopen (een lijst uit zijn omhulsel tillen, een dagnaam tot kop maken),
+    // en een bereik dat in zo'n knoop hing wijst daarna nergens meer heen. De
+    // browser zet de cursor dan vooraan in het vak — en dan typ je ineens in
+    // de regel erbovén verder. Aan het eind zetten we hem terug.
+    const blokVoor = cursorBlok();
     const anker0 = (() => { const sel = window.getSelection(); return sel && sel.anchorNode; })();
     const raaktCursorLi = (n) => n === anker0 || (anker0 && n.contains && n.contains(anker0));
     for (const li of v.querySelectorAll("ul li")) {
@@ -18778,6 +19024,19 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       cb.checked = aan;
       li.style.textDecoration = aan ? "line-through" : "";
       li.style.opacity = aan ? ".55" : "";
+    }
+    // Een nummering heeft geen afvinkvakjes. Zet je een afvinklijst om naar een
+    // nummering, dan bleven de vakjes staan — en daarna hield niemand ze meer
+    // bij: aanvinken streepte de regel niet meer door.
+    for (const li of v.querySelectorAll("ol li")) {
+      let had = false;
+      for (const cb of [...li.querySelectorAll("input.nt-cb")]) { cb.remove(); had = true; }
+      // De vaste spatie die achter het vakje stond hoort er dan ook af.
+      if (had && li.firstChild && li.firstChild.nodeType === 3) {
+        li.firstChild.textContent = li.firstChild.textContent.replace(/^[\u00a0\s]+/, "");
+      }
+      li.style.textDecoration = "";
+      li.style.opacity = "";
     }
     if (licht) return;
     // Losse tekst boven in het vak (de eerste regel zit vaak nog in geen enkel
@@ -18828,6 +19087,18 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       while (el.firstChild) h.appendChild(el.firstChild);
       el.replaceWith(h);
     }
+    // En dan de cursor terug, als hij onderweg is kwijtgeraakt.
+    if (blokVoor && v.contains(blokVoor)) {
+      try {
+        const sel = window.getSelection();
+        const kwijt = !sel || !sel.rangeCount || !sel.anchorNode || sel.anchorNode === v || !v.contains(sel.anchorNode);
+        if (kwijt) {
+          const r = document.createRange();
+          r.selectNodeContents(blokVoor); r.collapse(false);
+          sel.removeAllRanges(); sel.addRange(r);
+        }
+      } catch (e) {}
+    }
   };
   netjesRef.current = netjes;
 
@@ -18851,9 +19122,32 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       const haak = txt.slice(0, off).match(/\[ ?\] $/);
       if (haak) {
         const l = haak[0].length;
-        n.textContent = txt.slice(0, off - l) + txt.slice(off);
-        try { const r = document.createRange(); r.setStart(n, off - l); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
-        try { document.execCommand("insertHTML", false, CB_HTML); } catch (e) {}
+        // In een lijstregel staat al een vakje, en de opruimronde trekt elk
+        // extra vakje naar voren — dan stonden er twee op één regel. De haakjes
+        // halen we wel weg: je bedoelde duidelijk een afvinkregel, en dat is
+        // het al.
+        if (inLijst) {
+          stapNu();
+          try {
+            const r = document.createRange();
+            r.setStart(n, off - l); r.setEnd(n, off);
+            sel.removeAllRanges(); sel.addRange(r);
+            document.execCommand("delete");
+          } catch (e) {}
+          return;
+        }
+        // De haakjes aanslepen en zé door het vakje laten vervangen. Eerst de
+        // tekens weghalen en dan invoegen ging mis op een lege regel: er bleef
+        // een leeg stukje tekst over, de browser ruimt dat op, en het vakje
+        // belandde op de eerstvolgende regel — vlak voor "Schoonmaak". Wat je
+        // vervangt is altijd een geldige plek.
+        stapNu();
+        try {
+          const r = document.createRange();
+          r.setStart(n, off - l); r.setEnd(n, off);
+          sel.removeAllRanges(); sel.addRange(r);
+          document.execCommand("insertHTML", false, CB_HTML);
+        } catch (e) {}
         return;
       }
     }
@@ -18861,6 +19155,38 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     n.textContent = txt.slice(lengte);
     try { const r = document.createRange(); r.setStart(n, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
     maakLijst(soort);
+  };
+  // Staat de cursor helemaal achteraan in deze regel?
+  const aanEind = (blok) => {
+    try {
+      const sel = window.getSelection();
+      if (!sel || !sel.isCollapsed || !sel.anchorNode || !blok || !blok.contains(sel.anchorNode)) return false;
+      const r = document.createRange();
+      r.selectNodeContents(blok);
+      r.setStart(sel.anchorNode, sel.anchorOffset);
+      return !r.toString().replace(/\u00a0/g, " ").trim();
+    } catch (e) { return false; }
+  };
+  // De eerstvolgende regel, ook als die in een lijst eronder zit.
+  const volgendBlok = (el) => {
+    let n = el;
+    while (n && n !== vak.current) {
+      if (n.nextElementSibling) {
+        let k = n.nextElementSibling;
+        while (k && /^(UL|OL)$/.test(k.tagName || "") && k.firstElementChild) k = k.firstElementChild;
+        return k;
+      }
+      n = n.parentElement;
+    }
+    return null;
+  };
+  // Staat er een brede spatie (van Tab) vlak vóór de cursor?
+  const breedSpatieVoor = () => {
+    try {
+      const sel = window.getSelection();
+      if (!sel || !sel.isCollapsed || !sel.anchorNode || sel.anchorNode.nodeType !== 3) return false;
+      return sel.anchorOffset > 0 && sel.anchorNode.textContent.charAt(sel.anchorOffset - 1) === "\u2003";
+    } catch (e) { return false; }
   };
   // Staat de cursor helemaal vooraan in deze regel (het afvinkvakje telt niet mee)?
   const aanBegin = (blok) => {
@@ -18886,31 +19212,37 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // de oude weg, dus een vastgehouden vakje is daarna nergens meer: we zetten
   // er een merkje op dat meereist naar de nieuwe regel, en zoeken het daar op.
   const uitLijstZonderVakje = (li) => {
+    stapNu();
     const cb = li.querySelector("input.nt-cb");
     if (cb) cb.setAttribute("data-weg", "1");
     uitLijst();
-    let waar = null;
-    // De plek van het vakje vasthouden vóórdat het weggaat. Een bereik in het
-    // document schuift mee als er knopen verdwijnen; daarna naar het blok
-    // wijzen ging mis zodra dat blok het blad zélf bleek te zijn — en dan stond
-    // de cursor ineens bovenaan.
-    let plek = null;
+    let regel = null;
     for (const x of [...(vak.current ? vak.current.querySelectorAll("input[data-weg]") : [])]) {
-      if (!waar) {
-        waar = x.parentNode;
-        try { plek = document.createRange(); plek.setStartBefore(x); plek.collapse(true); } catch (e) { plek = null; }
+      if (!regel) {
+        const ouder = x.parentNode;
+        if (ouder && ouder !== vak.current && BLOKKEN.test(ouder.tagName || "")) {
+          regel = ouder; // het uitspringen heeft al een regel gemaakt
+        } else {
+          // Was dit het laatste punt van de lijst, dan laat Chrome het vakje
+          // los achter áchter de lijst, zonder regel eromheen. Dan bleef er na
+          // het weghalen helemaal niets over: geen lege regel om in te typen,
+          // en de cursor viel terug de lijst in — waardoor de volgende Enter je
+          // er weer een punt bij gaf. Die regel maken we hier zelf.
+          regel = document.createElement("div");
+          regel.appendChild(document.createElement("br"));
+          try { if (ouder) ouder.insertBefore(regel, x); } catch (e) { regel = null; }
+        }
       }
       x.remove();
     }
-    if (waar) {
+    if (regel) {
       // Een regel die helemaal leeg achterblijft heeft een regeleinde nodig,
       // anders kan de cursor er niet in staan en typ je verderop.
-      if (!waar.firstChild) waar.appendChild(document.createElement("br"));
+      if (!regel.firstChild) regel.appendChild(document.createElement("br"));
       try {
         const sel = window.getSelection();
-        let r = plek;
-        if (!r) { r = document.createRange(); r.selectNodeContents(waar); }
-        r.collapse(true);
+        const r = document.createRange();
+        r.selectNodeContents(regel); r.collapse(true);
         sel.removeAllRanges(); sel.addRange(r);
       } catch (x) {}
     }
@@ -18977,6 +19309,19 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     netjes(); checkFmt(); getypt();
   };
   const toetsVak = (e) => {
+    // Ongedaan maken en opnieuw doen gaan langs onze eigen stapel; de stapel van
+    // de browser kent alleen de helft van wat hier gebeurt.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zyZY]$/.test(e.key)) {
+      e.preventDefault();
+      if (e.key === "y" || e.key === "Y" || e.shiftKey) stapVooruit(); else stapTerug();
+      return;
+    }
+    if (vak.current) voorToets.current = vak.current.innerHTML;
+    eigenStap.current = false;
+    // Enter en Tab zijn elk een eigen stap; wissen loopt mee met het typen,
+    // zodat je een weggehaald woord in één keer terugkrijgt.
+    if (e.key === "Enter" || e.key === "Tab") stapNu();
+    else if (e.key === "Backspace" || e.key === "Delete") stapTypen();
     // Backspace vooraan een regel haalt het afvinkvakje weg en maakt er een
     // gewone regel van — zo kom je van een vakje af dat je daar niet wilde,
     // en houd je een lege regel over om tussenruimte te maken.
@@ -19037,13 +19382,32 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       uitLijstZonderVakje(li);
       return;
     }
+    // Vooruit wissen aan het eind van een regel voegt de volgende regel erbij,
+    // zoals in Word. Stond daar een afvinkregel, dan kwam het vakje midden in
+    // je zin te staan — dat vakje halen we er eerst af; de browser plakt de
+    // regels daarna zelf aan elkaar.
+    if (e.key === "Delete" && !e.shiftKey) {
+      const blok = cursorBlok();
+      if (!blok || !aanEind(blok)) return;
+      const volg = volgendBlok(blok);
+      const cb = volg && volg.querySelector ? volg.querySelector("input.nt-cb") : null;
+      if (!cb || cb.previousSibling) return;
+      cb.remove();
+      const eerste = volg.firstChild;
+      if (eerste && eerste.nodeType === 3) eerste.textContent = eerste.textContent.replace(/^[\u00a0\s]+/, "");
+      getypt();
+      return;
+    }
     if (e.key !== "Tab") return;
-    e.preventDefault();
     const sel = window.getSelection();
     const el = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode) : null;
     const inLijst = !!(el && el.closest && el.closest("li"));
-    if (inLijst) cmd(e.shiftKey ? "outdent" : "indent");
-    else if (!e.shiftKey) cmd("insertText", "\u2003");
+    if (inLijst) { e.preventDefault(); cmd(e.shiftKey ? "outdent" : "indent"); return; }
+    if (!e.shiftKey) { e.preventDefault(); cmd("insertText", "\u2003"); return; }
+    // Shift+Tab buiten een lijst haalt de brede spatie weg die Tab neerzette.
+    // Staat die er niet, dan laten we de toets met rust — anders kom je met het
+    // toetsenbord nooit meer uit het notitievak.
+    if (breedSpatieVoor()) { e.preventDefault(); cmd("delete"); }
   };
 
   // Linkpaneel: zoekt in recepten én partijen. Sleep een stuk tekst aan en
@@ -19072,6 +19436,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // cursief werken. Staat de cursor nog nergens, dan achteraan — daar zie je
   // hem tenminste staan, in plaats van midden in andermans zin.
   const vakjeErbij = () => {
+    stapNu();
     try {
       if (vak.current) vak.current.focus();
       const sel = window.getSelection();
@@ -19087,6 +19452,22 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     setLinkZoek(null); linkRange.current = null; linkTekst.current = "";
     getypt();
   };
+  // Plakken en slepen gaan allebei door de uitkleedmachine hierboven.
+  const plakHandeling = (bron, e) => {
+    try {
+      if (!bron) return;
+      const html = bron.getData("text/html");
+      const schoon = html ? schoonPlakHtml(html) : plakTekstHtml(bron.getData("text/plain"));
+      e.preventDefault();
+      if (!schoon) return;
+      stapNu();
+      if (vak.current) vak.current.focus();
+      document.execCommand("insertHTML", false, schoon);
+      netjes(true); checkFmt(); getypt();
+    } catch (x) {}
+  };
+  const plakken = (e) => plakHandeling(e.clipboardData, e);
+  const sleepErin = (e) => plakHandeling(e.dataTransfer, e);
   const plaatsHtml = (h) => {
     try {
       if (vak.current) vak.current.focus();
@@ -19133,6 +19514,11 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const t = e.target;
     // Afvinkvakje: aangevinkt = regel doorgestreept; de stand gaat mee in de html.
     if (t && t.tagName === "INPUT" && t.classList.contains("nt-cb")) {
+      // Het vinkje stond buiten de ongedaan-stapel: Ctrl+Z deed er niets mee.
+      // Op dit moment is alleen de eigenschap al omgeklapt en het attribuut nog
+      // niet — en het attribuut is wat in de html staat. Dus hier vastleggen
+      // levert precies de stand van vóór de klik op.
+      stapNu();
       if (t.checked) t.setAttribute("checked", ""); else t.removeAttribute("checked");
       // Een schoonmaaktaak die de app zelf bijschreef: hem hier afvinken telt
       // ook op de schoonmaaklijst van vandaag, en het vinkje weghalen draait
@@ -19156,6 +19542,10 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
         }
         stijl(wikkel);
       }
+      // De aandacht terug naar het blad: na het aantikken van een vakje stond
+      // hij op het vakje zelf, en dan kwamen Ctrl+Z en gewoon doortypen niet
+      // meer in de notitie terecht.
+      try { if (vak.current) vak.current.focus({ preventScroll: true }); } catch (x) {}
       getypt();
       return;
     }
@@ -19177,6 +19567,17 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     }
     return null;
   };
+  // Na het markeren de selectie loslaten, maar wel een cursor achterlaten —
+  // alles weghalen liet het vak zonder cursor achter en dan deed typen niets
+  // tot je opnieuw klikte.
+  const losLaten = (sel) => {
+    try {
+      if (!sel || !sel.rangeCount) return;
+      const r = sel.getRangeAt(0);
+      r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    } catch (e) { try { sel.removeAllRanges(); } catch (x) {} }
+  };
   const markeer = (kleurNaam) => {
     const k = MARKEER_KLEUREN.find((x) => x.naam === kleurNaam);
     if (!k) return;
@@ -19188,27 +19589,53 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const span = markSpanVan(sel.anchorNode);
     const nu = span ? String(span.style.backgroundColor || "").replace(/\s/g, "") : "";
     if (span && (nu === hexNaarRgb(k.kleur).replace(/\s/g, "") || nu === k.kleur.toLowerCase())) {
+      stapNu();
       const ouder = span.parentNode;
       while (span.firstChild) ouder.insertBefore(span.firstChild, span);
       span.remove();
       try { ouder.normalize(); } catch (e) {}
-      try { sel.removeAllRanges(); } catch (e) {}
+      losLaten(sel);
       if (vak.current) vak.current.focus();
       getypt();
       return;
     }
     cmd("hiliteColor", k.kleur);
-    try { sel.removeAllRanges(); } catch (e) {}
+    losLaten(sel);
   };
-  const stiftSelectie = () => { if (stift) markeer(stift); };
-  // Dubbelklik markeert het woord eronder, net als op de partijkaarten: nog een
-  // keer haalt de markering er weer af. Staat de stift aan, dan is het slepen
-  // al genoeg — dan doet de dubbelklik niets, anders zou hij het meteen wissen.
-  const dubbelMark = () => { if (!stift) markeer("groen"); };
+  // Slepen met de stift in de hand markeert wat je aanwijst. Een klik of
+  // dubbelklik laten we hier lopen: de dubbelklik heeft zijn eigen afhandeling,
+  // en anders markeren ze allebei — en dan heft de tweede de eerste meteen weer
+  // op, zodat er niets lijkt te gebeuren.
+  const sleepVan = React.useRef(null);
+  const muisNeer = (e) => { sleepVan.current = e && isFinite(e.clientX) ? { x: e.clientX, y: e.clientY } : null; };
+  const stiftSelectie = (e) => {
+    if (!stift) return;
+    const v = sleepVan.current;
+    // Met shift erbij wijs je het eind van de selectie aan zonder te slepen;
+    // dat telt ook als aanwijzen.
+    const gesleept = !v || !e || !isFinite(e.clientX) || e.shiftKey
+      || Math.abs(e.clientX - v.x) + Math.abs(e.clientY - v.y) > 3;
+    if (!gesleept) return;
+    markeer(stift);
+  };
+  // Dubbelklikken markeert het woord eronder — maar alleen met de stift in de
+  // hand. Zonder stift deed het dat ook, en dan kon je een woord niet meer
+  // dubbelklikken om het te overtypen: het werd groen en je selectie was weg.
+  const dubbelMark = () => { if (stift) markeer(stift); };
 
   // Bladen (tabjes): toevoegen, hernoemen, weghalen, wissen, printen.
-  const wisselBlad = (i) => { if (i === actief) return; netjes(); const lijst = syncVak(); setBladen(lijst); setActief(i); };
+  // Van tabje wisselen: eerst het blad dat je verlaat wegschrijven en de
+  // hangende bewaring afzeggen. Die stond nog op het oude blad gericht en
+  // schreef er even later de inhoud van het niéuwe blad overheen.
+  const wisselBlad = (i) => {
+    if (i === actief) return;
+    netjes();
+    const lijst = syncVak();
+    stopTimer(); bewaar(lijst); stapWis();
+    setBladen(lijst); setActief(i);
+  };
   const nieuwBlad = () => {
+    stopTimer(); stapWis();
     const lijst = syncVak();
     const nieuw = { id: "n" + Date.now(), naam: "Blad " + (lijst.length + 1), door: "", op: "", html: "" };
     const uit = [...lijst, nieuw];
@@ -19225,12 +19652,15 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     if (bladen.length <= 1) return;
     const b = bladen[actief];
     if (!await bevestig('Blad "' + (b.naam || "") + '" en de tekst erop weghalen?')) return;
+    stopTimer(); stapWis();
     const uit = syncVak().filter((_, i) => i !== actief);
     const ni = Math.max(0, actief - 1);
     setBladen(uit); setActief(ni); zetVak(uit[ni] ? uit[ni].html : ""); bewaar(uit);
   };
   const wisBlad = async () => {
     if (!await bevestig("Alles op dit blad wissen?")) return;
+    stopTimer();
+    stapNu();
     zetVak("");
     const uit = syncVak().map((x, i) => (i === actief ? { ...x, html: "" } : x));
     setBladen(uit); bewaar(uit);
@@ -19247,11 +19677,30 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       + esc2((b.door ? "Laatst aangepast door " + b.door + " · " : "") + new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }))
       + "</div>" + html + "</body></html>");
   };
+  // Een oude versie gaat terug naar hét blad waar hij vandaan komt, niet naar
+  // het blad dat je toevallig open hebt — zo overschreef hij het verkeerde blad
+  // zonder dat er iets van terug te halen was. En wat eronder verdwijnt gaat
+  // eerst zelf de geschiedenis in, zodat deze stap ook weer terug kan.
   const zetHistorieTerug = async (h) => {
-    if (!await bevestig('Versie van ' + new Date(h.t).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " terugzetten op het huidige blad?")) return;
-    zetVak(h.html || "");
+    const moment = new Date(h.t).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const idx = bladen.findIndex((b) => String(b.id) === String((h && h.bladId) || ""));
+    const doel = idx >= 0 ? idx : actief;
+    const naam = (bladen[doel] && bladen[doel].naam) || "dit blad";
+    if (!await bevestig(idx >= 0
+      ? 'Versie van ' + moment + ' terugzetten op "' + naam + '"?'
+      : 'Het blad waar deze versie vandaan komt is er niet meer. Terugzetten op "' + naam + '"?')) return;
+    stopTimer();
+    let lijst = syncVak();
+    const oud = lijst[doel];
+    if (oud && notitieTekst(oud.html)) {
+      historieRef.current = [{ t: nuIso(), door: oud.door || "", bladNaam: oud.naam, bladId: oud.id, html: oud.html }, ...historieRef.current].slice(0, 15);
+    }
+    lijst = lijst.map((b, i) => (i === doel ? { ...b, html: h.html || "" } : b));
+    stapWis();
+    setBladen(lijst);
+    if (doel !== actief) setActief(doel); else zetVak(h.html || "");
     setHistOpen(false);
-    getypt();
+    bewaar(lijst);
   };
 
   const Knop = ({ doe, titel, actief: aan, children }) => (
@@ -19359,7 +19808,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           </div>
         )}
         <div ref={vak} contentEditable suppressContentEditableWarning
-          onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
+          onInput={() => { stapTypen(); autoLijst(); netjes(true); getypt(); }} onPaste={plakken} onDrop={sleepErin} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseDown={muisNeer} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fff", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
@@ -20130,7 +20579,13 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                 setTimeout(() => springNaar(b), 250);
               }} />;
         if (!inhoud) return null;
-        const sluitLuik = () => { setSomOpen(false); setBestelOpen(false); setNotitieOpen(false); };
+        // Naast het luik klikken doet precies wat het kruisje doet, als het
+        // venster daarbinnen een eigen afsluiting heeft (de notities vragen dan
+        // om een naam en schrijven de vorige versie weg).
+        const sluitLuik = () => {
+          if (LUIK_SLUIT.nu) { LUIK_SLUIT.nu(); return; }
+          setSomOpen(false); setBestelOpen(false); setNotitieOpen(false);
+        };
         return (
           <>
             <div className="fixed inset-0" style={{ zIndex: 39 }} onClick={sluitLuik} />
