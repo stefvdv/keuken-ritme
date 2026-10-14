@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-14b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-14c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -7114,12 +7114,12 @@ function App() {
           <Plus size={19} /> {section === "gerechten" ? "Gerecht" : section === "recepten" ? "Recept" : section === "smaak" ? "Smaakcombinatie" : section === "voorraad" ? "Voorraad" : section === "technieken" ? "Werkwijze" : section === "assortiment" ? "Product" : section === "schoonmaak" ? "Taak" : section === "boekingen" ? "Boeking" : "Batch"}
         </button>
       )}
-      {user && !gast && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && section === "boekingen") && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} raised={showFab || section === "mep"}
+      {user && !gast && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && section === "boekingen") && <CalcWidget open={calcOpen} onOpen={openCalc} onClose={closeCalc} bodem={ZWEEF_BODEM(section, showFab)}
         tabellen={techTableRows} canEdit={canEdit} onEditTable={(t) => push({ screen: "techTableForm", table: t })} />}
       {user && canEdit && current.screen !== "bezorgmateriaal" && !(current.screen === "list" && (section === "boekingen" || section === "assortiment")) && (
         <button onClick={() => { setFabLabelOpen(true); try { window.history.pushState({ app: "ritme", etiket: true }, ""); } catch (e) {} }} title="Etiket maken"
-          className={"ff fixed right-[4.5rem] sm:right-[5rem] z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (showFab || section === "mep" ? "bottom-[5.25rem]" : "bottom-6")}
-          style={{ background: T.paper, color: T.green, border: "1px solid " + T.green }}>
+          className="ff fixed right-4 sm:right-6 z-30 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+          style={{ background: T.paper, color: T.green, border: "1px solid " + T.green, bottom: ZWEEF_TRAP(ZWEEF_BODEM(section, showFab)) }}>
           <Tag size={19} />
         </button>
       )}
@@ -7181,9 +7181,19 @@ function App() {
   );
 }
 
+// De zwevende knoppen staan onder elkaar langs de rechterrand: etiket boven,
+// daaronder de rekenmachine, en op de mep daaronder de twee stiften. Eerst
+// stonden ze naast elkaar, en dan kwamen de getallen van de samen-maken-tabel
+// eronder te liggen.
+const ZWEEF_HOOG = 56;  // hoogte van een knop plus de ruimte eronder
+const ZWEEF_BODEM = (section, showFab) =>
+  section === "mep" ? 24 + 2 * ZWEEF_HOOG // onder de rekenmachine passen twee stiften
+  : showFab ? 24 + ZWEEF_HOOG             // de brede "+"-knop staat eronder
+  : 24;
+const ZWEEF_TRAP = (bodem) => bodem + ZWEEF_HOOG;
 // Zwevende rekenmachine, beschikbaar op elke pagina. Via de knoppen Verlies
 // en Koken opent een popup met de bijbehorende rekentabel.
-function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTable }) {
+function CalcWidget({ open, onOpen, onClose, bodem = 24, tabellen, canEdit, onEditTable }) {
   const [tabel, setTabel] = useState(null); // null | "verlies" | "koken"
   const [expr, setExpr] = useState("");
   const [result, setResult] = useState("");
@@ -7255,7 +7265,7 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
     <>
       {open && <div className="fixed inset-0 z-30" onClick={onClose} />}
       {open && (
-        <div className={"fixed right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3 " + (raised ? "bottom-[9.25rem]" : "bottom-24")} style={{ background: T.paper, border: "1px solid " + T.line }}>
+        <div className="fixed right-4 sm:right-6 z-40 w-[16.5rem] rounded-2xl shadow-xl p-3" style={{ background: T.paper, border: "1px solid " + T.line, bottom: bodem + 56 }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-[12.5px] font-semibold uppercase tracking-widest acc">Rekenmachine</span>
             <span className="flex items-center gap-1">
@@ -7300,8 +7310,8 @@ function CalcWidget({ open, onOpen, onClose, raised, tabellen, canEdit, onEditTa
         </div>
       )}
       <button onClick={open ? onClose : onOpen} title="Rekenmachine"
-        className={"ff fixed right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center " + (raised ? "bottom-[5.25rem]" : "bottom-6")}
-        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green }}>
+        className="ff fixed right-4 sm:right-6 z-40 w-12 h-12 rounded-full shadow-lg inline-flex items-center justify-center"
+        style={{ background: open ? T.green : T.paper, color: open ? T.paper : T.green, border: "1px solid " + T.green, bottom: bodem }}>
         {open ? <X size={20} /> : <Percent size={19} />}
       </button>
     </>
@@ -9971,7 +9981,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
   return (
     // Hetzelfde luik als "Samen maken": wit, over de bladzijde heen, onder de
     // balk vandaan. Het schuiven en sluiten doet MepWeek eromheen.
-    <div className="card p-4 geenselectie">
+    <div className="card p-4 pb-20 geenselectie">
       <div className="flex flex-col">
       <div className="flex items-center justify-between gap-2">
         <h1 className="serif ink text-xl leading-tight">Bestellijst</h1>
@@ -16569,6 +16579,10 @@ const MARKEER_KLEUREN = [
   { naam: "geel", kleur: "#f7e59a", melding: "Mee bezig" },
   { naam: "rood", kleur: "#f2b8b1", melding: "Let op" },
 ];
+// Welke stiften er als knop staan. Rood is eruit: in de keuken werd hij niet
+// gebruikt en hij nam een plek in langs de rand. Wat er al rood staat blijft
+// gewoon staan — die kleur kennen we hierboven nog.
+const STIFT_KLEUREN = MARKEER_KLEUREN.filter((k) => k.naam !== "rood");
 // De stukken tussen de scheidingstekens (komma, |, /, regeleinde). Zowel het
 // markeren als het koppelen van recepten werkt per stuk, dus beide gebruiken
 // deze verdeling.
@@ -19141,7 +19155,9 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   return (
     // Hetzelfde luik als "Samen maken": wit, over de bladzijde heen, onder de
     // balk vandaan. Het schuiven en sluiten doet MepWeek eromheen.
-    <div className="card p-4 geenselectie">
+    // Het blad zelf is wit, de omlijsting crème — zo leest het als papier op
+    // tafel in plaats van andersom.
+    <div className="rounded-2xl p-4 pb-20 geenselectie" style={{ background: T.paper, border: "1px solid " + T.line }}>
       <div className="flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-1.5">
           <div className="serif ink text-xl leading-tight">Notities</div>
@@ -19222,7 +19238,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
         <div ref={vak} contentEditable suppressContentEditableWarning
           onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
-          style={{ background: "#fffdf5", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
+          style={{ background: "#fff", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
       </div>
     </div>
@@ -19735,7 +19751,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // vlak onder open. Hij had zijn eigen kopbalk tussen de dagen in; die nam
   // alleen maar ruimte in, en tussen de partijen was hij makkelijk te missen.
   const somKaart = partijen.length > 0 && somSet.length > 0 ? (
-        <div id="som-kaart" className="card p-3 mb-4 geenselectie">
+        <div id="som-kaart" className="card p-3 pb-20 mb-4 geenselectie">
           <div className="text-[12.5px] font-semibold uppercase tracking-widest acc mb-1.5">Samen maken — {somSet.length} dagen vanaf {kolKop(somSet[0])}</div>
           {!overlap.length && <p className="text-[12.5px] mute mb-0">Nog geen bereidingen die in meerdere partijen terugkomen — geef producten eerst een culinaire invulling.</p>}
           {overlap.length > 0 && <div className="overflow-x-auto"><table className="w-full text-[15px]" style={{ borderCollapse: "collapse", minWidth: "36rem" }}>
@@ -19744,10 +19760,10 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                 <th className="text-left py-2 pr-2">Bereiding</th>
                 {/* Ook de dagkoppen zijn te markeren: zet je een hele draaidag af,
                     dan hoort de kop daar net zo goed bij als de aantallen eronder. */}
-                {somSet.map((d) => <th key={d} className="text-right py-2 px-1">
+                {somSet.map((d) => <th key={d} className="text-center py-2 px-1">
                   <SomCel sleutel={"sk:" + d} tekst={kolKop(d)} stift={stift} markering={markering} zetMark={zetMark} />
                 </th>)}
-                <th className="text-right py-2 pl-2">
+                <th className="text-center py-2 pl-2">
                   <SomCel sleutel="sk:totaal" tekst="Totaal" stift={stift} markering={markering} zetMark={zetMark} />
                 </th>
               </tr>
@@ -19770,7 +19786,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     {/* Elk aantal is zelf een vakje: tik erop en je ziet hoeveel gram
                         dat op die dag is, dubbelklik en hij staat gemarkeerd. */}
                     {somSet.map((d) => (
-                      <td key={d} className="text-right py-2.5 px-1 ink font-medium">
+                      <td key={d} className="text-center py-2.5 px-1 ink font-medium">
                         {r.perDag[d] ? (
                           <SomCel sleutel={"sd:" + r.sleutel + ":" + d} tekst={fmtPorties(r.perDag[d])}
                             uitleg={(() => {
@@ -19786,7 +19802,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                         ) : <span className="mute">·</span>}
                       </td>
                     ))}
-                    <td className="text-right py-2.5 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + SOM_LIJN }}>
+                    <td className="text-center py-2.5 pl-2 font-bold" style={{ color: "#44502f", borderLeft: "1px solid " + SOM_LIJN }}>
                       <SomCel sleutel={"st:" + r.sleutel} tekst={fmtPorties(r.totaal)}
                         uitleg={{ gram: r.gram ? fmtGram(r.gram) : "Geen gewicht bekend",
                           sub: fmtPorties(r.totaal) + " porties · alle dagen samen", titel: r.naam }}
@@ -19827,8 +19843,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                           <span style={{ textDecoration: "line-through" }}>{r.naam}</span>
                           <span className="mute text-[13px]"> · {r.partijen.length} partijen</span>
                         </td>
-                        {somSet.map((d) => <td key={d} className="text-right py-2.5 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
-                        <td className="text-right py-2.5 pl-2 font-bold mute" style={{ borderLeft: "1px solid " + SOM_LIJN }}>{fmtPorties(r.totaal)}{r.gram ? <span className="block text-[12.5px]">{fmtGram(r.gram)}</span> : null}</td>
+                        {somSet.map((d) => <td key={d} className="text-center py-2.5 px-1 mute">{r.perDag[d] ? fmtPorties(r.perDag[d]) : "·"}</td>)}
+                        <td className="text-center py-2.5 pl-2 font-bold mute" style={{ borderLeft: "1px solid " + SOM_LIJN }}>{fmtPorties(r.totaal)}{r.gram ? <span className="block text-[12.5px]">{fmtGram(r.gram)}</span> : null}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -19980,8 +19996,10 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       {volgendeOpen && dagen2.map((d) => renderDag(d))}
       {volgendeOpen && !partijen.some((b) => dagen2.includes(b.datum)) && <Empty label="Geen partijen in de volgende week." />}
 
-      <div className="fixed z-40 flex items-center gap-2" style={{ right: 16, bottom: 24 }}>
-        {MARKEER_KLEUREN.map((k) => (
+      {/* Onder elkaar langs dezelfde rand als het etiket en de rekenmachine.
+          Naast elkaar liepen ze dwars onder de getallen van de tabel door. */}
+      <div className="fixed z-40 flex flex-col-reverse items-center gap-2" style={{ right: 18, bottom: 24 }}>
+        {STIFT_KLEUREN.map((k) => (
           <button key={k.naam} onClick={() => setStift(stift === k.naam ? null : k.naam)}
             title={k.melding} className="ff rounded-full w-10 h-10 shadow" style={{ background: k.kleur, border: "2.5px solid " + (stift === k.naam ? T.green : "rgba(255,255,255,.85)") }} />
         ))}
