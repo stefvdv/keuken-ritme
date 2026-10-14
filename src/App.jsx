@@ -572,7 +572,7 @@ const REMIND_HOUR = 18; // tweede herinnering als de eerste is weggeklikt
 // zolang het open staat; de Escape-afhandeling loopt de lijst van boven naar
 // beneden af en sluit het eerste wat openstaat.
 const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
-const RITME_VERSIE = "2026-10-14i"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-14o"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -10006,7 +10006,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 mute" />
           <input className={"input pl-9 py-2.5 w-full text-sm " + (zoek ? "pr-9" : "pr-3")} value={zoek} onChange={(e) => { setZoek(e.target.value); setRichtOp(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); tekstErbij(); } }}
-            placeholder={breed ? "Zoek in alle lijsten of typ er zelf een" : "Zoek in je favorieten of typ er zelf een"} />
+            placeholder={breed ? (onZoekBd ? "Zoek in alles van BD of typ er zelf een" : "Zoek in alle lijsten of typ er zelf een") : "Zoek in je favorieten of typ er zelf een"} />
           {/* Het kruisje staat er alleen als er iets te wissen valt, anders
               zit het in de weg bij een leeg vak. */}
           {zoek ? (
@@ -10016,13 +10016,22 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
             </button>
           ) : null}
         </div>
-        {buitenFavo > 0 && (
+        {/* Deze knop stond er alleen als er lijsten buiten de favorieten
+            ingeladen waren. Staat alles in de favorieten — en dat is hier het
+            geval — dan was heel het assortiment van BD onbereikbaar: de brede
+            stand is ook de stand waarin de app bij BD zélf zoekt. Nu staat hij
+            er zodra één van de twee iets extra's oplevert. */}
+        {(buitenFavo > 0 || !!onZoekBd) && (
           <button onClick={() => setBreed((b) => !b)}
             className={(breed ? "btnp" : "btno") + " ff shrink-0 rounded-lg px-3 py-2.5 text-[12.5px] font-medium inline-flex items-center gap-1.5"}
             title={breed
-              ? "Je zoekt nu ook buiten je favorieten. Tik om alleen in de favorieten te zoeken."
-              : "Zoek ook buiten je favorieten \u2014 in alle ingeladen lijsten"}>
-            <Star size={14} fill={breed ? "none" : "currentColor"} /> {breed ? "Alles" : "Favorieten"}
+              ? (onZoekBd
+                ? "Je zoekt nu in heel het assortiment van BD-Totaal. Tik om alleen in de favorieten te zoeken."
+                : "Je zoekt nu ook buiten je favorieten. Tik om alleen in de favorieten te zoeken.")
+              : (onZoekBd
+                ? "Zoek in heel het assortiment van BD-Totaal \u2014 ook wat niet in je favorieten staat"
+                : "Zoek ook buiten je favorieten \u2014 in alle ingeladen lijsten")}>
+            <Star size={14} fill={breed ? "none" : "currentColor"} /> {breed ? (onZoekBd ? "Alles van BD" : "Alles") : "Favorieten"}
           </button>
         )}
       </div>
@@ -10074,9 +10083,11 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
           </div>
         );
       })()}
-      {q && !breed && buitenFavo > 0 && (
+      {q && !breed && (buitenFavo > 0 || !!onZoekBd) && (
         <button onClick={() => setBreed(true)} className="ff w-full text-left card p-3 text-[12.5px] mute hover:opacity-80 mb-2">
-          Niet gevonden? Er staan nog {buitenFavo} {buitenFavo === 1 ? "lijst" : "lijsten"} buiten je favorieten — <span className="acc font-semibold underline">ook daarin zoeken</span>.
+          {buitenFavo > 0
+            ? <>Niet gevonden? Er staan nog {buitenFavo} {buitenFavo === 1 ? "lijst" : "lijsten"} buiten je favorieten — <span className="acc font-semibold underline">ook daarin zoeken</span>.</>
+            : <>Niet gevonden? <span className="acc font-semibold underline">Zoek in heel het assortiment van BD-Totaal</span> — ook wat niet in je favorieten staat.</>}
         </button>
       )}
       {/* Zoek je iets dat nergens staat, dan is enter genoeg. Zo kan een kok
@@ -15209,7 +15220,19 @@ const menuInhoudHtml = ({ blokken, en }) =>
 // briefpapier — logo, titel, lijn en tekst — krimpt in één keer mee en de
 // verhoudingen blijven kloppen. In het midden een haarlijntje om langs te snijden.
 const TAFEL_KRIMP = 148.5 / 210; // ≈ 0,7071
+// Waar het blok onderaan het briefpapier begint, gemeten op de afbeelding:
+// boven staat het logo (14,9–32,8 mm), daarna wit tot 181,3 mm, en vanaf daar
+// de koolrabi, "Met biologische oogst van Landgoed de Beug", het stukje tekst,
+// wildewortels.nl en het groene bio-merk. Daaronder zit nog 14,6 mm wit.
+const BRIEF_VOET = 181.3;
+// Een tafelkaartje wordt na het snijden in een houten voetje gezet, en dat
+// voetje eet de onderste centimeter op. Daarom schuift dat hele blok op de
+// kaart omhoog. 17 mm op het A4-blad is na de krimp ruim 12 mm op de kaart
+// zelf; het blok houdt dan zo'n 22 mm vrij onder zich. De kop van het
+// briefpapier blijft staan waar hij staat — daar is geen ruimte boven.
+const TAFEL_VOET_OMHOOG = 17;
 const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel, en }) =>
+  ((eigenBrief) =>
   "<!doctype html><html lang='" + (en ? "en" : "nl") + "'><head><meta charset='utf-8'><title>" + pEsc("Menu " + (naam || "")) + "</title><style>"
   + briefFontCss()
   + (tafel ? "@page{size:A4 landscape;margin:0}" : "@page{size:A4;margin:0}")
@@ -15221,17 +15244,25 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel, en }) =>
   + ".lijn{border-top:.75pt solid " + MENU_OPMAAK.kleur + ";margin:9pt 0 0}"
   + ".titel{font-family:'RitmeLora',Georgia,'Times New Roman',serif;font-size:34pt;line-height:40pt;text-align:center;margin:26pt 0 30pt}"
   + ".inhoud{margin-left:" + briefVorm.inspring + "mm;width:" + Math.max(20, briefVorm.breedte - briefVorm.inspring) + "mm}"
-  + ".kop{font-weight:700;font-size:10.5pt;line-height:15pt;margin:0}"
-  + ".regel{font-size:10.5pt;line-height:15pt;margin:0}"
+  + ".kop{font-weight:700;font-size:11.5pt;line-height:16pt;margin:0}"
+  + ".regel{font-size:11.5pt;line-height:16pt;margin:0}"
   + (tafel ? ".vel{position:relative;width:297mm;height:210mm;display:flex;overflow:hidden}"
       + ".helft{position:relative;width:148.5mm;height:210mm;overflow:hidden}"
       + ".helft .blad{transform:scale(" + TAFEL_KRIMP + ");transform-origin:top left}"
-      // Alles krimpt mee met het vel, en dan wordt 10,5 pt op de kaart nog maar
-      // ruim 7 pt — te klein om aan tafel te lezen. De menuregels gaan daarom
-      // een slag omhoog, zodat ze op het kaartje rond de 9 pt uitkomen. De
-      // titel en de MENU-regel laten we staan: die zijn al goed leesbaar.
-      + ".helft .kop,.helft .regel{font-size:13pt;line-height:18pt}"
-      + ".vouw{position:absolute;left:148.5mm;top:0;bottom:0;border-left:.3pt dashed #d6d3c6;pointer-events:none}" : "")
+      // Alles krimpt mee met het vel, en dan wordt 11,5 pt op de kaart nog maar
+      // 8 pt — te klein om aan tafel te lezen. De menuregels gaan daarom een
+      // slag omhoog, zodat ze op het kaartje rond de 10 pt uitkomen. De titel
+      // en de MENU-regel laten we staan: die zijn al goed leesbaar.
+      + ".helft .kop,.helft .regel{font-size:14.5pt;line-height:19.5pt}"
+      + ".vouw{position:absolute;left:148.5mm;top:0;bottom:0;border-left:.3pt dashed #d6d3c6;pointer-events:none}"
+      // Het blok onderaan het briefpapier een stuk omhoog, alleen op de kaart:
+      // we dekken het af met wit en tekenen hetzelfde stuk van de afbeelding
+      // hoger opnieuw. Zo blijft de kop staan en vervormt er niets. Alleen bij
+      // ons eigen briefpapier — van een zelf ingeladen vel weten we niet waar
+      // het blok begint, en dan laten we het met rust.
+      + (eigenBrief ? ".helft .blad::before{content:'';position:absolute;left:0;right:0;top:" + BRIEF_VOET + "mm;height:" + (297 - BRIEF_VOET) + "mm;background:#fff;z-index:1}"
+        + ".helft .blad::after{content:'';position:absolute;left:0;right:0;top:" + (BRIEF_VOET - TAFEL_VOET_OMHOOG) + "mm;height:" + (297 - BRIEF_VOET) + "mm;background:url('" + briefAchtergrond() + "') no-repeat 0 -" + BRIEF_VOET + "mm;background-size:210mm 297mm;z-index:1}"
+        + ".helft .tekst{z-index:2}" : "") : "")
   + (bewerkbaar ? ".tekst[contenteditable]{outline:1px dashed #b6b2a3;outline-offset:6px}.tekst[contenteditable]:focus{outline-color:#4f7a3a}@media print{.tekst{outline:none !important}}" : "")
   + "</style></head><body>"
   + (() => {
@@ -15240,7 +15271,7 @@ const menuBriefHtml = ({ naam, tekstHtml, bewerkbaar, tafel, en }) =>
       if (!tafel) return blad(true);
       return "<div class='vel'><div class='helft'>" + blad(true) + "</div><div class='helft'>" + blad(false) + "</div><div class='vouw'></div></div>";
     })()
-  + "</body></html>";
+  + "</body></html>")(!briefVorm.img);
 
 const kopieerRijkeTekst = (html) => {
   try {
@@ -18499,7 +18530,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   if (openSnap.current === null) openSnap.current = naarBladen(data).map((b) => ({ id: b.id, html: b.html }));
   const vak = React.useRef(null);
   const timer = React.useRef(null);
-  const laatst = React.useRef(JSON.stringify({ bladen: naarBladen(data), historie: historieRef.current }));
+  // Precies zoals het effect hieronder meet, anders lijkt er altijd nieuws te zijn.
+  const laatst = React.useRef(JSON.stringify({ bladen: naarBladen(data), historie: (data && data.historie) || [] }));
   const [histOpen, setHistOpen] = useState(false);
 
   // Vak vullen bij openen en bij tabwissel.
@@ -18577,26 +18609,44 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // wachten we op; zodra je het vak verlaat halen we het alsnog op.
   const [blurTik, setBlurTik] = useState(0);
   const wachtendeData = React.useRef(null);
+  // ... maar niet in stilte. Een laptop met de notities dagenlang open houdt de
+  // cursor in het vak, neemt dus nooit iets over, en toont dan een stand van
+  // vorige week terwijl er elders doorgewerkt is. De eerste letter die je daar
+  // typt zet een nieuw moment op dat oude blad, en dan wint het bij het
+  // samenvoegen van het nieuwere werk van je collega. Daarom zeggen we het nu
+  // met een regel boven het blad, met een knop erbij. Zelf overnemen in plaats
+  // van automatisch: wat half getypt in het vak staat gaat zo nooit verloren.
+  const [nieuwer, setNieuwer] = useState(false);
   // Staat het linkpaneel open? Als ref, want het effect hieronder draait ook
   // op momenten dat het niet opnieuw is opgebouwd.
   const linkOpenRef = React.useRef(false);
+  const neemOver = (d) => {
+    const binnen = JSON.stringify({ bladen: naarBladen(d), historie: (d && d.historie) || [] });
+    wachtendeData.current = null;
+    setNieuwer(false);
+    const bs = naarBladen(d);
+    historieRef.current = (d && Array.isArray(d.historie)) ? d.historie.slice(0, 15) : historieRef.current;
+    laatst.current = binnen;
+    setBladen(bs);
+    const i = Math.min(actief, bs.length - 1);
+    setActief(i);
+    zetVak(bs[i] ? bs[i].html : "");
+    // Dit is vanaf nu waar we op doorwerken. Zonder dit gelden de wijzigingen
+    // van je collega bij het sluiten als de jouwe: dan vraagt de app jouw naam
+    // en zet zijn versie in jouw geschiedenis.
+    openSnap.current = bs.map((x) => ({ id: x.id, html: x.html }));
+  };
+  const neemOverRef = React.useRef(neemOver); neemOverRef.current = neemOver;
   useEffect(() => {
     const binnen = JSON.stringify({ bladen: naarBladen(data), historie: (data && data.historie) || [] });
-    if (binnen === laatst.current) { wachtendeData.current = null; return; }
+    if (binnen === laatst.current) { wachtendeData.current = null; setNieuwer(false); return; }
     // Ook niet terwijl het linkpaneel open staat: het vak opnieuw vullen
     // gooit de plek weg waar de link heen moest, en dan kwam hij vooraan in
     // de tekst terecht.
     const inHetVak = typeof document !== "undefined" && vak.current && document.activeElement === vak.current;
-    if (inHetVak || linkOpenRef.current) { wachtendeData.current = data; return; }
-    if (vak.current && bladen[actief] && vak.current.innerHTML !== bladen[actief].html) return; // eigen typwerk wint
-    wachtendeData.current = null;
-    const d = naarBladen(data);
-    historieRef.current = (data && Array.isArray(data.historie)) ? data.historie.slice(0, 15) : historieRef.current;
-    laatst.current = binnen;
-    setBladen(d);
-    const i = Math.min(actief, d.length - 1);
-    setActief(i);
-    zetVak(d[i] ? d[i].html : "");
+    const onbewaard = vak.current && bladen[actief] && vak.current.innerHTML !== bladen[actief].html;
+    if (inHetVak || linkOpenRef.current || onbewaard) { wachtendeData.current = data; setNieuwer(true); return; }
+    neemOver(data);
   }, [data, blurTik]);
 
   // Opmaakstatus voor de knopjes.
@@ -18794,13 +18844,18 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     let soort = null, lengte = 0;
     if (!inLijst && off === 2 && (txt.slice(0, 2) === "- " || txt.slice(0, 2) === "* ")) { soort = "insertUnorderedList"; lengte = 2; }
     else if (!inLijst && off === 3 && /^1[.)] /.test(txt)) { soort = "insertOrderedList"; lengte = 3; }
-    else if (off >= 3 && (txt.slice(0, 3) === "[] " || txt.slice(0, 4) === "[ ] ")) {
-      const l = txt.slice(0, 4) === "[ ] " ? 4 : 3;
-      if (off !== l) return;
-      n.textContent = txt.slice(l);
-      try { const r = document.createRange(); r.setStart(n, 0); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
-      try { document.execCommand("insertHTML", false, CB_HTML); } catch (e) {}
-      return;
+    else {
+      // Een afvinkvakje mag overal komen: "[] " of "[ ] " vlak vóór de cursor
+      // wordt een vakje op dié plek. Dit keek vroeger alleen naar het begin van
+      // de regel, dus midden in een zin bleven de haakjes gewoon staan.
+      const haak = txt.slice(0, off).match(/\[ ?\] $/);
+      if (haak) {
+        const l = haak[0].length;
+        n.textContent = txt.slice(0, off - l) + txt.slice(off);
+        try { const r = document.createRange(); r.setStart(n, off - l); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
+        try { document.execCommand("insertHTML", false, CB_HTML); } catch (e) {}
+        return;
+      }
     }
     if (!soort) return;
     n.textContent = txt.slice(lengte);
@@ -19009,6 +19064,29 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     setLinkZoek((v) => (v == null ? "" : null));
   };
   const esc2 = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  // Het afvinkvakje hoort te komen waar de cursor staat. Het liep via dezelfde
+  // weg als de link, en die weg wist eerst de onthouden plek — waarna het vakje
+  // altijd helemaal achteraan het blad belandde. Er valt hier ook niets te
+  // onthouden: de knop houdt de selectie zelf in leven (hij slikt de muisdruk
+  // in), dus we zetten het vakje gewoon neer waar je staat, net zoals vet en
+  // cursief werken. Staat de cursor nog nergens, dan achteraan — daar zie je
+  // hem tenminste staan, in plaats van midden in andermans zin.
+  const vakjeErbij = () => {
+    try {
+      if (vak.current) vak.current.focus();
+      const sel = window.getSelection();
+      const inVak = !!(sel && sel.rangeCount && vak.current && sel.anchorNode && vak.current.contains(sel.anchorNode));
+      if (!inVak && sel && vak.current && typeof document !== "undefined" && document.createRange) {
+        const eind = document.createRange();
+        eind.selectNodeContents(vak.current);
+        eind.collapse(false);
+        sel.removeAllRanges(); sel.addRange(eind);
+      }
+      document.execCommand("insertHTML", false, CB_HTML);
+    } catch (e) {}
+    setLinkZoek(null); linkRange.current = null; linkTekst.current = "";
+    getypt();
+  };
   const plaatsHtml = (h) => {
     try {
       if (vak.current) vak.current.focus();
@@ -19189,7 +19267,12 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // tafel in plaats van andersom.
     <div className="rounded-2xl p-4 pb-20 geenselectie" style={{ background: T.paper, border: "1px solid " + T.line }}>
       <div className="flex flex-col">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
+        {/* De knoppenbalk blijft bovenaan in beeld terwijl je door een lang
+            blad scrolt — anders moet je helemaal terug naar boven voor een
+            vakje of een stift. De schaduw erboven vult de rand van de kaart,
+            zodat er geen tekst doorheen schuift. */}
+        <div className="flex items-start justify-between gap-2 mb-1.5 sticky pb-1.5"
+          style={{ position: "sticky", top: 0, zIndex: 3, background: T.paper, boxShadow: "0 -16px 0 0 " + T.paper }}>
           <div className="serif ink text-xl leading-tight">Notities</div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             <Knop doe={() => cmd("bold")} actief={fmt.vet} titel="Vet (Ctrl+B)"><Bold size={14} /></Knop>
@@ -19198,7 +19281,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
             <Knop doe={kopToggle} actief={fmt.kop} titel="Kop"><Heading size={14} /></Knop>
             <Knop doe={() => maakLijst("insertUnorderedList")} actief={fmt.ul} titel="Afvinklijst — typ ook: - en spatie"><List size={14} /></Knop>
             <Knop doe={() => maakLijst("insertOrderedList")} actief={fmt.ol} titel="Nummering — typ ook: 1. en spatie"><ListOrdered size={14} /></Knop>
-            <Knop doe={() => { linkRange.current = null; plaatsHtml(CB_HTML); }} titel="Afvinkvakje — typ ook: [] en spatie"><CheckSquare size={14} /></Knop>
+            <Knop doe={vakjeErbij} titel="Afvinkvakje — typ ook: [] en spatie"><CheckSquare size={14} /></Knop>
             <Knop doe={openLinkZoek} actief={linkZoek != null} titel="Link naar een recept of partij invoegen"><Link size={14} /></Knop>
             <Knop doe={printBlad} titel="Dit blad printen (A4)"><Printer size={14} /></Knop>
             <Knop doe={() => setHistOpen((v) => !v)} actief={histOpen} titel="Vorige versies"><History size={14} /></Knop>
@@ -19265,6 +19348,16 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           + ".mep-notitie ol{list-style:decimal;padding-left:1.6em;margin:.15em 0}"
           + ".mep-notitie ol ol{list-style:lower-alpha}.mep-notitie ol ol ol{list-style:lower-roman}"
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
+        {nieuwer && (
+          <div className="flex items-center gap-2 mb-2 rounded-xl px-3 py-2 text-[12.5px]"
+            style={{ background: "#fdf3d8", border: "1px solid #e6d49a" }}>
+            <span className="flex-1 min-w-0 ink">
+              Er is nieuwer werk van een collega{wachtendeData.current && wachtendeData.current.t ? " (" + opTekst(wachtendeData.current.t) + ")" : ""}. Wat je hier ziet is ouder.
+            </span>
+            <button type="button" onClick={() => { if (wachtendeData.current) neemOverRef.current(wachtendeData.current); }}
+              className="ff shrink-0 text-[12.5px] font-semibold underline acc">Overnemen</button>
+          </div>
+        )}
         <div ref={vak} contentEditable suppressContentEditableWarning
           onInput={() => { autoLijst(); netjes(true); getypt(); }} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
@@ -22174,14 +22267,26 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
     setSteps((a) => a.filter((_, x) => x !== i));
     setTimeout(() => { const el = document.querySelector('[data-rf-step="' + (i - 1) + '"]'); if (el) { el.focus(); const L = el.value.length; try { el.setSelectionRange(L, L); } catch (e) {} } }, 0);
   };
-  const addIngAt = (i) => {
+  // Enter zet een nieuwe lege regel ónder deze, met de cursor erin — je typt
+  // verder naar beneden. Staat de cursor helemaal vóór de tekst, dan schuift
+  // deze regel juist naar beneden en komt de lege erbóven, met de cursor
+  // daarin: zo maak je ergens tussenin ruimte zonder te knippen en plakken.
+  // Precies zoals de invulling bij een boeking het al deed.
+  const vooraanIn = (el) => !!el && el.selectionStart === 0
+    && (el.selectionEnd == null || el.selectionEnd === 0)
+    // Er moet wél tekst staan om vóór te komen. In een leeg vak zou je anders
+    // een tweede leeg vak erboven krijgen en je cursor kwijtraken.
+    && String(el.value || "").length > 0;
+  const addIngAt = (i, vooraan) => {
     setAlgOpen(null);
-    setIngredients((a) => [...a.slice(0, i + 1), { item: "", amount: "" }, ...a.slice(i + 1)]);
-    setTimeout(() => { const el = document.querySelector('[data-rf-item="' + (i + 1) + '"]'); if (el) el.focus(); }, 0);
+    const plek = vooraan ? i : i + 1;
+    setIngredients((a) => [...a.slice(0, plek), { item: "", amount: "" }, ...a.slice(plek)]);
+    setTimeout(() => { const el = document.querySelector('[data-rf-item="' + plek + '"]'); if (el) el.focus(); }, 0);
   };
-  const addStepAt = (i) => {
-    setSteps((a) => [...a.slice(0, i + 1), "", ...a.slice(i + 1)]);
-    setTimeout(() => { const el = document.querySelector('[data-rf-step="' + (i + 1) + '"]'); if (el) el.focus(); }, 0);
+  const addStepAt = (i, vooraan) => {
+    const plek = vooraan ? i : i + 1;
+    setSteps((a) => [...a.slice(0, plek), "", ...a.slice(plek)]);
+    setTimeout(() => { const el = document.querySelector('[data-rf-step="' + plek + '"]'); if (el) el.focus(); }, 0);
   };
   // Handmatige allergenen per ingrediënt: open paneel + aan/uit per allergeen.
   const [algOpen, setAlgOpen] = useState(null);
@@ -22436,7 +22541,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
                   const lijst = ingSug === i ? ingSugLijst(ing) : [];
                   if (lijstToetsen(e, lijst.length, ingSugIdx, setIngSugIdx, (k) => kiesIngSug(i, lijst[k]))) return;
                   if (e.key === "Tab" || e.key === "Escape") setIngSug(null);
-                  else if (e.key === "Enter") { e.preventDefault(); setIngSug(null); addIngAt(i); }
+                  else if (e.key === "Enter") { e.preventDefault(); setIngSug(null); addIngAt(i, vooraanIn(e.target)); }
                   else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); }
                 }} placeholder="Ingrediënt of recept" />
               {ingSug === i && (() => {
@@ -22468,7 +22573,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
                 );
               })()}
             </div>
-            <input data-rf-amt={i} className={inputCls} style={{ width: chefMode ? "5.5rem" : "7rem", flex: chefMode ? "0 0 5.5rem" : "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
+            <input data-rf-amt={i} className={inputCls} style={{ width: chefMode ? "5.5rem" : "7rem", flex: chefMode ? "0 0 5.5rem" : "0 0 7rem" }} value={ing.amount} onChange={(e) => setIng(i, "amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addIngAt(i, vooraanIn(e.target)); } else if (e.key === "Backspace" && i > 0 && !String(ing.item || "").trim() && !String(ing.amount || "").trim()) { e.preventDefault(); backIng(i); } }} placeholder="Hoeveelheid" />
             {chefMode && (() => {
               const kk = ingKost({ ...ing, cost: "" });
               const art = kk.artikel;
@@ -22566,7 +22671,7 @@ function RecipeForm({ catSettings, onSaveCats, recipe, fermentDefault, allRecipe
       <div className="space-y-2 mb-2">{steps.map((s, i) => (
         <div key={i} className="flex gap-2 items-start">
           <span className="w-6 h-6 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center mt-2" style={{ background: "#e8ebe0", color: T.green }}>{i + 1}</span>
-          <textarea data-rf-step={i} rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStepAt(i); } else if (e.key === "Backspace" && i > 0 && !String(s || "").trim()) { e.preventDefault(); backStep(i); } }} placeholder="Beschrijf de stap — of plak de hele bereiding" />
+          <textarea data-rf-step={i} rows={2} className={inputCls + " flex-1 resize-none"} value={s} onChange={(e) => setStep(i, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStepAt(i, vooraanIn(e.target)); } else if (e.key === "Backspace" && i > 0 && !String(s || "").trim()) { e.preventDefault(); backStep(i); } }} placeholder="Beschrijf de stap — of plak de hele bereiding" />
           <button onClick={() => setSteps((a) => a.filter((_, idx) => idx !== i))} className="mute hover:opacity-60 px-1 mt-2"><Trash2 size={16} /></button>
         </div>))}
       </div>
