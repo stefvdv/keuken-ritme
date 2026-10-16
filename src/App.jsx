@@ -579,7 +579,12 @@ const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
 // hier daarom zijn eigen sluitknop neer, zodat een klik ernaast precies
 // hetzelfde doet als het kruisje.
 const LUIK_SLUIT = { nu: null };
-const RITME_VERSIE = "2026-10-16c"; // versiestempel — check dit na elke deploy
+// Kom je op de mise en place terecht, dan plaatst die bladzijde zichzelf: de
+// dag van vandaag nog nét bovenaan. De schil zet bij elke paginawissel de
+// bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
+// sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
+const MEP_START = { aan: false };
+const RITME_VERSIE = "2026-10-16d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -5460,20 +5465,33 @@ function App() {
     // het "anker" van de vorige pagina.
     try { document.documentElement.style.overflowAnchor = "none"; } catch (e) {}
   }, []);
+  // Stap je van een andere bladzijde de mise en place op, dan mag die zichzelf
+  // plaatsen. Dit staat met opzet in de render en niet in een effect: de
+  // effecten van de kinderen gaan voor die van de schil, dus anders zou de mep
+  // de vlag lezen voordat hij gezet is. Ga je op de mep een recept in en weer
+  // terug, dan blijft de afdeling "mep" en gebeurt er niets — dan hoort de
+  // bladzijde te staan waar je hem achterliet.
+  const mepVorig = React.useRef(false);
+  const mepNu = section === "mep";
+  if (mepNu && !mepVorig.current) MEP_START.aan = true;
+  mepVorig.current = mepNu;
   useEffect(() => {
     const diepte = stack.length;
     const terugNaar = diepte < diepteRef.current ? scrollPerDiepte.current[diepte] : null;
     diepteRef.current = diepte;
-    const zet = () => { try { const y = terugNaar || 0; window.scrollTo(0, y); document.documentElement.scrollTop = y; document.body.scrollTop = y; } catch (e) {} };
+    const zet = () => { if (MEP_START.aan) return; try { const y = terugNaar || 0; window.scrollTo(0, y); document.documentElement.scrollTop = y; document.body.scrollTop = y; } catch (e) {} };
     zet();
     const t1 = setTimeout(zet, 60);
     const t2 = setTimeout(zet, 250);
+    // Een vangnet: blijft de vlag om wat voor reden ook hangen, dan gaat hij
+    // na deze ronde vanzelf weer uit.
+    const t3 = setTimeout(() => { MEP_START.aan = false; }, 400);
     // De knop waarmee je zojuist navigeerde houdt de focus vast. Enter zou dan
     // die knop opnieuw indrukken in plaats van het etiketvenster te openen —
     // vandaar dat het pas werkte nadat je ergens op de pagina had geklikt.
     try { const el = document.activeElement; if (el && el.tagName === "BUTTON") el.blur(); } catch (e) {}
     return () => {
-      clearTimeout(t1); clearTimeout(t2);
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
       if (terugNaar) delete scrollPerDiepte.current[diepte]; // eenmalig terugzetten
     };
   }, [current, section]);
@@ -20024,10 +20042,12 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   // Dit gebeurt één keer, bij het opengaan van de bladzijde: van week wisselen
   // laat de bladzijde staan waar hij staat.
   useEffect(() => {
+    // Alleen als je hier net binnenkomt. Kom je terug uit een recept, dan hoort
+    // de bladzijde te staan waar je hem achterliet.
+    if (!MEP_START.aan) return;
     // Komt de app binnen met een partij om naartoe te springen, dan gaat die
     // voor — anders vechten de twee om dezelfde bladzijde.
-    if (springNaarPartij) return;
-    if (dagen.indexOf(vandaag) < 0) return;
+    if (springNaarPartij || dagen.indexOf(vandaag) < 0) { MEP_START.aan = false; return; }
     let weg = false;
     const zet = () => {
       if (weg) return true;
@@ -20041,10 +20061,14 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       el.scrollIntoView({ block: "start" });
       return true;
     };
-    // Even wachten tot de dagen er staan; lukt het dan nog niet, dan nog één keer.
-    let t2 = null;
-    const t1 = setTimeout(() => { if (!zet()) t2 = setTimeout(zet, 300); }, 120);
-    return () => { weg = true; clearTimeout(t1); if (t2) clearTimeout(t2); };
+    // Meteen bij binnenkomst, zodat je de bladzijde niet eerst bovenaan ziet
+    // staan en er dan naartoe ziet springen. Daarna nog twee keer bijsturen:
+    // de bladzijde groeit nog een beetje terwijl de letters en de plaatjes
+    // binnenkomen, en dan klopt de hoogte van zonet niet meer.
+    zet();
+    const t1 = setTimeout(zet, 120);
+    const t2 = setTimeout(zet, 300);
+    return () => { weg = true; clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
