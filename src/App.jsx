@@ -579,7 +579,7 @@ const ESC_SLUITERS = { rekentabel: null, som: null, boeking: null, zoek: null };
 // hier daarom zijn eigen sluitknop neer, zodat een klik ernaast precies
 // hetzelfde doet als het kruisje.
 const LUIK_SLUIT = { nu: null };
-const RITME_VERSIE = "2026-10-14x"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-16c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3114,74 +3114,6 @@ const uitgaveVingerafdruk = (html) => {
 };
 const nieuweUitgave = (toen, nu) => !!toen && !!nu && toen !== nu;
 
-// ── Het notitieblok veilig samenvoegen ───────────────────────────────────
-// De notitie staat in één rij in de database en werd daar blind overheen
-// geschreven. Een tab die achterliep — een laptop die al een dag openstond —
-// schreef daarmee zijn oude tekst over het werk van een ander heen: op de ene
-// laptop was de notitie geleegd, en even later stond hij daar weer vol. De
-// notitie komt niet vanzelf binnen maar bij een ophaalronde, dus achterlopen
-// is eerder regel dan uitzondering.
-// Elk blad draagt daarom het moment van zijn laatste wijziging, en bij het
-// bewaren leggen we onze stand naast die van de server. Per blad wint de
-// jongste bewerking; de rest blijft staan.
-const notitieBladen = (d) => ((d && Array.isArray(d.bladen)) ? d.bladen : []).filter((b) => b && b.id != null);
-const bladT = (b) => String((b && b.t) || "");
-// Het moment op elk blad zetten, door te vergelijken met wat er stond. Hier,
-// op één plek, zodat geen van de schermen die de notitie bewaren er zelf aan
-// hoeft te denken. Een blad dat niet veranderde houdt het moment dat het al
-// had — en een blad zonder moment, uit de tijd dat we dit nog niet bijhielden,
-// blijft leeg: dan is het zo oud als wat er stond en wint de ander.
-const stempelNotitie = (nieuw, oud, nu) => {
-  const t = String(nu || new Date().toISOString());
-  const was = new Map();
-  for (const b of notitieBladen(oud)) was.set(String(b.id), b);
-  const bladen = notitieBladen(nieuw).map((b) => {
-    const o = was.get(String(b.id));
-    const zelfde = o && String(o.html || "") === String(b.html || "") && String(o.naam || "") === String(b.naam || "");
-    return { ...b, t: zelfde ? bladT(o) : t };
-  });
-  return { ...(nieuw || {}), bladen, t };
-};
-// Mijn stand naast die van de server. "basis" is het moment van de stand waar
-// ik op doorwerkte: daarmee is een blad dat bij de een ontbreekt te duiden —
-// weggehaald door die ander, of juist nieuw bij de ander.
-const voegNotitiesSamen = (mijn, hun, basis) => {
-  const mB = notitieBladen(mijn), hB = notitieBladen(hun);
-  if (!hB.length) return mijn;
-  if (!mB.length && !(mijn && mijn.bladen)) return hun;
-  const b0 = String(basis || "");
-  const hunT = String((hun && hun.t) || "");
-  const hunOp = new Map(), mijnOp = new Map();
-  for (const b of hB) hunOp.set(String(b.id), b);
-  for (const b of mB) mijnOp.set(String(b.id), b);
-  const uit = [];
-  for (const b of mB) {
-    const h = hunOp.get(String(b.id));
-    // Bij hen bestaat dit blad niet (meer). Hebben zij bewaard nadat mijn
-    // stand van de server kwam, en heb ik dit blad sindsdien niet aangeraakt,
-    // dan hebben zij het weggehaald en hoort het weg.
-    if (!h) { if (hunT > b0 && bladT(b) <= b0) continue; uit.push(b); continue; }
-    uit.push(bladT(h) > bladT(b) ? h : b);
-  }
-  for (const h of hB) {
-    if (mijnOp.has(String(h.id))) continue;
-    // Andersom: een blad dat ik niet heb. Bestond het al voordat ik begon,
-    // dan heb ík het weggehaald; is het van later, dan is het nieuw bij hen.
-    if (bladT(h) <= b0) continue;
-    uit.push(h);
-  }
-  const gezien = new Set();
-  const historie = [...((mijn && mijn.historie) || []), ...((hun && hun.historie) || [])]
-    .filter((x) => { const k = JSON.stringify([x && x.t, x && x.bladId, x && x.html]); if (gezien.has(k)) return false; gezien.add(k); return true; })
-    .sort((a, b) => String((b && b.t) || "").localeCompare(String((a && a.t) || "")))
-    .slice(0, 15);
-  // De dagstempel van het schoonmaakblok: de laatste telt, anders schrijft de
-  // app het blok op een van de twee apparaten nog een keer bij.
-  const schoonDag = [String((mijn && mijn.schoonDag) || ""), String((hun && hun.schoonDag) || "")].sort().pop();
-  const uitObj = { ...(mijn || {}), bladen: uit, historie };
-  if (schoonDag) uitObj.schoonDag = schoonDag;
-  return uitObj;
-};
 
 // ── Meldingen in app-stijl ────────────────────────────────────────────────
 // De vensters van de browser ("ritme-eta.vercel.app vertelt") zien eruit als
@@ -3577,28 +3509,30 @@ function App() {
     const l = (cleaningLogs || []).find((x) => x.taskId === taskId && String(x.doneDate).slice(0, 10) === vandaag);
     if (l) removeCleaningLog(l.id, true);
   };
-  // De laatste stand die van de server kwam of die wij er zelf heen schreven.
-  // Dat moment is de maatstaf bij het samenvoegen: alles wat daarna op de
-  // server gebeurd is, is van iemand anders.
-  const notitieBasis = React.useRef("");
+  // Dezelfde weg als de markering op de mep, en om dezelfde reden: dat gaat al
+  // maanden goed tussen de apparaten. Wat hier verandert gaat na een korte rust
+  // in één keer naar de server, en zolang dat nog niet gelukt is laten we een
+  // binnenkomende stand erbuiten — die is dan ouder dan wat hier op het scherm
+  // staat. Geen tijdstempels per blad en geen samenvoeging meer: dat bouwwerk
+  // leverde vooral vals alarm op. Werkt er iemand op hetzelfde blad tegelijk,
+  // dan wint wie het laatst bewaart; de vorige versie staat onder "Vorige
+  // versies" en is daar terug te halen.
   const notitieNu = React.useRef(null);
-  const bewaarMepNotitie = async (obj) => {
-    const nu = new Date().toISOString();
-    const mijn = stempelNotitie(obj, notitieNu.current, nu);
-    setMepNotitie(mijn);
-    notitieNu.current = mijn;
-    if (!live) { notitieBasis.current = nu; return; }
-    // Eerst kijken wat er inmiddels staat. Iemand anders kan in de tussentijd
-    // iets veranderd hebben, en die mag niet onder onze versie verdwijnen.
-    let hun = null;
-    try {
-      const { data, error } = await supabase.from("app_settings").select("value").eq("key", "mep_notitie").maybeSingle();
-      if (!error && data && data.value && typeof data.value === "object") hun = data.value;
-    } catch (e) {}
-    const samen = hun ? voegNotitiesSamen(mijn, hun, notitieBasis.current) : mijn;
-    if (hun && JSON.stringify(samen) !== JSON.stringify(mijn)) { setMepNotitie(samen); notitieNu.current = samen; }
-    notitieBasis.current = nu;
-    try { await instelUpsert("mep_notitie", samen); } catch (e) {}
+  const notitieRef = React.useRef("");
+  const notitieOnbewaard = React.useRef(false);
+  const notitieTimer = React.useRef(null);
+  const bewaarMepNotitie = (obj) => {
+    setMepNotitie(obj);
+    notitieNu.current = obj;
+    const ser = JSON.stringify(obj);
+    notitieRef.current = ser;
+    notitieOnbewaard.current = true;
+    if (notitieTimer.current) clearTimeout(notitieTimer.current);
+    notitieTimer.current = setTimeout(async () => {
+      if (!live) { notitieOnbewaard.current = false; return; }
+      try { await instelUpsert("mep_notitie", obj); } catch (e) {}
+      if (notitieRef.current === ser) notitieOnbewaard.current = false;
+    }, 600);
   };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
   // De laatste stand, ook binnen dezelfde handeling. React werkt zijn state pas
@@ -3998,9 +3932,10 @@ function App() {
     // database niet volloopt. Elke sync ruimt meteen op.
     const bewaarGrens = (() => { const d = new Date(); d.setDate(d.getDate() - 62); return localDate(d); })();
     if (live) { try { await supabase.from("mice_events").delete().lt("datum", bewaarGrens); } catch (e) {} }
-    // De kern bijwerken: per draaidag de MICE-laag verversen, en als het aantal
-    // gasten verandert schuiven de aantallen die daaraan hingen mee. Alleen wat
-    // echt verandert wordt weggeschreven.
+    // De kern bijwerken: per draaidag de MICE-laag verversen. Verandert het
+    // aantal gasten, dan schuiven de aantallen die daaraan hingen mee; verandert
+    // het aantal van één product, dan schuift de invulling van dát product mee.
+    // Alleen wat echt verandert wordt weggeschreven.
     try {
       const bij = kernBijwerken(koppeling, rijen, new Date().toISOString());
       const sleutels = Object.keys(bij);
@@ -5313,11 +5248,14 @@ function App() {
         : typeof v.html === "string" ? { bladen: [{ id: "n1", naam: "Notities", html: v.html, door: "", op: "" }], historie: [] } // oude vorm
         : null;
       if (binnen) {
-        setMepNotitie(binnen);
-        // Dit is vanaf nu waar we op doorwerken; alles wat er later op de
-        // server bij komt is van iemand anders.
-        notitieNu.current = binnen;
-        notitieBasis.current = String(binnen.t || "");
+        // Net als bij de markering: niet overschrijven zolang er hier nog iets
+        // op weg is naar de server.
+        const ser = JSON.stringify(binnen);
+        if (!notitieOnbewaard.current && ser !== notitieRef.current) {
+          notitieRef.current = ser;
+          setMepNotitie(binnen);
+          notitieNu.current = binnen;
+        }
       }
     }
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
@@ -13911,6 +13849,37 @@ const schuifNaarGasten = (eigenLaag, velden, oud, nieuw, nu, van) => {
   return uit;
 };
 
+// Wijzigt MICE het aantal van een product — 20 lunches worden er 30 — dan
+// schuiven de regels in de invulling mee die précies op dat oude aantal stonden:
+// 20 sandwich, 20 wrap, 20 soep worden er 30. Een regel met een eigen aantal
+// (10 brownies bij 20 lunches) blijft staan, en "7 liter" ook: daar staat een
+// maat bij. Dezelfde regel als bij het aantal gasten, nu per product.
+const schuifInvullingBijProduct = (eigenLaag, oudeVelden, nieuweVelden, nu) => {
+  const t = String(nu || new Date().toISOString());
+  const uit = { ...(eigenLaag || {}) };
+  for (const naam of Object.keys(nieuweVelden || {})) {
+    if (!kernIsProd(naam)) continue;
+    const oudW = (oudeVelden || {})[naam] && (oudeVelden || {})[naam].w;
+    const nieuwW = nieuweVelden[naam] && nieuweVelden[naam].w;
+    if (!oudW || !nieuwW) continue;
+    const o = Number(oudW.aantal) || 0, n = Number(nieuwW.aantal) || 0;
+    if (!o || !n || o === n) continue;
+    const merk = kernMerkVan(naam);
+    const sl = kernInvVeld(merk);
+    // Bij voorkeur de lijst uit de laag waar we zelf in schrijven: daar staan
+    // ook de steentjes van weggehaalde regels, en die horen te blijven — anders
+    // komt zo'n regel bij de eerstvolgende sync weer boven. Staat hij daar niet,
+    // dan nemen we de samengevouwen stand.
+    const eigen = (eigenLaag || {})[sl];
+    const veld = (eigen && Array.isArray(eigen.w)) ? eigen : nieuweVelden[sl];
+    const ruw = Array.isArray(veld && veld.w) ? veld.w : [];
+    if (!ruw.length) continue;
+    const na = schuifInvulling(ruw, o, n);
+    if (!kernGelijk(na, ruw)) uit[sl] = kernVeld(na, t, "mice");
+  }
+  return uit;
+};
+
 // Het aantal gasten zetten, met alles wat daaraan hing.
 const zetGasten = (eigenLaag, velden, nieuw, nu, van) => {
   const t = String(nu || new Date().toISOString());
@@ -13929,9 +13898,14 @@ const naSync = (lagen, waarden, nu) => {
   const oudGasten = Number(kernWaarde(oudeVelden, "gasten")) || 0;
   const mice = verversMice((lagen || {}).mice, waarden, t);
   const nieuwGasten = Number(kernWaarde(vouwSamen(mice, (lagen || {}).bk), "gasten")) || 0;
-  const bk = oudGasten && nieuwGasten && oudGasten !== nieuwGasten
+  let bk = oudGasten && nieuwGasten && oudGasten !== nieuwGasten
     ? schuifNaarGasten((lagen || {}).bk, oudeVelden, oudGasten, nieuwGasten, t, "mice")
     : { ...((lagen || {}).bk || {}) };
+  // En hetzelfde per product: veranderde MICE het aantal van één product, dan
+  // schuift de invulling van dát product mee. Dit kijkt naar de stand zoals hij
+  // er ná het gastenwerk hierboven bij staat, dus wat daar al meeschoof wordt
+  // niet nog een keer opgeschoven.
+  bk = schuifInvullingBijProduct(bk, oudeVelden, vouwSamen(mice, bk, (lagen || {}).mep), t);
   return { mice, bk };
 };
 
@@ -18629,11 +18603,14 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   if (openSnap.current === null) openSnap.current = naarBladen(data).map((b) => ({ id: b.id, html: b.html }));
   const vak = React.useRef(null);
   const timer = React.useRef(null);
-  // Één maat voor "is er iets veranderd", voor het bewaren én voor de vraag of
-  // er nieuw werk van een collega binnenkwam. Die twee maten liepen uit elkaar
-  // — de ene telde ook het tijdstempel mee — waardoor de gele balk na je eigen
-  // bewaring ging roepen dat er nieuwer werk was.
-  const vinger = (d) => JSON.stringify({ bladen: naarBladen(d), historie: (d && d.historie) || [] });
+  // Één maat voor "is er iets veranderd": de naam en de tekst van elk blad, en
+  // de geschiedenis. Verder niets. Hij keek ook naar wat de app er zelf omheen
+  // zet — een tijdstempel, de dagstempel van de schoonmaak — en dus leek er na
+  // je eigen bewaring altijd iets nieuws te zijn.
+  const vinger = (d) => JSON.stringify({
+    bladen: naarBladen(d).map((b) => [String((b && b.id) == null ? "" : b.id), String((b && b.naam) || ""), String((b && b.html) || "")]),
+    historie: ((d && d.historie) || []).map((h) => String((h && h.t) || "") + "|" + String((h && h.bladId) || "")),
+  });
   const laatst = React.useRef(vinger(data));
   // Wat er in het vak stond, ook als het vak er niet meer is: bij het sluiten
   // door naast het luik te klikken is de verwijzing al leeg.
@@ -18760,8 +18737,21 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const syncVak = () => {
     const html = vak.current ? vak.current.innerHTML : laatsteHtml.current;
     if (html == null) return bladen;
-    let uit = bladen;
-    setBladen((bs) => { uit = bs.map((b, i) => (i === actief ? { ...b, html } : b)); return uit; });
+    // Hier rechtstreeks uitrekenen en daarna pas wegzetten. Het via de
+    // bijwerkfunctie van React doen leek hetzelfde, maar die functie wordt niet
+    // altijd meteen uitgevoerd — en dan gaf dit de oude stand terug en bewaarde
+    // het blad dat je verliet niets.
+    const uit = bladen.map((b, i) => {
+      if (i !== actief) return b;
+      if (String(b.html || "") === String(html || "")) return b;
+      // Zodra de tekst verandert loopt het moment mee — ook zonder dat er een
+      // naam gevraagd is. Dat gebeurde alleen bij het sluiten mét naam, en dus
+      // bleef "Laatst aangepast" dagen op dezelfde tijd staan terwijl er volop
+      // bijgeschreven werd. De naam blijft staan tot er bij het sluiten een
+      // nieuwe gegeven wordt.
+      return { ...b, html, op: nuIso() };
+    });
+    setBladen(uit);
     return uit;
   };
   // Alleen de tekst telt mee bij de vraag wie het aangepast heeft. Markeren met
@@ -18776,9 +18766,10 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // opnieuw bovenaan zette.
     const obj = { ...(data && typeof data === "object" ? data : {}), bladen: lijst, historie: historieRef.current };
     const ser = vinger(obj);
-    if (ser === laatst.current) return;
+    if (ser === laatst.current) return false;
     laatst.current = ser;
     onSave(obj);
+    return true; // er ging iets de deur uit; de ouder stuurt het zo terug
   };
   const bewaarRef = React.useRef(bewaar); bewaarRef.current = bewaar;
   const stopTimer = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
@@ -18835,30 +18826,19 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     return () => { window.removeEventListener("popstate", terug); window.removeEventListener("keydown", toets, true); };
   }, []);
 
-  // Wijzigingen van collega's live overnemen zolang hier niets onbewaards staat.
-  // Maar nooit terwijl de cursor in het vak staat: het vak opnieuw vullen zet
-  // de cursor terug naar het begin en slikt het woord op dat je half getypt
-  // had. Dat gebeurde ook bij je eigen bewaring die een tel later terugkomt —
-  // op de telefoon, waar je trager typt, bij zowat elke zin. Wat er binnenkomt
-  // wachten we op; zodra je het vak verlaat halen we het alsnog op.
-  const [blurTik, setBlurTik] = useState(0);
-  const wachtendeData = React.useRef(null);
-  // ... maar niet in stilte. Een laptop met de notities dagenlang open houdt de
-  // cursor in het vak, neemt dus nooit iets over, en toont dan een stand van
-  // vorige week terwijl er elders doorgewerkt is. De eerste letter die je daar
-  // typt zet een nieuw moment op dat oude blad, en dan wint het bij het
-  // samenvoegen van het nieuwere werk van je collega. Daarom zeggen we het nu
-  // met een regel boven het blad, met een knop erbij. Zelf overnemen in plaats
-  // van automatisch: wat half getypt in het vak staat gaat zo nooit verloren.
-  const [nieuwer, setNieuwer] = useState(false);
+  // Wijzigingen van een collega komen er vanzelf in, zonder er iets over te
+  // zeggen — net als de markering op de mep. Alleen niet terwijl de cursor in
+  // het vak staat: het vak opnieuw vullen zet de cursor terug naar het begin en
+  // slikt het woord op dat je half getypt had. Zo'n versie blijft wachten tot
+  // je het vak verlaat.
+  const wachtend = React.useRef(null);
   // Staat het linkpaneel open? Als ref, want het effect hieronder draait ook
   // op momenten dat het niet opnieuw is opgebouwd.
   const linkOpenRef = React.useRef(false);
   const neemOver = (d) => {
     const binnen = vinger(d);
     stopTimer(); stapWis();
-    wachtendeData.current = null;
-    setNieuwer(false);
+    wachtend.current = null;
     const bs = naarBladen(d);
     historieRef.current = (d && Array.isArray(d.historie)) ? d.historie.slice(0, 15) : historieRef.current;
     laatst.current = binnen;
@@ -18875,18 +18855,27 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // en zet zijn versie in jouw geschiedenis.
     openSnap.current = bs.map((x) => ({ id: x.id, html: x.html }));
   };
-  const neemOverRef = React.useRef(neemOver); neemOverRef.current = neemOver;
   useEffect(() => {
     const binnen = vinger(data);
-    if (binnen === laatst.current) { wachtendeData.current = null; setNieuwer(false); return; }
+    if (binnen === laatst.current) { wachtend.current = null; return; }
     // Ook niet terwijl het linkpaneel open staat: het vak opnieuw vullen
     // gooit de plek weg waar de link heen moest, en dan kwam hij vooraan in
     // de tekst terecht.
     const inHetVak = typeof document !== "undefined" && vak.current && document.activeElement === vak.current;
     const onbewaard = vak.current && bladen[actief] && vak.current.innerHTML !== bladen[actief].html;
-    if (inHetVak || linkOpenRef.current || onbewaard) { wachtendeData.current = data; setNieuwer(true); return; }
+    if (inHetVak || linkOpenRef.current || onbewaard) { wachtend.current = data; return; }
     neemOver(data);
-  }, [data, blurTik]);
+  }, [data]);
+  // Bij het verlaten van het vak: alleen wat het effect hierboven werkelijk
+  // heeft zien binnenkomen alsnog ophalen. Op dit moment opnieuw naar `data`
+  // kijken ging mis — vlak na je eigen bewaring staat daar nog de vorige stand,
+  // en die nam het venster dan over alsof het nieuw werk van een ander was.
+  const naBlur = () => {
+    const d = wachtend.current;
+    wachtend.current = null;
+    if (d && vinger(d) !== laatst.current) neemOver(d);
+  };
+  const naBlurRef = React.useRef(naBlur); naBlurRef.current = naBlur;
 
   // Opmaakstatus voor de knopjes.
   const [fmt, setFmt] = useState({ vet: false, onder: false, cursief: false, ul: false, ol: false, kop: false });
@@ -19505,7 +19494,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // zodra het dicht is mag wat er binnenkwam alsnog opgehaald worden.
   useEffect(() => {
     linkOpenRef.current = linkOpen;
-    if (!linkOpen) setBlurTik((n) => n + 1);
+    if (!linkOpen) naBlurRef.current();
   }, [linkOpen]);
   const plaatsRecept = (r) => plaatsHtml(linkHtml("recept", r.id, r.name));
   const dKort = (d) => { try { const x = new Date(d + "T12:00:00"); return ["zo", "ma", "di", "wo", "do", "vr", "za"][x.getDay()] + " " + x.getDate() + "/" + (x.getMonth() + 1); } catch (e) { return d || ""; } };
@@ -19747,7 +19736,12 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           <button onClick={hernoemBlad} className="ff shrink-0 mute hover:opacity-70 p-1" title="Blad hernoemen"><Pencil size={13} /></button>
           {bladen.length > 1 && <button onClick={wegBlad} className="ff shrink-0 hover:opacity-70 p-1" style={{ color: "#8a4a3a" }} title="Blad weghalen"><X size={14} /></button>}
         </div>
-        {bladNu.door && <div className="text-[12px] mute mb-1.5">Laatst aangepast door <span className="ink font-medium">{bladNu.door}</span>{bladNu.op ? " · " + opTekst(bladNu.op) : ""}</div>}
+        {/* Deze regel staat er altijd, ook als hij leeg is. Verscheen hij pas
+            zodra er iets veranderde, dan schoof het hele blad een regel omlaag
+            op het moment dat je een vakje aantikte — en dan miste je tik. */}
+        <div className="text-[12px] mute mb-1.5">
+          {bladNu.op ? <>Laatst aangepast{bladNu.door ? <> door <span className="ink font-medium">{bladNu.door}</span></> : null} · {opTekst(bladNu.op)}</> : "\u00a0"}
+        </div>
         {linkZoek != null && (
           <div className="mb-2">
             <input autoFocus className="input px-3 py-2 w-full text-sm" value={linkZoek} onChange={(e) => setLinkZoek(e.target.value)}
@@ -19797,18 +19791,16 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           + ".mep-notitie ol{list-style:decimal;padding-left:1.6em;margin:.15em 0}"
           + ".mep-notitie ol ol{list-style:lower-alpha}.mep-notitie ol ol ol{list-style:lower-roman}"
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
-        {nieuwer && (
-          <div className="flex items-center gap-2 mb-2 rounded-xl px-3 py-2 text-[12.5px]"
-            style={{ background: "#fdf3d8", border: "1px solid #e6d49a" }}>
-            <span className="flex-1 min-w-0 ink">
-              Er is nieuwer werk van een collega{wachtendeData.current && wachtendeData.current.t ? " (" + opTekst(wachtendeData.current.t) + ")" : ""}. Wat je hier ziet is ouder.
-            </span>
-            <button type="button" onClick={() => { if (wachtendeData.current) neemOverRef.current(wachtendeData.current); }}
-              className="ff shrink-0 text-[12.5px] font-semibold underline acc">Overnemen</button>
-          </div>
-        )}
         <div ref={vak} contentEditable suppressContentEditableWarning
-          onInput={() => { stapTypen(); autoLijst(); netjes(true); getypt(); }} onPaste={plakken} onDrop={sleepErin} onBlur={() => { netjes(); bewaar(); setBlurTik((n) => n + 1); }} onMouseDown={muisNeer} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
+          onInput={() => { stapTypen(); autoLijst(); netjes(true); getypt(); }} onPaste={plakken} onDrop={sleepErin} onBlur={() => {
+            netjes();
+            // Hebben we zelf net iets weggeschreven, dan is wat er op dit moment
+            // binnenkomt oud nieuws — de ouder is nog niet bijgewerkt. Dan niet
+            // opnieuw gaan kijken: anders nam het venster zijn eigen vorige stand
+            // over, en gold jouw wijziging ineens als die van een ander.
+            bewaar();
+            naBlur();
+          }} onMouseDown={muisNeer} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fff", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
@@ -20026,6 +20018,35 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
       if (waarnemer) waarnemer.disconnect();
     };
   }, [weekStart, volgendeOpen, somOpen, balkBreed]);
+  // Bij het openen staat de dag van vandaag nog nét bovenaan, onder de balk.
+  // De dagen die al geweest zijn staan erboven — je kunt er gewoon naartoe
+  // terugscrollen, maar je begint waar het werk is in plaats van op maandag.
+  // Dit gebeurt één keer, bij het opengaan van de bladzijde: van week wisselen
+  // laat de bladzijde staan waar hij staat.
+  useEffect(() => {
+    // Komt de app binnen met een partij om naartoe te springen, dan gaat die
+    // voor — anders vechten de twee om dezelfde bladzijde.
+    if (springNaarPartij) return;
+    if (dagen.indexOf(vandaag) < 0) return;
+    let weg = false;
+    const zet = () => {
+      if (weg) return true;
+      const el = typeof document === "undefined" ? null : document.querySelector('[data-mepdag="' + vandaag + '"]');
+      if (!el || !el.scrollIntoView) return false;
+      // De balk blijft bovenaan staan en zou de kop anders afdekken. Dit is de
+      // ruimte die scrollIntoView vrijhoudt — werkt ook als niet het venster
+      // maar de body zelf de scrollende bladzijde is.
+      const hoog = balkRef.current ? Math.round(balkRef.current.getBoundingClientRect().height) : 0;
+      try { el.style.scrollMarginTop = (hoog + 10) + "px"; } catch (e) {}
+      el.scrollIntoView({ block: "start" });
+      return true;
+    };
+    // Even wachten tot de dagen er staan; lukt het dan nog niet, dan nog één keer.
+    let t2 = null;
+    const t1 = setTimeout(() => { if (!zet()) t2 = setTimeout(zet, 300); }, 120);
+    return () => { weg = true; clearTimeout(t1); if (t2) clearTimeout(t2); };
+  }, []);
+
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
   const somSet = dagen.filter((d) => d >= vandaag).slice(0, somDagen);
 
