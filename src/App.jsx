@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-16d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-17a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3069,7 +3069,7 @@ html{font-size:17px}
 .mepkolom{column-gap:.625rem}
 @media (min-width:768px){.mepkolom{column-count:2}}
 .mepkolom > *{display:block;width:100%;margin:0 0 .625rem;break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid}
-.weglegbalk{position:fixed;z-index:40;display:flex;flex-wrap:wrap;gap:.5rem;left:.75rem;right:.75rem;top:calc(4rem + var(--meldbalk, 0px));transition:top .15s ease}
+.weglegbalk{position:fixed;z-index:60;display:flex;flex-wrap:wrap;gap:.5rem;left:.75rem;right:.75rem;top:calc(4rem + var(--meldbalk, 0px));transition:top .15s ease}
 @media (min-width:768px){.weglegbalk{left:5.95rem;right:1rem;top:calc(.7rem + var(--meldbalk, 0px))}}
 ::selection{background:#dfe4d3}
 `}</style>
@@ -3792,19 +3792,39 @@ function App() {
         // programmadeel — anders belanden de dagen bij elkaar op dag 1.
         const regels = [];
         const tlDag = {};
+        // En andersom: per dag het nummer van de draaiboekdag. Daarmee opent de
+        // MICE-knop bij een meerdaagse boeking de dag waar je op staat in
+        // plaats van altijd dag 1 — dat is wat ?timeline_id= in de MICE-link
+        // aanwijst.
+        const dagTl = {};
         for (const a of e.activities || []) {
           const d = String(a.datetime_start || "").slice(0, 10);
           if (a.event_timeline_id && d && !tlDag[a.event_timeline_id]) tlDag[a.event_timeline_id] = d;
+          if (a.event_timeline_id && d && !dagTl[d]) dagTl[d] = a.event_timeline_id;
         }
         const dagVanProduct = (p, dag) => String(p.date || "").slice(0, 10) || tlDag[p.event_timeline_id] || dag || "";
         const pakProducten = (arr, act, tijd, dag) => {
           const kaal = (h) => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/g, "&").trim();
+          // De prijs zoals die in déze boeking staat. MICE laat per boeking een
+          // eigen prijs invullen — maatwerk, een afspraak met de klant — en de
+          // app liet tot nu toe altijd de prijs uit de productenlijst zien.
+          // Alleen de velden zonder btw: "price" is inclusief, en het tarief
+          // verschilt per product (eten 9%, drank 21%), dus terugrekenen kan
+          // niet. Staat er geen prijs zonder btw op de regel, dan houden we de
+          // prijs uit de productenlijst aan.
+          const regelPrijs = (p) => {
+            for (const v of [p.price_excl_vat, p.price_ex_vat, p.unit_price_excl_vat, p.amount_price_excl_vat]) {
+              if (v != null && v !== "" && isFinite(Number(v))) return Number(v);
+            }
+            return null;
+          };
           for (const p of arr || []) {
             if (p.object_type !== "product") continue;
             const oms = kaal(p.description || p.remark || "");
             const pid = p.object_id != null && p.object_id !== "" ? p.object_id : "vrij:" + String(p.name || "").trim().toLowerCase();
             const pDag = dagVanProduct(p, dag);
-            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", ...(pDag && pDag !== datum ? { dag: pDag } : {}), catId: p.object_category_id || null, ...(oms ? { oms } : {}) });
+            const prs = regelPrijs(p);
+            regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", ...(pDag && pDag !== datum ? { dag: pDag } : {}), catId: p.object_category_id || null, ...(prs != null ? { prijs: prs } : {}), ...(oms ? { oms } : {}) });
           }
         };
         pakProducten(e.products, "", "", "");
@@ -3831,6 +3851,11 @@ function App() {
           // boeking invullen ("afleveradres") wanneer het klantadres zelf
           // onvolledig is (bv. alleen een woonplaats).
           adres: eigenVeld(e, "afleveradres") || (klant[e.client_id] || {}).adres || KLANT_ADRES_OVERRIDE[boekingSleutel((klant[e.client_id] || {}).naam)] || "",
+          // Wanneer de boeking in MICE is aangemaakt. Handig om te zien of iets
+          // net binnen is of al weken staat. MICE noemt dit veld niet overal
+          // hetzelfde, vandaar de drie namen.
+          mice_aangemaakt: e.created_at || e.date_created || e.created || null,
+          mice_tl: Object.keys(dagTl).length ? dagTl : null,
           id: e.id, naam: e.name || "", datum,
           start_tijd: e.datetime_start || null, eind_tijd: e.datetime_end || null,
           gasten: Number(e.guests) || 0, status: e.status || "",
@@ -3878,7 +3903,7 @@ function App() {
           if (al1 !== al2) w.push("Allergieën gewijzigd" + (al2 ? ": " + allergieRegels(r.bericht).join("; ") : " (verwijderd)"));
           if (String(o.dieet || "") !== String(r.dieet || "")) w.push("Dieetwensen: " + (String(r.dieet || "").trim() || "(leeg)"));
           const no1 = kaalBericht(o.bericht), no2 = kaalBericht(r.bericht);
-          if (no1 !== no2) w.push("Notitie gewijzigd" + (no2 ? ": " + no2.slice(0, 140).replace(/\n/g, " ") + (no2.length > 140 ? "…" : "") : " (verwijderd)"));
+          if (no1 !== no2) w.push("Aantekening gewijzigd" + (no2 ? ": " + no2.slice(0, 140).replace(/\n/g, " ") + (no2.length > 140 ? "…" : "") : " (verwijderd)"));
         }
         const vorig = (o && Array.isArray(o.log) && o.log) || [];
         r.log = w.length ? [...vorig, { t: new Date().toISOString(), w }].slice(-30) : vorig;
@@ -4055,7 +4080,7 @@ function App() {
     const bk = kernOpslaan(lagen, b, regels, velden, nu, "bk", bron);
     const basis = boekingVelden(lagen);
     for (const w of invWijzigingen || []) {
-      const merk = prodMerk({ miceId: w.miceId });
+      const merk = merkUitInvulSleutel(w.miceId);
       const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
       bk[kernInvVeld(merk)] = kernVeld(invulStempel(od, kernInvulling(basis, merk), nu), nu, bron);
       schrijfInvulGesch(w.miceId, od);
@@ -4079,7 +4104,7 @@ function App() {
     const basis = boekingVelden(lagen);
     const eigen = { ...lagen.bk };
     for (const w of lijst || []) {
-      const merk = prodMerk({ miceId: w.miceId });
+      const merk = merkUitInvulSleutel(w.miceId);
       const od = w && w.inv && Array.isArray(w.inv.onderdelen) ? w.inv.onderdelen : [];
       eigen[kernInvVeld(merk)] = kernVeld(invulStempel(od, kernInvulling(basis, merk), nu), nu, bron);
       schrijfInvulGesch(w.miceId, od);
@@ -5250,7 +5275,7 @@ function App() {
     if (mnRow && mnRow.value) {
       const v = mnRow.value;
       const binnen = Array.isArray(v.bladen) ? v
-        : typeof v.html === "string" ? { bladen: [{ id: "n1", naam: "Notities", html: v.html, door: "", op: "" }], historie: [] } // oude vorm
+        : typeof v.html === "string" ? { bladen: [{ id: "n1", naam: "Aantekeningen", html: v.html, door: "", op: "" }], historie: [] } // oude vorm
         : null;
       if (binnen) {
         // Net als bij de markering: niet overschrijven zolang er hier nog iets
@@ -6399,7 +6424,7 @@ function App() {
   const editCleaningLog = async (logId, note) => {
     const l = cleaningLogs.find((x) => x.id === logId);
     if (!l || (l.note || "") === note) { return; }
-    const naam = await askName("groot", "Notitie aanpassen");
+    const naam = await askName("groot", "Aantekening aanpassen");
     if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     const edit = { at: new Date().toISOString().slice(0, 16).replace("T", " "), by: naam, from: l.note || "", to: note };
     const nl = { ...l, note, edits: [...(l.edits || []), edit] };
@@ -6434,7 +6459,7 @@ function App() {
     flash("Taak verwijderd", () => saveCleaningTask({ name: t.name, area: t.area, intervalDays: t.intervalDays, minutes: t.minutes }, id));
   };
   const saveTechNotes = async (key, lines) => {
-    const naam = await askName("groot", "Notities opslaan");
+    const naam = await askName("groot", "Aantekeningen opslaan");
     if (!naam) return; // geannuleerd in de naam-popup — niets vastleggen
     if (live) {
       const { error } = await supabase.from("technique_notes").upsert({ key, lines, updated_by: naam, updated_at: new Date().toISOString() });
@@ -9769,7 +9794,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     getypt();
   };
   const leegmaken = async () => {
-    if (!await bevestig("De notitie en de besteltelling blijven staan.", { titel: "Alle ingevulde aantallen leegmaken?", okLabel: "Leegmaken" })) return;
+    if (!await bevestig("De aantekening en de besteltelling blijven staan.", { titel: "Alle ingevulde aantallen leegmaken?", okLabel: "Leegmaken" })) return;
     setSt((s) => { const n = { ...s, aantallen: {} }; stRef.current = n; return n; });
     getypt();
   };
@@ -9998,7 +10023,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
           </button>
         )}
       </div>
-      <textarea className="input px-3 py-2.5 w-full text-sm mb-3" rows={2} value={st.notitie} onChange={(e) => zetNotitie(e.target.value)} placeholder="Notities bij de bestelling (bv. vrijdag bezorgen, vraag naar de nieuwe oogst)" />
+      <textarea className="input px-3 py-2.5 w-full text-sm mb-3" rows={2} value={st.notitie} onChange={(e) => zetNotitie(e.target.value)} placeholder="Aantekeningen bij de bestelling (bv. vrijdag bezorgen, vraag naar de nieuwe oogst)" />
 
       {gevuld.length > 0 && !q && (
         <>
@@ -11731,7 +11756,7 @@ function PairingForm({ title, name, setName, nameLocked, pairs, setPairs, note, 
       <div className="text-sm font-medium ink mb-3">{title}</div>
       {!nameLocked && <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Product</span><input className="input px-3 py-2.5" value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. vlierbloesem" /></label>}
       <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Partners (gescheiden door komma's)</span><textarea rows={2} className="input px-3 py-2.5 resize-none" value={pairs} onChange={(e) => setPairs(e.target.value)} placeholder="bv. citroen, honing, room" /></label>
-      <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Notitie</span><input className="input px-3 py-2.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Korte typering" /></label>
+      <label className="block mb-3"><span className="block text-sm font-medium ink mb-1.5">Aantekening</span><input className="input px-3 py-2.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Korte typering" /></label>
       {setSeason && <div className="mb-3">
         <span className="block text-sm font-medium ink mb-1.5">Seizoen <span className="mute font-normal">(niets gekozen = volgt de seizoenslijst)</span></span>
         <div className="flex flex-wrap gap-1.5">
@@ -11957,6 +11982,10 @@ function telGebruik(soort, naam) {
     const k = "ritme:gebruik";
     const d = JSON.parse(localStorage.getItem(k) || "{}");
     d[soort + ":" + naam] = (d[soort + ":" + naam] || 0) + 1;
+    // Het moment erbij, onder een eigen voorvoegsel. Het samenvoegen tussen de
+    // apparaten neemt per sleutel de hoogste waarde, en dat is voor een moment
+    // precies het laatste moment.
+    d["t:" + soort + ":" + naam] = Date.now();
     localStorage.setItem(k, JSON.stringify(d));
     if (gebruikGewijzigd) gebruikGewijzigd();
   } catch (e) {}
@@ -11976,6 +12005,18 @@ function leesGebruik(soort) {
     const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}");
     const uit = {};
     for (const k of Object.keys(d)) if (k.startsWith(soort + ":")) uit[k.slice(soort.length + 1)] = d[k];
+    return uit;
+  } catch (e) { return {}; }
+}
+// Wanneer iets voor het laatst gekozen is. Apart van de telling: in een
+// kieslijst wil je zien wat je net gebruikt hebt, niet wat je ooit het vaakst
+// gebruikte.
+function leesLaatst(soort) {
+  try {
+    const d = JSON.parse(localStorage.getItem("ritme:gebruik") || "{}");
+    const uit = {};
+    const kop = "t:" + soort + ":";
+    for (const k of Object.keys(d)) if (k.startsWith(kop)) uit[k.slice(kop.length)] = d[k];
     return uit;
   } catch (e) { return {}; }
 }
@@ -13146,16 +13187,21 @@ function VormKiezer({ waarde, onChange, className, eigen, onEigen }) {
 // Bestelde productregels uit de MICE-sync omzetten naar keuzes; gebruikt
 // wanneer er voor de boeking niets handmatig is gekozen. Hetzelfde product in
 // meerdere programmadelen telt op tot één keuze.
-// MICE-status in keukentaal. "unconfirmed" dekt zowel lopende als verlopen
-// opties; die partijen gaan vaak alsnog door en horen dus gewoon in beeld.
+// MICE-status in keukentaal. MICE kent zes standen; "unconfirmed" is de eerste
+// daarvan — een binnengekomen aanvraag, grijs in hun eigen planning. Die stond
+// hier jarenlang op "in optie", waardoor een aanvraag in de app blauw werd en
+// niet van een echte optie te onderscheiden was. Een optie heet bij MICE
+// gewoon "option".
 const statusNL = (st) => {
   const s = String(st || "");
   if (s === "confirmed") return "";
   if (s === "cancelled") return "geannuleerd";
-  if (s === "unconfirmed" || s === "option") return "in optie";
+  if (s === "unconfirmed") return "aanvraag";
+  if (s === "option") return "in optie";
   if (s.includes("expired")) return "optie verlopen";
   if (s === "completed") return "afgerond";
   if (s === "request" || s === "pending" || s === "inquiry" || s === "aanvraag") return "aanvraag";
+  if (s === "new" || s === "prospect" || s === "lead" || s === "enquiry") return "aanvraag";
   return s;
 };
 const isAanvraagStatus = (st) => statusNL(st) === "aanvraag";
@@ -13382,6 +13428,10 @@ const prodMerk = (k) => (k && k.miceId != null && String(k.miceId) !== "" ? "m:"
 // boeking meer dan één naam onder hetzelfde nummer, dan komt de naam in het
 // merk — precies zoals de invulling dat al deed.
 const prodMerkIn = (b, k) => (k && k.miceId != null && String(k.miceId) !== "" ? "m:" + invulSleutel(b, k) : prodMerk(k));
+// Van een invulsleutel terug naar het merk waaronder de invulling in de kern
+// staat. Een MICE-nummer krijgt er "m:" voor; de sleutel van een zelf
+// toegevoegd product ís het merk al.
+const merkUitInvulSleutel = (sl) => (String(sl || "").slice(0, 2) === "n:" ? String(sl) : prodMerk({ miceId: sl }));
 // Wat er op de mep staat als daar een eigen aanpassing voor is gemaakt.
 // Zo'n aanpassing mag niet betekenen dat een product dat daarna bij de boeking
 // komt hier stilletjes verdwijnt: we vergelijken met de situatie van toen, en
@@ -14258,7 +14308,9 @@ const allergieVanBoeking = (b) => {
 const VERBERG_CATEGORIEEN = new Set(["dranken", "locatiehuur", "personeelsdiensten", "bloemen en cadeaus", "workshops", "buitenkeuken"]);
 const VERBERG_IDS = new Set([251091, 269892, 294470, 315007, 325635, 399647, 420970, 431060]); // o.a. korting, kurkgeld, wijnarrangement, zelfoogst
 const TOON_IDS = new Set([242048, 264671]); // workshop met de kok, appel crumble
-const VERBERG_NAAM = /(koffie|thee\b|dranken|frisdrank|wijn|bier|bubbels|cava|cider|limonade|nacalculatie|zaalhuur|locatiehuur|dagdeel)/;
+// Namen die nooit in de keuken thuishoren: drank, verkoopposten en kosten.
+// "drank" (enkelvoud) dekt ook drankarrangement en drankenarrangement.
+const VERBERG_NAAM = /(koffie|thee\b|drank|frisdrank|wijn|bier|bubbels|cava|cider|limonade|nacalculatie|zaalhuur|locatiehuur|dagdeel|bezorg|transportkost|reiskost|kilometer|statiegeld|\bborg\b|kurkgeld|korting|toeslag|servicekost|administratiekost|personeelskost)/;
 // Instelbare zichtbaarheid per categorie (Extras → MICE-productcategorieën),
 // gedeeld met het team. Waarden: "keuken" (mep + boeking), "boeking"
 // (alleen boeking, niet op de mep), "verborgen" (onder Overige, niet op mep).
@@ -14315,9 +14367,11 @@ const isKeukenRegel = (k, catVan) => {
   const cat = String((catVan && catVan[k.miceId]) || "").toLowerCase().trim();
   const zicht = catZichtVan(cat);
   if (zicht) return zicht !== "verborgen";
-  if (cat) return !VERBERG_CATEGORIEEN.has(cat);
-  // Geen categorie bekend (nieuw of nooit geïmporteerd): vang duidelijke
-  // dranken- en huurnamen alsnog af.
+  if (cat && VERBERG_CATEGORIEEN.has(cat)) return false;
+  // Het naam-vangnet geldt óók als er wél een categorie staat. MICE vult bij
+  // een onbekende categorie "Overige" in, en daar komt van alles in terecht:
+  // drankarrangementen, bezorgkosten, kurkgeld. Alleen een eigen keuze in
+  // Extras (per product of per categorie) wint hiervan — die staat hierboven.
   return !VERBERG_NAAM.test(zonderAccent(String(k.naam || "")).toLowerCase());
 };
 // Mep-specifiek: spullen die wél bij de boeking horen (huur, techniek,
@@ -14546,7 +14600,16 @@ const MICE_WEB = "https://debeug.miceoperations.com";
 // Rechtstreeks naar het tabblad Documenten van die boeking; daar staat de
 // keukenlijst waar het menu in moet. Eigen boekingen (negatief id) staan niet
 // in MICE en krijgen dus geen link.
-const miceDocumentenUrl = (b) => (b && Number(b.id) > 0 ? MICE_WEB + "/events/" + b.id + "/documents" : "");
+// Bij een meerdaagse boeking opende deze knop altijd dag 1: de link kent geen
+// dag. MICE wijst een draaiboekdag aan met ?timeline_id=, en dat nummer halen
+// we bij de sync per dag op. Kennen we het niet (of is de boeking eendaags),
+// dan gaat de knop gewoon naar de documenten, zoals altijd.
+const miceDagUrl = (b) => {
+  if (!b || !(Number(b.id) > 0)) return "";
+  const tl = b.mice_tl && b.datum ? b.mice_tl[String(b.datum)] : null;
+  return tl ? MICE_WEB + "/events/" + b.id + "/dashboard?timeline_id=" + tl : "";
+};
+const miceDocumentenUrl = (b) => (b && Number(b.id) > 0 ? (miceDagUrl(b) || MICE_WEB + "/events/" + b.id + "/documents") : "");
 // Het merkteken van MICE, uitgeknipt uit hun eigen app zodat de knop meteen
 // herkenbaar is. Ingesloten als afbeelding: geen extra bestand om te laden.
 const MICE_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABIBAMAAACnw650AAAAGFBMVEX////9/f3Uz9RoWWstGDEpFS0oEyweCCIYGJdhAAAExUlEQVR42oVWTU9bRxQ99+EKR2o9d0yqNBI2xibdlI8SgtQNkEJX7aaKusm2i/6d/pCm+QNtiEq6SiiIBFWNgOcPEEmk4rnzqBSbJL5dvGc/2zjtrDz2mXPH955z59IP+P+VGdyq8wwI2/eD1E1UAGFoGPB7QFpfPPvVAbC00anZkSCN5n9xVQBA4GYWdqdHgDSavB8iPu+OXPPLGl8GNWbvVy0cAIC4KbRW52GQm7tXs67L5Kxu09wwk+Yf1NkRx0xWHZknrKVBUOPNLgsZl7cMdVVY583290nABNSZu2cdabQ0sQjg3cOzGovXrWL869hSTLT//DWZi6WN8dPqi5cXS5/IS27Z8JuX2RTUKW5mWxwt394la60dP337xYtXaJuTa1dSUGO/3qKL5dX69SwA0JXxg7VTet1uft0GgAAAdK5qyJRXe4kBFfc3HGtuq9YD+aYXPr+z11dUKmYWPWh7vheu/Tva4/N6vV8R1Fz8M+vNB8jGTDpZF5yv0KC08vvTpNoL56sMc+spD+mxsC7sD4tJuFcn0r642866VqudTSrZarWvHHwobR5DFhlAC4/BY8KaZ3R8XMky0ETxsx+148HIAGpEuVIvRQeCj00JABp/CG4YQ6x0Ng8EQLTDFK2WgE4Ynk3FeQvDUED7U5CqAQLAO41lRNaGnOTNWgaMJRgCAoA9zNU6AFUXp9hvGucEyN0U1S1BAC04oPv36XAB6MzWJd6RYYUggKr3kUlA4rzgfCc5Q8cMCCMAFMB88rXmfhOgqt0zDJwZBAgEoF5J/OF8ZzKJBrAV7xgBpArTc6tF7tnxJnfPmGkCFAHIKfK+ayyjtYJo94rKgMYFZlDCz2XvD3M1H3F8RyUAhAyke8PYusB9Q8G7AT0EMUPPq1Pq6qLlbtr6Qb31bt2ToWjtPzsdAlbhq8NfDm7p2RSIJmQYxACkT7Me0UqvZw0wpYaLSmamfjkcCTQFHRtfSqMrQIoMlAlN7RWvOHs+57sFTpIcwCzCu9ROdPJdo7fx1STjSoBqeoFcaHs7cQYZoSDOaqMvC30NnAU04REA3phcXUa9KVoQKAuCRKMCgFLtEVkAqt57wwgAZvi/FwCoc+kr4wBEOwxaYGSA3M06nAIIymlLyYNjR1JcYLWi5pEpmVtpsK9iIz+GuVZnBEAQlZhifw+tjgg4qV3DQEJzGdPYNBStcgwqrnvNPapd4pmtg/M9FQTMSQvtX8ebEK3sJSB6NgXJPZJhoqpStFbqMhXXvWJ78Op6vunF5DUV3T9TLB9t9VNpY3LXEFX2eiCSslcAKumbPfezFY5WSunbMj59StFd8lN/URYAmm8+ffD8NbWWPaeWouPywzy0uHW7GRK7fOXdg10WM7YS9fsuZ8LxvWLnydurSwA622HVOuuXn8Zyp2RWkcK+oec1KRNDpSnWWTfzbTToYHNSJBHiMFGns65ypzsZdEGU87nCT9p98sW6/EzVDvcCYjliFw8PZNXllwvBiIbhq0qsBEAdVWbmGiPGEJ19TCaZQsr5jbMUMzD1wFGFAYCW+Kh/gOobaF65cn4j/tzcmR7ZxLRwsDRTOiIVENvp0Z2O9MbnZ2EeyF/WcdrpguJOYEdPh33t0E+/b4T8FxSAIZcynWS8AAAAAElFTkSuQmCC";
@@ -15297,7 +15360,11 @@ const menuHtmlVan = (blokken) => (blokken || []).map((x) =>
 
 const invulSleutel = (b, k) => {
   const mid = String((k && k.miceId) || "");
-  if (!mid) return mid;
+  // Een product dat je zelf hebt toegevoegd heeft geen MICE-nummer. Het kreeg
+  // daardoor geen sleutel, en zonder sleutel kon er geen invulling onder: het
+  // werd een kale regel met één tekstvak die daarna niets meer deed. Zijn merk
+  // ("n:" plus de naam) is net zo goed een sleutel.
+  if (!mid) return k && String(k.naam || "").trim() ? prodMerk(k) : "";
   const namen = new Set();
   for (const r of (b && b.regels) || []) if (String(r.id) === mid && r.naam) namen.add(r.naam);
   return namen.size > 1 && k.naam ? mid + "\u0001" + normNaam(zonderDessert(k.naam)) : mid;
@@ -15380,7 +15447,7 @@ const EETMOMENTEN_STANDAARD = [
   { naam: "Lunch", w: ["lunch", "brood", "sandwich", "soep"] },
   { naam: "Snack", w: ["snack", "middag", "taart", "zoet", "koffie", "thee"] },
   { naam: "Amuse", w: ["amuse"] },
-  { naam: "Diner", w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht"] },
+  { naam: "Diner", w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht", "supplement"] },
   { naam: "Dessert", w: ["dessert", "nagerecht", "toetje"], eerst: true },
   { naam: "Borrel", w: ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"] },
 ];
@@ -15412,7 +15479,16 @@ const eetMoment = (t) => {
   const r = eetRang(t);
   return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
 };
-const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRang((a.naam || "") + " " + ((catVan && catVan[a.miceId]) || "")) - eetRang((b.naam || "") + " " + ((catVan && catVan[b.miceId]) || "")));
+// Een vleessupplement (of vissupplement) komt er bij een gang bíj. Het hoorde
+// nergens en belandde daardoor achter de borrel; nu valt het onder het diner,
+// en binnen die gang onderaan — eerst het menu, dan wat erbij komt.
+const isSupplement = (t) => /supplement/.test(zonderAccent(String(t || "")).toLowerCase());
+const eetSleutel = (k, catVan) => String((k && k.naam) || "") + " " + ((catVan && catVan[k && k.miceId]) || "");
+const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => {
+  const ra = eetRang(eetSleutel(a, catVan)), rb = eetRang(eetSleutel(b, catVan));
+  if (ra !== rb) return ra - rb;
+  return (isSupplement(eetSleutel(a, catVan)) ? 1 : 0) - (isSupplement(eetSleutel(b, catVan)) ? 1 : 0);
+});
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
 // De portie kan in gram, kilo, milli-/centi-/liters of stuks staan; de
@@ -16869,7 +16945,20 @@ function AutoTextarea({ value, onChange, className, placeholder }) {
 // potlood zet de kaart zelf om in invoervelden — geen popup.
 // Partij-informatiepopup: hergebruikt op Mep én op de bezorgmateriaal-pagina,
 // zodat contact/adres-info er overal precies hetzelfde uitziet.
-function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, klantInstel, meerdaags }) {
+// "In MICE gezet" in gewone woorden: donderdag 2 okt 2026 · 14:12. Komt er
+// alleen een datum binnen zonder tijd, dan laten we de tijd weg.
+const ingevoerdTekst = (iso) => {
+  const x = new Date(String(iso || ""));
+  if (isNaN(x)) return "";
+  const d = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"][x.getDay()]
+    + " " + x.getDate() + " " + ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"][x.getMonth()]
+    + " " + x.getFullYear();
+  const metTijd = /\d{2}:\d{2}/.test(String(iso));
+  if (!metTijd) return d;
+  const p2 = (n) => String(n).padStart(2, "0");
+  return d + " \u00b7 " + p2(x.getHours()) + ":" + p2(x.getMinutes());
+};
+function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, klantInstel, meerdaags, ingevoerdOp }) {
   const [adresVeld, setAdresVeld] = useState(() => (klantInstel && klantInstel.adres) || "");
   useEffect(() => { setAdresVeld((klantInstel && klantInstel.adres) || ""); }, [klantInstel && klantInstel.adres]);
   return (
@@ -16882,7 +16971,7 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
         {meerdaags && (
           <div className="rounded-lg px-2.5 py-2 mb-2.5 text-[12.5px] leading-relaxed" style={{ background: "#f2f0e6", color: "#5c5a4c" }}>
             <div className="font-semibold ink">Meerdaagse boeking{meerdaags.reeks ? " \u00b7 " + meerdaags.reeks : ""}</div>
-            <div className="mt-0.5">Dag {meerdaags.nummer} van {meerdaags.totaal}. Elke draaidag staat op zichzelf: menu, aantal gasten, allergenen, tijden en notitie stel je per dag in, en wat je hier bewaart raakt de andere dag{meerdaags.totaal > 2 ? "en" : ""} niet.</div>
+            <div className="mt-0.5">Dag {meerdaags.nummer} van {meerdaags.totaal}. Elke draaidag staat op zichzelf: menu, aantal gasten, allergenen, tijden en aantekening stel je per dag in, en wat je hier bewaart raakt de andere dag{meerdaags.totaal > 2 ? "en" : ""} niet.</div>
           </div>
         )}
         <div className="space-y-1.5 text-[14px]">
@@ -16896,6 +16985,9 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
               <a href={navHref(adres)} target="_blank" rel="noreferrer" className="ff underline ink font-semibold">{adres}</a>
             </div>
           )}
+          {/* Wanneer de boeking in MICE is gezet: zo zie je of hier iets staat
+              dat net binnen is, of iets dat al weken bekend is. */}
+          {ingevoerdOp && <div><span className="mute">In MICE gezet: </span><span className="ink">{ingevoerdTekst(ingevoerdOp)}</span></div>}
           {contact && <div><span className="mute">Contact: </span><span className="ink">{contact}</span></div>}
           {toonEmail && klant_email && <div><span className="mute">E-mail: </span><span className="ink">{klant_email}</span></div>}
           {tel && (
@@ -16925,30 +17017,6 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
               </div>
             </div>
 
-            <div>
-              <div className="text-[12.5px] mute mb-1">
-                {klantInstel.herhaal
-                  ? "De invulling van deze partij staat klaar voor de volgende keer" + (klantInstel.herhaal === "dag" && klantInstel.dagNaam ? " (elke " + klantInstel.dagNaam + ")" : "") + ". Is de partij veranderd? Sla hem opnieuw op."
-                  : "Deze partij bewaren als voorbeeld: volgende boekingen van deze klant beginnen dan met dezelfde producten en invulling, omgerekend naar hun aantal."}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {/* Eerst vragen. Deze knoppen leggen de invulling van déze partij
-                    vast als voorbeeld voor alle volgende boekingen van deze klant;
-                    een misklik hier werkt door op partijen die je nog niet ziet. */}
-                <button onClick={async () => { if (await vraagHerhaal(klantInstel, "elke")) klantInstel.onHerhaal("elke"); }} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
-                  {klantInstel.herhaal === "elke" ? "Opnieuw opslaan" : "Herhalen — elke keer"}
-                </button>
-                {klantInstel.dagNaam && (
-                  <button onClick={async () => { if (await vraagHerhaal(klantInstel, "dag")) klantInstel.onHerhaal("dag"); }} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium">
-                    {klantInstel.herhaal === "dag" ? "Opnieuw opslaan" : "Alleen op " + klantInstel.dagNaam}
-                  </button>
-                )}
-                {klantInstel.herhaal && (
-                  <button onClick={async () => { if (await bevestig("Het bewaarde voorbeeld wordt weggegooid. Volgende boekingen van " + (String(klantInstel.naam || "").trim() || "deze klant") + " beginnen weer leeg.", { titel: "Stoppen met herhalen?", okLabel: "Stoppen" })) klantInstel.onHerhaal(""); }}
-                    className="ff text-[12.5px] font-medium mute hover:opacity-70 px-2">Stoppen</button>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
@@ -17235,7 +17303,7 @@ const versWijzigingen = (b) => {
       if (w.startsWith("Gasten:")) zet(uit.gasten, w, t);
       else if (w.startsWith("Starttijd:") || w.startsWith("Datum:")) zet(uit.tijd, w, t);
       else if (w.startsWith("Allergieën") || w.startsWith("Dieetwensen")) zet(uit.allergie, w, t);
-      else if (w.startsWith("Notitie")) zet(uit.notitie, w, t);
+      else if (w.startsWith("Notitie") || w.startsWith("Aantekening")) zet(uit.notitie, w, t);
       else if (w.startsWith("Erbij: ")) { const m = w.match(/^Erbij: [\d.,]+\u00d7 (.+)$/); if (m) zetP(nrm(m[1]), w, t); }
       else if (w.startsWith("Weg: ")) { /* verdwenen regel: niets te labelen */ }
       else { const m = w.match(/^(.+): [\d.,]+\u00d7 \u2192 [\d.,]+\u00d7$/); if (m) zetP(nrm(m[1]), w, t); }
@@ -17249,7 +17317,7 @@ const versWijzigingen = (b) => {
 // precies het logboek van wat er met de hand gebeurd is — geen gok achteraf.
 const KERN_LABELS = {
   gasten: "Aantal gasten", tijd: "Tijd", naam: "Naam van de partij", status: "Status",
-  zaal: "Zaal", notitie: "Notitie", dieet: "Dieet", allergie: "Allergenen",
+  zaal: "Zaal", notitie: "Aantekening", dieet: "Dieet", allergie: "Allergenen",
   invklaar: "Invulling afgerond", menukop: "Menu naar MICE",
 };
 const kernTekstVan = (sleutel, w) => {
@@ -17473,7 +17541,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const overigeKeuzes = toonOverige ? keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || "")) && !isKeukenRegel(k, catVan)) : [];
   const prijsVan = (miceId) => {
     if (!toonPrijs || !miceId) return "";
-    const p = (miceProducten || []).find((x) => x.id === miceId);
+    // Wat er in déze boeking staat gaat voor op de prijs uit de productenlijst.
+    const eigen = ((b && b.regels) || []).find((x) => String(x.id) === String(miceId) && x.prijs != null);
+    const p = eigen || (miceProducten || []).find((x) => x.id === miceId);
     return p && p.prijs ? " · € " + Number(p.prijs).toFixed(2).replace(".", ",") : "";
   };
   const onderdelenVan = (miceId) => {
@@ -17490,7 +17560,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   // aantal van de regel. Daardoor kon je een hoeveelheid die toevallig op het
   // aantal gasten uitkwam niet aanpassen — je typte 50, en bij het opnieuw
   // tekenen stond er weer 100. Het meeschuiven gebeurt nu bij het opslaan.
-  const odVan = (k) => (k && k.miceId ? onderdelenVan(invulSleutel(b, k)) : null);
+  const odVan = (k) => { const sl = invulSleutel(b, k); return sl ? onderdelenVan(sl) : null; };
   // Het menu voor het MICE-document: alleen productregels die voor de keuken
   // tellen (huur, techniek en dranken vallen af), met per regel de ingevulde
   // gerechtnamen. Producten zonder invulling leveren geen kop op — een lege
@@ -17514,6 +17584,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       if (bestaand) bestaand.regels = [...bestaand.regels, ...regels];
       else uit.push({ kop, regels });
     }
+    // De kopjes in de volgorde van de maaltijd, niet in de volgorde waarin het
+    // eerste product van elk kopje toevallig binnenkwam. Daardoor stond het
+    // dessert in de kopie naar MICE soms boven het diner. Een kopje dat de
+    // app niet kent blijft achteraan staan, in de volgorde waarin het stond.
+    const rang = (x) => eetRang(String(x.kop || ""));
+    uit.sort((x, y) => rang(x) - rang(y));
     return { blokken: uit, leeg };
   };
   const menuNu = menuVanPartij();
@@ -17567,15 +17643,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     try { const pos = eind ? String(el.value || "").length : 0; el.setSelectionRange(pos, pos); } catch (e) {}
     return true;
   };
-  // Pijltoetsen: staat de cursor aan de rand van de tekst (of is het vak
-  // leeg), dan verhuist de focus naar het vak in die richting.
-  const pijlNav = (e, links, rechts, boven, onder) => {
-    const el = e.target;
-    let s0 = 0, s1 = 0, len = 0;
-    try { s0 = el.selectionStart; s1 = el.selectionEnd; len = String(el.value || "").length; } catch (e2) {}
-    if (e.key === "ArrowLeft" && s0 === 0 && s1 === 0 && links) { if (veldFocus(links, true)) e.preventDefault(); }
-    else if (e.key === "ArrowRight" && s0 === len && s1 === len && rechts) { if (veldFocus(rechts, false)) e.preventDefault(); }
-    else if (e.key === "ArrowUp" && boven) { if (veldFocus(boven, true)) e.preventDefault(); }
+  // Pijltoetsen omhoog en omlaag verhuizen de cursor naar het vak boven of
+  // onder. Links en rechts doen dat met opzet niet: die horen binnen de tekst
+  // te blijven. Sprong je bij het laatste teken ongemerkt naar het volgende
+  // vak, dan typte je verder op een plek waar je niet dacht te staan — aan het
+  // einde van de tekst blijft de cursor nu gewoon staan.
+  const pijlNav = (e, boven, onder) => {
+    if (e.key === "ArrowUp" && boven) { if (veldFocus(boven, true)) e.preventDefault(); }
     else if (e.key === "ArrowDown" && onder) { if (veldFocus(onder, true)) e.preventDefault(); }
   };
 
@@ -17671,7 +17745,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       .map((x) => ({ ...x.k }));
     setRegels(gesorteerd);
     const m = {};
-    for (const k of keuzesS) if (k.miceId) m[invulSleutel(b, k)] = (odVan(k) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o }));
+    for (const k of keuzesS) { const sl = invulSleutel(b, k); if (sl) m[sl] = (odVan(k) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o })); }
     setInv(m);
     setVelden({
       gasten: String((extra && extra.gasten) != null && (extra && extra.gasten) !== "" ? extra.gasten : (b.gasten || "")),
@@ -17842,7 +17916,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       // op de mep. Het aantal van de productregel telt, en anders het aantal
       // gasten: precies wat er als voorstel stond.
       const voorstelPer = {};
-      for (const k of schoon) if (k.miceId) voorstelPer[invulSleutel(b, k)] = Number(k.aantal) || Number(b.gasten) || 0;
+      for (const k of schoon) { const sl = invulSleutel(b, k); if (sl) voorstelPer[sl] = Number(k.aantal) || Number(b.gasten) || 0; }
       for (const mid of Object.keys(inv)) {
         const voorstel = voorstelPer[mid] || 0;
         const onderdelen = inv[mid].map((o) => {
@@ -17926,7 +18000,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           </span>
         )}
         {!bewerk && (
-          <>
+          <div className="flex flex-wrap items-center justify-end gap-2 ml-auto">
             <button onClick={() => { setInfoOpen(true); if (onSluitStift) onSluitStift(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={17} /></button>
             <button onClick={() => setEtiketOpen(etiketVoorstel())} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Etiket printen"><Tag size={17} /></button>
             {menuNu.blokken.length > 0 && (
@@ -17934,10 +18008,13 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                 className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Menu printen op briefpapier"><Printer size={17} /></button>
             )}
             {canEdit && <button onClick={startBewerk} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij bewerken"><Pencil size={17} /></button>}
-          </>
+          </div>
         )}
         {bewerk && (
-          <>
+          // Eén groep die rechts uitlijnt. Stond dit los in de regel, dan viel
+          // bij een lange naam de laatste knop — het groene vinkje — een regel
+          // lager naar links, precies waar je hem niet zoekt.
+          <div className="flex flex-wrap items-center justify-end gap-2 ml-auto">
             <button onClick={kopieerInvulling} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + (kopieOk ? "#4f7a3a" : T.line), color: kopieOk ? "#4f7a3a" : T.ink }} title="Hele invulling kopiëren (ook met Ctrl+C zonder tekstselectie) — plakken kan in een andere boeking">
               {kopieOk ? <Check size={17} /> : <Copy size={17} />}
             </button>
@@ -17953,7 +18030,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             )}
             {onMenuKopie && miceDocumentenUrl(b) && (
               <a href={miceDocumentenUrl(b)} target="_blank" rel="noreferrer" className="ff shrink-0 rounded-lg overflow-hidden block"
-                style={{ width: "2.1rem", height: "2.1rem" }} title="Documenten van deze boeking in MICE openen">
+                style={{ width: "2.1rem", height: "2.1rem" }} title={miceDagUrl(b) ? "Het draaiboek van deze dag in MICE openen" : "Documenten van deze boeking in MICE openen"}>
                 <img src={MICE_LOGO} alt="MICE" style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }} />
               </a>
             )}
@@ -17961,9 +18038,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               <button onClick={() => { opslaan(); onMinimaliseren(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }}
                 title="Even wegleggen — slaat op en sluit de partij, zodat je een tweede boeking kunt openen. Openen zet hem weer in bewerken."><Minus size={18} /></button>
             )}
-            <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Bewerken annuleren — terug naar de partij zonder op te slaan"><X size={18} /></button>
-            <button onClick={opslaan} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #4f7a3a", color: "#4f7a3a" }} title="Opslaan"><Check size={18} /></button>
-          </>
+            {/* Annuleren en opslaan horen bij elkaar en gaan samen of niet. */}
+            <span className="flex items-center gap-2 shrink-0">
+              <button onClick={() => setBewerk(false)} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #b3261e", color: "#b3261e" }} title="Bewerken annuleren — terug naar de partij zonder op te slaan"><X size={18} /></button>
+              <button onClick={opslaan} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1.5px solid #4f7a3a", color: "#4f7a3a" }} title="Opslaan"><Check size={18} /></button>
+            </span>
+          </div>
         )}
       </div>
       {etiketOpen && <PartijEtiketPopup voorstel={etiketOpen} onSluit={() => setEtiketOpen(null)} onPrint={(f) => { printPartijEtiket(f); setEtiketOpen(null); }} />}
@@ -18022,7 +18102,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       {infoOpen && (
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
           statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
-          meerdaags={meerdaagsInfo(b)}
+          meerdaags={meerdaagsInfo(b)} ingevoerdOp={b.mice_aangemaakt}
           klantInstel={klantInstel} onSluit={() => setInfoOpen(false)} />
       )}
 
@@ -18126,7 +18206,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       const gekoppeld = koppelBijlagen(regelTekst, (o.bijlagen && o.bijlagen.length ? o.bijlagen : (o.recipeId ? [{ recipeId: o.recipeId, naam: o.receptNaam || "" }] : [])).filter((bl) => bl.recipeId));
                       return (
                       <div key={j} className={zonderKop ? "ink" : "ink pl-3"}>
-                        <MarkTekst aantal={aantalTekst} tekst={regelTekst} basis={"po:" + markBasis(b) + ":" + k.miceId + ":" + j} stift={stift} markering={markering} zetMark={zetMarkK} erf={erfKleur}
+                        <MarkTekst aantal={aantalTekst} tekst={regelTekst} basis={"po:" + markBasis(b) + ":" + (k.miceId || prodMerk(k)) + ":" + j} stift={stift} markering={markering} zetMark={zetMarkK} erf={erfKleur}
                           receptPer={gekoppeld.perIndex} onRecept={onOpenRecipe} />
                         {zonderKop && j === 0 && isVers && <NieuwTag titel={isVers.titel} />}
                         {!stift && gekoppeld.rest.map((bl, bi) => (
@@ -18165,7 +18245,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           <div className="mt-1.5">
             {noot ? (
               <>
-                <button onClick={() => setNootOpen((o) => !o)} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Notitie verbergen" : "Notitie"}</button>
+                <button onClick={() => setNootOpen((o) => !o)} className="ff text-[13.5px] font-bold underline" style={{ color: T.ink }}>{nootOpen ? "Aantekening verbergen" : "Aantekening"}</button>
                 {vers.notitie && <NieuwTag titel={vers.notitie.titel} />}
                 {nootOpen && (
                   <p className="text-[13px] mute leading-relaxed mt-1 mb-0" style={{ whiteSpace: "pre-wrap" }}>
@@ -18173,7 +18253,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                   </p>
                 )}
               </>
-            ) : <span className="text-[13px] mute">Geen notitie</span>}
+            ) : <span className="text-[13px] mute">Geen aantekening</span>}
           </div>
           <BoekingLog log={log} />
         </>
@@ -18182,8 +18262,8 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       {bewerk && (
         <div className="mt-2 space-y-2" onKeyDown={bewerkToetsen} onPaste={bewerkPlak}>
           {regels.map((k, i) => {
-            if (k.miceId) {
-              const mid = invulSleutel(b, k);
+            const mid = invulSleutel(b, k);
+            if (mid) {
               return (
                 <div key={i} className="space-y-1">
                   {/* Geen eigen aantalvak meer bij het product: het aantal boven
@@ -18201,7 +18281,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       ? <input className="input px-2 py-1.5 text-sm min-w-0 flex-1 font-semibold" data-pn={b.id + "-" + i} title={productInfoHover(k)} value={k.naam || ""} onChange={(e) => zetR(i, "naam", e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") { e.preventDefault(); focusNa('[data-oa="' + b.id + "-" + i + '-0"]'); return; }
-                            pijlNav(e, null, '[data-oa="' + b.id + "-" + i + '-0"]', '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
+                            pijlNav(e, '[data-on="' + b.id + "-" + (i - 1) + '-0"]', '[data-oa="' + b.id + "-" + i + '-0"]');
                           }} />
                       : <span className="min-w-0 flex-1 text-sm font-semibold ink truncate" title={productInfoHover(k)} style={productInfoHover(k) ? { cursor: "help" } : undefined}>{k.naam}</span>}
                     {/* Tijd waarop dit product op tafel komt. Leeg laten betekent:
@@ -18217,7 +18297,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                       );
                     })()}
                     {prijsVan(k.miceId) && <span className="text-[12.5px] shrink-0" style={{ color: "#44502f" }}>{prijsVan(k.miceId).slice(3)}</span>}
-                    {vorigeInvulling && vorigeInvulling(k.miceId, k.aantal || b.gasten) && (
+                    {k.miceId && vorigeInvulling && vorigeInvulling(k.miceId, k.aantal || b.gasten) && (
                       <button onClick={() => { const vd = vorigeInvulling(k.miceId, k.aantal || b.gasten); if (vd) setInv((m) => ({ ...m, [mid]: vd.map((o) => { const n = { ...o }; delete n.rid; delete n.t; return n; }) })); }}
                         className="ff mute hover:opacity-60 shrink-0" title="Invulling van de vorige keer overnemen — hetzelfde soort product, hoeveelheden omgerekend naar deze partij"><RotateCcw size={15} /></button>
                     )}
@@ -18241,8 +18321,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                                 return;
                               }
                               pijlNav(e,
-                                j > 0 ? '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pn="' + b.id + "-" + i + '"]',
-                                '[data-op="' + b.id + "-" + i + "-" + j + '"]',
                                 j > 0 ? '[data-oa="' + b.id + "-" + i + "-" + (j - 1) + '"]' : '[data-pn="' + b.id + "-" + i + '"]',
                                 '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
@@ -18252,8 +18330,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                               if (e.key === "Enter") { e.preventDefault(); focusNa('[data-on="' + b.id + "-" + i + "-" + j + '"]'); return; }
                               if (e.key === "Backspace" && !String(o.portie || "")) { e.preventDefault(); if (!e.repeat) veldFocus('[data-oa="' + b.id + "-" + i + "-" + j + '"]', true); return; }
                               pijlNav(e,
-                                '[data-oa="' + b.id + "-" + i + "-" + j + '"]',
-                                '[data-on="' + b.id + "-" + i + "-" + j + '"]',
                                 '[data-op="' + b.id + "-" + i + "-" + (j - 1) + '"]',
                                 '[data-op="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
@@ -18306,8 +18382,6 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                                 return;
                               }
                               pijlNav(e,
-                                '[data-op="' + b.id + "-" + i + "-" + j + '"]',
-                                '[data-oa="' + b.id + "-" + i + "-" + (j + 1) + '"]',
                                 '[data-on="' + b.id + "-" + i + "-" + (j - 1) + '"]',
                                 '[data-on="' + b.id + "-" + i + "-" + (j + 1) + '"]');
                             }} />
@@ -18318,7 +18392,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                               enzovoort. Had de vorige keer geen regel op die plek, dan
                               is de knop uit. */}
                           {(() => {
-                            const vd = vorigeInvulling ? vorigeInvulling(k.miceId, k.aantal || b.gasten) : null;
+                            const vd = k.miceId && vorigeInvulling ? vorigeInvulling(k.miceId, k.aantal || b.gasten) : null;
                             const eerder = vd && vd[j] ? vd[j] : null;
                             return (
                               <button data-oh={b.id + "-" + i + "-" + j} disabled={!eerder}
@@ -18430,7 +18504,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                   ))}
                 </div>
               </div>
-              <Field label="Notitie"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.notitie} onChange={(e) => setVelden((v) => ({ ...v, notitie: e.target.value }))} /></Field>
+              <Field label="Aantekening"><AutoTextarea className="input px-2 py-1.5 text-sm w-full" value={velden.notitie} onChange={(e) => setVelden((v) => ({ ...v, notitie: e.target.value }))} /></Field>
             </>
           )}
           {(handmatig || onVerwijderPartij) && (
@@ -18449,7 +18523,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
           {kies && (
             <ProductKiezer boeking={b} lijst={(miceProducten || []).length ? miceProducten : (producten || []).map((p) => ({ id: p.id, naam: p.name, omschrijving: [p.doel, p.cat].filter(Boolean).join(" · "), eigen: true }))}
               onSluit={() => setKies(false)}
-              onKies={(p, aantal) => { setRegels((rs) => [...rs, p.hand ? { naam: p.naam, aantal } : p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal }]); if (!p.eigen && !p.hand) setInv((m) => (m[String(p.id)] ? m : { ...m, [String(p.id)]: (onderdelenVan(p.id) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o })) })); setKies(false); }} />
+              onKies={(p, aantal) => {
+                const regel = p.hand ? { naam: p.naam, aantal } : p.eigen ? { productId: p.id, naam: p.naam, aantal } : { miceId: p.id, naam: p.naam, aantal };
+                setRegels((rs) => [...rs, regel]);
+                // Meteen één lege invulregel eronder, ook bij een product dat je
+                // zelf toevoegt. Anders stond er een kop zonder iets om in te
+                // vullen en moest je er eerst een regel bij zoeken.
+                const sl = invulSleutel(b, regel);
+                if (sl) setInv((m) => (m[sl] ? m : { ...m, [sl]: ((!p.eigen && !p.hand && onderdelenVan(sl)) || [{ hoeveelheid: "", naam: "", recipeId: null, productId: null }]).map((o) => ({ ...o })) }));
+                setKies(false);
+              }} />
           )}
         </div>
       )}
@@ -18610,7 +18693,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const naarBladen = (d) => {
     if (d && Array.isArray(d.bladen) && d.bladen.length) return d.bladen.map((b) => ({ ...b }));
     const html = d && typeof d.html === "string" ? d.html : (typeof d === "string" ? d : "");
-    return [{ id: "n1", naam: "Notities", html, door: "", op: "" }];
+    return [{ id: "n1", naam: "Aantekeningen", html, door: "", op: "" }];
   };
   const [bladen, setBladen] = useState(() => naarBladen(data));
   const [actief, setActief] = useState(0);
@@ -18815,7 +18898,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const nieuw = lijst.filter((b) => !openSnap.current.some((x) => x.id === b.id));
     if (gewijzigd.length || nieuw.length || lijst.length !== openSnap.current.length) {
       let naam = "";
-      if (onAskName) { try { naam = await onAskName("notities", "Notitie aanpassen"); } catch (e) {} }
+      if (onAskName) { try { naam = await onAskName("notities", "Aantekening aanpassen"); } catch (e) {} }
       const t = nuIso();
       if (naam) {
         lijst = lijst.map((b) => (gewijzigd.some((g) => g.id === b.id) ? { ...b, door: naam, op: t } : b));
@@ -19675,12 +19758,12 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const printBlad = () => {
     const b = bladen[actief]; if (!b) return;
     const html = vak.current ? vak.current.innerHTML : b.html;
-    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Notities</title><style>"
+    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Aantekeningen</title><style>"
       + "@page{size:A4;margin:16mm}body{font:11.5pt/1.45 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:16pt;margin:0 0 1mm}.sub{color:#6a6550;margin:0 0 5mm;font-size:9.5pt}"
       + "h2{font-size:13pt;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}ul{list-style:none}"
       + "a{color:#44502f;font-weight:600;text-decoration:underline}input[type=checkbox]{width:3.2mm;height:3.2mm;margin-right:1.5mm}"
-      + "</style></head><body><h1>" + esc2(b.naam || "Notities") + "</h1><div class='sub'>"
+      + "</style></head><body><h1>" + esc2(b.naam || "Aantekeningen") + "</h1><div class='sub'>"
       + esc2((b.door ? "Laatst aangepast door " + b.door + " · " : "") + new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }))
       + "</div>" + html + "</body></html>");
   };
@@ -19729,7 +19812,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
             zodat er geen tekst doorheen schuift. */}
         <div className="flex items-start justify-between gap-2 mb-1.5 sticky pb-1.5"
           style={{ position: "sticky", top: 0, zIndex: 3, background: T.paper, boxShadow: "0 -16px 0 0 " + T.paper }}>
-          <div className="serif ink text-xl leading-tight">Notities</div>
+          <div className="serif ink text-xl leading-tight">Aantekeningen</div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             <Knop doe={() => cmd("bold")} actief={fmt.vet} titel="Vet (Ctrl+B)"><Bold size={14} /></Knop>
             <Knop doe={() => cmd("underline")} actief={fmt.onder} titel="Onderstreept (Ctrl+U)"><Underline size={14} /></Knop>
@@ -19794,7 +19877,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
               ? <div className="text-[12px] mute px-1">Nog geen eerdere versies. Bij elke aanpassing (met naam) wordt de vorige versie hier bewaard.</div>
               : historieRef.current.map((h, i) => (
                 <div key={i} className={"flex items-center gap-2 px-1 py-1.5 text-[12.5px]" + (i > 0 ? " divi" : "")}>
-                  <span className="flex-1 min-w-0 truncate"><span className="ink font-medium">{h.bladNaam || "Notities"}</span> <span className="mute">· {opTekst(h.t)}{h.door ? " · door " + h.door : ""}</span></span>
+                  <span className="flex-1 min-w-0 truncate"><span className="ink font-medium">{h.bladNaam || "Aantekeningen"}</span> <span className="mute">· {opTekst(h.t)}{h.door ? " · door " + h.door : ""}</span></span>
                   <button onClick={() => zetHistorieTerug(h)} className="ff shrink-0 text-[12px] font-semibold underline acc">Terugzetten</button>
                 </div>
               ))}
@@ -20136,11 +20219,11 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   };
   const invVoor = (b, miceId) => {
     const v = veldenVan(b);
-    const sl = kernInvVeld(prodMerk({ miceId }));
+    const sl = kernInvVeld(merkUitInvulSleutel(miceId));
     // Staat het veld er, dan telt dat — ook leeggemaakt. Staat het er niet en
     // heeft deze klant een sjabloon van "herhalen", dan komt die invulling
     // eruit: dat is iets wat met de hand is aangezet, geen gok van de app.
-    if (kernHeeft(v, sl)) return { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" };
+    if (kernHeeft(v, sl)) return { onderdelen: kernInvulling(v, merkUitInvulSleutel(miceId)), naam: "" };
     const k = gekozen(b).find((x) => invulSleutel(b, x) === String(miceId));
     return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || gastenVan(b));
   };
@@ -20596,8 +20679,8 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
           )}
         </div>
         <div className="flex items-center justify-end gap-1.5 flex-wrap w-full md:w-auto md:ml-auto">
-          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
-            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Aantekeningen — gedeeld papiertje van de keuken">
+            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Aantekeningen
             {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
           <button onClick={() => setBestelOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title={bestelTeDoen ? "Bestellijst — er staat iets op de lijst" : "Bestellijst — gedeelde inkooplijst"}><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst
@@ -20792,6 +20875,11 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
   const [detail, setDetail] = useState(null); // boekings-id in de detailweergave
   const [detailDag, setDetailDag] = useState(null); // welke dag van een meerdaagse boeking
+  // Er kunnen er twee naast elkaar staan: handig om een partij over te nemen
+  // of twee dagen van dezelfde klant naast elkaar te leggen. Het tweede slot
+  // staat rechts; valt het eerste weg, dan schuift de tweede naar links.
+  const [detail2, setDetail2] = useState(null);
+  const [detail2Dag, setDetail2Dag] = useState(null);
   // De terugknop van het toestel sluit de geopende boeking. Staat de kaart in
   // bewerkstand, dan heeft die zijn eigen terugknop: de eerste druk sluit het
   // bewerken (die luisteraar hangt er later in en is dus later aan de beurt),
@@ -20800,9 +20888,11 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   useEffect(() => {
     if (!detail) return;
     const terug = () => {
-      const api = kaartApi.current;
+      // Staan er twee naast elkaar, dan gaat de rechter het eerst dicht.
+      const slot = detail2 != null ? 2 : 1;
+      const api = (slot === 2 ? kaartApi2 : kaartApi).current;
       if (api && api.inBewerking && api.inBewerking()) return; // de bewerkstand vangt deze druk op
-      setDetail(null);
+      sluitSlotRef.current(slot);
     };
     try { window.history.pushState({ app: "ritme", boeking: true }, ""); } catch (e) {}
     window.addEventListener("popstate", terug);
@@ -20815,6 +20905,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   // Partijen die tijdens het bewerken even zijn weggelegd: opgeslagen en
   // gesloten, zodat er een tweede boeking open kan. Ze staan als pillen
   // onderaan het scherm, zoals een taakbalk, en openen weer in bewerkstand.
+  const kaartApi2 = React.useRef(null);
   const [weggelegd, setWeggelegd] = useState([]); // [{ id, datum, naam }]
   const [heropend, setHeropend] = useState(null); // id dat meteen in bewerken mag
   useEffect(() => {
@@ -20822,16 +20913,20 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     const t = setTimeout(() => setHeropend(null), 0); // de kaart heeft de vlag nu gehad
     return () => clearTimeout(t);
   }, [detail, heropend]);
-  const legWeg = (b) => {
-    setWeggelegd((w) => (w.some((x) => String(x.id) === String(b.id)) ? w : [...w, { id: b.id, datum: b.datum, naam: naamVan(b) || "Zonder naam" }]));
-    setDetail(null);
-  };
+  const opDeBalk = (b) => setWeggelegd((w) => (w.some((x) => String(x.id) === String(b.id)) ? w : [...w, { id: b.id, datum: b.datum, naam: naamVan(b) || "Zonder naam" }]));
+  const legWeg = (b, slot) => { opDeBalk(b); sluitSlotRef.current(slot || 1); };
   const haalTerug = (w) => {
     setWeggelegd((lijst) => lijst.filter((x) => String(x.id) !== String(w.id)));
     setHeropend(w.id);
     setMaand(String(w.datum || "").slice(0, 7));
-    setDetail(w.id); setDetailDag(w.datum || null);
+    // Ernaast, niet in plaats van: staat er al een partij open, dan komt deze
+    // er rechts bij. Zo kun je er twee naast elkaar leggen.
+    openErnaastRef.current(w.id, w.datum || null);
   };
+  // legWeg en haalTerug staan boven de twee sloten; via een ref komen ze er
+  // toch bij zonder dat de volgorde van de declaraties moet veranderen.
+  const sluitSlotRef = React.useRef(() => {});
+  const openErnaastRef = React.useRef(() => {});
   const somDagen = 7;
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
   const [somRij, setSomRij] = useState(null);
@@ -20840,7 +20935,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   useEffect(() => {
     if (!nieuwBewerk) return;
     setMaand(String(nieuwBewerk.datum).slice(0, 7));
-    setDetail(nieuwBewerk.id); setDetailDag(nieuwBewerk.datum || null);
+    setDetail(nieuwBewerk.id); setDetailDag(nieuwBewerk.datum || null); setDetail2(null); setDetail2Dag(null);
     const t = setTimeout(() => onNieuwGebruikt && onNieuwGebruikt(), 1200);
     return () => clearTimeout(t);
   }, [nieuwBewerk]);
@@ -20857,14 +20952,14 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
   };
   const invVoor = (b, miceId) => {
     const v = veldenVan(b);
-    const sl = kernInvVeld(prodMerk({ miceId }));
+    const sl = kernInvVeld(merkUitInvulSleutel(miceId));
     // Staat het veld er, dan telt dat — ook als het leeggemaakt is. Zo blijft
     // een bewust lege invulling leeg.
     // Staat het er niet, dan kijkt hij naar het sjabloon van "herhalen". Dat is
     // iets wat je zelf hebt aangezet voor déze klant, op déze weekdag, en
     // alleen voor precies hetzelfde product — geen gok van de app, zoals de
     // oude terugval op "iets uit dezelfde categorie" dat wel was.
-    if (kernHeeft(v, sl)) return { onderdelen: kernInvulling(v, prodMerk({ miceId })), naam: "" };
+    if (kernHeeft(v, sl)) return { onderdelen: kernInvulling(v, merkUitInvulSleutel(miceId)), naam: "" };
     const k = gekozen(b).find((x) => invulSleutel(b, x) === String(miceId));
     return herhaalInvulling(koppeling, b, miceId, (k && k.aantal) || gastenVan(b));
   };
@@ -20906,7 +21001,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     }
   }
   const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
-  const springNaar = (p) => { setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); setDetailDag(p.datum || null); };
+  const springNaar = (p) => { setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); setDetailDag(p.datum || null); setDetail2(null); setDetail2Dag(null); };
   // Live zoeken naar een partij op naam, met sprong naar de kaart (evt. na
   // maandwissel) en een korte donkere rand-highlight.
   const [zoekOpen, setZoekOpen] = useState(false);
@@ -21026,11 +21121,64 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     return () => clearTimeout(t);
   }, []);
 
-  const detailBoeking = (() => {
-    if (detail == null) return null;
+  const partijMet = (id, dag) => {
+    if (id == null) return null;
     const lijst = splitsPerDag(boekingen);
-    return (detailDag && lijst.find((b) => b.id === detail && b.datum === detailDag)) || lijst.find((b) => b.id === detail) || null;
-  })();
+    return (dag && lijst.find((b) => b.id === id && b.datum === dag)) || lijst.find((b) => b.id === id) || null;
+  };
+  const detailBoeking = partijMet(detail, detailDag);
+  const detailBoeking2 = partijMet(detail2, detail2Dag);
+  // Sluiten van het linkerslot schuift de rechter naar links: zo staat er
+  // nooit een gat waar je op klikt.
+  const sluitSlot = (n) => {
+    if (n === 2) { setDetail2(null); setDetail2Dag(null); return; }
+    setDetail(detail2); setDetailDag(detail2Dag);
+    setDetail2(null); setDetail2Dag(null);
+  };
+  // Een partij ernaast zetten. Is er nog niets open, dan komt hij links; staat
+  // er al een, dan rechts. Staat hij al open, dan gebeurt er niets.
+  const openErnaast = (id, dag) => {
+    // Staat hij al links, dan is er niets te openen. Rechts hoeft niet
+    // nagekeken: het linkerslot is altijd als eerste gevuld, dus een partij
+    // die rechts staat staat nooit als enige open.
+    if (String(detail) === String(id) && String(detailDag || "") === String(dag || "")) return;
+    if (detail == null) { setDetail(id); setDetailDag(dag || null); return; }
+    setDetail2(id); setDetail2Dag(dag || null);
+  };
+  sluitSlotRef.current = sluitSlot;
+  openErnaastRef.current = openErnaast;
+
+  // De detailkaart, zodat hij twee keer naast elkaar kan staan: je kunt een
+  // tweede partij ernaast openen zonder de eerste kwijt te raken.
+  const partijKaart = (bk, apiRef, sluit) => (
+  <PartijKaart apiRef={apiRef} b={bk} naamTekst={naamVan(bk)} statusWaarde={statusVan(bk)} magNaamStatus={true} keuzes={gekozen(bk)} mepRegels={mepVan(bk).filter(() => true)}
+    allergie={allergieEff(bk)} noot={nootEff(bk)}
+    tijdTekst={tijdVan(bk)} gastenTekst={gastenVan(bk)}
+    catVan={catVan} stift={null} markering={GEEN_MARKERING} zetMark={() => {}}
+    canEdit={canEdit} magExtra={true} extra={bkxVan(bk)}
+    aangepast={Object.keys(lagenVan(bk).bk || {}).length > 0}
+    nootOpenStandaard={true}
+    invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true} toonPrijs={true} toonOverige={true}
+    autoBewerk={(nieuwBewerk && nieuwBewerk.id === bk.id) || String(heropend || "") === String(bk.id)}
+    onMinimaliseren={() => legWeg(bk)}
+    invullingVan={(miceId) => invVoor(bk, miceId)}
+    onInvulling={canEdit && onKernInvul ? (miceId, inv) => onKernInvul(bk, [{ miceId, inv }]) : null} onInvullingBatch={canEdit && onKernInvul ? (lijst) => onKernInvul(bk, lijst) : null}
+    invKlaar={invKlaarVan ? (invKlaarVan(bk) || bk.datum < vandaag) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(bk, klaar) : null}
+    menuKopie={menuKopieVan ? menuKopieVan(bk) : null}
+    onMenuKopie={onMenuKopie ? (tekst) => onMenuKopie(bk, tekst) : null}
+    vorigeInvulling={(miceId, aantal) => vorigeInvulling(bk, miceId, aantal)}
+    onInvullen={null}
+    onOpslaan={(regels, velden, inv) => onKernOpslaan && onKernOpslaan(bk, regels, velden, inv)}
+    onHerstel={() => { if (onKernWissen) onKernWissen(bk); if (onSync) onSync(); }} herstelLabel="Wijzigingen resetten"
+    handmatig={kernHandmatig(vouwSamen(lagenVan(bk).bk, lagenVan(bk).mep), lagenVan(bk).mice)}
+    magSelecteren={true}
+    onVerwijderPartij={() => { onVerwijder(bk); sluit(); }}
+    onOpenRecipe={onOpenRecipe} log={bk.log}
+    randKleur={statusRand(statusVan(bk))} statusTekst={statusNL(statusVan(bk))}
+    tel={bk.tel} contact={bk.contact} zaal={bk.zaal} adres={adresVan(bk)} klant_email={bk.klant_email}
+    klantInstel={klantInstelVan ? klantInstelVan(bk) : null}
+    miceProducten={miceProducten} producten={producten} />
+  );
 
   return (
     <div>
@@ -21177,7 +21325,7 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
                           // in bewerken, net als via de pil onderaan.
                           const w = weggelegd.find((x) => String(x.id) === String(b.id));
                           if (w) { haalTerug({ ...w, datum: b.datum || w.datum }); return; }
-                          setDetail(b.id); setDetailDag(b.datum);
+                          openErnaastRef.current(b.id, b.datum);
                         }} className="ff w-full text-left rounded-md px-1.5 py-1 leading-tight" style={{ background: statusRand(statusVan(b)), color: "#fbf9f2", border: invKlaarVan && !invKlaarVan(b) && b.datum >= vandaag ? "3px solid #1a1a1a" : "3px solid transparent", boxShadow: highlightId === b.id ? "0 0 0 2.5px #1a1a1a" : weggelegd.some((w) => String(w.id) === String(b.id)) ? "0 0 0 2.5px #b3261e" : "none" }}>
                         <span title={naamVan(b) || ""} className="block truncate text-[11px] font-semibold">{naamVan(b) || "Zonder naam"}</span>
                         <span className="flex items-center gap-1 text-[10.5px]" style={{ opacity: 0.9 }}><Users size={11} className="shrink-0" /> {gastenVan(b)} · {tijdVan(b) || "—"}</span>
@@ -21210,45 +21358,46 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
       )}
 
       {detailBoeking && (
-        <div className="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6" style={{ background: "rgba(43,46,36,.55)" }} {...backdropSluiter(() => {
+        <div className="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6" style={{ background: "rgba(43,46,36,.55)", paddingTop: weggelegd.length ? "4.25rem" : undefined }} {...backdropSluiter(() => {
             // Naast de popup klikken tijdens bewerken = opslaan en wegleggen,
             // zodat de partij op de balk blijft staan en een misklik niets kost.
-            const api = kaartApi.current;
-            const bezig = !!(api && api.inBewerking && api.inBewerking());
-            if (api) api.opslaanBijSluiten();
-            if (bezig) legWeg(detailBoeking); else setDetail(null);
+            // Staan er twee open, dan geldt dat voor allebei.
+            for (const [bk, api, n] of [[detailBoeking2, kaartApi2.current, 2], [detailBoeking, kaartApi.current, 1]]) {
+              if (!bk) continue;
+              const bezig = !!(api && api.inBewerking && api.inBewerking());
+              if (api) api.opslaanBijSluiten();
+              if (bezig) opDeBalk(bk);
+            }
+            setDetail(null); setDetailDag(null); setDetail2(null); setDetail2Dag(null);
           })}>
-          <div className="max-w-2xl mx-auto" onClick={(e) => e.stopPropagation()}>
+          <div className={(detailBoeking2 ? "max-w-6xl" : "max-w-2xl") + " mx-auto"} onClick={(e) => e.stopPropagation()}>
             {/* Geen eigen sluitknop: het rode kruis op de kaart annuleert het
                 bewerken, en klikken náást de popup sluit hem (en slaat op, zodat
                 een misklik niets weggooit). */}
-            <PartijKaart apiRef={kaartApi} b={detailBoeking} naamTekst={naamVan(detailBoeking)} statusWaarde={statusVan(detailBoeking)} magNaamStatus={true} keuzes={gekozen(detailBoeking)} mepRegels={mepVan(detailBoeking).filter(() => true)}
-              allergie={allergieEff(detailBoeking)} noot={nootEff(detailBoeking)}
-              tijdTekst={tijdVan(detailBoeking)} gastenTekst={gastenVan(detailBoeking)}
-              catVan={catVan} stift={null} markering={GEEN_MARKERING} zetMark={() => {}}
-              canEdit={canEdit} magExtra={true} extra={bkxVan(detailBoeking)}
-              aangepast={Object.keys(lagenVan(detailBoeking).bk || {}).length > 0}
-              nootOpenStandaard={true}
-              invulStatus={null} magInvullen={canEdit} recepten={recepten} magProductNaam={true} toonPrijs={true} toonOverige={true}
-              autoBewerk={(nieuwBewerk && nieuwBewerk.id === detailBoeking.id) || String(heropend || "") === String(detailBoeking.id)}
-              onMinimaliseren={() => legWeg(detailBoeking)}
-              invullingVan={(miceId) => invVoor(detailBoeking, miceId)}
-              onInvulling={canEdit && onKernInvul ? (miceId, inv) => onKernInvul(detailBoeking, [{ miceId, inv }]) : null} onInvullingBatch={canEdit && onKernInvul ? (lijst) => onKernInvul(detailBoeking, lijst) : null}
-              invKlaar={invKlaarVan ? (invKlaarVan(detailBoeking) || detailBoeking.datum < vandaag) : true} onInvKlaar={canEdit && onInvKlaar ? (klaar) => onInvKlaar(detailBoeking, klaar) : null}
-              menuKopie={menuKopieVan ? menuKopieVan(detailBoeking) : null}
-              onMenuKopie={onMenuKopie ? (tekst) => onMenuKopie(detailBoeking, tekst) : null}
-              vorigeInvulling={(miceId, aantal) => vorigeInvulling(detailBoeking, miceId, aantal)}
-              onInvullen={null}
-              onOpslaan={(regels, velden, inv) => onKernOpslaan && onKernOpslaan(detailBoeking, regels, velden, inv)}
-              onHerstel={() => { if (onKernWissen) onKernWissen(detailBoeking); if (onSync) onSync(); }} herstelLabel="Wijzigingen resetten"
-              handmatig={kernHandmatig(vouwSamen(lagenVan(detailBoeking).bk, lagenVan(detailBoeking).mep), lagenVan(detailBoeking).mice)}
-              magSelecteren={true}
-              onVerwijderPartij={() => { onVerwijder(detailBoeking); setDetail(null); }}
-              onOpenRecipe={onOpenRecipe} log={detailBoeking.log}
-              randKleur={statusRand(statusVan(detailBoeking))} statusTekst={statusNL(statusVan(detailBoeking))}
-              tel={detailBoeking.tel} contact={detailBoeking.contact} zaal={detailBoeking.zaal} adres={adresVan(detailBoeking)} klant_email={detailBoeking.klant_email}
-              klantInstel={klantInstelVan ? klantInstelVan(detailBoeking) : null}
-              miceProducten={miceProducten} producten={producten} />
+            <div className={detailBoeking2 ? "grid grid-cols-1 lg:grid-cols-2 gap-4 items-start" : ""}>
+              <div className="min-w-0">{partijKaart(detailBoeking, kaartApi, () => sluitSlot(1))}</div>
+              {detailBoeking2 && <div className="min-w-0">{partijKaart(detailBoeking2, kaartApi2, () => sluitSlot(2))}</div>}
+            </div>
+            {/* Een tweede partij van dezelfde dag erbij halen. Alleen wat er
+                nog niet staat, en alleen zolang er plek is. */}
+            {!detailBoeking2 && (() => {
+              const buren = splitsPerDag(boekingen)
+                .filter((x) => x.datum === detailBoeking.datum && !(String(x.id) === String(detailBoeking.id)) && !afgezegd(x) && !isVerwijderd(koppeling, x))
+                .slice(0, 6);
+              if (!buren.length) return null;
+              return (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-[12px]" style={{ color: "#e8e6dc" }}>Ernaast openen:</span>
+                  {buren.map((x) => (
+                    <button key={String(x.id) + x.datum} onClick={() => openErnaast(x.id, x.datum)} title={naamVan(x) || "Zonder naam"}
+                      className="ff rounded-full px-3 py-1.5 text-[12.5px] font-medium"
+                      style={{ background: T.paper, border: "1px solid " + T.line, color: T.ink }}>
+                      {String(naamVan(x) || "Zonder naam").length > 18 ? String(naamVan(x)).slice(0, 18) + "\u2026" : (naamVan(x) || "Zonder naam")}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -21405,9 +21554,15 @@ function InvulGeschKolom({ lijst }) {
 function ProductKiezer({ boeking, lijst, onKies, onSluit }) {
   const [q, setQ] = useState("");
   const [aantal, setAantal] = useState(String(boeking.gasten || ""));
+  // Volgorde: wat je het vaakst koos staat bovenaan. Staan er twee even vaak,
+  // dan die je het laatst koos. Eén keer bepaald bij het openen, zodat de
+  // lijst niet onder je handen verspringt.
   const [gebruik] = useState(() => leesGebruik("product"));
+  const [laatst] = useState(() => leesLaatst("product"));
   const hits = (lijst || []).filter((p) => !q.trim() || softMatchAny([p.naam, p.omschrijving, p.categorie], q))
-    .sort((a, b) => (gebruik[String(b.id)] || 0) - (gebruik[String(a.id)] || 0)).slice(0, 60);
+    .sort((a, b) => (gebruik[String(b.id)] || 0) - (gebruik[String(a.id)] || 0)
+      || (laatst[String(b.id)] || 0) - (laatst[String(a.id)] || 0)
+      || String(a.naam || "").localeCompare(String(b.naam || ""))).slice(0, 60);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-md rounded-2xl p-5 flex flex-col" style={{ background: T.paper, maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
@@ -23386,7 +23541,7 @@ function BatchLogScreen({ batch, canEdit, onBack, onAdd, onDeleteRow }) {
             <Field label="Suiker (°Brix)"><input type="text" inputMode="decimal" className={inputCls} value={brix} onChange={(e) => setBrix(e.target.value.replace(/[^0-9.,]/g, ""))} /></Field>
             <Field label="Temp (°C)"><input type="text" inputMode="decimal" className={inputCls} value={tempC} onChange={(e) => setTempC(e.target.value.replace(/[^0-9.,-]/g, ""))} /></Field>
           </div>
-          <Field label="Notitie"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. geproefd, mooi zuur" /></Field>
+          <Field label="Aantekening"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. geproefd, mooi zuur" /></Field>
           <button onClick={submit} className="btnp ff inline-flex items-center gap-1.5 rounded-lg text-sm font-medium px-4 py-2.5"><Plus size={15} /> Meting toevoegen</button>
         </div>
       )}
@@ -23494,7 +23649,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
         <span className="text-[12.5px] mute">{dLabel(reg.boeking_datum)}</span>
         <span className="flex items-center gap-1.5 shrink-0">
           {boeking && <button onClick={() => setInfoOpen(true)} className="ff rounded-lg p-1" style={{ border: "1px solid " + T.line, color: T.ink }} title="Partij-informatie"><Info size={15} /></button>}
-          {canEdit && onBewerk && !bw && <button onClick={startBewerk} className="ff rounded-lg p-1" style={{ border: "1px solid " + T.line, color: T.ink }} title="Bezorging bewerken (meegegeven materialen en notitie)"><Pencil size={15} /></button>}
+          {canEdit && onBewerk && !bw && <button onClick={startBewerk} className="ff rounded-lg p-1" style={{ border: "1px solid " + T.line, color: T.ink }} title="Bezorging bewerken (meegegeven materialen en aantekening)"><Pencil size={15} /></button>}
           {open.length > 0
             ? <span className="text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#f3ecdc", color: "#6a5326" }}>Nog op te halen</span>
             : <span className="text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5" style={{ background: "#e7ecdd", color: "#44502f" }}>Compleet</span>}
@@ -23508,7 +23663,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
         <PartijInfoPopup naam={boeking.naam} datumKop={dLabel(boeking.datum)} tijdTekst={String(boeking.start_tijd || "").slice(11, 16)}
           gastenTekst={String(boeking.gasten || 0)} bezorging={false} zaal={boeking.zaal || ""} adres={boeking.adres || ""}
           contact={boeking.contact || ""} klant_email={boeking.klant_email || ""} toonEmail={true} tel={boeking.tel || ""}
-          onSluit={() => setInfoOpen(false)} />
+          ingevoerdOp={boeking.mice_aangemaakt} onSluit={() => setInfoOpen(false)} />
       )}
       {/* Per materiaal één regel: naam links, status rechts. In één
           oogopslag te zien wat nog buiten staat. */}
@@ -23545,7 +23700,7 @@ function BezorgKaart({ reg, canEdit, onTerug, onBewerk, onDelete, materiaalNamen
             </div>
           ))}
           <AddRow onClick={plusBwMat} label="Materiaal toevoegen" />
-          <Field label="Notitie"><input className="input px-3 py-2 w-full text-sm" value={bw.notitie} onChange={(e) => setBw((b) => ({ ...b, notitie: e.target.value }))} placeholder="bv. bij de achterdeur afgegeven" /></Field>
+          <Field label="Aantekening"><input className="input px-3 py-2 w-full text-sm" value={bw.notitie} onChange={(e) => setBw((b) => ({ ...b, notitie: e.target.value }))} placeholder="bv. bij de achterdeur afgegeven" /></Field>
           <div className="flex justify-end gap-2">
             <button onClick={() => setBw(null)} className="ff rounded-lg px-3 py-1.5 text-sm font-medium mute" style={{ border: "1px solid " + T.line }}>Annuleren</button>
             <button onClick={bewaarBewerk} className="btnp ff rounded-lg px-3.5 py-1.5 text-sm font-semibold">Wijzigingen opslaan</button>
@@ -23985,7 +24140,7 @@ function BezorgScreen({ boekingen, keuzeBoekingen, bezorgLijst, materiaalItems, 
                   {vanafPaklijst && <p className="text-[12px] mt-1" style={{ color: "#44502f" }}>Paklijst “{vanafPaklijst}” overgenomen — pas de aantallen gerust aan.</p>}
                 </div>
               )}
-              <Field label="Notitie (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
+              <Field label="Aantekening (optioneel)"><input className="input px-3 py-2 w-full text-sm" value={notitie} onChange={(e) => setNotitie(e.target.value)} placeholder="bv. bij de achterdeur afgegeven" /></Field>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12.5px] mute">{Object.keys(bezorgAantallen).length} materiaal{Object.keys(bezorgAantallen).length === 1 ? "" : "en"} ingevuld</span>
                 <span className="flex gap-2">
