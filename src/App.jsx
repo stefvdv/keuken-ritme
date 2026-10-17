@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-17a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-17b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -4310,76 +4310,6 @@ function App() {
     setEetvolgorde(n.length ? n : EETMOMENTEN_STANDAARD);
     await bewaarInstelling("eetvolgorde", { momenten: n });
   };
-  // Adres onthouden voor deze klant — ingesteld op de partij zelf (i-knop).
-  const saveKlantAdres = async (b, adres) => {
-    const sl = klantSleutel(b);
-    if (!sl) return;
-    const a = String(adres || "").trim();
-    const n = { ...klantAdres };
-    if (a) n[sl] = a; else delete n[sl];
-    setKlantAdres(n);
-    await bewaarInstelling("klant_adres", n);
-    flash(a ? "Adres onthouden voor " + (b.klant || b.naam || "deze klant") : "Adres vergeten");
-  };
-  // Deze partij als sjabloon voor de volgende keer: de productenlijst en de
-  // invulling zoals ze nu staan.
-  const bouwSjabloon = (b, dag) => {
-    // Precies de lijst die op de kaart staat — dus ook een vaste weeklijst zoals
-    // die van Necker, of een sjabloon dat er al was. Werd hier alleen naar de
-    // handmatige laag en de MICE-bestelling gekeken, dan legde hij voor zo'n
-    // partij een lege lijst vast en leek het herhalen niet opgeslagen.
-    const bron = alleKeuzesVan(koppeling, boekingSleutel, b) || [];
-    const keuzes = bron.map((k) => ({ miceId: k.miceId != null ? k.miceId : null, naam: k.naam || "", aantal: k.aantal != null ? k.aantal : null, ...(k.kern ? { kern: k.kern } : {}), ...(k.tijd ? { tijd: k.tijd } : {}) }));
-    // De invulling komt uit de kern. Hij werd hier nog uit de oude inv|-laag
-    // gehaald, en daar schrijft sinds de herbouw niemand meer in: het sjabloon
-    // werd dus opgeslagen zonder invulling, en dan valt er later niets te
-    // herhalen.
-    // De productregels komen hier uit de kern en niet uit de lijst hierboven.
-    // Dat scheelt twee valkuilen. De lijst hierboven kan een vaste weeklijst
-    // zijn (die van Necker) waarvan de regels geen productnummer hebben,
-    // terwijl de invulling juist onder het MICE-product staat. En de
-    // invulling staat in de kern onder "m:<sleutel>", waar het sjabloon de
-    // kale sleutel bewaart — dat is waar invVoor later op zoekt. Precies de
-    // regels van de kaart, dus, want die leest de kaart ook.
-    const velden = boekingVelden(kernLagen(koppelingNu.current, b.id, b.datum));
-    const inv = [];
-    for (const r of kernRegels(velden)) {
-      if (!r.merk || r.merk.slice(0, 2) !== "m:") continue;
-      const merk = r.merk.slice(2); // de kale invulsleutel
-      const od = kernInvulling(velden, r.merk);
-      if (!od.some((o) => String((o && o.naam) || "").trim())) continue;
-      inv.push({ miceId: merk, cat: catVanAlle[idUitSleutel(merk)] || "", naam: r.naam || "", aantal: r.aantal || b.gasten || 0, onderdelen: od });
-    }
-    return { sjabloon: true, dag: dag == null ? null : dag, t: new Date().toISOString(), keuzes, inv };
-  };
-  const zetHerhaal = async (b, keuze) => {
-    const dagNu = weekdagVan(b);
-    const dag = keuze === "dag" ? dagNu : null;
-    // Eerst vastleggen wat er nu staat, dan pas de oude sjablonen opruimen —
-    // andersom haalt het opruimen de bron weg waaruit we willen vastleggen.
-    const sj = keuze ? bouwSjabloon(b, dag) : null;
-    if (sj && !sj.keuzes.length && !sj.inv.length) { flash("Er is nog niets om te herhalen — vul de partij eerst in"); return; }
-    for (const sl of [herhaalSleutel(b, null), dagNu == null ? null : herhaalSleutel(b, dagNu)]) {
-      if (sl && koppeling[sl]) await saveKoppelingSleutel(sl, []);
-    }
-    if (!keuze) { flash("Deze partij wordt niet meer herhaald"); return; }
-    await saveKoppelingSleutel(herhaalSleutel(b, dag), [sj]);
-    flash("Herhaalt voortaan voor " + (b.klant || b.naam || "deze klant") + (dag == null ? "" : " op " + DAGNAMEN[dag]));
-  };
-  const klantInstelVan = (b) => {
-    if (!canEdit || !b || !klantSleutel(b)) return null;
-    const sj = herhaalSjabloon(koppeling, b);
-    return {
-      naam: String(b.klant || b.contact || b.naam || ""),
-      adres: klantAdres[klantSleutel(b)] || "",
-      uitMice: String(b.adres || "").trim(),
-      dagNaam: DAGNAMEN[weekdagVan(b)] || "",
-      herhaal: sj ? (sj.dag == null ? "elke" : "dag") : "",
-      herhaalSinds: (sj && sj.t) || "",
-      onAdres: (a) => saveKlantAdres(b, a),
-      onHerhaal: (keuze) => zetHerhaal(b, keuze),
-    };
-  };
   const saveMenuOpmaak = async (v) => {
     const n = { titel: String((v && v.titel) || "").trim() || MENU_TITEL_STANDAARD, titelEn: String((v && v.titelEn) || "").trim() || MENU_TITEL_EN_STANDAARD, kleur: String((v && v.kleur) || "").trim() || BRIEF_GROEN_STANDAARD };
     setMenuOpmaak(n);
@@ -6967,7 +6897,7 @@ function App() {
               onEditItem={(id) => push({ screen: "calcItemForm", editing: id })}
               onDeleteItem={deleteCalcItem} />}
             {section === "mep" && (
-              <MepWeek klantInstelVan={klantInstelVan} boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
+              <MepWeek boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
@@ -6984,7 +6914,7 @@ function App() {
               onDeleteDoc={deleteWerkDoc}
               onEditFerment={() => push({ screen: "fermentGuideForm" })} />}
             {section === "boekingen" && chefMode && (
-              <BoekingenList klantInstelVan={klantInstelVan} boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
+              <BoekingenList boekingen={boekingen} koppeling={koppeling} boekingSleutel={boekingSleutel}
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 miceProducten={miceProducten} prodKoppeling={prodKoppeling}
                 bezorgLijst={bezorgLijst} onOpenBezorg={(id) => push({ screen: "bezorgmateriaal", focus: id })}
@@ -14412,6 +14342,9 @@ const catZichtStandaard = (cat) => {
   return "keuken";
 };
 const isVerwijderd = (koppeling, b) => koppeling["del|" + b.id] !== undefined;
+// Een partij die niet doorgaat: de status zegt het, of iemand heeft het in de
+// aantekening gezet. Beide pagina's kijken hier naar.
+const isAfgezegd = (status, noot) => /cancel|annul|afgezegd/i.test(String(status || "")) || /\bafgezegd\b/i.test(String(noot || ""));
 const statusRand = (st) => {
   const s = String(st || "");
   if (s === "confirmed" || s === "completed") return "#5a7d46";
@@ -14543,25 +14476,6 @@ const adresVan = (b) => String((b && b.adres) || "").trim() || KLANT_ADRES[klant
 const weekdagVan = (b) => { const d = new Date(String((b && b.datum) || "") + "T12:00:00"); return isFinite(d) ? d.getDay() : null; };
 // Wat er precies gaat gebeuren als je op herhalen drukt, in gewone woorden.
 // Het staat er los van de knop zodat het na te rekenen is zonder het scherm.
-const herhaalVraag = (klantInstel, keuze) => {
-  const k = klantInstel || {};
-  const naam = String(k.naam || "").trim() || "deze klant";
-  const wanneer = keuze === "dag" ? "elke " + (k.dagNaam || "week") : "elke volgende boeking";
-  const al = keuze === "dag" ? k.herhaal === "dag" : k.herhaal === "elke";
-  return {
-    titel: al ? "Het voorbeeld vervangen?" : "Deze partij bewaren als voorbeeld?",
-    tekst: (al
-      ? "Het voorbeeld dat er nu staat wordt overschreven door de invulling van deze partij."
-      : "De producten en de invulling van deze partij worden bewaard als voorbeeld.")
-      + "\n\nVanaf nu begint " + wanneer + " van " + naam + " hiermee, omgerekend naar hun aantal gasten."
-      + "\n\nWat er al op de mise-en-place staat verandert hier niet van.",
-    okLabel: al ? "Vervangen" : "Bewaren",
-  };
-};
-const vraagHerhaal = async (klantInstel, keuze) => {
-  const v = herhaalVraag(klantInstel, keuze);
-  return await bevestig(v.tekst, { titel: v.titel, okLabel: v.okLabel });
-};
 const herhaalSleutel = (b, dag) => "herhaal|" + klantSleutel(b) + "|" + (dag == null ? "*" : dag);
 const herhaalSjabloon = (koppeling, b) => {
   if (!koppeling || !b || !klantSleutel(b)) return null;
@@ -16958,9 +16872,7 @@ const ingevoerdTekst = (iso) => {
   const p2 = (n) => String(n).padStart(2, "0");
   return d + " \u00b7 " + p2(x.getHours()) + ":" + p2(x.getMinutes());
 };
-function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, klantInstel, meerdaags, ingevoerdOp }) {
-  const [adresVeld, setAdresVeld] = useState(() => (klantInstel && klantInstel.adres) || "");
-  useEffect(() => { setAdresVeld((klantInstel && klantInstel.adres) || ""); }, [klantInstel && klantInstel.adres]);
+function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, statusTekst, zaal, adres, contact, klant_email, toonEmail = true, tel, onSluit, meerdaags, ingevoerdOp }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(43,46,36,.5)" }} onClick={onSluit}>
       <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
@@ -16999,27 +16911,6 @@ function PartijInfoPopup({ naam, datumKop, tijdTekst, gastenTekst, bezorging, st
             </div>
           )}
         </div>
-        {klantInstel && (
-          <div className="mt-3 pt-3 space-y-3" style={{ borderTop: "1px solid " + T.line }}>
-            <div className="text-[11px] font-semibold uppercase tracking-widest acc">Vast voor {klantInstel.naam || "deze klant"}</div>
-
-            <div>
-              <div className="text-[12.5px] mute mb-1">
-                {klantInstel.uitMice
-                  ? "MICE levert voor deze boeking zelf een adres aan; dat gaat altijd voor."
-                  : "MICE levert geen adres. Vul het hier één keer in, dan staat het bij elke boeking van deze klant."}
-              </div>
-              <div className="flex gap-2">
-                <input className="input px-2 py-1.5 text-sm flex-1 min-w-0" value={adresVeld} onChange={(e) => setAdresVeld(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); klantInstel.onAdres(adresVeld); } }}
-                  placeholder="Straat 1, Plaats" />
-                <button onClick={() => klantInstel.onAdres(adresVeld)} className="btno ff rounded-lg px-3 py-1.5 text-[12.5px] font-medium shrink-0">Onthouden</button>
-              </div>
-            </div>
-
-          </div>
-        )}
-
         <div className="flex justify-end mt-3">
           <button onClick={onSluit} className="btno ff rounded-lg px-3 py-2 text-[12.5px] font-medium">Sluiten</button>
         </div>
@@ -17438,7 +17329,7 @@ function PartijGeschPopup({ naam, handmatig, log, onReset, resetLabel, onSluit }
   );
 }
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, klantInstel, handmatig, magSelecteren }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, handmatig, magSelecteren }) {
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
   const [naAfronden, setNaAfronden] = useState(false); // venster kwam uit "Invulling afronden"
@@ -18103,7 +17994,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         <PartijInfoPopup naam={b.naam} datumKop={datumKop} tijdTekst={tijdTekst} gastenTekst={gastenTekst} bezorging={bezorging}
           statusTekst={statusTekst} zaal={zaalEff} adres={adres} contact={contact} klant_email={klant_email} toonEmail={toonEmail} tel={tel}
           meerdaags={meerdaagsInfo(b)} ingevoerdOp={b.mice_aangemaakt}
-          klantInstel={klantInstel} onSluit={() => setInfoOpen(false)} />
+          onSluit={() => setInfoOpen(false)} />
       )}
 
       {!bewerk && (
@@ -19920,7 +19811,7 @@ const dagOnderBalk = (koppen, balkOnder) => {
   for (const k of koppen || []) { if (Number(k.top) < Number(balkOnder)) uit = k.dag; else break; }
   return uit;
 };
-function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel, mepMark, onMepMark }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [notitieOpen, setNotitieOpen] = useState(false);
   // De app schrijft het schoonmaakblok niet bij terwijl dit venster openstaat.
@@ -20184,7 +20075,7 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
   const naamVan = (b) => String(kernWaarde(veldenVan(b), "naam") || "") || b.naam;
   // Afgezegd/geannuleerd hoort niet in de mep (op de Boekingen-pagina blijven
   // ze wel zichtbaar). Ook een notitie als "afgezegd" telt mee.
-  const afgezegd = (b) => /cancel|annul|afgezegd/i.test(String(statusVan(b) || "")) || /\bafgezegd\b/i.test(String(nootEff(b) || ""));
+  const afgezegd = (b) => isAfgezegd(statusVan(b), nootEff(b));
   // Veertien dagen in totaal: wat er in beeld staat, plus de rest van de week
   // erna. De tweede lus begint waar de eerste ophoudt — begon hij op een vast
   // getal, dan stond de maandag erna er twee keer in.
@@ -20636,7 +20527,6 @@ function MepWeek({ klantInstelVan, boekingen, koppeling, boekingSleutel, product
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal} adres={adresVan(b)} klant_email={b.klant_email} toonEmail={false}
-                    klantInstel={klantInstelVan ? klantInstelVan(b) : null}
                     miceProducten={miceProducten} producten={producten} />
                   </div>
                 );
@@ -20866,7 +20756,7 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const kaartApi = React.useRef(null); // opslaan-bij-sluiten van de detailkaart
@@ -21176,7 +21066,6 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
     onOpenRecipe={onOpenRecipe} log={bk.log}
     randKleur={statusRand(statusVan(bk))} statusTekst={statusNL(statusVan(bk))}
     tel={bk.tel} contact={bk.contact} zaal={bk.zaal} adres={adresVan(bk)} klant_email={bk.klant_email}
-    klantInstel={klantInstelVan ? klantInstelVan(bk) : null}
     miceProducten={miceProducten} producten={producten} />
   );
 
@@ -21382,11 +21271,11 @@ function BoekingenList({ klantInstelVan, boekingen, koppeling, boekingSleutel, p
                 nog niet staat, en alleen zolang er plek is. */}
             {!detailBoeking2 && (() => {
               const buren = splitsPerDag(boekingen)
-                .filter((x) => x.datum === detailBoeking.datum && !(String(x.id) === String(detailBoeking.id)) && !afgezegd(x) && !isVerwijderd(koppeling, x))
+                .filter((x) => x.datum === detailBoeking.datum && !(String(x.id) === String(detailBoeking.id)) && !isAfgezegd(statusVan(x), nootEff(x)) && !isVerwijderd(koppeling, x))
                 .slice(0, 6);
               if (!buren.length) return null;
               return (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2" data-ernaast="1">
                   <span className="text-[12px]" style={{ color: "#e8e6dc" }}>Ernaast openen:</span>
                   {buren.map((x) => (
                     <button key={String(x.id) + x.datum} onClick={() => openErnaast(x.id, x.datum)} title={naamVan(x) || "Zonder naam"}
