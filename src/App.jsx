@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-17h"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-17j"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -8901,15 +8901,23 @@ const bestelDagLabel = (dag, nu) => {
   // een week tussen zit, en bij een bestelling wil je de dag zeker weten.
   return naam + " " + d.getDate() + " " + MAANDEN_KORT[d.getMonth()] + " besteld";
 };
-const bdBestelRegels = (artikelen, aantallen) => {
+// "namen" is de lijst zoals het luik hem toont (sleutel → regel). Zonder die
+// lijst stond er van een zelf toegevoegd product alleen het kenmerk in beeld —
+// "e1791959718639 — zelf toegevoegd" — en dan weet je niet wát er niet meegaat.
+const bdBestelRegels = (artikelen, aantallen, namen) => {
   const opSleutel = new Map();
   for (const a of artikelen || []) opSleutel.set("a:" + a.code, a);
+  const uitLijst = (sl) => {
+    if (!namen) return null;
+    const r = typeof namen.get === "function" ? namen.get(sl) : namen[sl];
+    return r && String(r.naam || "").trim() ? String(r.naam).trim() : null;
+  };
   const mee = [], anders = [];
   for (const sleutel of Object.keys(aantallen || {})) {
     const tekst = String(aantallen[sleutel] == null ? "" : aantallen[sleutel]).trim();
     if (!tekst) continue;
     const art = opSleutel.get(sleutel);
-    const naam = (art && (art.omschrijving || art.code)) || String(sleutel).replace(/^[ae]:/, "");
+    const naam = (art && (art.omschrijving || art.code)) || uitLijst(sleutel) || String(sleutel).replace(/^[ae]:/, "");
     if (!art) { anders.push({ naam, aantal: tekst, reden: "zelf toegevoegd" }); continue; }
     if (!isBdLev(art.leverancier)) { anders.push({ naam, aantal: tekst, reden: art.leverancier || "andere leverancier" }); continue; }
     const code = rauweArtikelCode(art.code);
@@ -9649,6 +9657,13 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     return uit;
   }, [bdArtikelen, st.eigenProducten]);
 
+  // De volgorde van de lijst staat op hoe vaak iets besteld is. Maar invullen
+  // telt mee voor die teller, dus sprong de regel waar je een aantal in typte
+  // meteen naar boven — en al het andere schoof mee onder je handen vandaan.
+  // De volgorde ligt daarom vast zodra je begint in te vullen; sluit je het
+  // luik en open je het opnieuw, dan staat alles weer op zijn nieuwe plek.
+  const telVast = React.useRef(null);
+  const telBevroren = React.useRef(false);
   const zetAantal = (sleutel, tekst) => {
     setSt((s) => {
       const was = String(s.aantallen[sleutel] || "").trim();
@@ -9657,6 +9672,7 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
       if (nu.trim()) aantallen[sleutel] = nu; else delete aantallen[sleutel];
       const telling = { ...s.telling };
       if (!was && nu.trim()) telling[sleutel] = (telling[sleutel] || 0) + 1; // leeg → ingevuld telt als "besteld"
+      telBevroren.current = true; // de volgorde blijft staan zolang je bezig bent
       const nieuw = { ...s, aantallen, telling };
       stRef.current = nieuw;
       return nieuw;
@@ -9733,7 +9749,6 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
   // op hun site, met de bestelling voor je. Zo zie je altijd eerst wat er
   // staat voordat het weggaat.
   const [bdBezig, setBdBezig] = useState(false);
-  const bdLijst = React.useMemo(() => bdBestelRegels(bdArtikelen, st.aantallen), [bdArtikelen, st.aantallen]);
   const naarBd = async () => {
     if (!onNaarBd || bdBezig) return;
     const { mee, anders } = bdLijst;
@@ -9842,7 +9857,9 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     // niet zoekt — dan is het gewoon de catalogus en mag je er doorheen.
     return (!q || breed) ? binnen.concat(buiten) : binnen;
   }, [lijsten, favo, q, breed]);
-  const sorteer = (items) => [...items].sort((a, b) => ((st.telling[b.sleutel] || 0) - (st.telling[a.sleutel] || 0)) || a.naam.localeCompare(b.naam, "nl"));
+  if (!telBevroren.current) telVast.current = st.telling || {};
+  const sorteerTel = telVast.current || {};
+  const sorteer = (items) => [...items].sort((a, b) => ((sorteerTel[b.sleutel] || 0) - (sorteerTel[a.sleutel] || 0)) || a.naam.localeCompare(b.naam, "nl"));
   // Levert het zoeken érgens iets op? Zo niet, dan bieden we aan om de
   // getypte tekst zelf op de lijst te zetten.
   const gevondenIets = React.useMemo(() => {
@@ -9857,6 +9874,9 @@ function BestelPopup({ bdArtikelen, data, onSave, onClose, onNaarBd, levFavoriet
     return (bdZoek.hits || []).length > 0 || bdZoek.bezig;
   }, [q, zichtbareLijsten, st.verborgen, bdZoek.hits, bdZoek.bezig]);
   const alle = React.useMemo(() => { const m = new Map(); for (const l of lijsten) for (const r of l.items) m.set(r.sleutel, { ...r, lijst: l.naam }); return m; }, [lijsten]);
+  // Wat er naar de wagen van BD kan en wat niet. Staat hier en niet hierboven,
+  // omdat het de lijst van dit luik nodig heeft om de namen te kunnen noemen.
+  const bdLijst = React.useMemo(() => bdBestelRegels(bdArtikelen, st.aantallen, alle), [bdArtikelen, st.aantallen, alle]);
   const bestelDagen = React.useMemo(() => bestelDagenNu(st.besteld), [st.besteld]);
   // Een bestelde regel terugvinden bij het artikel waar hij van kwam. Eerst op
   // sleutel, en anders op naam: regels van v\u00f3\u00f3r we die sleutel bewaarden
@@ -15402,11 +15422,11 @@ const eetMoment = (t) => {
   const r = eetRang(t);
   return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
 };
-// Een vleessupplement (of vissupplement) komt er bij een gang bíj. Het hoorde
-// nergens en belandde daardoor achter de borrel; nu valt het onder het diner.
-// Binnen die gang wordt het niet verplaatst: het hoort bij het hoofdgerecht,
-// en achteraan zetten bracht het ná het dessert dat in hetzelfde buffet zit.
-// De volgorde van de boeking is hier de baas.
+// Een vleessupplement (of vissupplement) komt er bij een gang bíj, meestal bij
+// het hoofdgerecht. Het hoorde nergens en belandde daardoor achter de borrel;
+// nu valt het onder het diner, en binnen die gang staat het vooraan. Achteraan
+// zetten bracht het ná het dessert, en dat dessert is vaak de laatste regel
+// van hetzelfde buffet — dan kan het supplement er alleen nog vóór.
 const isSupplement = (t) => /supp?lement/.test(zonderAccent(String(t || "")).toLowerCase());
 // Waar de app naar kijkt om de gang van een product te bepalen: de naam van
 // dát product en zijn eigen omschrijving uit MICE — wat achter het i-knopje
@@ -15431,9 +15451,14 @@ const eetMomentVan = (k, catVan) => {
   const r = eetRangVan(k, catVan);
   return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
 };
-// Alleen op gang sorteren. Binnen een gang blijft de volgorde van de boeking
-// staan: die sorteer is stabiel, dus wat in MICE voor elkaar staat blijft dat.
-const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRangVan(a, catVan) - eetRangVan(b, catVan));
+// Op gang sorteren, en binnen een gang het supplement vooraan. Verder blijft
+// de volgorde van de boeking staan: deze sorteer is stabiel, dus wat in MICE
+// voor elkaar staat blijft dat.
+const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => {
+  const ra = eetRangVan(a, catVan), rb = eetRangVan(b, catVan);
+  if (ra !== rb) return ra - rb;
+  return (isSupplement(eetSleutel(a)) ? 0 : 1) - (isSupplement(eetSleutel(b)) ? 0 : 1);
+});
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
 // De portie kan in gram, kilo, milli-/centi-/liters of stuks staan; de
