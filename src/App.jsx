@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-17e"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-17g"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -15361,7 +15361,7 @@ const EETMOMENTEN_STANDAARD = [
   { naam: "Lunch", w: ["lunch", "brood", "sandwich", "soep"] },
   { naam: "Snack", w: ["snack", "middag", "taart", "zoet", "koffie", "thee"] },
   { naam: "Amuse", w: ["amuse"] },
-  { naam: "Diner", w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht", "supplement"] },
+  { naam: "Diner", w: ["diner", "dinner", "buffet", "walking", "hoofdgerecht", "supplement", "suplement"] },
   { naam: "Dessert", w: ["dessert", "nagerecht", "toetje"], eerst: true },
   { naam: "Borrel", w: ["borrel", "tapas", "hapjes", "drank", "bier", "wijn"] },
 ];
@@ -15381,9 +15381,18 @@ const schoonEetmomenten = (lijst) => {
 };
 const zetEetvolgorde = (lijst) => { const n = schoonEetmomenten(lijst); EETVOLGORDE = n.length ? n : EETMOMENTEN_STANDAARD; };
 const eetRang = (t) => {
-  const x = zonderAccent(String(t || "")).toLowerCase();
-  for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].eerst && EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
-  for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
+  const vol = zonderAccent(String(t || "")).toLowerCase();
+  // Het merkje "(dessert)" zet de app er zelf achter als MICE in de
+  // omschrijving over een dessert spreekt. Dat mag een gang die in de naam
+  // zélf staat niet overrulen: "Diner: Smaken uit de tuin (buffet) (dessert)"
+  // is een diner met een dessert erin, geen dessert — en zette anders het hele
+  // buffet onder het kopje Dessert. Eerst dus zonder dat merkje kijken; zegt
+  // de kale naam niets, dan telt het merkje alsnog.
+  const kaal = vol.replace(/\s*\(dessert\)/g, " ");
+  for (const x of kaal === vol ? [vol] : [kaal, vol]) {
+    for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].eerst && EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
+    for (let i = 0; i < EETVOLGORDE.length; i++) if (EETVOLGORDE[i].w.some((w) => x.includes(w))) return i;
+  }
   return EETVOLGORDE.length;
 };
 // Bij welk eetmoment hoort dit product? De naam daarvan — Lunch, Diner,
@@ -15396,12 +15405,34 @@ const eetMoment = (t) => {
 // Een vleessupplement (of vissupplement) komt er bij een gang bíj. Het hoorde
 // nergens en belandde daardoor achter de borrel; nu valt het onder het diner,
 // en binnen die gang onderaan — eerst het menu, dan wat erbij komt.
-const isSupplement = (t) => /supplement/.test(zonderAccent(String(t || "")).toLowerCase());
-const eetSleutel = (k, catVan) => String((k && k.naam) || "") + " " + ((catVan && catVan[k && k.miceId]) || "");
+const isSupplement = (t) => /supp?lement/.test(zonderAccent(String(t || "")).toLowerCase());
+// Waar de app naar kijkt om de gang van een product te bepalen: de naam van
+// dát product en zijn eigen omschrijving uit MICE — wat achter het i-knopje
+// staat. Niet de categorie: die is gedeeld met andere producten, en daardoor
+// belandde een borrelselectie in de categorie "Lunch & Broodjes" onder het
+// kopje Lunch. Zo bepaal je het in MICE, per product, en niet via een hokje
+// waar nog twintig andere dingen in zitten.
+const eetSleutel = (k) => String((k && k.naam) || "") + " " + String((k && k.oms) || "");
+// In deze volgorde: eerst de naam van het product, dan zijn omschrijving, en
+// pas als die allebei niets zeggen de categorie. Alle drie apart, niet op één
+// hoop: zou de omschrijving met de naam meedoen, dan maakte "buffet met
+// dessert" van een heel dinerbuffet een dessert. De naam heeft het laatste
+// woord, de omschrijving vult aan waar de naam zwijgt.
+const eetRangVan = (k, catVan) => {
+  for (const t of [String((k && k.naam) || ""), String((k && k.oms) || ""), String((catVan && catVan[k && k.miceId]) || "")]) {
+    const r = eetRang(t);
+    if (r < EETVOLGORDE.length) return r;
+  }
+  return EETVOLGORDE.length;
+};
+const eetMomentVan = (k, catVan) => {
+  const r = eetRangVan(k, catVan);
+  return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
+};
 const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => {
-  const ra = eetRang(eetSleutel(a, catVan)), rb = eetRang(eetSleutel(b, catVan));
+  const ra = eetRangVan(a, catVan), rb = eetRangVan(b, catVan);
   if (ra !== rb) return ra - rb;
-  return (isSupplement(eetSleutel(a, catVan)) ? 1 : 0) - (isSupplement(eetSleutel(b, catVan)) ? 1 : 0);
+  return (isSupplement(eetSleutel(a)) ? 1 : 0) - (isSupplement(eetSleutel(b)) ? 1 : 0);
 });
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
@@ -17470,7 +17501,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       // gast leest "Lunch", geen "MK Lunch arrangement nr.10". Twee producten
       // in dezelfde gang komen onder één kopje te staan.
       if (!regels.length) { leeg++; continue; }
-      const kop = eetMoment(String(k.naam || "") + " " + String((catVan && catVan[k.miceId]) || ""));
+      const kop = eetMomentVan(k, catVan);
       const bestaand = kop ? uit.find((x) => x.kop === kop) : null;
       if (bestaand) bestaand.regels = [...bestaand.regels, ...regels];
       else uit.push({ kop, regels });
