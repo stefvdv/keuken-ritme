@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-17b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-17e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17927,7 +17927,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
             )}
             {onMinimaliseren && (
               <button onClick={() => { opslaan(); onMinimaliseren(); }} className="ff shrink-0 rounded-lg p-1.5" style={{ border: "1px solid " + T.line, color: T.ink }}
-                title="Even wegleggen — slaat op en sluit de partij, zodat je een tweede boeking kunt openen. Openen zet hem weer in bewerken."><Minus size={18} /></button>
+                title="Even wegleggen — slaat op en sluit de partij. Open je daarna een andere boeking, dan komt deze er weer naast te staan."><Minus size={18} /></button>
             )}
             {/* Annuleren en opslaan horen bij elkaar en gaan samen of niet. */}
             <span className="flex items-center gap-2 shrink-0">
@@ -20015,35 +20015,80 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   // terugscrollen, maar je begint waar het werk is in plaats van op maandag.
   // Dit gebeurt één keer, bij het opengaan van de bladzijde: van week wisselen
   // laat de bladzijde staan waar hij staat.
+  // Mag deze bladzijde zichzelf plaatsen? Eén keer afgelezen bij het opengaan.
+  // De schil zet zijn vlag een fractie later weer uit, en wij zijn dan nog
+  // bezig: bij het opstarten van de app zijn de boekingen er nog niet en
+  // groeit de bladzijde pas als ze binnenkomen.
+  const mikRef = React.useRef(null);
+  if (mikRef.current === null) mikRef.current = !!MEP_START.aan;
   useEffect(() => {
     // Alleen als je hier net binnenkomt. Kom je terug uit een recept, dan hoort
     // de bladzijde te staan waar je hem achterliet.
-    if (!MEP_START.aan) return;
+    if (!mikRef.current) return;
     // Komt de app binnen met een partij om naartoe te springen, dan gaat die
     // voor — anders vechten de twee om dezelfde bladzijde.
-    if (springNaarPartij || dagen.indexOf(vandaag) < 0) { MEP_START.aan = false; return; }
+    if (springNaarPartij || dagen.indexOf(vandaag) < 0) { mikRef.current = false; MEP_START.aan = false; return; }
     let weg = false;
+    // Hoeveel er van de dagkop onder de balk blijft staan: net de streep
+    // eronder, en niets meer. De kop zelf hoeft niet in beeld — die staat al
+    // in de balk die meeschuift, en stond je er vlak boven, dan zag je de dag
+    // twee keer: de vorige dag in de balk en de nieuwe eronder.
+    const STREEP = 4;
     const zet = () => {
-      if (weg) return true;
-      const el = typeof document === "undefined" ? null : document.querySelector('[data-mepdag="' + vandaag + '"]');
-      if (!el || !el.scrollIntoView) return false;
-      // De balk blijft bovenaan staan en zou de kop anders afdekken. Dit is de
-      // ruimte die scrollIntoView vrijhoudt — werkt ook als niet het venster
-      // maar de body zelf de scrollende bladzijde is.
-      const hoog = balkRef.current ? Math.round(balkRef.current.getBoundingClientRect().height) : 0;
-      try { el.style.scrollMarginTop = (hoog + 10) + "px"; } catch (e) {}
-      el.scrollIntoView({ block: "start" });
-      return true;
+      if (weg) return null;
+      if (typeof document === "undefined") return null;
+      const el = document.querySelector('[data-mepdag="' + vandaag + '"]');
+      if (!el || !el.getBoundingClientRect) return null;
+      const balk = balkRef.current;
+      const onder = balk ? balk.getBoundingClientRect().bottom : 0;
+      const nu = (typeof window !== "undefined" && window.scrollY) || document.documentElement.scrollTop || document.body.scrollTop || 0;
+      // De ónderkant van de kop komt net onder de balk te liggen.
+      const doel = Math.max(0, Math.round(nu + el.getBoundingClientRect().bottom - onder - STREEP));
+      // Alle drie zetten: op de telefoon is niet het venster maar de body het
+      // scrollende element, en dan komt window.scrollTo nergens aan.
+      try { if (typeof window !== "undefined" && window.scrollTo) window.scrollTo(0, doel); } catch (e) {}
+      try { document.documentElement.scrollTop = doel; } catch (e) {}
+      try { document.body.scrollTop = doel; } catch (e) {}
+      return doel;
     };
+    // Zodra je zelf aan de bladzijde komt is het jouw bladzijde: dan houden we
+    // onmiddellijk op met bijsturen, ook als we nog niet klaar waren.
+    const handen = () => { weg = true; mikRef.current = false; };
     // Meteen bij binnenkomst, zodat je de bladzijde niet eerst bovenaan ziet
-    // staan en er dan naartoe ziet springen. Daarna nog twee keer bijsturen:
-    // de bladzijde groeit nog een beetje terwijl de letters en de plaatjes
-    // binnenkomen, en dan klopt de hoogte van zonet niet meer.
-    zet();
-    const t1 = setTimeout(zet, 120);
-    const t2 = setTimeout(zet, 300);
-    return () => { weg = true; clearTimeout(t1); clearTimeout(t2); };
-  }, []);
+    // staan en er dan naartoe ziet springen. Daarna blijven bijsturen zolang
+    // hij nog beweegt: de bladzijde groeit terwijl de partijen binnenkomen, en
+    // de balk gaat pas plakken zodra er voor het eerst gescrold is — dan staat
+    // hij ergens anders dan toen we hem opmaten. Drie rondes op dezelfde plek
+    // betekent dat hij stilstaat; na drie seconden houden we hoe dan ook op.
+    let vorige = null, stil = 0, timer = null;
+    const begin = Date.now();
+    const tik = () => {
+      if (weg) return;
+      const doel = zet();
+      if (doel != null && doel === vorige) stil++; else stil = 0;
+      vorige = doel;
+      if (stil >= 3 || Date.now() - begin > 3000) return;
+      timer = setTimeout(tik, 100);
+    };
+    tik();
+    try {
+      window.addEventListener("wheel", handen, { passive: true });
+      window.addEventListener("touchstart", handen, { passive: true });
+      window.addEventListener("keydown", handen);
+    } catch (e) {}
+    return () => {
+      weg = true;
+      if (timer) clearTimeout(timer);
+      try {
+        window.removeEventListener("wheel", handen);
+        window.removeEventListener("touchstart", handen);
+        window.removeEventListener("keydown", handen);
+      } catch (e) {}
+    };
+    // Komen de boekingen later binnen — bij het opstarten van de app duurt dat
+    // even — dan groeit de bladzijde onder ons vandaan en mikken we opnieuw.
+    // Zolang jij er zelf niet aan gekomen bent, tenminste.
+  }, [mikRef.current, boekingen.length]);
 
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
   const somSet = dagen.filter((d) => d >= vandaag).slice(0, somDagen);
@@ -20804,11 +20849,20 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     return () => clearTimeout(t);
   }, [detail, heropend]);
   const opDeBalk = (b) => setWeggelegd((w) => (w.some((x) => String(x.id) === String(b.id)) ? w : [...w, { id: b.id, datum: b.datum, naam: naamVan(b) || "Zonder naam" }]));
-  const legWeg = (b, slot) => { opDeBalk(b); sluitSlotRef.current(slot || 1); };
+  // Welke partij er zojuist is weggelegd. Open je hierna een andere, dan komt
+  // deze er links naast te staan — allebei in beeld, zonder dat je hem eerst
+  // van de balk hoeft te plukken.
+  const naastRef = React.useRef(null);
+  const legWeg = (b, slot) => {
+    opDeBalk(b);
+    naastRef.current = { id: b.id, datum: b.datum };
+    sluitSlotRef.current(slot || 1);
+  };
   const haalTerug = (w) => {
     setWeggelegd((lijst) => lijst.filter((x) => String(x.id) !== String(w.id)));
     setHeropend(w.id);
     setMaand(String(w.datum || "").slice(0, 7));
+    naastRef.current = null; // deze haal je nú terug; hij hoeft niet nóg eens
     // Ernaast, niet in plaats van: staat er al een partij open, dan komt deze
     // er rechts bij. Zo kun je er twee naast elkaar leggen.
     openErnaastRef.current(w.id, w.datum || null);
@@ -20825,6 +20879,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   useEffect(() => {
     if (!nieuwBewerk) return;
     setMaand(String(nieuwBewerk.datum).slice(0, 7));
+    naastRef.current = null;
     setDetail(nieuwBewerk.id); setDetailDag(nieuwBewerk.datum || null); setDetail2(null); setDetail2Dag(null);
     const t = setTimeout(() => onNieuwGebruikt && onNieuwGebruikt(), 1200);
     return () => clearTimeout(t);
@@ -20891,7 +20946,7 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     }
   }
   const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
-  const springNaar = (p) => { setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); setDetailDag(p.datum || null); setDetail2(null); setDetail2Dag(null); };
+  const springNaar = (p) => { naastRef.current = null; setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); setDetailDag(p.datum || null); setDetail2(null); setDetail2Dag(null); };
   // Live zoeken naar een partij op naam, met sprong naar de kaart (evt. na
   // maandwissel) en een korte donkere rand-highlight.
   const [zoekOpen, setZoekOpen] = useState(false);
@@ -21032,7 +21087,21 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
     // nagekeken: het linkerslot is altijd als eerste gevuld, dus een partij
     // die rechts staat staat nooit als enige open.
     if (String(detail) === String(id) && String(detailDag || "") === String(dag || "")) return;
-    if (detail == null) { setDetail(id); setDetailDag(dag || null); return; }
+    const w = naastRef.current;
+    naastRef.current = null;
+    if (detail == null) {
+      // Heb je er net een weggelegd, dan komt die er links bij en de partij die
+      // je nu opent rechts ernaast. Dat is waarvoor je hem wegde: twee naast
+      // elkaar, zonder dat je hem van de balk hoeft te halen.
+      if (w && !(String(w.id) === String(id) && String(w.datum || "") === String(dag || ""))) {
+        setWeggelegd((lijst) => lijst.filter((x) => String(x.id) !== String(w.id)));
+        setDetail(w.id); setDetailDag(w.datum || null);
+        setDetail2(id); setDetail2Dag(dag || null);
+        return;
+      }
+      setDetail(id); setDetailDag(dag || null);
+      return;
+    }
     setDetail2(id); setDetail2Dag(dag || null);
   };
   sluitSlotRef.current = sluitSlot;
@@ -21267,26 +21336,6 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
               <div className="min-w-0">{partijKaart(detailBoeking, kaartApi, () => sluitSlot(1))}</div>
               {detailBoeking2 && <div className="min-w-0">{partijKaart(detailBoeking2, kaartApi2, () => sluitSlot(2))}</div>}
             </div>
-            {/* Een tweede partij van dezelfde dag erbij halen. Alleen wat er
-                nog niet staat, en alleen zolang er plek is. */}
-            {!detailBoeking2 && (() => {
-              const buren = splitsPerDag(boekingen)
-                .filter((x) => x.datum === detailBoeking.datum && !(String(x.id) === String(detailBoeking.id)) && !isAfgezegd(statusVan(x), nootEff(x)) && !isVerwijderd(koppeling, x))
-                .slice(0, 6);
-              if (!buren.length) return null;
-              return (
-                <div className="mt-3 flex flex-wrap items-center gap-2" data-ernaast="1">
-                  <span className="text-[12px]" style={{ color: "#e8e6dc" }}>Ernaast openen:</span>
-                  {buren.map((x) => (
-                    <button key={String(x.id) + x.datum} onClick={() => openErnaast(x.id, x.datum)} title={naamVan(x) || "Zonder naam"}
-                      className="ff rounded-full px-3 py-1.5 text-[12.5px] font-medium"
-                      style={{ background: T.paper, border: "1px solid " + T.line, color: T.ink }}>
-                      {String(naamVan(x) || "Zonder naam").length > 18 ? String(naamVan(x)).slice(0, 18) + "\u2026" : (naamVan(x) || "Zonder naam")}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
           </div>
         </div>
       )}
