@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-17g"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-17h"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -15403,8 +15403,10 @@ const eetMoment = (t) => {
   return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
 };
 // Een vleessupplement (of vissupplement) komt er bij een gang bíj. Het hoorde
-// nergens en belandde daardoor achter de borrel; nu valt het onder het diner,
-// en binnen die gang onderaan — eerst het menu, dan wat erbij komt.
+// nergens en belandde daardoor achter de borrel; nu valt het onder het diner.
+// Binnen die gang wordt het niet verplaatst: het hoort bij het hoofdgerecht,
+// en achteraan zetten bracht het ná het dessert dat in hetzelfde buffet zit.
+// De volgorde van de boeking is hier de baas.
 const isSupplement = (t) => /supp?lement/.test(zonderAccent(String(t || "")).toLowerCase());
 // Waar de app naar kijkt om de gang van een product te bepalen: de naam van
 // dát product en zijn eigen omschrijving uit MICE — wat achter het i-knopje
@@ -15429,11 +15431,9 @@ const eetMomentVan = (k, catVan) => {
   const r = eetRangVan(k, catVan);
   return r < EETVOLGORDE.length ? String(EETVOLGORDE[r].naam || "").trim() : "";
 };
-const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => {
-  const ra = eetRangVan(a, catVan), rb = eetRangVan(b, catVan);
-  if (ra !== rb) return ra - rb;
-  return (isSupplement(eetSleutel(a)) ? 1 : 0) - (isSupplement(eetSleutel(b)) ? 1 : 0);
-});
+// Alleen op gang sorteren. Binnen een gang blijft de volgorde van de boeking
+// staan: die sorteer is stabiel, dus wat in MICE voor elkaar staat blijft dat.
+const sorteerEetmoment = (keuzes, catVan) => [...(keuzes || [])].sort((a, b) => eetRangVan(a, catVan) - eetRangVan(b, catVan));
 // Getal uit een hoeveelheidstekst ("7 liter", "2,5 l") voor de optelsom.
 const eersteGetal = (t) => { const m = String(t || "").replace(",", ".").match(/\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
 // De portie kan in gram, kilo, milli-/centi-/liters of stuks staan; de
@@ -17506,12 +17506,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
       if (bestaand) bestaand.regels = [...bestaand.regels, ...regels];
       else uit.push({ kop, regels });
     }
-    // De kopjes in de volgorde van de maaltijd, niet in de volgorde waarin het
-    // eerste product van elk kopje toevallig binnenkwam. Daardoor stond het
-    // dessert in de kopie naar MICE soms boven het diner. Een kopje dat de
-    // app niet kent blijft achteraan staan, in de volgorde waarin het stond.
-    const rang = (x) => eetRang(String(x.kop || ""));
-    uit.sort((x, y) => rang(x) - rang(y));
+    // Geen eigen sortering meer: de blokken staan in de volgorde waarin de
+    // producten op de kaart staan, en die is al op gang gesorteerd. Zo kan de
+    // afdruk niet uit de pas lopen met wat je op de partij ziet staan.
     return { blokken: uit, leeg };
   };
   const menuNu = menuVanPartij();
