@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-17j"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-19a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3491,6 +3491,11 @@ function App() {
     // En niet voordat de schoonmaakgegevens binnen zijn — anders lijkt even
     // alles open te staan, of juist niets.
     if (!schoonGereed.current) return;
+    // En niet zolang we niet zeker weten dat deze notitie vers is. Een tabblad
+    // dat net wakker wordt uit de slaapstand draagt de stand van toen; eerst
+    // ophalen, dan pas bijwerken. Anders schrijft dit blok ongemerkt oud werk
+    // terug over wat een collega intussen heeft gedaan.
+    if (!notitieVers.current) return;
     const dag = kitchenDate();
     if (n.schoonDag === dag) return;
     // Ook op het toestel zelf onthouden. Komt de stempel om wat voor reden dan
@@ -3499,11 +3504,16 @@ function App() {
     let lokaal = null;
     try { lokaal = localStorage.getItem(SCHOON_DAG_LOKAAL); } catch (e) {}
     if (lokaal === dag) return;
-    try { localStorage.setItem(SCHOON_DAG_LOKAAL, dag); } catch (e) {}
     const open = schoonmaakVoorNotitie(cleaningTasks, cleaningLogs);
     const eerste = n.bladen[0];
     const html = notitieMetSchoonmaak(eerste.html, open, (cleaningTasks || []).map((t) => t && t.name));
-    bewaarMepNotitie({ ...n, schoonDag: dag, bladen: n.bladen.map((b, i) => (i === 0 ? { ...b, html } : b)) });
+    // De dagstempel op dit apparaat pas zetten als het wegschrijven echt is
+    // gelukt. Mislukte het — geen verbinding, of een ander apparaat was eerder
+    // — dan moet dit apparaat het straks opnieuw mogen proberen. Stond de
+    // stempel er meteen, dan bleef het blok dagenlang op de oude stand staan.
+    Promise.resolve(bewaarMepNotitie({ ...n, schoonDag: dag, bladen: n.bladen.map((b, i) => (i === 0 ? { ...b, html } : b)) }, true))
+      .then((gelukt) => { if (gelukt) { try { localStorage.setItem(SCHOON_DAG_LOKAAL, dag); } catch (e) {} } })
+      .catch(() => {});
   }, [mepNotitie, cleaningTasks, cleaningLogs, keukenTik, notitieOpen]);
   // Een taak afvinken in de notitie tekent hem ook af op de schoonmaaklijst van
   // vandaag — en het vinkje weghalen draait dat weer terug.
@@ -3526,18 +3536,68 @@ function App() {
   const notitieRef = React.useRef("");
   const notitieOnbewaard = React.useRef(false);
   const notitieTimer = React.useRef(null);
-  const bewaarMepNotitie = (obj) => {
+  // De stempel waarmee de notitie op de server stond toen wij hem ophaalden.
+  // Daarmee kan een schrijfactie zien of er iemand tussendoor is geweest.
+  const notitieStempel = React.useRef(null);
+  // Weten we zeker dat wat hier in beeld staat vers is? Zodra het tabblad uit
+  // beeld gaat of het net wegvalt weten we dat niet meer, en mag de app niets
+  // uit zichzelf wegschrijven: een tabblad dat dagen heeft opengestaan draagt
+  // een stand van dagen terug, en die hoort niet over nieuwer werk heen.
+  const notitieVers = React.useRef(false);
+  // Wegschrijven met een slot erop. Alleen als de rij nog de stempel draagt
+  // die wij zagen gaat het door; staat er iets nieuwers, dan heeft het andere
+  // apparaat voorrang en geven we dat terug als "voorbij". Zonder dit slot kon
+  // een oud tabblad ongemerkt een week aan werk terugdraaien.
+  const schrijfNotitie = async (obj) => {
+    const nu = new Date().toISOString();
+    const stempel = notitieStempel.current;
+    // Nog nooit een stempel gezien (verse installatie, lege rij): gewoon zetten.
+    if (!stempel) { await instelUpsert("mep_notitie", obj); notitieStempel.current = nu; return "ok"; }
+    instelBezig.current["mep_notitie"] = (instelBezig.current["mep_notitie"] || 0) + 1;
+    try {
+      const { data, error } = await supabase.from("app_settings")
+        .update({ value: obj, updated_at: nu })
+        .eq("key", "mep_notitie").eq("updated_at", stempel).select("key");
+      if (error) throw error;
+      if (!data || !data.length) return "voorbij";
+      notitieStempel.current = nu;
+      return "ok";
+    } finally {
+      instelBezig.current["mep_notitie"] = Math.max(0, (instelBezig.current["mep_notitie"] || 1) - 1);
+      instelSchrijf.current["mep_notitie"] = Date.now();
+    }
+  };
+  // obj = de nieuwe notitie, auto = de app werkt zelf een blok bij (geen
+  // typwerk van een kok). Geeft terug of het wegschrijven gelukt is.
+  const bewaarMepNotitie = (obj, auto) => {
     setMepNotitie(obj);
     notitieNu.current = obj;
     const ser = JSON.stringify(obj);
     notitieRef.current = ser;
-    notitieOnbewaard.current = true;
+    // Alleen eigen typwerk houdt binnenkomende gegevens tegen. Werkt de app
+    // zelf een blokje bij, dan mag een verse stand daar gewoon overheen: die
+    // is nieuwer dan wat hier toevallig in het geheugen staat. Precies hier
+    // ging het mis — een automatische bijwerking hield de verse versie buiten
+    // de deur en schreef daarna zijn eigen oude stand weg.
+    if (!auto) notitieOnbewaard.current = true;
     if (notitieTimer.current) clearTimeout(notitieTimer.current);
-    notitieTimer.current = setTimeout(async () => {
-      if (!live) { notitieOnbewaard.current = false; return; }
-      try { await instelUpsert("mep_notitie", obj); } catch (e) {}
-      if (notitieRef.current === ser) notitieOnbewaard.current = false;
-    }, 600);
+    return new Promise((klaar) => {
+      notitieTimer.current = setTimeout(async () => {
+        if (!live) { notitieOnbewaard.current = false; klaar(false); return; }
+        let uitslag = "fout";
+        try { uitslag = await schrijfNotitie(obj); } catch (e) { uitslag = "fout"; }
+        if (notitieRef.current === ser) notitieOnbewaard.current = false;
+        if (uitslag === "voorbij") {
+          // Er staat iets nieuwers. Die versie halen we op; was het typwerk van
+          // een kok, dan zeggen we erbij dat het niet bewaard is.
+          notitieOnbewaard.current = false;
+          notitieVers.current = false;
+          try { loadShared(); } catch (e) {}
+          if (!auto) flash("Iemand anders paste de aantekeningen net aan. Die versie staat er nu; jouw laatste wijziging is niet bewaard.");
+        }
+        klaar(uitslag === "ok");
+      }, 600);
+    });
   };
   const [koppeling, setKoppeling] = useState({}); // eventnaam -> gekozen MICE-producten
   // De laatste stand, ook binnen dezelfde handeling. React werkt zijn state pas
@@ -5216,6 +5276,10 @@ function App() {
           setMepNotitie(binnen);
           notitieNu.current = binnen;
         }
+        // De stempel van de rij onthouden: daarmee kan een schrijfactie straks
+        // zien of er iemand tussendoor is geweest. En vanaf nu weten we dat
+        // wat hier staat vers is, dus mag het schoonmaakblok weer bijwerken.
+        if (!notitieOnbewaard.current) notitieStempel.current = mnRow.updated_at || null;
       }
     }
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
@@ -5238,6 +5302,10 @@ function App() {
     const tnMap = { ...TECH_NOTES_SEED };
     (tn.data || []).forEach((r) => { if (Array.isArray(r.lines) && r.lines.length) tnMap[r.key] = r.lines; });
     setTechNotes(tnMap);
+    // Deze ronde is geslaagd: wat er nu staat is vers, dus het schoonmaakblok
+    // mag weer uit zichzelf bijwerken. Dit hoort hier en niet bij de notitierij
+    // zelf — is die er nog niet, dan zou de vlag anders nooit aangaan.
+    notitieVers.current = true;
     setLoaded(true);
     if (snapshotUitCache) flash("Geen verbinding — je ziet de laatst bekende stand; alles synchroniseert zodra er weer internet is");
     const dbDishes = (di.data || []).map((d) => ({
@@ -5291,7 +5359,13 @@ function App() {
       laatsteHaal.current = Date.now();
       loadShared();
     };
-    const bijZicht = () => { if (typeof document === "undefined" || document.visibilityState === "visible") opnieuw(); };
+    const bijZicht = () => {
+      // Uit beeld of net weg: vanaf nu weten we niet meer of wat hier staat
+      // nog klopt. Pas na een geslaagde haalronde mag de app weer uit zichzelf
+      // schrijven.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") { notitieVers.current = false; return; }
+      opnieuw();
+    };
     // En voor het geval het tabblad dagenlang in beeld blijft staan zonder dat
     // er iemand iets doet: elk kwartier even kijken.
     const klok = setInterval(opnieuw, 15 * 60000);
