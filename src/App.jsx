@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-19a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-19b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3504,9 +3504,10 @@ function App() {
     let lokaal = null;
     try { lokaal = localStorage.getItem(SCHOON_DAG_LOKAAL); } catch (e) {}
     if (lokaal === dag) return;
-    const open = schoonmaakVoorNotitie(cleaningTasks, cleaningLogs);
+    const alleOpen = schoonmaakOpen(cleaningTasks, cleaningLogs);
+    const open = alleOpen.slice(0, SCHOON_IN_NOTITIE);
     const eerste = n.bladen[0];
-    const html = notitieMetSchoonmaak(eerste.html, open, (cleaningTasks || []).map((t) => t && t.name));
+    const html = notitieMetSchoonmaak(eerste.html, open, (cleaningTasks || []).map((t) => t && t.name), alleOpen.length - open.length);
     // De dagstempel op dit apparaat pas zetten als het wegschrijven echt is
     // gelukt. Mislukte het — geen verbinding, of een ander apparaat was eerder
     // — dan moet dit apparaat het straks opnieuw mogen proberen. Stond de
@@ -18579,6 +18580,11 @@ const SCHOON_KOP_HTML = '<div data-schoonkop="1"><strong>' + SCHOON_KOP_TEKST + 
 // zette hij er elke keer een nieuwe bovenop. Wat hier overblijft is het werk
 // van de keuken, precies zoals het stond.
 const APP_KOPPEN = new Set([SCHOON_KOP_TEKST.toLowerCase(), MEP_KOP_TEKST.toLowerCase()]);
+// De slotregel onder het blok: "en nog 16 op de schoonmaaklijst". Die hoort er
+// de volgende ronde weer uit. We herkennen hem aan zijn merkje én aan zijn
+// tekst, want een merkje overleeft het bewerken in de browser niet altijd.
+const schoonRestTekst = (n) => "en nog " + n + " op de schoonmaaklijst";
+const SCHOON_REST_RE = /^en nog \d+ op de schoonmaaklijst$/;
 // Eén blokregel: een div, p of kopje zonder nog een blok erin.
 const NOTITIE_BLOK = /<(div|p|h[1-3])\b[^>]*>(?:(?!<\1\b)[\s\S])*?<\/\1>/gi;
 const notitieBlokTekst = (b) => String(b).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
@@ -18605,6 +18611,7 @@ const notitieHandmatig = (html, namen) => {
         if (puurVanDeApp) return "";
         return b.replace(/\s*data-schoonmaak="[^"]*"/gi, "").replace(/\s*data-schoonnaam="[^"]*"/gi, "");
       }
+      if (b.indexOf("data-schoonrest") >= 0 || SCHOON_REST_RE.test(notitieBlokTekst(b))) return "";
       return APP_KOPPEN.has(notitieBlokTekst(b)) ? "" : b;
     })
     .replace(/^(?:\s*<div>\s*(?:<br\s*\/?>)?\s*<\/div>)+/i, "")
@@ -18612,24 +18619,46 @@ const notitieHandmatig = (html, namen) => {
 };
 // Het blad opnieuw opbouwen: het handwerk bovenaan, de schoonmaak eronder.
 // Dit mag zo vaak gebeuren als nodig: er komt altijd hetzelfde uit.
-const notitieMetSchoonmaak = (html, taken, alleNamen) => {
+const notitieMetSchoonmaak = (html, taken, alleNamen, rest) => {
   const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const lijst = (Array.isArray(taken) ? taken : []).filter((t) => t && t.id && String(t.naam || "").trim());
   // De namen van álle schoonmaaktaken, niet alleen die van vandaag: een regel
   // van gisteren hoort ook herkend te worden als "hier staat alleen de naam".
   const namen = (Array.isArray(alleNamen) && alleNamen.length ? alleNamen : lijst.map((t) => t.naam));
+  const over = Math.max(0, Math.round(Number(rest) || 0));
+  const staart = over > 0
+    ? '<div data-schoonrest="1"><em>' + schoonRestTekst(over) + "</em></div>"
+    : "";
   const onder = lijst.length
     ? "<div><br></div>" + SCHOON_KOP_HTML
       + lijst.map((t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="' + esc(t.id) + '" data-schoonnaam="' + esc(t.naam) + '">&nbsp;' + esc(t.naam) + "</div>").join("")
+      + staart
     : "";
   return MEP_KOP_HTML + notitieHandmatig(html, namen) + onder;
 };
 // Welke taken er onder de notitie komen: alleen de taken die over hun tijd heen
 // zijn. Wat elke dag moet gebeuren staat al op de schoonmaaklijst zelf en zou
 // deze lijst elke ochtend helemaal volzetten.
-const schoonmaakVoorNotitie = (taken, logs) => (taken || [])
-  .filter((t) => t && t.id !== DAY_DONE_ID && t.id !== DAY_OFF_ID && Number(t.intervalDays) > 1 && taskStatus(t, logs).due)
-  .map((t) => ({ id: t.id, naam: t.name }));
+// De ergste eerst: hoe verder over zijn tijd, hoe hoger. Een taak die nog nooit
+// is afgetekend staat bovenaan — daar is niets van bekend, dus die wacht het
+// langst. Bij gelijke stand op naam, zodat de volgorde niet per apparaat
+// verschilt.
+const schoonOverTijd = (x) => (x.st.last === null ? 1e9 : x.st.since - Number(x.t.intervalDays));
+const schoonmaakOpen = (taken, logs) => (taken || [])
+  .filter((t) => t && t.id !== DAY_DONE_ID && t.id !== DAY_OFF_ID && Number(t.intervalDays) > 1)
+  .map((t) => ({ t, st: taskStatus(t, logs) }))
+  .filter((x) => x.st.due)
+  .sort((a, b) => {
+    const d = schoonOverTijd(b) - schoonOverTijd(a);
+    return d !== 0 ? d : String(a.t.name || "").localeCompare(String(b.t.name || ""), "nl");
+  })
+  .map((x) => ({ id: x.t.id, naam: x.t.name }));
+// Hoeveel er in de notitie passen. Loopt de boel op — en dat kan, bij ons
+// stonden er eens eenentwintig open — dan wordt het blok een muur waar niemand
+// meer naar kijkt. Vijf is te overzien; vink je er een af, dan schuift de
+// volgende vanzelf aan, en de rest staat gewoon op de schoonmaaklijst.
+const SCHOON_IN_NOTITIE = 5;
+const schoonmaakVoorNotitie = (taken, logs) => schoonmaakOpen(taken, logs).slice(0, SCHOON_IN_NOTITIE);
 
 // ── Plakken: eerst uitkleden ──────────────────────────────────────────────
 // Wat er uit Word of van een webpagina komt is een berg opmaak die hier niet
