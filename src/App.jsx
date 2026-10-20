@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-19b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-20a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3106,12 +3106,31 @@ class AppErrorBoundary extends React.Component {
 // laadt de pagina op de server, en zijn dat nog dezelfde als bij het opstarten?
 // Een uitgave schrijft nieuwe bestandsnamen, dus dat is genoeg om het te zien,
 // zonder dat er iets aan de bouw hoeft te veranderen.
+// Van een adres alleen het stuk vanaf /assets/ — in de pagina staat de hele
+// url, in de html van de server een kaal pad. Zonder dit gelijktrekken lijkt
+// elke pagina verouderd.
+const assetPad = (v) => { const t = String(v || ""); const i = t.indexOf("/assets/"); return i >= 0 ? t.slice(i) : ""; };
+// De vingerafdruk van de pagina die hier nu draait. Hiermee vergelijkt de app
+// zichzelf met de server, in plaats van de server met zichzelf — dat laatste
+// deed hij, en daardoor merkte een apparaat dat met oude code opstartte nooit
+// dat het achterliep.
+const eigenUitgave = () => {
+  try {
+    if (typeof document === "undefined" || !document.querySelectorAll) return "";
+    const uit = [];
+    document.querySelectorAll("script[src], link[href]").forEach((el) => {
+      const p = assetPad(el.getAttribute("src") || el.getAttribute("href"));
+      if (p) uit.push(p);
+    });
+    return uit.length ? uit.sort().join("|") : "";
+  } catch (e) { return ""; }
+};
 const uitgaveVingerafdruk = (html) => {
   const t = String(html || "");
   const uit = [];
   const re = /(?:src|href)\s*=\s*["']([^"']*\/assets\/[^"']+)["']/gi;
   let m;
-  while ((m = re.exec(t))) uit.push(m[1]);
+  while ((m = re.exec(t))) { const p = assetPad(m[1]); if (p) uit.push(p); }
   if (uit.length) return uit.sort().join("|");
   // Geen bestanden met een naam die per uitgave verandert: dan is de pagina
   // zelf de maatstaf. Beter een grove vergelijking dan geen.
@@ -3496,6 +3515,10 @@ function App() {
     // ophalen, dan pas bijwerken. Anders schrijft dit blok ongemerkt oud werk
     // terug over wat een collega intussen heeft gedaan.
     if (!notitieVers.current) return;
+    // En al helemaal niet wanneer deze pagina weet dat er nieuwere code op de
+    // server staat. Dat was het geval bij de tablet die dagen uit had gestaan:
+    // oude code, oude stand, en die ging er zo overheen.
+    if (uitgaveOud) return;
     const dag = kitchenDate();
     if (n.schoonDag === dag) return;
     // Ook op het toestel zelf onthouden. Komt de stempel om wat voor reden dan
@@ -3540,6 +3563,12 @@ function App() {
   // De stempel waarmee de notitie op de server stond toen wij hem ophaalden.
   // Daarmee kan een schrijfactie zien of er iemand tussendoor is geweest.
   const notitieStempel = React.useRef(null);
+  // Het volgnummer van de notitie. Elke schrijfactie telt er één bij op. De
+  // database laat alleen een hoger nummer toe, en dat is het enige wat ook een
+  // apparaat met oude code tegenhoudt: dat kent het slot hieronder niet, maar
+  // het schrijft wel het nummer terug dat het ooit ophaalde — en dat is niet
+  // hoger, dus komt het er niet in.
+  const notitieVolgnr = React.useRef(0);
   // Weten we zeker dat wat hier in beeld staat vers is? Zodra het tabblad uit
   // beeld gaat of het net wegvalt weten we dat niet meer, en mag de app niets
   // uit zichzelf wegschrijven: een tabblad dat dagen heeft opengestaan draagt
@@ -3552,16 +3581,21 @@ function App() {
   const schrijfNotitie = async (obj) => {
     const nu = new Date().toISOString();
     const stempel = notitieStempel.current;
+    const volgend = (Number(notitieVolgnr.current) || 0) + 1;
+    const blob = { ...obj, versie: volgend };
     // Nog nooit een stempel gezien (verse installatie, lege rij): gewoon zetten.
-    if (!stempel) { await instelUpsert("mep_notitie", obj); notitieStempel.current = nu; return "ok"; }
+    if (!stempel) { await instelUpsert("mep_notitie", blob); notitieStempel.current = nu; notitieVolgnr.current = volgend; return "ok"; }
     instelBezig.current["mep_notitie"] = (instelBezig.current["mep_notitie"] || 0) + 1;
     try {
       const { data, error } = await supabase.from("app_settings")
-        .update({ value: obj, updated_at: nu })
+        .update({ value: blob, updated_at: nu })
         .eq("key", "mep_notitie").eq("updated_at", stempel).select("key");
       if (error) throw error;
+      // Geen rij geraakt: of de stempel klopte niet meer, of de database hield
+      // de schrijfactie tegen omdat het volgnummer niet hoger was.
       if (!data || !data.length) return "voorbij";
       notitieStempel.current = nu;
+      notitieVolgnr.current = volgend;
       return "ok";
     } finally {
       instelBezig.current["mep_notitie"] = Math.max(0, (instelBezig.current["mep_notitie"] || 1) - 1);
@@ -3594,7 +3628,7 @@ function App() {
           notitieOnbewaard.current = false;
           notitieVers.current = false;
           try { loadShared(); } catch (e) {}
-          if (!auto) flash("Iemand anders paste de aantekeningen net aan. Die versie staat er nu; jouw laatste wijziging is niet bewaard.");
+          if (!auto) flash("Iemand anders paste de notities net aan. Die versie staat er nu; jouw laatste wijziging is niet bewaard.");
         }
         klaar(uitslag === "ok");
       }, 600);
@@ -5266,7 +5300,7 @@ function App() {
     if (mnRow && mnRow.value) {
       const v = mnRow.value;
       const binnen = Array.isArray(v.bladen) ? v
-        : typeof v.html === "string" ? { bladen: [{ id: "n1", naam: "Aantekeningen", html: v.html, door: "", op: "" }], historie: [] } // oude vorm
+        : typeof v.html === "string" ? { bladen: [{ id: "n1", naam: "Notities", html: v.html, door: "", op: "" }], historie: [] } // oude vorm
         : null;
       if (binnen) {
         // Net als bij de markering: niet overschrijven zolang er hier nog iets
@@ -5280,7 +5314,10 @@ function App() {
         // De stempel van de rij onthouden: daarmee kan een schrijfactie straks
         // zien of er iemand tussendoor is geweest. En vanaf nu weten we dat
         // wat hier staat vers is, dus mag het schoonmaakblok weer bijwerken.
-        if (!notitieOnbewaard.current) notitieStempel.current = mnRow.updated_at || null;
+        if (!notitieOnbewaard.current) {
+          notitieStempel.current = mnRow.updated_at || null;
+          notitieVolgnr.current = Number(v.versie) || 0;
+        }
       }
     }
     // Boekingen uit MICE (kan ontbreken zolang de SQL niet gedraaid is).
@@ -5400,8 +5437,10 @@ function App() {
         const r = await fetch(window.location.origin + "/?v=" + Date.now(), { cache: "no-store", credentials: "same-origin" });
         if (!r || !r.ok || weg) return;
         const vink = uitgaveVingerafdruk(await r.text());
-        if (!uitgaveNu.current) { uitgaveNu.current = vink; return; }
-        if (nieuweUitgave(uitgaveNu.current, vink)) setUitgaveOud(true);
+        // Het ijkpunt is wat déze pagina draait, niet wat de server bij de
+        // eerste meting toevallig serveerde.
+        if (!uitgaveNu.current) { uitgaveNu.current = eigenUitgave() || vink; }
+        if (nieuweUitgave(uitgaveNu.current, vink)) { setUitgaveOud(true); return; }
       } catch (e) { /* geen net: dan weten we het later wel */ }
     };
     kijk(true);
@@ -18740,7 +18779,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const naarBladen = (d) => {
     if (d && Array.isArray(d.bladen) && d.bladen.length) return d.bladen.map((b) => ({ ...b }));
     const html = d && typeof d.html === "string" ? d.html : (typeof d === "string" ? d : "");
-    return [{ id: "n1", naam: "Aantekeningen", html, door: "", op: "" }];
+    return [{ id: "n1", naam: "Notities", html, door: "", op: "" }];
   };
   const [bladen, setBladen] = useState(() => naarBladen(data));
   const [actief, setActief] = useState(0);
@@ -18945,7 +18984,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     const nieuw = lijst.filter((b) => !openSnap.current.some((x) => x.id === b.id));
     if (gewijzigd.length || nieuw.length || lijst.length !== openSnap.current.length) {
       let naam = "";
-      if (onAskName) { try { naam = await onAskName("notities", "Aantekening aanpassen"); } catch (e) {} }
+      if (onAskName) { try { naam = await onAskName("notities", "Notitie aanpassen"); } catch (e) {} }
       const t = nuIso();
       if (naam) {
         lijst = lijst.map((b) => (gewijzigd.some((g) => g.id === b.id) ? { ...b, door: naam, op: t } : b));
@@ -19805,12 +19844,12 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const printBlad = () => {
     const b = bladen[actief]; if (!b) return;
     const html = vak.current ? vak.current.innerHTML : b.html;
-    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Aantekeningen</title><style>"
+    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Notities</title><style>"
       + "@page{size:A4;margin:16mm}body{font:11.5pt/1.45 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:16pt;margin:0 0 1mm}.sub{color:#6a6550;margin:0 0 5mm;font-size:9.5pt}"
       + "h2{font-size:13pt;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}ul{list-style:none}"
       + "a{color:#44502f;font-weight:600;text-decoration:underline}input[type=checkbox]{width:3.2mm;height:3.2mm;margin-right:1.5mm}"
-      + "</style></head><body><h1>" + esc2(b.naam || "Aantekeningen") + "</h1><div class='sub'>"
+      + "</style></head><body><h1>" + esc2(b.naam || "Notities") + "</h1><div class='sub'>"
       + esc2((b.door ? "Laatst aangepast door " + b.door + " · " : "") + new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }))
       + "</div>" + html + "</body></html>");
   };
@@ -19859,7 +19898,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
             zodat er geen tekst doorheen schuift. */}
         <div className="flex items-start justify-between gap-2 mb-1.5 sticky pb-1.5"
           style={{ position: "sticky", top: 0, zIndex: 3, background: T.paper, boxShadow: "0 -16px 0 0 " + T.paper }}>
-          <div className="serif ink text-xl leading-tight">Aantekeningen</div>
+          <div className="serif ink text-xl leading-tight">Notities</div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             <Knop doe={() => cmd("bold")} actief={fmt.vet} titel="Vet (Ctrl+B)"><Bold size={14} /></Knop>
             <Knop doe={() => cmd("underline")} actief={fmt.onder} titel="Onderstreept (Ctrl+U)"><Underline size={14} /></Knop>
@@ -19924,7 +19963,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
               ? <div className="text-[12px] mute px-1">Nog geen eerdere versies. Bij elke aanpassing (met naam) wordt de vorige versie hier bewaard.</div>
               : historieRef.current.map((h, i) => (
                 <div key={i} className={"flex items-center gap-2 px-1 py-1.5 text-[12.5px]" + (i > 0 ? " divi" : "")}>
-                  <span className="flex-1 min-w-0 truncate"><span className="ink font-medium">{h.bladNaam || "Aantekeningen"}</span> <span className="mute">· {opTekst(h.t)}{h.door ? " · door " + h.door : ""}</span></span>
+                  <span className="flex-1 min-w-0 truncate"><span className="ink font-medium">{h.bladNaam || "Notities"}</span> <span className="mute">· {opTekst(h.t)}{h.door ? " · door " + h.door : ""}</span></span>
                   <button onClick={() => zetHistorieTerug(h)} className="ff shrink-0 text-[12px] font-semibold underline acc">Terugzetten</button>
                 </div>
               ))}
@@ -20770,8 +20809,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
           )}
         </div>
         <div className="flex items-center justify-end gap-1.5 flex-wrap w-full md:w-auto md:ml-auto">
-          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Aantekeningen — gedeeld papiertje van de keuken">
-            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Aantekeningen
+          <button onClick={() => setNotitieOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title="Notities — gedeeld papiertje van de keuken">
+            <StickyNote size={16} className="md:hidden" /><StickyNote size={20} className="hidden md:block" /> Notities
             {heeftNotitie && !notitieOpen && <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 rounded-full" style={{ background: "#b4432f", border: "2px solid " + T.paper }} />}
           </button>
           <button onClick={() => setBestelOpen(true)} className="btno ff relative inline-flex items-center gap-1.5 rounded-lg md:rounded-xl px-3 py-2 md:px-[15px] md:py-2.5 text-[13px] md:text-[16px] font-semibold" title={bestelTeDoen ? "Bestellijst — er staat iets op de lijst" : "Bestellijst — gedeelde inkooplijst"}><ClipboardList size={16} className="md:hidden" /><ClipboardList size={20} className="hidden md:block" /> Bestellijst
