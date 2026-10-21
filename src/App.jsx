@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-20a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-21a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3528,14 +3528,18 @@ function App() {
     try { lokaal = localStorage.getItem(SCHOON_DAG_LOKAAL); } catch (e) {}
     if (lokaal === dag) return;
     const alleOpen = schoonmaakOpen(cleaningTasks, cleaningLogs);
-    const open = alleOpen.slice(0, SCHOON_IN_NOTITIE);
-    const eerste = n.bladen[0];
-    const html = notitieMetSchoonmaak(eerste.html, open, (cleaningTasks || []).map((t) => t && t.name), alleOpen.length - open.length);
+    const schoonNu = schoonVakBijwerken(n.schoon || "", alleOpen);
+    // Het notitieblad is weer puur handwerk. Stond er nog een schoonmaakblok of
+    // een "Mise en place"-kop van vroeger in, dan haalt dit hem er eenmalig uit.
+    const namen = (cleaningTasks || []).map((t) => t && t.name);
+    const bladen = n.bladen.map((b, i) => (i === 0 ? { ...b, html: notitieHandmatig(b.html, namen) } : b));
+    const veranderd = schoonNu !== (n.schoon || "") || bladen[0].html !== n.bladen[0].html;
+    if (!veranderd) { try { localStorage.setItem(SCHOON_DAG_LOKAAL, dag); } catch (e) {} return; }
     // De dagstempel op dit apparaat pas zetten als het wegschrijven echt is
     // gelukt. Mislukte het — geen verbinding, of een ander apparaat was eerder
     // — dan moet dit apparaat het straks opnieuw mogen proberen. Stond de
-    // stempel er meteen, dan bleef het blok dagenlang op de oude stand staan.
-    Promise.resolve(bewaarMepNotitie({ ...n, schoonDag: dag, bladen: n.bladen.map((b, i) => (i === 0 ? { ...b, html } : b)) }, true))
+    // stempel er meteen, dan bleef het vak dagenlang op de oude stand staan.
+    Promise.resolve(bewaarMepNotitie({ ...n, schoonDag: dag, schoon: schoonNu, bladen }, true))
       .then((gelukt) => { if (gelukt) { try { localStorage.setItem(SCHOON_DAG_LOKAAL, dag); } catch (e) {} } })
       .catch(() => {});
   }, [mepNotitie, cleaningTasks, cleaningLogs, keukenTik, notitieOpen]);
@@ -18656,6 +18660,47 @@ const notitieHandmatig = (html, namen) => {
     .replace(/^(?:\s*<div>\s*(?:<br\s*\/?>)?\s*<\/div>)+/i, "")
     .replace(/(?:<div>\s*(?:<br\s*\/?>)?\s*<\/div>\s*)+$/i, "");
 };
+// ── Het schoonmaakvak ────────────────────────────────────────────────────
+// Een eigen vak naast de notities, zodat het notitieblad weer puur handwerk is.
+// De app schrijft er alleen taken bíj. Wat erin staat laat hij met rust, ook
+// als je een regel hebt bewerkt of er zelf iets bij hebt getypt. Eén ding ruimt
+// hij op: een regel die hij zelf neerzette, die is afgevinkt en waarvan de taak
+// niet meer over tijd is. Die is klaar en mag de volgende dag weg.
+const SCHOON_VAK_MAX = 5; // hoogstens zoveel nog openstaande regels van de app
+const schoonIdUit = (b) => { const m = String(b).match(/data-schoonmaak="([^"]*)"/i); return m ? m[1] : null; };
+const schoonAangevinkt = (b) => /<input[^>]*\schecked(?=[\s>])/i.test(String(b));
+const schoonKaal = (t) => String(t == null ? "" : t).replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const schoonRegel = (t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="'
+  + aEsc(t.id) + '" data-schoonnaam="' + aEsc(t.naam) + '">&nbsp;' + pEsc(t.naam) + "</div>";
+const schoonVakBijwerken = (html, overTijd) => {
+  const lijst = Array.isArray(overTijd) ? overTijd : [];
+  const overIds = new Set(lijst.map((t) => String(t.id)));
+  const staatEr = new Set();
+  const namenEr = new Set();
+  let nogOpen = 0;
+  const behouden = String(html == null ? "" : html).replace(NOTITIE_BLOK, (b) => {
+    const id = schoonIdUit(b);
+    if (!id) { const t = notitieBlokTekst(b); if (t) namenEr.add(t); return b; } // eigen regel
+    const naam = schoonNaamUit(b);
+    const af = schoonAangevinkt(b);
+    // Staat er nog iets anders op die regel, dan is hij van de kok geworden en
+    // blijft hij staan — net als in het notitieblad.
+    const puurVanDeApp = naam != null && schoonKaal(naam) === notitieBlokTekst(b);
+    if (puurVanDeApp && af && !overIds.has(String(id))) return "";
+    staatEr.add(String(id));
+    if (naam) namenEr.add(schoonKaal(naam));
+    if (!af) nogOpen++;
+    return b;
+  }).replace(/^(?:\s*<div>\s*(?:<br\s*\/?>)?\s*<\/div>)+/i, "").replace(/(?:<div>\s*(?:<br\s*\/?>)?\s*<\/div>\s*)+$/i, "");
+  const erbij = [];
+  for (const t of lijst) {
+    if (nogOpen + erbij.length >= SCHOON_VAK_MAX) break;
+    if (staatEr.has(String(t.id)) || namenEr.has(schoonKaal(t.naam))) continue;
+    erbij.push(t);
+  }
+  return behouden + erbij.map(schoonRegel).join("");
+};
+
 // Het blad opnieuw opbouwen: het handwerk bovenaan, de schoonmaak eronder.
 // Dit mag zo vaak gebeuren als nodig: er komt altijd hetzelfde uit.
 const notitieMetSchoonmaak = (html, taken, alleNamen, rest) => {
@@ -18673,7 +18718,7 @@ const notitieMetSchoonmaak = (html, taken, alleNamen, rest) => {
       + lijst.map((t) => '<div><input type="checkbox" class="nt-cb" data-schoonmaak="' + esc(t.id) + '" data-schoonnaam="' + esc(t.naam) + '">&nbsp;' + esc(t.naam) + "</div>").join("")
       + staart
     : "";
-  return MEP_KOP_HTML + notitieHandmatig(html, namen) + onder;
+  return notitieHandmatig(html, namen) + onder;
 };
 // Welke taken er onder de notitie komen: alleen de taken die over hun tijd heen
 // zijn. Wat elke dag moet gebeuren staat al op de schoonmaaklijst zelf en zou
@@ -18797,7 +18842,23 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const vinger = (d) => JSON.stringify({
     bladen: naarBladen(d).map((b) => [String((b && b.id) == null ? "" : b.id), String((b && b.naam) || ""), String((b && b.html) || "")]),
     historie: ((d && d.historie) || []).map((h) => String((h && h.t) || "") + "|" + String((h && h.bladId) || "")),
+    schoon: String((d && d.schoon) || ""),
   });
+  // ── Het schoonmaakvak ───────────────────────────────────────────────────
+  // Een eigen vak naast het blad. De app vult het aan met taken die over tijd
+  // zijn; wat jij erin typt blijft van jou. Het bewaart langs dezelfde weg als
+  // het blad, zodat er nooit twee schrijfacties langs elkaar heen lopen.
+  const schoonVak = React.useRef(null);
+  const schoonGetypt = () => { stopTimer(); timer.current = setTimeout(() => bewaarRef.current(), 800); };
+  // Binnenkomende stand in het vak zetten — maar niet terwijl je er zelf in
+  // staat te typen, anders springt de cursor weg onder je handen.
+  const schoonBinnen = String((data && data.schoon) || "");
+  React.useEffect(() => {
+    const el = schoonVak.current;
+    if (!el) return;
+    try { if (typeof document !== "undefined" && document.activeElement === el) return; } catch (e) {}
+    if (el.innerHTML !== schoonBinnen) el.innerHTML = schoonBinnen;
+  }, [schoonBinnen]);
   const laatst = React.useRef(vinger(data));
   // Wat er in het vak stond, ook als het vak er niet meer is: bij het sluiten
   // door naast het luik te klikken is de verwijzing al leeg.
@@ -18951,7 +19012,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     // schoonmaakblok bijvoorbeeld. Die viel er bij elke bewaring af, waarna de
     // app dacht dat hij vandaag nog niets bijgeschreven had en het blok steeds
     // opnieuw bovenaan zette.
-    const obj = { ...(data && typeof data === "object" ? data : {}), bladen: lijst, historie: historieRef.current };
+    const obj = { ...(data && typeof data === "object" ? data : {}), bladen: lijst, historie: historieRef.current,
+      schoon: schoonVak.current ? schoonVak.current.innerHTML : String((data && data.schoon) || "") };
     const ser = vinger(obj);
     if (ser === laatst.current) return false;
     laatst.current = ser;
@@ -19686,7 +19748,10 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const plaatsRecept = (r) => plaatsHtml(linkHtml("recept", r.id, r.name));
   const dKort = (d) => { try { const x = new Date(d + "T12:00:00"); return ["zo", "ma", "di", "wo", "do", "vr", "za"][x.getDay()] + " " + x.getDate() + "/" + (x.getMonth() + 1); } catch (e) { return d || ""; } };
   const plaatsPartij = (b) => plaatsHtml(linkHtml("partij", b.id, (b.naam || "Zonder naam") + " \u00b7 " + dKort(b.datum)));
-  const klikVak = (e) => {
+  // welk = het vak waarin geklikt is. Zonder opgave is dat het notitieblad;
+  // het schoonmaakvak geeft zichzelf mee.
+  const klikVak = (e, welk) => {
+    const doelVak = welk || vak;
     const t = e.target;
     // Afvinkvakje: aangevinkt = regel doorgestreept; de stand gaat mee in de html.
     if (t && t.tagName === "INPUT" && t.classList.contains("nt-cb")) {
@@ -19703,7 +19768,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       if (taak && onSchoonmaakAf) { try { onSchoonmaakAf(taak, !!t.checked); } catch (e) {} }
       const stijl = (el) => { el.style.textDecoration = t.checked ? "line-through" : ""; el.style.opacity = t.checked ? ".55" : ""; };
       const blok = t.closest("li, p, div");
-      if (blok && blok !== vak.current) {
+      if (blok && blok !== doelVak.current) {
         stijl(blok);
       } else {
         // Regel staat los in het vak: bestaande wikkel hergebruiken of de
@@ -19721,8 +19786,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
       // De aandacht terug naar het blad: na het aantikken van een vakje stond
       // hij op het vakje zelf, en dan kwamen Ctrl+Z en gewoon doortypen niet
       // meer in de notitie terecht.
-      try { if (vak.current) vak.current.focus({ preventScroll: true }); } catch (x) {}
-      getypt();
+      try { if (doelVak.current) doelVak.current.focus({ preventScroll: true }); } catch (x) {}
+      if (doelVak === schoonVak) schoonGetypt(); else getypt();
       return;
     }
     const a = t && t.closest ? t.closest("a[data-recept], a[data-partij]") : null;
@@ -19978,6 +20043,12 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           + ".mep-notitie ol{list-style:decimal;padding-left:1.6em;margin:.15em 0}"
           + ".mep-notitie ol ol{list-style:lower-alpha}.mep-notitie ol ol ol{list-style:lower-roman}"
           + ".mep-notitie li{margin:.1em 0}.mep-notitie blockquote{margin:.2em 0;padding-left:.8em;border-left:3px solid #d8d5c5}"}</style>
+        {/* Breed scherm: het blad links, de schoonmaaktaken rechts ernaast.
+            Op de telefoon is daar geen ruimte voor, dan komt het vak eronder
+            te staan — in hetzelfde venster, zodat je niet hoeft te wisselen. */}
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch">
+        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="text-[10.5px] font-semibold uppercase tracking-widest acc mb-1">Notitieblad</div>
         <div ref={vak} contentEditable suppressContentEditableWarning
           onInput={() => { stapTypen(); autoLijst(); netjes(true); getypt(); }} onPaste={plakken} onDrop={sleepErin} onBlur={() => {
             netjes();
@@ -19990,6 +20061,17 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
           }} onMouseDown={muisNeer} onMouseUp={stiftSelectie} onTouchEnd={stiftSelectie} onDoubleClick={dubbelMark} onKeyDown={toetsVak} onKeyUp={checkFmt} onClick={klikVak}
           className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
           style={{ background: "#fff", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
+        </div>
+        <div className="lg:w-80 shrink-0 flex flex-col">
+          <div className="text-[10.5px] font-semibold uppercase tracking-widest acc mb-1">Schoonmaak taken</div>
+          <div ref={schoonVak} contentEditable suppressContentEditableWarning
+            onInput={schoonGetypt} onPaste={plakken} onBlur={() => { bewaar(); }}
+            onClick={(e) => klikVak(e, schoonVak)}
+            className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
+            style={{ background: "#fff", border: "1px solid " + T.line, boxShadow: "inset 0 1px 3px rgba(0,0,0,.05)", whiteSpace: "pre-wrap", minHeight: "48vh" }} />
+          <div className="text-[11.5px] mute mt-1">Vult zichzelf aan met taken die over tijd zijn · je mag er zelf bij schrijven</div>
+        </div>
+        </div>
         <div className="text-[11.5px] mute mt-2">Gedeeld met het hele team · wordt vanzelf bewaard{stift ? " · stift actief: selecteer tekst om te markeren" : ""}</div>
       </div>
     </div>
