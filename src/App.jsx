@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-21a"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-21b"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -18849,6 +18849,11 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // zijn; wat jij erin typt blijft van jou. Het bewaart langs dezelfde weg als
   // het blad, zodat er nooit twee schrijfacties langs elkaar heen lopen.
   const schoonVak = React.useRef(null);
+  // Welk van de twee vakken had als laatste de aandacht. De werkbalk werkt
+  // daarop; zonder dit sprong elke knop terug naar het notitieblad, ook als je
+  // in de schoonmaaktaken stond te typen.
+  const inSchoon = React.useRef(false);
+  const huidigVak = () => (inSchoon.current && schoonVak.current ? schoonVak.current : vak.current);
   const schoonGetypt = () => { stopTimer(); timer.current = setTimeout(() => bewaarRef.current(), 800); };
   // Binnenkomende stand in het vak zetten — maar niet terwijl je er zelf in
   // staat te typen, anders springt de cursor weg onder je handen.
@@ -19140,7 +19145,15 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
     document.addEventListener("selectionchange", checkFmt);
     return () => document.removeEventListener("selectionchange", checkFmt);
   }, []);
-  const cmd = (naam, waarde) => { stapNu(); try { document.execCommand(naam, false, waarde); } catch (e) {} if (vak.current) vak.current.focus(); checkFmt(); getypt(); };
+  const cmd = (naam, waarde) => {
+    const doel = huidigVak();
+    const schoon = doel === schoonVak.current;
+    if (!schoon) stapNu();
+    try { document.execCommand(naam, false, waarde); } catch (e) {}
+    if (doel) doel.focus();
+    checkFmt();
+    if (schoon) schoonGetypt(); else getypt();
+  };
   const kopToggle = () => cmd("formatBlock", fmt.kop ? "<div>" : "<h2>");
 
   // Het blok (regel) waar de cursor in staat.
@@ -19179,6 +19192,9 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // Een opsomming beginnen, of er een van maken. Stond de cursor buiten een
   // lijst, dan wordt het er altijd een op zichzelf.
   const maakLijst = (soort) => {
+    // Dit leunt op het blokkenwerk van het notitieblad. In de schoonmaaktaken
+    // doet hij dus niets, in plaats van stiekem het blad te verbouwen.
+    if (huidigVak() === schoonVak.current) return;
     stapNu();
     const blok = cursorBlok();
     const buiten = !blok || blok.tagName !== "LI";
@@ -19674,21 +19690,23 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   // cursief werken. Staat de cursor nog nergens, dan achteraan — daar zie je
   // hem tenminste staan, in plaats van midden in andermans zin.
   const vakjeErbij = () => {
-    stapNu();
+    const doel = huidigVak();
+    const schoon = doel === schoonVak.current;
+    if (!schoon) stapNu(); // de ongedaan-stapel hoort bij het notitieblad
     try {
-      if (vak.current) vak.current.focus();
+      if (doel) doel.focus();
       const sel = window.getSelection();
-      const inVak = !!(sel && sel.rangeCount && vak.current && sel.anchorNode && vak.current.contains(sel.anchorNode));
-      if (!inVak && sel && vak.current && typeof document !== "undefined" && document.createRange) {
+      const inVak = !!(sel && sel.rangeCount && doel && sel.anchorNode && doel.contains(sel.anchorNode));
+      if (!inVak && sel && doel && typeof document !== "undefined" && document.createRange) {
         const eind = document.createRange();
-        eind.selectNodeContents(vak.current);
+        eind.selectNodeContents(doel);
         eind.collapse(false);
         sel.removeAllRanges(); sel.addRange(eind);
       }
       document.execCommand("insertHTML", false, CB_HTML);
     } catch (e) {}
     setLinkZoek(null); linkRange.current = null; linkTekst.current = "";
-    getypt();
+    if (schoon) schoonGetypt(); else getypt();
   };
   // Plakken en slepen gaan allebei door de uitkleedmachine hierboven.
   const plakHandeling = (bron, e) => {
@@ -20050,6 +20068,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
         <div className="flex-1 min-w-0 flex flex-col">
         <div className="text-[10.5px] font-semibold uppercase tracking-widest acc mb-1">Notitieblad</div>
         <div ref={vak} contentEditable suppressContentEditableWarning
+          onFocus={() => { inSchoon.current = false; }}
           onInput={() => { stapTypen(); autoLijst(); netjes(true); getypt(); }} onPaste={plakken} onDrop={sleepErin} onBlur={() => {
             netjes();
             // Hebben we zelf net iets weggeschreven, dan is wat er op dit moment
@@ -20065,6 +20084,8 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
         <div className="lg:w-80 shrink-0 flex flex-col">
           <div className="text-[10.5px] font-semibold uppercase tracking-widest acc mb-1">Schoonmaak taken</div>
           <div ref={schoonVak} contentEditable suppressContentEditableWarning
+            onFocus={() => { inSchoon.current = true; }}
+            onMouseDown={() => { inSchoon.current = true; }}
             onInput={schoonGetypt} onPaste={plakken} onBlur={() => { bewaar(); }}
             onClick={(e) => klikVak(e, schoonVak)}
             className="mep-notitie overflow-y-auto rounded-xl px-4 py-3 text-[15px] ink leading-relaxed outline-none"
