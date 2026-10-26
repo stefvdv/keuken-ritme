@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-21b"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-26c"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -619,6 +619,9 @@ const HACCP_KIND_TASK = {
   levering: "h-levering",
 };
 const HACCP_TASK_KIND = { "h-bereiding": "bereiding", "h-terugkoelen": "terugkoelen", "h-levering": "levering" };
+// De logregel waarmee een nieuw binnengekomen partij zich aandient. Staat als
+// tekst in het logboek, dus hier één keer vastgelegd in plaats van los getypt.
+const NIEUWE_PARTIJ = "Nieuwe partij";
 const DAY_DONE_ID = "__dag-afgerond";  // markeert dat de schoonmaak van vandaag is afgerond
 const DAY_OFF_ID  = "__vrije-dag";     // markeert een dag waarop het bedrijf dicht was
 
@@ -695,6 +698,9 @@ function localDate(d) {
   return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
 }
 const isoDate = (d) => localDate(d);
+// De maandag van de week waar deze dag in valt. Stond twee keer los binnen een
+// component; de meldingen hebben hem ook nodig, dus hier één keer voor iedereen.
+const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
 // Weergave van datums, overal in de app: dag-maand-jaar. Intern (opslag,
 // vergelijkingen, datumvelden) blijft alles ISO (jaar-maand-dag).
 const fmtDMY = (iso) => { const t = String(iso || "").slice(0, 10); const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[3] + "-" + m[2] + "-" + m[1] : t; };
@@ -3890,6 +3896,7 @@ function App() {
         // Zo weet elke regel bij welke dag hij hoort, ook los van een
         // programmadeel — anders belanden de dagen bij elkaar op dag 1.
         const regels = [];
+        const overgeslagen = []; // wat MICE stuurde maar de app niet als product herkent
         const tlDag = {};
         // En andersom: per dag het nummer van de draaiboekdag. Daarmee opent de
         // MICE-knop bij een meerdaagse boeking de dag waar je op staat in
@@ -3918,7 +3925,16 @@ function App() {
             return null;
           };
           for (const p of arr || []) {
-            if (p.object_type !== "product") continue;
+            // Alles wat MICE geen "product" noemt valt hier af — arrangementen,
+            // pakketten, wat ze verder ook sturen. Dat is nooit te zien geweest:
+            // de regel verdween gewoon. Nu houden we bij wat er afvalt, zodat
+            // de boekingkaart het kan melden in plaats van stilletjes een
+            // gerecht te missen.
+            if (p.object_type !== "product") {
+              const nm = String(p.name || "").trim();
+              if (nm) overgeslagen.push({ naam: nm, soort: String(p.object_type || "onbekend"), aantal: Number(p.amount) || 0 });
+              continue;
+            }
             const oms = kaal(p.description || p.remark || "");
             const pid = p.object_id != null && p.object_id !== "" ? p.object_id : "vrij:" + String(p.name || "").trim().toLowerCase();
             const pDag = dagVanProduct(p, dag);
@@ -3941,6 +3957,10 @@ function App() {
         };
         rijen.push({
           regels,
+          // Wat MICE wél stuurde maar hier niet als product binnenkwam. Staat
+          // er iets in, dan mist de keuken een regel en moet de kaart dat
+          // zeggen in plaats van hem stilletjes weg te laten.
+          mice_over: overgeslagen.length ? overgeslagen : null,
           dieet: eigenVeld(e, "dieetwensen"),
           tel: (klant[e.client_id] || {}).tel || "",
           contact: (klant[e.client_id] || {}).naam || "",
@@ -4004,6 +4024,11 @@ function App() {
           const no1 = kaalBericht(o.bericht), no2 = kaalBericht(r.bericht);
           if (no1 !== no2) w.push("Aantekening gewijzigd" + (no2 ? ": " + no2.slice(0, 140).replace(/\n/g, " ") + (no2.length > 140 ? "…" : "") : " (verwijderd)"));
         }
+        // Een partij die er nog niet was krijgt ook een regel. Zonder dit kon
+        // de meldingsbalk nooit laten weten dat er iets is bijgeboekt in een
+        // week die je al had ingevuld. Niet bij de allereerste binnenhaalronde:
+        // dan is álles nieuw en zou de balk in één klap volstaan.
+        if (!o && (boekingen || []).length) w.push(NIEUWE_PARTIJ);
         const vorig = (o && Array.isArray(o.log) && o.log) || [];
         r.log = w.length ? [...vorig, { t: new Date().toISOString(), w }].slice(-30) : vorig;
       }
@@ -4313,11 +4338,28 @@ function App() {
       return !!(oud && (oud.onderdelen || []).some((o) => String((o && o.naam) || "").trim()));
     });
   };
+  // Is er aan deze partij al iets ingevuld? Eén regel is genoeg: daar begint
+  // het werk, en vanaf dan wil je weten dat MICE er iets aan verandert.
+  const invGestartVan = (b) => {
+    const velden = boekingVelden(kernLagen(koppelingNu.current, b.id, b.datum));
+    const regels = kernRegels(velden).filter((r) => isKeukenRegel(r, catVanAlle) && !isNonfoodRegel(r, catVanAlle));
+    return regels.some((r) => {
+      const od = kernInvulling(velden, r.merk);
+      if (od.some((o) => String((o && o.naam) || "").trim())) return true;
+      const oud = r.miceId == null ? null : prodKoppeling[r.miceId];
+      return !!(oud && (oud.onderdelen || []).some((o) => String((o && o.naam) || "").trim()));
+    });
+  };
   const invKlaarVan = (b) => {
     const r = (leesLaag(koppeling, boekingSleutel, b, "invklaar|") || [])[0];
     if (r && typeof r.klaar === "boolean") return !!r.klaar; // met de hand gezet: dat telt
     return invCompleetVan(b);
   };
+  // Was de week van deze partij al ingevuld? Dat bepaalt of een nieuwe boeking
+  // het melden waard is: komt er iets bij in een week waar je al doorheen bent,
+  // dan moet je dat weten. Is die week nog niet aangeraakt, dan kom je hem
+  // vanzelf tegen. De partij zelf telt niet mee — die is juist de nieuwe.
+  const weekAlIngevuld = (b) => weekIsAf(boekingen, b, invKlaarVan);
   // Heropenen legt een expliciete "nee" vast; anders zou de invulling zelf hem
   // meteen weer op afgerond zetten.
   const zetInvKlaar = (b, klaar) => saveKoppelingSleutel(laagSleutel(b, "invklaar|"), [{ klaar: !!klaar, t: new Date().toISOString() }]);
@@ -6658,6 +6700,7 @@ function App() {
   // ingelogd en crasht React ("Rendered more hooks...").
   const [meldingenOpen, setMeldingenOpen] = useState(false);
   const [mepSpringNaar, setMepSpringNaar] = useState(null); // { id, datum } van een boeking om op de mep in beeld te brengen
+  const [boekingSpringNaar, setBoekingSpringNaar] = useState(null); // { id, datum, w } van een boeking om op de boekingpagina te openen
 
   const laatsteHomeKlik = React.useRef(0);
   const balkNetDicht = React.useRef(0); // buitenklik sluit de meldingsbalk al vóór de homeklik afgaat
@@ -6679,6 +6722,35 @@ function App() {
   const [wijzAfgerondPermanent, setWijzAfgerondPermanent] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem(WIJZ_PERMANENT_KEY) || "[]")); } catch (e) { return new Set(); }
   });
+  // Vanuit de meldingsbalk een partij openen. De melding is daarmee gezien, dus
+  // die ronden we meteen af en het meldingencentrum gaat dicht. Daarna naar de
+  // boekingpagina, naar die partij — met de wijzigingen erbij, zodat de kaart
+  // ze kan markeren en de geschiedenis uitklapt.
+  // De boekingpagina zit achter de chef-modus. Staat die nog niet open, dan
+  // vragen we eerst de code en gaan we daarna alsnog naar de partij.
+  const [chefVraag, setChefVraag] = useState(null);   // { b, w, vingerafdruk } — waar we heen willen zodra de code klopt
+  const [chefVraagFout, setChefVraagFout] = useState("");
+  // De melding gaat pas weg als je de partij ook werkelijk te zien krijgt.
+  // Klopt de code niet, of klik je het venster weg, dan blijft hij in de balk
+  // staan — anders ben je hem kwijt zonder dat je hebt kunnen kijken.
+  const naarBoekingPartij = (b, w, vingerafdruk) => {
+    rondWijzPartijAf(vingerafdruk);
+    setMeldingenOpen(false);
+    setSection("boekingen");
+    setBoekingSpringNaar({ id: b.id, datum: b.datum, w: Array.isArray(w) ? w : [] });
+  };
+  const openPartijUitMelding = (b, w, vingerafdruk) => {
+    if (!canEdit) { flash("Log eerst in met het keukenwachtwoord om de partij te openen"); return; }
+    if (!chefMode) {
+      // Nog niet afronden: eerst de code. Het meldingencentrum blijft open
+      // staan achter het venster, zodat je na een misser meteen opnieuw kunt
+      // klikken.
+      setChefVraagFout("");
+      setChefVraag({ b, w: Array.isArray(w) ? w : [], vingerafdruk });
+      return;
+    }
+    naarBoekingPartij(b, w, vingerafdruk);
+  };
   const rondWijzPartijAf = (sleutel) => {
     setWijzAfgerondPermanent((s) => {
       const nieuw = new Set([...s, sleutel]);
@@ -6852,9 +6924,19 @@ function App() {
       const w = [];
       (b.log || []).forEach((e) => { if (String(e.t || "") >= wijzGrens) (e.w || []).forEach((x) => w.push(String(x))); });
       if (!w.length) return;
+      // Niet elke wijziging is het melden waard. Waar nog niets is ingevuld
+      // kom je vanzelf langs; daar hoeft de balk je niet voor te halen. Twee
+      // gevallen tellen wel:
+      //  · er staat al een invulling voor deze partij — dan raakt een
+      //    wijziging werk dat je al gedaan hebt;
+      //  · de partij is nieuw binnengekomen in een week die je al af had —
+      //    dan zou hij anders ongemerkt tussen de afgevinkte dagen glippen.
+      const nieuw = w.some((x) => String(x) === NIEUWE_PARTIJ);
+      const telt = nieuw ? weekAlIngevuld(b) : invGestartVan(b);
+      if (!telt) return;
       const vingerafdruk = "wijzigingen:" + b.id + ":" + w.join("|");
       if (wijzAfgerondPermanent.has(vingerafdruk)) return;
-      wijzItems.push({ b, w, vingerafdruk });
+      wijzItems.push({ b, w, vingerafdruk, nieuw });
     });
     const wijzLabel = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d || ""; } };
     // De 5 meest recente logregels over alle boekingen, ook al zijn ze afgerond.
@@ -6868,8 +6950,10 @@ function App() {
       id: "boekingen", label: "Boekingen", icon: <CalendarDays size={15} />, heeft: wijzItems.length > 0, toonAltijd: recenteWijz.length > 0,
       content: (
         <div className="space-y-2.5 text-sm">
-          {wijzItems.map(({ b, w, vingerafdruk }) => (
-            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} onAfronden={() => rondWijzPartijAf(vingerafdruk)} />
+          {wijzItems.map(({ b, w, vingerafdruk, nieuw }) => (
+            <WijzigingMeldingRegel key={b.id} b={b} w={w} wijzLabel={wijzLabel} nieuw={nieuw}
+              onAfronden={() => rondWijzPartijAf(vingerafdruk)}
+              onOpen={() => openPartijUitMelding(b, w, vingerafdruk)} />
           ))}
           <LaatsteWijzigingenBlok regels={recenteWijz} wijzLabel={wijzLabel} wanneerKort={wanneerKort} bovenrand={wijzItems.length > 0} />
         </div>
@@ -6971,6 +7055,22 @@ function App() {
         onInstellingen={() => push({ screen: "settings" })} meldingen={actieveMeldingen.length} />}
 
       {!gast && meldingenOpen && meldingCategorieen.length > 0 && <MeldingenBalk categorieen={meldingCategorieen} onSluiten={sluitMeldingen} isGedempt={isGedempt} onDempen={dempMelding} />}
+      {/* Dit venster staat bewust ná de meldingsbalk. Zet je het ervoor, dan
+          verschuift de balk in de boom, bouwt React hem opnieuw op en klapt de
+          categorie die je net had opengeklikt weer dicht — en dan is er na een
+          verkeerde code niets meer om op te klikken. */}
+      {chefVraag && (
+        <PromptModal titel="Chef-modus" label="Chef-code" placeholder="Code" wachtwoord okLabel="Openen" fout={chefVraagFout}
+          hint={"De boeking \u201c" + ((chefVraag.b && chefVraag.b.naam) || "partij") + "\u201d staat op de boekingpagina, en die zit achter de chef-modus."}
+          onCancel={() => setChefVraag(null)}
+          onOk={(code) => {
+            if (!chefCodeKlopt(code)) { setChefVraagFout("Die code klopt niet."); return; }
+            setChefMode(true);
+            const doel = chefVraag;
+            setChefVraag(null);
+            naarBoekingPartij(doel.b, doel.w, doel.vingerafdruk);
+          }} />
+      )}
 
       <div className="flex-1 min-w-0 flex flex-col">
       {gast && (
@@ -7044,6 +7144,7 @@ function App() {
                 menuKopieVan={menuKopieVan} onMenuKopie={(b2, tekst) => { if (canEdit) zetMenuKopie(b2, tekst); }}
                 onProdKoppel={saveProdKoppeling}
                 onImportCategorieen={importMiceCategorieen}
+                springNaarPartij={boekingSpringNaar} onSprongKlaar={() => setBoekingSpringNaar(null)}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
             {section === "schoonmaak" && <CleaningList tasks={cleaningTasks} logs={cleaningLogs} haccpLogs={haccpLogs} canEdit={canEdit} user={user}
@@ -14482,6 +14583,21 @@ const catZichtStandaard = (cat) => {
 const isVerwijderd = (koppeling, b) => koppeling["del|" + b.id] !== undefined;
 // Een partij die niet doorgaat: de status zegt het, of iemand heeft het in de
 // aantekening gezet. Beide pagina's kijken hier naar.
+// Was de week van deze partij al ingevuld? Dat bepaalt of een nieuwe boeking
+// het melden waard is: komt er iets bij in een week waar je al doorheen bent,
+// dan moet je dat weten. Is die week nog niet aangeraakt, dan kom je hem
+// vanzelf tegen. De partij zelf telt niet mee — die is juist de nieuwe — en
+// afgezegde partijen evenmin, want daar valt niets aan in te vullen.
+const weekIsAf = (boekingen, b, isKlaar) => {
+  if (!b || !b.datum) return false;
+  const maandag = maandagVan(b.datum);
+  if (!maandag) return false;
+  const zondag = (() => { const d = new Date(maandag + "T12:00:00"); d.setDate(d.getDate() + 6); return localDate(d); })();
+  const zelfde = (boekingen || []).filter((x) => x && x.datum && String(x.id) !== String(b.id)
+    && x.datum >= maandag && x.datum <= zondag && !isAfgezegd(x.status, x.bericht));
+  if (!zelfde.length) return false; // alleen deze partij: er was nog niets om af te hebben
+  return zelfde.every((x) => isKlaar(x));
+};
 const isAfgezegd = (status, noot) => /cancel|annul|afgezegd/i.test(String(status || "")) || /\bafgezegd\b/i.test(String(noot || ""));
 const statusRand = (st) => {
   const s = String(st || "");
@@ -16503,12 +16619,20 @@ function FermentGuideForm({ rows, onCancel, onSave }) {
 // een pil die naar onder uitklapt, met de balk zelf blijft staan.
 // Eén regel in de boekingen-melding: standaard ingeklapt, klik op de naam
 // toont wat er gewijzigd is (geen navigatie meer naar de mep).
-function WijzigingMeldingRegel({ b, w, wijzLabel, onAfronden }) {
+function WijzigingMeldingRegel({ b, w, wijzLabel, onAfronden, onOpen, nieuw }) {
   const [uit, setUit] = useState(false);
   return (
     <div className="flex items-start justify-between gap-2">
       <div className="min-w-0 flex-1">
-        <button onClick={() => setUit((v) => !v)} className="ff underline font-medium text-left">{b.naam || "Partij"}</button>
+        {/* De naam brengt je naar de partij zelf; het pijltje ernaast klapt
+            alleen uit wat er veranderd is. Zo kun je vanuit de balk meteen
+            aan het werk zonder eerst te zoeken waar die partij ook alweer
+            stond. */}
+        <button onClick={onOpen} className="ff underline font-medium text-left" title="Partij openen op de mise en place">{b.naam || "Partij"}</button>
+        {nieuw && <span className="ml-1 rounded px-1 py-[1px] text-[10.5px] font-semibold align-middle" style={{ background: "#e6dcc2" }}>nieuw</span>}
+        <button onClick={() => setUit((v) => !v)} className="ff ml-1 align-middle opacity-70" title={uit ? "Inklappen" : "Wat er veranderd is"}>
+          {uit ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </button>
         <span className="opacity-70"> · {wijzLabel(b.datum)}</span>
         {uit && <ul className="mt-0.5 space-y-0.5">{w.map((x, i) => <li key={i} className="flex items-start gap-1.5"><Check size={13} className="shrink-0 mt-0.5" /><span className="flex-1">{x}</span></li>)}</ul>}
       </div>
@@ -17503,7 +17627,7 @@ function PartijGeschPopup({ naam, handmatig, log, onReset, resetLabel, onSluit }
   );
 }
 
-function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, handmatig, magSelecteren }) {
+function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTekst, catVan, stift, markering, zetMark, canEdit, magExtra, extra, aangepast, nootOpenStandaard, invulStatus, onInvullen, onOpslaan, onHerstel, onOpenRecipe, log, randKleur, statusTekst, tel, contact, zaal, miceProducten, producten, recepten, magInvullen, invullingVan, onInvulling, alleenKeuken, magProductNaam, autoBewerk, toonPrijs, toonOverige, onVerwijderPartij, naamTekst, statusWaarde, magNaamStatus, onSluitStift, herstelLabel, vorigeInvulling, adres, klant_email, toonEmail = true, invulVervangt = false, onInvullingBatch, invKlaar = true, onInvKlaar, apiRef, menuKopie, onMenuKopie, onMinimaliseren, handmatig, magSelecteren, toonWijzigingen }) {
   const [etiketOpen, setEtiketOpen] = useState(null); // voorstel voor de etiketpopup
   const [menuOpen, setMenuOpen] = useState(false); // menu-kopieerpopup (alleen op de boekingpagina)
   const [naAfronden, setNaAfronden] = useState(false); // venster kwam uit "Invulling afronden"
@@ -17524,13 +17648,16 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     const maak = (el, sl) => {
       if (!el || !el.teksten.length) return null;
       const sleutel = String(b.id) + "|" + sl + "|" + el.t;
-      if ((nieuwTellers()[sleutel] || 0) >= NIEUW_MAX) return null;
+      // Kom je hier vanuit de meldingsbalk, dan is juist die wijziging de
+      // reden van je bezoek. Dan telt de kijkteller even niet mee, ook als je
+      // de kaart deze week al voorbij hebt zien komen.
+      if (!toonWijzigingen && (nieuwTellers()[sleutel] || 0) >= NIEUW_MAX) return null;
       return { titel: el.teksten.join("\n"), sleutel };
     };
     const producten = new Map();
     for (const [nm, el] of versEl.producten) { const n = maak(el, "p|" + nm); if (n) producten.set(nm, n); }
     return { gasten: maak(versEl.gasten, "gasten"), tijd: maak(versEl.tijd, "tijd"), allergie: maak(versEl.allergie, "allergie"), notitie: maak(versEl.notitie, "notitie"), producten };
-  }, [versEl, b.id]);
+  }, [versEl, b.id, toonWijzigingen]);
   useEffect(() => {
     const sls = [vers.gasten, vers.tijd, vers.allergie, vers.notitie, ...vers.producten.values()].filter(Boolean).map((x) => x.sleutel);
     sls.forEach(telNieuw);
@@ -17583,6 +17710,9 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   // zat het markeren met de stift in de weg.
   const [infoKeuze, setInfoKeuze] = useState(null);
   const [geschOpen, setGeschOpen] = useState(false); // geschiedenis van deze partij
+  // Vanuit de meldingsbalk geopend: dan wil je meteen zien wat er veranderd
+  // is, zonder eerst naar de geschiedenisknop te zoeken.
+  useEffect(() => { if (toonWijzigingen) setGeschOpen(true); }, [toonWijzigingen]);
   // Escape en de terugknop van het toestel sluiten de bewerkstand én slaan op.
   // Alleen het rode kruis gooit bewust weg: alle andere manieren om weg te
   // komen — wegklikken, een andere pagina, de app wegleggen — bewaren je werk.
@@ -18285,6 +18415,22 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
                   </div>
                 ));
               })()}
+            </div>
+          )}
+          {Array.isArray(b.mice_over) && b.mice_over.length > 0 && (
+            <div className="mt-1.5 rounded-lg px-2.5 py-2 text-[13px]" style={{ background: "#fdf2e7", border: "1px solid #e0b78d" }}>
+              <div className="flex items-start gap-1.5">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: "#9a4a2f" }} />
+                <div className="min-w-0">
+                  <span className="font-semibold">MICE stuurt hier {b.mice_over.length === 1 ? "een regel" : b.mice_over.length + " regels"} die de app niet als product herkent.</span>
+                  <div className="mt-0.5">
+                    {b.mice_over.map((x, i) => (
+                      <div key={i}>{(x.aantal ? x.aantal + "× " : "") + x.naam}<span className="mute"> · {x.soort}</span></div>
+                    ))}
+                  </div>
+                  <div className="mute mt-0.5">Waarschijnlijk een arrangement of pakket in plaats van een los product. Zet het in MICE om naar een product, of geef dit door.</div>
+                </div>
+              </div>
             </div>
           )}
           {allergie.length > 0 && (
@@ -20161,7 +20307,6 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     const html = notitie && Array.isArray(notitie.bladen) ? notitie.bladen.map((b) => b.html || "").join(" ") : (notitie && notitie.html) || (typeof notitie === "string" ? notitie : "");
     return String(html).replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").trim().length > 0;
   })();
-  const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [weekStart, setWeekStart] = useState(() => maandagVan(localDate()));
   const somDagen = 7; // optelsom altijd een hele week
   const [somOpen, setSomOpen] = useState(false); // tabel standaard ingeklapt
@@ -20578,12 +20723,28 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     setTimeout(() => { const el = document.getElementById("partij-" + p.id + (p.meerdaags ? "-" + p.datum : "")) || document.getElementById("partij-" + p.id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 90);
   };
   // Van buitenaf aangeroepen (bv. vanuit de boekingen-melding): naar een
-  // specifieke partij springen zodra die binnenkomt.
+  // specifieke partij springen zodra die binnenkomt. Staat hij in een andere
+  // week, dan verzetten we eerst de week — anders staat de kaart niet eens in
+  // beeld en gebeurt er ogenschijnlijk niets.
+  const [wijzWijzer, setWijzWijzer] = useState(null); // { id, datum, w } — wat er net veranderd is
   useEffect(() => {
     if (!springNaarPartij) return;
-    springNaar(springNaarPartij);
+    const p = springNaarPartij;
+    const maandag = p.datum ? maandagVan(p.datum) : null;
+    if (maandag && maandag !== weekStart) setWeekStart(maandag);
+    if (Array.isArray(p.w) && p.w.length) setWijzWijzer({ id: String(p.id), datum: p.datum, w: p.w });
+    // Even wachten als de week nog moet omslaan: de kaart bestaat pas na de
+    // volgende tekenronde.
+    setTimeout(() => springNaar(p), maandag && maandag !== weekStart ? 120 : 0);
     if (onSprongKlaar) onSprongKlaar();
   }, [springNaarPartij]);
+  // De markering is tijdelijk: na een halve minuut is het nieuws gezien en
+  // hoort de kaart er weer gewoon bij te staan.
+  useEffect(() => {
+    if (!wijzWijzer) return;
+    const t = setTimeout(() => setWijzWijzer(null), 30000);
+    return () => clearTimeout(t);
+  }, [wijzWijzer]);
 
   const dagKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zondag","maandag","dinsdag","woensdag","donderdag","vrijdag","zaterdag"][x.getDay()] + " " + x.getDate() + " " + ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"][x.getMonth()]; };
   const kolKop = (d) => { const x = new Date(d + "T12:00:00"); return ["zo","ma","di","wo","do","vr","za"][x.getDay()] + " " + x.getDate(); };
@@ -20867,6 +21028,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
                     }}
                     onHerstel={() => { if (onKernMepWissen) onKernMepWissen(b); }} herstelLabel="Wijzigingen resetten"
                     handmatig={kernHandmatig(vouwSamen(lagenVan(b).bk, lagenVan(b).mep), lagenVan(b).mice)}
+                    toonWijzigingen={wijzWijzer && String(wijzWijzer.id) === String(b.id) ? wijzWijzer.w : null}
                     onOpenRecipe={onOpenRecipe} log={b.log} alleenKeuken={true} onSluitStift={() => setStift(null)}
                     randKleur={statusRand(statusVan(b))}
                     tel={b.tel} contact={b.contact} zaal={b.zaal} adres={adresVan(b)} klant_email={b.klant_email} toonEmail={false}
@@ -21099,12 +21261,11 @@ const autoVrij = (log) => !!log && (String(log.doneBy || "").toLowerCase() === "
 // Boekingen uit MICE: wie komt er wanneer, met hoeveel, en wat moet de keuken
 // daarvoor maken. De koppeling van boeking naar product doe je één keer per
 // gezelschap; daarna weet de app het.
-function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul }) {
+function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, miceProducten, prodKoppeling, bezorgLijst, onOpenBezorg, canEdit, onHaal, onKoppel, onBkExtra, onProdKoppel, onImportCategorieen, onOpenRecipe, nieuwBewerk, onVerwijder, onHerstel, onNieuwGebruikt, onPermanent, onSync, onInvulPartij, onInvulPartijBatch, invKlaarVan, onInvKlaar, onWisInv, menuKopieVan, onMenuKopie, onKernOpslaan, onKernWissen, onKernInvul, springNaarPartij, onSprongKlaar }) {
   const [prullenOpen, setPrullenOpen] = useState(false);
   const dagenKopRef = React.useRef(null); // dagenkop scrollt horizontaal mee met de kalender
   const kaartApi = React.useRef(null); // opslaan-bij-sluiten van de detailkaart
   const vandaag = localDate();
-  const maandagVan = (d) => { const x = new Date(d + "T12:00:00"); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return localDate(x); };
   const [maand, setMaand] = useState(() => vandaag.slice(0, 7)); // "JJJJ-MM"
   const [detail, setDetail] = useState(null); // boekings-id in de detailweergave
   const [detailDag, setDetailDag] = useState(null); // welke dag van een meerdaagse boeking
@@ -21245,6 +21406,23 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   }
   const prodOverlap = Object.values(perProduct).filter((r) => r.partijen.length > 1).sort((a, b) => b.totaal - a.totaal);
   const springNaar = (p) => { naastRef.current = null; setMaand(String(p.datum).slice(0, 7)); setDetail(p.id); setDetailDag(p.datum || null); setDetail2(null); setDetail2Dag(null); };
+  // Van buitenaf aangeroepen, vanuit de meldingsbalk: naar deze partij toe,
+  // desnoods een andere maand in, met de wijzigingen erbij zodat de kaart ze
+  // kan markeren en de geschiedenis uitklapt.
+  const [wijzWijzer, setWijzWijzer] = useState(null); // { id, w }
+  useEffect(() => {
+    if (!springNaarPartij) return;
+    const p = springNaarPartij;
+    springNaar(p);
+    setWijzWijzer(Array.isArray(p.w) && p.w.length ? { id: String(p.id), w: p.w } : null);
+    if (onSprongKlaar) onSprongKlaar();
+  }, [springNaarPartij]);
+  // De markering is tijdelijk: na een halve minuut is het nieuws gezien.
+  useEffect(() => {
+    if (!wijzWijzer) return;
+    const t = setTimeout(() => setWijzWijzer(null), 30000);
+    return () => clearTimeout(t);
+  }, [wijzWijzer]);
   // Live zoeken naar een partij op naam, met sprong naar de kaart (evt. na
   // maandwissel) en een korte donkere rand-highlight.
   const [zoekOpen, setZoekOpen] = useState(false);
@@ -21408,7 +21586,9 @@ function BoekingenList({ boekingen, koppeling, boekingSleutel, producten, recept
   // De detailkaart, zodat hij twee keer naast elkaar kan staan: je kunt een
   // tweede partij ernaast openen zonder de eerste kwijt te raken.
   const partijKaart = (bk, apiRef, sluit) => (
-  <PartijKaart apiRef={apiRef} b={bk} naamTekst={naamVan(bk)} statusWaarde={statusVan(bk)} magNaamStatus={true} keuzes={gekozen(bk)} mepRegels={mepVan(bk).filter(() => true)}
+  <PartijKaart apiRef={apiRef} b={bk}
+    toonWijzigingen={wijzWijzer && String(wijzWijzer.id) === String(bk.id) ? wijzWijzer.w : null}
+    naamTekst={naamVan(bk)} statusWaarde={statusVan(bk)} magNaamStatus={true} keuzes={gekozen(bk)} mepRegels={mepVan(bk).filter(() => true)}
     allergie={allergieEff(bk)} noot={nootEff(bk)}
     tijdTekst={tijdVan(bk)} gastenTekst={gastenVan(bk)}
     catVan={catVan} stift={null} markering={GEEN_MARKERING} zetMark={() => {}}
