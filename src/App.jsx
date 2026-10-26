@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-26c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-26d"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -17731,6 +17731,12 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
   const bezorging = extra && extra.bezorgwijze ? extra.bezorgwijze === "bezorgen" : bezorgingAuto;
   const zaalEff = (extra && String(extra.zaal || "").trim()) || zaal;
   const toonKeuzes = keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || ""))).filter((k) => (alleenKeuken ? isMepRegel(k, catVan) : isKeukenRegel(k, catVan)));
+  // Alleen de overgeslagen regels die de keuken werkelijk aangaan. Wat je bij
+  // de boeking hebt weggezet als nonfood of verborgen hoort hier ook niet: dan
+  // wordt deze controle een opsomming van dingen die je juist niet wilt zien.
+  const miceOverKeuken = (Array.isArray(b.mice_over) ? b.mice_over : [])
+    .filter((x) => x && String(x.naam || "").trim())
+    .filter((x) => { const k = { miceId: null, naam: x.naam }; return isKeukenRegel(k, catVan) && !isNonfoodRegel(k, catVan); });
   // Verborgen regels (dranken, huur, personeel…) blijven op de boekingpagina
   // bereikbaar onder een ingeklapt kopje Overige.
   const overigeKeuzes = toonOverige ? keuzesS.filter((k) => !/bezorg/i.test(String(k.naam || "")) && !isKeukenRegel(k, catVan)) : [];
@@ -18417,18 +18423,24 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
               })()}
             </div>
           )}
-          {Array.isArray(b.mice_over) && b.mice_over.length > 0 && (
+          {/* Wat MICE stuurde maar hier niet als productregel binnenkwam. Dit is
+              bedoeld als laatste controle tegen een gemist gerecht, dus alleen
+              op de boekingpagina (niet op de mep, daar staat het werk zelf) en
+              zonder de dingen die je bewust hebt weggezet omdat ze de keuken
+              niets aangaan — zaalhuur, techniek, nonfood. Blijft er niets over,
+              dan is er ook niets te melden. */}
+          {!alleenKeuken && miceOverKeuken.length > 0 && (
             <div className="mt-1.5 rounded-lg px-2.5 py-2 text-[13px]" style={{ background: "#fdf2e7", border: "1px solid #e0b78d" }}>
               <div className="flex items-start gap-1.5">
                 <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: "#9a4a2f" }} />
                 <div className="min-w-0">
-                  <span className="font-semibold">MICE stuurt hier {b.mice_over.length === 1 ? "een regel" : b.mice_over.length + " regels"} die de app niet als product herkent.</span>
+                  <span className="font-semibold">Niet doorgekomen uit MICE: {miceOverKeuken.length === 1 ? "één regel" : miceOverKeuken.length + " regels"}.</span>
                   <div className="mt-0.5">
-                    {b.mice_over.map((x, i) => (
+                    {miceOverKeuken.map((x, i) => (
                       <div key={i}>{(x.aantal ? x.aantal + "× " : "") + x.naam}<span className="mute"> · {x.soort}</span></div>
                     ))}
                   </div>
-                  <div className="mute mt-0.5">Waarschijnlijk een arrangement of pakket in plaats van een los product. Zet het in MICE om naar een product, of geef dit door.</div>
+                  <div className="mute mt-0.5">Staat in MICE wel op de boeking, maar niet als los product — vermoedelijk een arrangement of pakket. Zet het daar om naar een product, dan komt het vanzelf in de keukenlijst.</div>
                 </div>
               </div>
             </div>
