@@ -584,7 +584,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-26d"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-26e"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -622,6 +622,32 @@ const HACCP_TASK_KIND = { "h-bereiding": "bereiding", "h-terugkoelen": "terugkoe
 // De logregel waarmee een nieuw binnengekomen partij zich aandient. Staat als
 // tekst in het logboek, dus hier één keer vastgelegd in plaats van los getypt.
 const NIEUWE_PARTIJ = "Nieuwe partij";
+// ── Arrangementen uit MICE ────────────────────────────────────────────────
+// MICE zet arrangementen niet bij de producten maar apart, in "packages".
+// Die werden nooit gelezen, en daardoor ontbrak op de boekingkaart precies het
+// gerecht waar de partij om draait — alleen het bezorgen en ophalen kwam door.
+// Bevat een arrangement zelf producten, dan zijn díé het werk en telt het
+// arrangement niet apart mee (anders staat alles dubbel); staat het er zonder,
+// dan is het arrangement zelf de regel.
+const pakketSplits = (arr) => {
+  const eigen = [];   // arrangementen die zelf een regel worden
+  const binnen = [];  // producten die ín een arrangement zitten
+  for (const p of arr || []) {
+    if (!p || typeof p !== "object") continue;
+    const kids = Array.isArray(p.products) ? p.products : [];
+    if (kids.length) { for (const k of kids) binnen.push(k); continue; }
+    if (String(p.name || p.title || "").trim()) eigen.push(p);
+  }
+  return { eigen, binnen };
+};
+const pakketNaam = (p) => String((p && (p.name || p.title)) || "").trim();
+// Een eigen nummer, zodat een arrangement niet botst met een product dat
+// toevallig hetzelfde nummer heeft. Zonder nummer valt hij terug op de naam,
+// net als een los getypte regel.
+const pakketId = (p) => (p && p.object_id != null && p.object_id !== "" ? "pakket:" + p.object_id
+  : p && p.id != null && p.id !== "" ? "pakket:" + p.id
+  : "vrij:" + pakketNaam(p).toLowerCase());
+const pakketAantal = (p, gasten) => Number((p && p.amount)) || Number((p && p.guests)) || Number(gasten) || 0;
 const DAY_DONE_ID = "__dag-afgerond";  // markeert dat de schoonmaak van vandaag is afgerond
 const DAY_OFF_ID  = "__vrije-dag";     // markeert een dag waarop het bedrijf dicht was
 
@@ -3942,11 +3968,31 @@ function App() {
             regels.push({ id: pid, naam: p.name || "", aantal: Number(p.amount) || 0, act: act || "", tijd: tijd || "", ...(pDag && pDag !== datum ? { dag: pDag } : {}), catId: p.object_category_id || null, ...(prs != null ? { prijs: prs } : {}), ...(oms ? { oms } : {}) });
           }
         };
+        // Arrangementen staan in MICE niet bij de producten maar apart, in
+        // "packages". Die werden nooit gelezen, en daardoor ontbrak op de
+        // boekingkaart precies het gerecht waar de partij om draait — alleen
+        // het bezorgen en ophalen kwam door. Bevat een arrangement zelf
+        // producten, dan zijn díé het werk; staat het er zonder, dan is het
+        // arrangement zelf de regel.
+        const pakPakketten = (arr, act, tijd, dag) => {
+          const { eigen, binnen } = pakketSplits(arr);
+          if (binnen.length) pakProducten(binnen, act, tijd, dag);
+          for (const p of eigen) {
+            const pDag = dagVanProduct(p, dag);
+            regels.push({ id: pakketId(p), naam: pakketNaam(p), aantal: pakketAantal(p, e.guests), act: act || "", tijd: tijd || "",
+              ...(pDag && pDag !== datum ? { dag: pDag } : {}) });
+          }
+        };
         pakProducten(e.products, "", "", "");
+        pakPakketten(e.packages, "", "", "");
         // Een meerdaagse boeking heeft programmadelen op verschillende dagen.
         // De dag van het programmadeel gaat mee op de regel, zodat de partij
         // straks op de juiste dag op de mep en in de boekingen staat.
-        for (const a of e.activities || []) pakProducten(a.products, a.name || "", String(a.datetime_start || "").slice(11, 16), String(a.datetime_start || "").slice(0, 10));
+        for (const a of e.activities || []) {
+          const aNaam = a.name || "", aTijd = String(a.datetime_start || "").slice(11, 16), aDag = String(a.datetime_start || "").slice(0, 10);
+          pakProducten(a.products, aNaam, aTijd, aDag);
+          pakPakketten(a.packages, aNaam, aTijd, aDag);
+        }
         // Eigen veld "dieetwensen": MICE levert eigen velden in wisselende vorm.
         const eigenVeld = (ev, naam) => {
           for (const bron of [ev.extra_fields, ev.custom_attributes]) {
