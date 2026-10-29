@@ -216,12 +216,56 @@ const FERMENT_ACTIONS = {
 const fermentInterval = (dagen) => Math.max(1, Math.floor((Number(dagen) || 0) / Math.max(1, FERMENT_CONTROLES)));
 
 // ---------- printen ----------
+// Welke printer waarvoor. Etiketten komen uit de ene printer, menukaarten en
+// A4 uit de andere. Een webpagina kan die keuze niet zelf maken: de browser
+// bepaalt waar het papier uitkomt, en hij onthoudt er maar één. Wat de app wél
+// kan is zorgen dat je het weet op het moment dat het misgaat — bij de eerste
+// print van een ander soort dan de vorige keer. Print je etiketten achter
+// elkaar, dan zegt hij niets.
+const PRINT_STANDAARD = { etiket: "beneden", a4: "boven" };
+let PRINTER_NAMEN = { ...PRINT_STANDAARD };
+const zetPrinterNamen = (m) => {
+  PRINTER_NAMEN = {
+    etiket: String((m && m.etiket) || "").trim() || PRINT_STANDAARD.etiket,
+    a4: String((m && m.a4) || "").trim() || PRINT_STANDAARD.a4,
+  };
+};
+// Het laatste soort blijft op dít apparaat staan, niet bij het team: de
+// printerkeuze van de browser is ook van dit apparaat alleen.
+const PRINT_LAATST_KEY = "ritme_laatste_printsoort";
+const laatstePrintSoort = () => { try { return localStorage.getItem(PRINT_LAATST_KEY) || ""; } catch (e) { return ""; } };
+const onthoudPrintSoort = (s) => { try { localStorage.setItem(PRINT_LAATST_KEY, s); } catch (e) {} };
+// De tekst van de waarschuwing, apart gehouden zodat hij te proeven is zonder
+// dat er een venster aan te pas komt. null = niets zeggen.
+const printWaarschuwing = (soort, vorige, namen) => {
+  const n = namen || PRINTER_NAMEN;
+  if (!soort || !n[soort]) return null;
+  if (vorige === soort) return null;
+  const deze = "Dit is " + (soort === "etiket" ? "een etiket" : "een A4") + " \u2014 kies " + n[soort] + ".";
+  if (!vorige || !n[vorige]) return "De printer staat nog op wat er het laatst op dit apparaat gekozen is. " + deze;
+  return "De vorige print ging naar " + n[vorige] + ". " + deze;
+};
+// Vóór het printvenster: waarschuwen als de printer om moet. Geeft false terug
+// als je afziet van de print.
+const printVooraf = async (soort) => {
+  const tekst = printWaarschuwing(soort, laatstePrintSoort());
+  if (tekst) {
+    const door = await bevestig(tekst, { titel: "Let op de printer", okLabel: "Printvenster openen" });
+    if (!door) return false;
+  }
+  if (soort) onthoudPrintSoort(soort);
+  return true;
+};
 // Opent een schone printweergave in een nieuw venster (A4), los van de app-UI.
 // Printen zonder tabblad-wissel: een onzichtbaar frame in deze pagina print en
 // ruimt zichzelf op. Dit voorkomt de veld-blokkade die ontstond doordat het
 // print-tabblad de focus meenam — na terugkeren waren tekstvelden dood tot een
 // refresh. Geen pop-uptoestemming meer nodig, en de focus blijft gewoon hier.
-function printHtmlInPagina(html) {
+// Elke print zegt aan zijn naam uit welke printer hij hoort te komen.
+const printEtiket = (html) => printHtmlInPagina(html, "etiket");
+const printA4 = (html) => printHtmlInPagina(html, "a4");
+async function printHtmlInPagina(html, soort) {
+  if (!(await printVooraf(soort))) return;
   try {
     const fr = document.createElement("iframe");
     fr.setAttribute("aria-hidden", "true");
@@ -268,7 +312,7 @@ function openPrint(title, bodyHTML) {
     "</style></head><body>" + bodyHTML +
     "<div class='foot'>Ritme · In het ritme van het land — Wilde Wortels, Landgoed de Beug · afgedrukt op " + new Date().toLocaleString("nl-NL") + "</div>" +
     "</body></html>";
-  printHtmlInPagina(html);
+  printA4(html);
 }
 const pEsc = (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -584,7 +628,7 @@ const LUIK_SLUIT = { nu: null };
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
 const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-28c"; // versiestempel — check dit na elke deploy
+const RITME_VERSIE = "2026-10-29a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -3333,6 +3377,9 @@ function App() {
   // account. Hij is te bewerken in Extras; de namen uit de code zijn alleen
   // de startlijst voor wie nog nooit iets heeft ingesteld.
   const [teamNamen, setTeamNamen] = useState(() => TEAM.map((m) => m.name));
+  // Hoe de twee printers bij jullie heten. Gedeeld met het team: de printers
+  // staan er voor iedereen hetzelfde bij.
+  const [printerNamen, setPrinterNamen] = useState(PRINT_STANDAARD);
   const [materiaalItems, setMateriaalItems] = useState([]); // [{ naam, categorie, opmerking }]
   const [materiaalCategorieen, setMateriaalCategorieen] = useState(BEZORG_CATEGORIEEN_DEFAULT);
   const [haccpInterval, setHaccpInterval] = useState(HACCP_INTERVAL_STANDAARD); // om de hoeveel dagen meten
@@ -4596,6 +4643,18 @@ function App() {
       if (error) flash("Materiaal alleen op dit apparaat bewaard");
     }
   };
+  const savePrinterNamen = async (m) => {
+    const uit = {
+      etiket: String((m && m.etiket) || "").trim() || PRINT_STANDAARD.etiket,
+      a4: String((m && m.a4) || "").trim() || PRINT_STANDAARD.a4,
+    };
+    setPrinterNamen(uit);
+    if (live) {
+      const { error } = await instelUpsert("printers", uit);
+      if (error) { flash("Alleen op dit apparaat bewaard \u2014 draai eerst de app_settings-SQL in Supabase"); return false; }
+    }
+    return true;
+  };
   const saveTeamNamen = async (lijst) => {
     const uit = [...new Set((lijst || []).map((x) => String(x).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nl"));
     setTeamNamen(uit);
@@ -4664,6 +4723,7 @@ function App() {
   React.useMemo(() => zetPrijslijst(bdArtikelen), [bdArtikelen]);
   bdArtikelenRef.current = bdArtikelen;
   React.useMemo(() => zetArtikelKoppel(artikelKoppel), [artikelKoppel]);
+  React.useMemo(() => zetPrinterNamen(printerNamen), [printerNamen]);
   const [catSettings, setCatSettings] = useState(() => {
     // Start met de lokale cache; de gedeelde versie uit Supabase overschrijft dit bij het laden.
     try { return { eigen: JSON.parse(localStorage.getItem("ritme:cats-eigen") || "[]") || [], verborgen: JSON.parse(localStorage.getItem("ritme:cats-verborgen") || "[]") || [] }; } catch (e) { return { eigen: [], verborgen: [] }; }
@@ -5261,7 +5321,7 @@ function App() {
       metSnapshot("haccp_records", supabase.from("haccp_records").select("*").order("record_date", { ascending: false })),
       metSnapshot("werkwijze_docs", supabase.from("werkwijze_docs").select("*")),
       metSnapshot("voorraad", supabase.from("voorraad").select("*")),
-      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "calc_artikel", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "mep_notitie", "bestellijst", "mep_markering", "bd_lijst_stand", "lev_favoriet", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
+      metSnapshot("app_settings", supabase.from("app_settings").select("*").in("key", ["recipe_categories", "calc_negeer", "calc_spelling", "calc_alias", "calc_artikel", "verpakkingsvormen", "haccp_interval", "ferment_controles", "cat_zichtbaarheid", "bezorg_materialen", "paklijsten", "team_namen", "printers", "mep_notitie", "bestellijst", "mep_markering", "bd_lijst_stand", "lev_favoriet", "gebruik_telling", "briefpapier", "prod_zicht", "eetvolgorde", "menu_opmaak", "menu_engels", "klant_adres"])),
       metSnapshot("mice_events", supabase.from("mice_events").select("*").order("datum", { ascending: true })),
       metSnapshot("mice_koppeling", supabase.from("mice_koppeling").select("*")),
       metSnapshot("mice_producten", supabase.from("mice_producten").select("*").order("naam", { ascending: true })),
@@ -5349,6 +5409,11 @@ function App() {
       else if (Array.isArray(bmRow.value.namen)) setMateriaalItems(bmRow.value.namen.map((n) => ({ naam: n, categorie: "Overige", opmerking: "", hoeveelheid: "" }))); // migratie oude vorm
       if (Array.isArray(bmRow.value.categorieen) && bmRow.value.categorieen.length) setMateriaalCategorieen(bmRow.value.categorieen);
     }
+    const prRow = instelRij("printers");
+    if (prRow && prRow.value) setPrinterNamen({
+      etiket: String(prRow.value.etiket || "").trim() || PRINT_STANDAARD.etiket,
+      a4: String(prRow.value.a4 || "").trim() || PRINT_STANDAARD.a4,
+    });
     const tnRow = instelRij("team_namen");
     if (tnRow && tnRow.value && Array.isArray(tnRow.value.namen)) {
       const lijst = tnRow.value.volledig ? tnRow.value.namen : [...TEAM.map((m) => m.name), ...tnRow.value.namen];
@@ -7277,6 +7342,7 @@ function App() {
           allergenFixRijen={(allergenFixDoc && Array.isArray(allergenFixDoc.sections) ? allergenFixDoc.sections : []).filter((r) => r && r.name).sort((a, b) => String(a.name).localeCompare(String(b.name), "nl"))} onSaveAllergenFix={canEdit ? saveAllergenFix : null} fermentControles={fermentControles} onFermentControles={canEdit ? saveFermentControles : null} onImportCategorieen={canEdit ? importMiceCategorieen : null} onHaalProducten={canEdit ? haalMiceProducten : null}
           briefpapier={briefpapier} onBriefpapier={canEdit ? saveBriefpapier : null}
           teamNamen={teamNamen} onTeamNamen={canEdit ? saveTeamNamen : null}
+          printerNamen={printerNamen} onPrinterNamen={canEdit ? savePrinterNamen : null}
           miceProducten={miceProducten} prodCatVan={catVanAlle} prodZicht={prodZicht} onProdZicht={canEdit ? saveProdZicht : null}
           eetvolgorde={eetvolgorde} onEetvolgorde={canEdit ? saveEetvolgorde : null}
           menuOpmaak={menuOpmaak} onMenuOpmaak={canEdit ? saveMenuOpmaak : null} menuEngels={menuEngels} onMenuEngels={canEdit ? saveMenuEngels : null}
@@ -8518,7 +8584,7 @@ function printAssortimentProduct(p, recipeById) {
   const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const k = productKost(p, recipeById), v = eurNum(p.price);
   const items = (p.items || []).map(normItem).filter((x) => String(x.text).trim()).map((x) => ({ ...x, bedrag: itemKostVan(x, recipeById) }));
-  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.name) + '</title><style>' +
+  printA4('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.name) + '</title><style>' +
     "@page{size:A4;margin:18mm}body{font-family:Georgia,serif;color:#2c2e24}" +
     "h1{font-size:26pt;margin:0 0 2mm}.sub{color:#6b6d5f;font-size:11pt;margin-bottom:8mm}" +
     "table{border-collapse:collapse;margin-bottom:8mm}td{padding:1.5mm 8mm 1.5mm 0;font-size:12pt}" +
@@ -10559,6 +10625,36 @@ function BriefpapierBeheer({ waarde, onSave, opmaak, onOpmaak }) {
 
 // Het team: alleen namen, als merkje bij wie wat gedaan heeft. Geen accounts,
 // geen rollen — die deden in de app niets.
+// De twee printernamen. Ze doen niets meer dan in de waarschuwing komen te
+// staan: de app kan geen printer kiezen, dus moet hij hem kunnen noemen zoals
+// jullie hem noemen — "boven", "de grote", "bij de pas".
+function PrinterNamenBeheer({ waarde, onSave }) {
+  const [etiket, setEtiket] = useState((waarde && waarde.etiket) || "");
+  const [a4, setA4] = useState((waarde && waarde.a4) || "");
+  useEffect(() => { setEtiket((waarde && waarde.etiket) || ""); setA4((waarde && waarde.a4) || ""); }, [waarde]);
+  const bewaar = () => onSave({ etiket, a4 });
+  const veld = (label, uitleg, w, zet) => (
+    <div className="mb-3 last:mb-0">
+      <div className="text-sm ink font-medium">{label}</div>
+      <div className="text-[12.5px] mute mb-1.5">{uitleg}</div>
+      <input className="input px-3 py-2 w-full text-sm" value={w} onChange={(e) => zet(e.target.value)}
+        onBlur={bewaar} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+        placeholder="Hoe heet die printer bij jullie?" />
+    </div>
+  );
+  return (
+    <div className="card p-4">
+      <p className="text-sm mute mb-3">
+        De app kan de printer niet zelf kiezen — dat doet de browser, en die onthoudt er maar één.
+        Wat hij wel doet: waarschuwen zodra je iets anders print dan de vorige keer, met de naam van de printer
+        die je dan moet kiezen. Print je etiketten achter elkaar, dan zegt hij niets.
+      </p>
+      {veld("Etiketten", "De etiketprinter.", etiket, setEtiket)}
+      {veld("Menukaarten en A4", "Alles op papier: menukaarten, mise en place, notities, calculaties.", a4, setA4)}
+    </div>
+  );
+}
+
 function TeamBeheer({ namen, onSave }) {
   const [nieuw, setNieuw] = useState("");
   const voeg = () => { const n = nieuw.trim(); if (!n) return; onSave([...(namen || []), n]); setNieuw(""); };
@@ -10848,7 +10944,7 @@ function MenuEngelsBeheer({ waarde, onZet }) {
 }
 
 function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerechten, onOpenBezorg, installed, canInstall, onInstall, onSignOut, onBackup, onWordBackup, onRestore, chefMode, onChef, allergenFixRijen, onSaveAllergenFix, fermentControles, onFermentControles, onImportCategorieen, catLijst, catZicht, onCatZicht, briefpapier, onBriefpapier,
-  teamNamen, onTeamNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, bdStand, onHaalLijst, lijstBezig, recepten, onHaalProducten }) {
+  teamNamen, onTeamNamen, printerNamen, onPrinterNamen, miceProducten, prodCatVan, prodZicht, onProdZicht, eetvolgorde, onEetvolgorde, menuOpmaak, onMenuOpmaak, menuEngels, onMenuEngels, artikelKoppel, onArtikelKoppel, bdArtikelen, bdStand, onHaalLijst, lijstBezig, recepten, onHaalProducten }) {
   const catImportRef = React.useRef(null);
   const [prodBezig, setProdBezig] = useState(false); // productenlijst wordt opgehaald
   const [catZichtOpen, setCatZichtOpen] = useState(false);
@@ -11043,6 +11139,13 @@ function SettingsScreen({ onBack, onResetBoekingen, boekingenLaden, onOpenGerech
         <>
           <SectionTitle>Team</SectionTitle>
           <TeamBeheer namen={teamNamen} onSave={onTeamNamen} />
+        </>
+      )}
+
+      {onPrinterNamen && (
+        <>
+          <SectionTitle>Printers</SectionTitle>
+          <PrinterNamenBeheer waarde={printerNamen} onSave={onPrinterNamen} />
         </>
       )}
 
@@ -12588,7 +12691,7 @@ function printLabel(recipe, inhoud, dates) {
     }
     return 12;
   })();
-  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+  printEtiket('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -12772,7 +12875,7 @@ function printBatchLabel(d) {
   const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const doel = [d.ph ? "pH " + d.ph : "", d.brix ? d.brix + " °Brix" : ""].filter(Boolean).join(" · ");
   const nota = String(d.note || "").trim();
-  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+  printEtiket('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -12889,7 +12992,7 @@ function printCustomLabel(f) {
       // woord — zo meet het pasmaakscript de echte breedte.
       const [rLabel, rDatum] = regels[0].split(/:\s*/);
       const tekst = esc(rLabel + ":") + "<br>" + esc(rDatum || "");
-      printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+      printEtiket('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
         "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
         "html,body{margin:0;padding:0}" +
         "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden}" +
@@ -12906,7 +13009,7 @@ function printCustomLabel(f) {
     // Zonder naam vullen de datums zelf de sticker; met naam staan ze klein onderin.
     const grootTekst = f.name ? f.name : regels.join("\n");
     const voet = f.name && regels.length ? '<div class="voet">' + esc(regels.join("  ·  ")) + "</div>" : "";
-    printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+    printEtiket('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
       "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
       "html,body{margin:0;padding:0}" +
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -12923,7 +13026,7 @@ function printCustomLabel(f) {
   // De sticker wordt altijd gevuld: eerst schalen de infoRegels zo groot
   // mogelijk (met plafond), daarna groeit de naam tot de resterende ruimte
   // vol is. Bij heel veel tekst schaalt alles samen kleiner tot het past.
-  printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+  printEtiket('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
     "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
     "html,body{margin:0;padding:0}" +
     "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -17274,9 +17377,13 @@ function MenuPrintPopup({ naam, blokken, onSluit }) {
     } catch (e) {}
   };
   useEffect(() => () => { if (escInBlad.current) escInBlad.current(); }, []);
-  const printen = () => {
+  // De menukaart print zijn eigen blad, dus hij gaat niet door printA4 heen —
+  // maar de waarschuwing hoort er net zo goed bij: dit is juist de print
+  // waarvoor je de printer moet omzetten.
+  const printen = async () => {
     const fr = lijstRef.current;
     if (!fr) return;
+    if (!(await printVooraf("a4"))) return;
     try {
       const doc = fr.contentDocument;
       const tekst = doc && doc.querySelector(".tekst[contenteditable]");
@@ -17823,7 +17930,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
         rijen.push("<div class='pr sub'>" + pEsc((o.hoeveelheid ? o.hoeveelheid + " " : (k.aantal || b.gasten) + "× ") + o.naam + (p > 0 && n2 > 0 ? " · " + portieTotaal(o.portie, n2) + " (" + portiePP(o.portie) + ")" : "")) + "</div>");
       }
     }
-    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>" + pEsc(b.naam || "Partij") + "</title><style>"
+    printA4("<!doctype html><html><head><meta charset='utf-8'><title>" + pEsc(b.naam || "Partij") + "</title><style>"
       + "@page{size:A4;margin:16mm}body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:19px;margin:0}.st{color:#a05a00;font-weight:600;font-size:13px}"
       + ".sub{margin-left:5mm;font-weight:600}"
@@ -17852,7 +17959,7 @@ function PartijKaart({ b, keuzes, mepRegels, allergie, noot, tijdTekst, gastenTe
     ].filter((r) => String(r.t || "").trim());
     const naamTxt = String(f.naam || "").trim() || "Zonder naam";
     const productTxt = String(f.product || "").trim();
-    printHtmlInPagina('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
+    printEtiket('<!doctype html><html><head><meta charset="utf-8"><title>Etiket</title><style>' +
       "@page{size:" + LABEL_MM.w + "mm " + LABEL_MM.h + "mm;margin:0}" +
       "html,body{margin:0;padding:0}" +
       "body{width:" + LABEL_MM.w + "mm;height:" + LABEL_MM.h + "mm;font-family:Arial,Helvetica,sans-serif;overflow:hidden;position:relative}" +
@@ -20056,7 +20163,7 @@ function MepNotitiePopup({ data, onSave, onClose, stift, recepten, boekingen, on
   const printBlad = () => {
     const b = bladen[actief]; if (!b) return;
     const html = vak.current ? vak.current.innerHTML : b.html;
-    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Notities</title><style>"
+    printA4("<!doctype html><html><head><meta charset='utf-8'><title>Notities</title><style>"
       + "@page{size:A4;margin:16mm}body{font:11.5pt/1.45 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:16pt;margin:0 0 1mm}.sub{color:#6a6550;margin:0 0 5mm;font-size:9.5pt}"
       + "h2{font-size:13pt;margin:4mm 0 1mm}ul,ol{margin:.5mm 0;padding-left:6mm}li{margin:.4mm 0}ul{list-style:none}"
@@ -21139,7 +21246,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       const kop = dagKop(d) + (d > laatsteVanDeWeek ? " \u2014 volgende week" : "");
       return "<div class='" + (heel ? "d" : "dl") + "'><h2>" + pEsc(kop) + "</h2>" + stukken + "</div>";
     };
-    printHtmlInPagina("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
+    printA4("<!doctype html><html><head><meta charset='utf-8'><title>Mise en place</title><style>"
       + "@page{size:A4;margin:" + (14 + KLEM_MM) + "mm 14mm 14mm}body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#2b2e24}"
       + "h1{font-size:17px;margin:0 0 2mm}h2{font-size:13px;margin:5mm 0 1.5mm;border-bottom:1px solid #ccc;padding-bottom:1mm;break-after:avoid;page-break-after:avoid}"
       + ".sub{color:#6a6550;margin:0 0 4mm}table{width:100%;border-collapse:collapse;margin-bottom:5mm}"
