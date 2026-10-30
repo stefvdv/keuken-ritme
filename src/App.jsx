@@ -627,8 +627,15 @@ const LUIK_SLUIT = { nu: null };
 // dag van vandaag nog nét bovenaan. De schil zet bij elke paginawissel de
 // bladzijde terug naar boven — ook nog een kwart seconde later — en trok de
 // sprong daarmee weer weg. Staat dit aan, dan houdt de schil zich even stil.
-const MEP_START = { aan: false };
-const RITME_VERSIE = "2026-10-29a"; // versiestempel — check dit na elke deploy
+// `aan` zegt dat de mep zichzelf mag plaatsen. `mik` houdt bij waar hij voor
+// het laatst op gemikt heeft — dat is hoe de test ziet dat het gebeurd is,
+// want een bladzijde die niet opgemaakt wordt heeft geen hoogtes om aan af te
+// lezen.
+const MEP_START = { aan: false, mik: null };
+// Waar de bladzijde heen moet om de ónderkant van de dagkop net onder de balk
+// te leggen. Apart gehouden zodat het rekenwerk te proeven is.
+const mepMikDoel = (kopOnder, balkOnder, nu, streep) => Math.max(0, Math.round((nu || 0) + kopOnder - balkOnder - (streep || 0)));
+const RITME_VERSIE = "2026-10-30a"; // versiestempel — check dit na elke deploy
 // Deellink: ?deel=recepten opent de app in gastweergave — alleen de
 // receptenlijst, alleen-lezen, zonder inloggen (gast leest anoniem mee;
 // schrijven kan een anonieme sessie sowieso niet). Met &recept=<id> opent
@@ -5678,8 +5685,17 @@ function App() {
   // de vlag lezen voordat hij gezet is. Ga je op de mep een recept in en weer
   // terug, dan blijft de afdeling "mep" en gebeurt er niets — dan hoort de
   // bladzijde te staan waar je hem achterliet.
+  // Escape brengt je naar de mep. Sta je er al, dan verandert er niets aan de
+  // afdeling en zou de bladzijde blijven staan waar hij stond — of erger, naar
+  // boven springen omdat de stapel wordt teruggezet. Deze teller zegt tegen de
+  // mep dat hij zichzelf opnieuw mag plaatsen.
+  const [mikBeurt, setMikBeurt] = useState(0);
   const mepVorig = React.useRef(false);
-  const mepNu = section === "mep";
+  // Pas tellen als de bladzijde er werkelijk staat. Zolang het aanmeldscherm
+  // in beeld is wordt deze regel ook gedraaid, en dan ging de vlag al om vóór
+  // de mep ooit gerenderd was: bij het opstarten van de app plaatste hij
+  // zichzelf daardoor nooit en begon je op maandag.
+  const mepNu = !!user && section === "mep";
   if (mepNu && !mepVorig.current) MEP_START.aan = true;
   mepVorig.current = mepNu;
   useEffect(() => {
@@ -5774,8 +5790,12 @@ function App() {
       // weggooien. Daar gebruik je de terugknop.
       if (FORM_SCREENS.has(String(schermRef.current || ""))) return;
       e.preventDefault();
+      // De vlag houdt het terugzetten van de stapel tegen om de bladzijde naar
+      // boven te gooien; de teller laat de mep opnieuw op vandaag mikken.
+      MEP_START.aan = true;
       resetTo({ screen: "list" });
       setSection("mep");
+      setMikBeurt((n) => n + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -7254,7 +7274,7 @@ function App() {
                 producten={assortiment} recepten={recipes} calcItems={calcItems} recipeById={recipeById} dishById={dishById}
                 prodKoppeling={prodKoppeling} miceProducten={miceProducten} onKoppel={saveMepKoppeling} onWisMep={wisMepKoppeling} onMepExtra={saveMepExtra} onProdKoppel={saveProdKoppeling} onInvulPartij={saveInvullingPartij} onInvulPartijBatch={saveInvullingenPartij}
                 onKernMep={canEdit ? kernOpslaanMep : null} onKernMepWissen={canEdit ? kernMepWissen : null} onKernMepInvul={canEdit ? kernMepInvul : null}
-                springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)}
+                springNaarPartij={mepSpringNaar} onSprongKlaar={() => setMepSpringNaar(null)} mikBeurt={mikBeurt}
                 notitie={mepNotitie} onNotitie={bewaarMepNotitie} onAskName={askName} onSchoonmaakAf={schoonmaakUitNotitie} onNotitieOpen={setNotitieOpen} bdArtikelen={bdArtikelen} bestelLijst={bestelLijst} onBestelLijst={bewaarBestelLijst} onNaarBd={canEdit ? naarBdWagen : null} levFavoriet={levFavoriet} onZoekBd={canEdit ? zoekBijBd : null} onNieuwArtikel={canEdit ? updateBdArtikel : null} mepMark={mepMark} onMepMark={bewaarMepMark}
                 onOpenRecipe={(id) => push({ screen: "recipeDetail", id })} />
             )}
@@ -20790,7 +20810,7 @@ function SamenMakenPaneel({ somSet, boekingen, koppeling, boekingSleutel, micePr
   );
 }
 
-function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel, mepMark, onMepMark }) {
+function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, calcItems, recipeById, dishById, prodKoppeling, miceProducten, onKoppel, onWisMep, onMepExtra, onProdKoppel, onInvulPartij, onInvulPartijBatch, onKernMep, onKernMepWissen, onKernMepInvul, onOpenRecipe, springNaarPartij, onSprongKlaar, mikBeurt, notitie, onNotitie, onAskName, onSchoonmaakAf, onNotitieOpen, bdArtikelen, bestelLijst, onBestelLijst, onNaarBd, levFavoriet, onZoekBd, onNieuwArtikel, mepMark, onMepMark }) {
   const vandaag = localDate();
   const [volgendeOpen, setVolgendeOpen] = useState(false); // volgende week start altijd ingeklapt
   // De balk met Bestellijst, Notities en printen blijft in beeld terwijl je
@@ -20956,6 +20976,15 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
   // groeit de bladzijde pas als ze binnenkomen.
   const mikRef = React.useRef(null);
   if (mikRef.current === null) mikRef.current = !!MEP_START.aan;
+  // Een nieuwe beurt van de schil (je drukte Escape terwijl je hier al stond):
+  // dan mag de bladzijde zich opnieuw plaatsen, ook als je er zelf al aan
+  // gezeten hebt.
+  const beurtRef = React.useRef(null);
+  if (beurtRef.current !== mikBeurt) {
+    const eerste = beurtRef.current === null;
+    beurtRef.current = mikBeurt;
+    if (!eerste) mikRef.current = true;
+  }
   useEffect(() => {
     // Alleen als je hier net binnenkomt. Kom je terug uit een recept, dan hoort
     // de bladzijde te staan waar je hem achterliet.
@@ -20978,7 +21007,8 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
       const onder = balk ? balk.getBoundingClientRect().bottom : 0;
       const nu = (typeof window !== "undefined" && window.scrollY) || document.documentElement.scrollTop || document.body.scrollTop || 0;
       // De ónderkant van de kop komt net onder de balk te liggen.
-      const doel = Math.max(0, Math.round(nu + el.getBoundingClientRect().bottom - onder - STREEP));
+      const doel = mepMikDoel(el.getBoundingClientRect().bottom, onder, nu, STREEP);
+      MEP_START.mik = { dag: vandaag, doel, beurt: ((MEP_START.mik && MEP_START.mik.beurt) || 0) + 1 };
       // Alle drie zetten: op de telefoon is niet het venster maar de body het
       // scrollende element, en dan komt window.scrollTo nergens aan.
       try { if (typeof window !== "undefined" && window.scrollTo) window.scrollTo(0, doel); } catch (e) {}
@@ -20988,7 +21018,10 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     };
     // Zodra je zelf aan de bladzijde komt is het jouw bladzijde: dan houden we
     // onmiddellijk op met bijsturen, ook als we nog niet klaar waren.
-    const handen = () => { weg = true; mikRef.current = false; };
+    // Escape telt niet mee: dát is juist de toets waarmee je zegt "zet me
+    // terug op vandaag". Zonder deze uitzondering blies hij zijn eigen
+    // opdracht meteen weer af.
+    const handen = (e) => { if (e && e.type === "keydown" && e.key === "Escape") return; weg = true; mikRef.current = false; };
     // Meteen bij binnenkomst, zodat je de bladzijde niet eerst bovenaan ziet
     // staan en er dan naartoe ziet springen. Daarna blijven bijsturen zolang
     // hij nog beweegt: de bladzijde groeit terwijl de partijen binnenkomen, en
@@ -21023,7 +21056,7 @@ function MepWeek({ boekingen, koppeling, boekingSleutel, producten, recepten, ca
     // Komen de boekingen later binnen — bij het opstarten van de app duurt dat
     // even — dan groeit de bladzijde onder ons vandaan en mikken we opnieuw.
     // Zolang jij er zelf niet aan gekomen bent, tenminste.
-  }, [mikRef.current, boekingen.length]);
+  }, [mikRef.current, mikBeurt, boekingen.length]);
 
   // De optelsom kijkt nooit terug: alleen vandaag en verder.
   const somSet = dagen.filter((d) => d >= vandaag).slice(0, somDagen);
